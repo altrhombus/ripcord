@@ -108,8 +108,8 @@ public class ConsoleCardViewModelTests
     }
 
     [Fact]
-    public void Details_LeadWithTheFamily()
-        => Assert.Equal("PS5 · 10.0.0.7", NewCard().State.Details);
+    public void Details_AreTheFamily_WithoutTheAddress()
+        => Assert.Equal("PS5", NewCard().State.Details);
 
     [Fact]
     public void Accent_ComesFromTheConsolesOwnFamily()
@@ -117,7 +117,7 @@ public class ConsoleCardViewModelTests
         // A PS4 record must not be drawn with, or described as, a PS5.
         var ps4 = NewCard(Console(platform: "Ps4"));
         Assert.Equal(AccentRole.PlayStation, ps4.State.Accent);
-        Assert.StartsWith("PS4 · ", ps4.State.Details);
+        Assert.Equal("PS4", ps4.State.Details);
     }
 
     [Fact]

@@ -35,12 +35,45 @@ public enum CardDensity
 /// where a second hero-sized tile beside the only console would make adding one look like half the page's
 /// purpose; the hero layout offers a quiet link instead.
 /// </param>
+/// <param name="Geometry">How the card inside the cell is drawn. See <see cref="CardGeometry"/>.</param>
 public readonly record struct CardLayout(
     CardDensity Density,
     double CellWidth,
     double CellHeight,
     int MaxColumns,
-    bool ShowAddTile);
+    bool ShowAddTile,
+    CardGeometry Geometry);
+
+/// <summary>Which step of the platform's type ramp the console's name takes.</summary>
+public enum CardNameStep
+{
+    Subtitle,
+    Title,
+    TitleLarge,
+}
+
+/// <summary>
+/// How a card is drawn at the size it is being given: the wedge, the insets, and which step of the type ramp
+/// its text takes. Plain numbers, so the rule is tested here and the front end only turns them into
+/// thicknesses and styles.
+/// </summary>
+/// <param name="CardWidth">The visible card, without the gutter.</param>
+/// <param name="WedgeWidth">The play wedge, a proportion of the card. See <see cref="CardMetrics.WedgeShare"/>.</param>
+/// <param name="InsetLeft">Space between the card's leading edge and its text.</param>
+/// <param name="InsetRight">The text column's trailing inset: the wedge, its slant and a little air.</param>
+/// <param name="InsetVertical">Space above and below the text.</param>
+/// <param name="NameStep">The console name's step on the type ramp.</param>
+/// <param name="StatusIsBody">The status line is Body rather than Caption, on a card big enough to read across a room.</param>
+/// <param name="MarkHeight">The family mark beside "PS5"; its width follows the mark's 9 : 16.</param>
+public readonly record struct CardGeometry(
+    double CardWidth,
+    double WedgeWidth,
+    double InsetLeft,
+    double InsetRight,
+    double InsetVertical,
+    CardNameStep NameStep,
+    bool StatusIsBody,
+    double MarkHeight);
 
 /// <summary>
 /// Decides how the console grid is laid out, from the viewport and the number of consoles.
@@ -96,19 +129,44 @@ public static class CardMetrics
     public const double RoomyCellHeight = 232;
 
     /// <summary>
-    /// The hero cell: a 520×176 card inside a 532×188 one.
+    /// The hero takes this share of the page's width, between <see cref="HeroMinCardWidth"/> and
+    /// <see cref="HeroMaxCardWidth"/>.
     ///
     /// <para>
-    /// The width is definite rather than a maximum, and that is load-bearing. As a <c>MaxWidth</c> on a centred
-    /// panel it collapsed to content and the card came out around 420 — which does not look wrong on its own,
-    /// but the wedge beside it is a fixed 184, so it silently became 44% of the card rather than the 35% it is
-    /// drawn as. A proportion expressed as one fixed number beside one elastic one is not a proportion.
+    /// It was a fixed 520 × 176 at every window size: a small strip under a lot of nothing in a big window, and
+    /// clipped through its play mark in a small one (visual audit, 2026-10-08). One console is the whole page,
+    /// so the card is sized like a page's subject rather than like one tile of many.
     /// </para>
     /// </summary>
-    public const double HeroCellWidth = 532;
+    public const double HeroShare = 0.5;
 
-    /// <summary>See <see cref="HeroCellWidth"/>. The hero is the same height as a grid card, not taller.</summary>
-    public const double HeroCellHeight = 188;
+    /// <summary>The smallest hero, which is the old fixed one less a little, and fits the 640 px window.</summary>
+    public const double HeroMinCardWidth = 440;
+
+    /// <summary>
+    /// The largest hero. Past this a card stops reading as a card and starts reading as a banner, and the eye has
+    /// to travel from the name to the wedge.
+    /// </summary>
+    public const double HeroMaxCardWidth = 880;
+
+    /// <summary>The hero's width to height, the old 520 × 176's, held as it grows.</summary>
+    public const double HeroAspect = 520.0 / 176.0;
+
+    /// <summary>The hero is never shorter than the grid card, whatever its proportion says.</summary>
+    public const double HeroMinCardHeight = 176;
+
+    /// <summary>
+    /// Where the hero's text steps up the platform's type ramp: its name from Title to Title Large and its status
+    /// from Caption to Body. A card twice as wide with the same small text reads as empty; stepping the ramp at a
+    /// breakpoint is how Fluent pages answer more room (showcase plan, decision A, 2026-10-09).
+    /// </summary>
+    public const double HeroLargeTypeWidth = 720;
+
+    /// <summary>The page's own padding each side, which the hero must fit inside.</summary>
+    public const double PagePadding = 24;
+
+    /// <summary>The wedge's share of the hero, as drawn on the original 520 card (184 of 520).</summary>
+    public const double WedgeShare = 0.35;
 
     /// <summary>
     /// How much of a card's height is text at 100% text size: the name, the family line and the status line with
@@ -161,8 +219,7 @@ public static class CardMetrics
         // only thing the page can do.
         if (consoleCount <= 1)
         {
-            return new CardLayout(
-                CardDensity.Hero, HeroCellWidth, HeroCellHeight + extra, MaxColumns: 1, ShowAddTile: false);
+            return Hero(viewportWidth, extra);
         }
 
         bool roomy = viewportWidth >= WideViewportWidth;
@@ -179,12 +236,53 @@ public static class CardMetrics
             _ => int.MaxValue,
         };
 
+        CardDensity density = roomy ? CardDensity.Roomy : CardDensity.Grid;
+
         return new CardLayout(
-            roomy ? CardDensity.Roomy : CardDensity.Grid,
+            density,
             cellWidth,
             cellHeight,
             maxColumns,
-            ShowAddTile: true);
+            ShowAddTile: true,
+            Geometry: roomy
+                ? new CardGeometry(cellWidth - Gutter, WedgeWidth(density), 20, 124, 18, CardNameStep.Subtitle, false, 16)
+                : new CardGeometry(cellWidth - Gutter, WedgeWidth(density), 16, 84, 14, CardNameStep.Subtitle, false, 16));
+    }
+
+    /// <summary>
+    /// The one-console card, sized from the page. Its proportion, its wedge's share and the wedge's angle hold at
+    /// every size; its text steps up the ramp once at <see cref="HeroLargeTypeWidth"/>.
+    /// </summary>
+    private static CardLayout Hero(double viewportWidth, double extraTextHeight)
+    {
+        // Inside the page's padding, and inside the cell's own gutter.
+        double room = Math.Max(0, viewportWidth - (2 * PagePadding) - Gutter);
+        double card = Math.Clamp(viewportWidth * HeroShare, HeroMinCardWidth, HeroMaxCardWidth);
+
+        // Never wider than the page has room for. A window under the app's minimum (or a first measure at zero)
+        // still gets the smallest hero rather than nothing.
+        card = Math.Round(Math.Max(Math.Min(card, room), HeroMinCardWidth * 0.75));
+
+        double height = Math.Round(Math.Max(HeroMinCardHeight, card / HeroAspect));
+        bool large = card >= HeroLargeTypeWidth;
+
+        var geometry = new CardGeometry(
+            CardWidth: card,
+            WedgeWidth: Math.Round(card * WedgeShare),
+            InsetLeft: large ? 36 : 28,
+            InsetRight: Math.Round(card * WedgeShare) + 16,
+            InsetVertical: large ? 32 : 24,
+            NameStep: large ? CardNameStep.TitleLarge : CardNameStep.Title,
+            StatusIsBody: large,
+            MarkHeight: large ? 20 : 16);
+
+        return new CardLayout(
+            CardDensity.Hero,
+            card + Gutter,
+            height + Gutter + extraTextHeight,
+            MaxColumns: 1,
+            ShowAddTile: false,
+            geometry);
     }
 
     /// <summary>
@@ -204,6 +302,7 @@ public static class CardMetrics
     /// </summary>
     public static double WedgeWidth(CardDensity density) => density switch
     {
+        // The hero's is a share of whatever width it is given; this is its width on the 520 card it was drawn on.
         CardDensity.Hero => 184,
         CardDensity.Roomy => 112,
         _ => 72,

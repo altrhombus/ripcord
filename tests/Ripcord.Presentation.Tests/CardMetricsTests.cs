@@ -22,7 +22,6 @@ public class CardMetricsTests
             CardLayout layout = CardMetrics.For(width, consoleCount: 1);
 
             Assert.Equal(CardDensity.Hero, layout.Density);
-            Assert.Equal(CardMetrics.HeroCellWidth, layout.CellWidth);
             Assert.Equal(1, layout.MaxColumns);
         }
     }
@@ -100,7 +99,7 @@ public class CardMetricsTests
     {
         double dense = CardMetrics.WedgeWidth(CardDensity.Grid) / (CardMetrics.GridCellWidth - CardMetrics.Gutter);
         double roomy = CardMetrics.WedgeWidth(CardDensity.Roomy) / (CardMetrics.RoomyCellWidth - CardMetrics.Gutter);
-        double hero = CardMetrics.WedgeWidth(CardDensity.Hero) / (CardMetrics.HeroCellWidth - CardMetrics.Gutter);
+        double hero = CardMetrics.WedgeWidth(CardDensity.Hero) / 520;
 
         Assert.InRange(dense, 0.24, 0.28);
         Assert.InRange(roomy, 0.30, 0.34);
@@ -125,6 +124,77 @@ public class CardMetricsTests
                 Assert.True(layout.CellHeight - CardMetrics.Gutter > 0);
             }
         }
+    }
+
+    /// <summary>
+    /// The hero follows the window: half the page, between the smallest and largest hero. It was a fixed 520 at
+    /// every size, a strip in a big window and clipped through its play mark in a small one (2026-10-08).
+    /// </summary>
+    [Theory]
+    [InlineData(640, CardMetrics.HeroMinCardWidth)]
+    [InlineData(1280, 640)]
+    [InlineData(1600, 800)]
+    [InlineData(3440, CardMetrics.HeroMaxCardWidth)]
+    public void TheHero_IsHalfThePage_BetweenItsBounds(double viewport, double card)
+    {
+        CardLayout layout = CardMetrics.For(viewport, consoleCount: 1);
+
+        Assert.Equal(card, layout.Geometry.CardWidth);
+        Assert.Equal(card + CardMetrics.Gutter, layout.CellWidth);
+    }
+
+    /// <summary>The smallest window the app allows still holds the whole card, padding and gutter included.</summary>
+    [Fact]
+    public void TheHero_FitsTheMinimumWindow()
+    {
+        const double window = 640;
+        CardLayout layout = CardMetrics.For(window, consoleCount: 1);
+
+        Assert.True(layout.CellWidth <= window - (2 * CardMetrics.PagePadding));
+    }
+
+    /// <summary>
+    /// The proportion, the wedge's share and so the diagonal's angle hold at every size; only the size changes.
+    /// </summary>
+    [Theory]
+    [InlineData(640)]
+    [InlineData(1280)]
+    [InlineData(3440)]
+    public void TheHero_KeepsItsProportionAndItsWedge(double viewport)
+    {
+        CardGeometry g = CardMetrics.For(viewport, consoleCount: 1).Geometry;
+        double height = CardMetrics.For(viewport, consoleCount: 1).CellHeight - CardMetrics.Gutter;
+
+        Assert.InRange(g.WedgeWidth / g.CardWidth, 0.34, 0.36);
+        Assert.True(height >= CardMetrics.HeroMinCardHeight);
+        Assert.True(g.InsetRight > g.WedgeWidth);
+    }
+
+    /// <summary>
+    /// Text steps up the platform's ramp once, at a breakpoint, rather than scaling with the card (showcase plan,
+    /// decision A). Asserted on both sides, as the other breakpoints are.
+    /// </summary>
+    [Fact]
+    public void TheHerosText_StepsUpTheRampAtTheBreakpoint()
+    {
+        CardGeometry below = CardMetrics.For(1436, consoleCount: 1).Geometry;
+        CardGeometry above = CardMetrics.For(1440, consoleCount: 1).Geometry;
+
+        Assert.Equal(CardNameStep.Title, below.NameStep);
+        Assert.False(below.StatusIsBody);
+        Assert.Equal(CardNameStep.TitleLarge, above.NameStep);
+        Assert.True(above.StatusIsBody);
+    }
+
+    /// <summary>The grid cards are unchanged by any of this: subtitle names, caption status, their old insets.</summary>
+    [Fact]
+    public void GridCards_KeepTheirOwnGeometry()
+    {
+        CardGeometry g = CardMetrics.For(1280, consoleCount: 4).Geometry;
+
+        Assert.Equal(CardNameStep.Subtitle, g.NameStep);
+        Assert.Equal(CardMetrics.WedgeWidth(CardDensity.Grid), g.WedgeWidth);
+        Assert.Equal(CardMetrics.GridCellWidth - CardMetrics.Gutter, g.CardWidth);
     }
 
     [Theory]

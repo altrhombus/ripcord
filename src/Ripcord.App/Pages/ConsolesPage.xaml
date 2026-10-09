@@ -81,7 +81,7 @@
                         the console did not answer; PlayWedge.xaml has the argument for that departure.
                     -->
                     <controls:PlayWedge
-                        Width="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Wedge}"
+                        Width="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=Wedge}"
                         HorizontalAlignment="Right"
                         Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}"
                         AccentColor="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentColor}}"
@@ -98,7 +98,7 @@
                         be cut through. "Played 31 min ago" lost its bottom third when the slack sat on a row
                         that could only be clipped.
                     -->
-                    <Grid Margin="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Margin}">
+                    <Grid Margin="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=Margin}">
                         <!--
                             Last-played gets its own row. It shared the status row for one build and "Played 11
                             Sep 2026" came out as "Played 11 Sep 2" - the text column here is about 164px once
@@ -130,16 +130,17 @@
                             </Grid.RowDefinitions>
 
                             <!--
-                                The name leads. Two lines at most, and the right margin holds the overflow button
-                                off its first line. The tooltip REPEATS the name rather than being the only copy:
+                                The name leads. Two lines at most; the overflow button lives in the wedge's corner
+                                now, so the name has the whole text column. The tooltip REPEATS the name rather than being the only copy:
                                 touch never hovers, so anything reachable by hover alone is unreachable on a
                                 handheld. Details in the overflow menu is the copy reachable by finger, pad and
                                 mouse.
                             -->
+                            <!--  Its own foreground, like every other line here: inherited, it took the grid item's pointer-over colour and greyed out under the pointer.  -->
                             <TextBlock
-                                Margin="0,0,36,0"
+                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                 MaxLines="2"
-                                Style="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=NameStyle}"
+                                Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=NameStyle}"
                                 Text="{x:Bind State.DisplayName, Mode=OneWay}"
                                 TextTrimming="CharacterEllipsis"
                                 TextWrapping="Wrap"
@@ -152,14 +153,14 @@
                                 Orientation="Horizontal"
                                 Spacing="8">
                                 <controls:FamilyMark
-                                    Width="9"
-                                    Height="16"
+                                    Width="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=MarkWidth}"
+                                    Height="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=MarkHeight}"
                                     VerticalAlignment="Center"
                                     Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}" />
                                 <TextBlock
                                     VerticalAlignment="Center"
                                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                                     Text="{x:Bind State.Details, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis" />
                             </StackPanel>
@@ -242,7 +243,7 @@
                                 Grid.Column="1"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                                 Text="{x:Bind State.StatusLabel, Mode=OneWay}"
                                 TextTrimming="CharacterEllipsis" />
 
@@ -251,7 +252,7 @@
                                 Grid.Column="2"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                                 Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
                                 TextTrimming="CharacterEllipsis"
                                 Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=OneLine}" />
@@ -269,26 +270,27 @@
                         2026-10-08). The hero's wedge is 184 wide; this keeps clear of its slant and wraps instead.
                     -->
                     <TextBlock
-                        MaxWidth="120"
+                        MaxWidth="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=ActionLabelWidth}"
                         Margin="0,0,20,18"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                         Text="{x:Bind State.PrimaryActionLabel, Mode=OneWay}"
                         TextAlignment="Right"
                         TextWrapping="Wrap"
                         Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=ActionLabel}" />
 
                     <!--
-                        The overflow floats over the content rather than sitting in it, so a 48px hit area
-                        does not push the title down. A button nested inside a clickable item is fine: it
-                        handles the pointer first, so opening the menu does not also start a connect.
+                        The overflow sits in the card's top-trailing corner, the place Windows and the console
+                        shells put a tile's "more". It used to float at the wedge's leading edge, mid-card, which
+                        read as misplaced (visual audit, 2026-10-08). A button nested inside a clickable item is
+                        fine: it handles the pointer first, so opening the menu does not also start a connect.
                     -->
                     <Button
                         MinWidth="{StaticResource RipcordTouchTarget}"
                         MinHeight="{StaticResource RipcordTouchTarget}"
-                        Margin="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Overflow}"
+                        Margin="0,4,4,0"
                         Padding="0"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"
@@ -403,7 +405,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
 
-            <!--  The one-console "add another" link, which is not part of the scrolling grid.  -->
+            <!--  The shortcut confirmation, below the grid. ("Add another console" moved into the grid's footer.)  -->
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -469,14 +471,6 @@
             Margin="0,0,0,8"
             IsOpen="False" />
 
-        <HyperlinkButton
-            x:Name="HeroAddLink"
-            Grid.Row="3"
-            Margin="0,4,0,24"
-            HorizontalAlignment="Center"
-            Click="OnAddConsoleClick"
-            Visibility="Collapsed"
-            x:Uid="ConsolesPage_AddAnotherConsole" />
 
         <!--  Empty state — shown when no consoles are paired.  -->
         <StackPanel
@@ -544,6 +538,21 @@
             ItemTemplateSelector="{StaticResource CardTemplateSelector}"
             SelectionMode="None"
             Visibility="Collapsed">
+            <!--
+                "Add another console" rides under the hero, 16 below the card, as part of the same centred block. It sat
+                in its own row at the window's bottom edge, a long way from the card it belongs with (visual audit,
+                2026-10-08). The grid's footer, so it moves with the card wherever the card goes. Collapsed below the
+                hero, where the ghost tile does this job.
+            -->
+            <GridView.Footer>
+                <HyperlinkButton
+                    x:Name="HeroAddLink"
+                    Margin="0,4,0,0"
+                    HorizontalAlignment="Center"
+                    Click="OnAddConsoleClick"
+                    Visibility="Collapsed"
+                    x:Uid="ConsolesPage_AddAnotherConsole" />
+            </GridView.Footer>
             <GridView.ItemsPanel>
                 <ItemsPanelTemplate>
                     <!--
