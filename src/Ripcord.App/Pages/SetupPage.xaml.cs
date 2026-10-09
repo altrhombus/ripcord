@@ -267,7 +267,38 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         {
             AssembleWelcome();
         }
-        DispatcherQueue.TryEnqueue(() => target.Focus(FocusState.Programmatic));
+        SeedFocus(target);
+    }
+
+    /// <summary>
+    /// Put focus on a step's control, and keep it there through the step change.
+    ///
+    /// <para>
+    /// The step that was showing collapses with focus inside it, and Windows then moves focus to the next control it
+    /// finds, which is the gear in the title bar. Focusing the new step only from a queued callback lost that race
+    /// now and then, with the decoder check long finished (owner, 2026-10-09). So focus moves at once, and again
+    /// after the layout that processes the collapse if it is anywhere but the target: the fallback lands inside the
+    /// page too ("Continue", in an automated run), and one layout pass is too short for anyone to have moved it.
+    /// </para>
+    /// </summary>
+    private void SeedFocus(Control target)
+    {
+        target.Focus(FocusState.Programmatic);
+
+        void Recheck(object? sender, object e)
+        {
+            LayoutUpdated -= Recheck;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (XamlRoot is not null && target.IsEnabled
+                    && !ReferenceEquals(Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(XamlRoot), target))
+                {
+                    target.Focus(FocusState.Programmatic);
+                }
+            });
+        }
+
+        LayoutUpdated += Recheck;
     }
 
     /// <summary>
