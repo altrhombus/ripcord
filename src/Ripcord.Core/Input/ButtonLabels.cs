@@ -98,6 +98,44 @@ public static class ButtonLabels
         => $"{BadgeText(prompt.Button, family)}: {prompt.Verb}";
 
     /// <summary>
+    /// What the accept button does on the focused control, when "Select" would undersell it (showcase plan, part
+    /// 6). The front end picks one by the control's kind; a console card says its own action ("Play", "Wake &amp;
+    /// play") instead. Only the verb changes, never the bar's shape, so the prompts do not jump as focus moves.
+    /// </summary>
+    public const string VerbSelect = "Select";
+
+    /// <inheritdoc cref="VerbSelect"/>
+    public const string VerbToggle = "Toggle";
+
+    /// <inheritdoc cref="VerbSelect"/>
+    public const string VerbType = "Type";
+
+    /// <inheritdoc cref="VerbSelect"/>
+    public const string VerbOpen = "Open";
+
+    /// <summary>
+    /// The prompts with the accept button's verb replaced, for the control that has focus. Anything but the accept
+    /// button is left as the scope declared it; a null or empty verb leaves the prompts untouched.
+    /// </summary>
+    public static IReadOnlyList<InputPrompt> WithAcceptVerb(IReadOnlyList<InputPrompt> prompts, string? verb)
+    {
+        ArgumentNullException.ThrowIfNull(prompts);
+
+        if (string.IsNullOrEmpty(verb))
+        {
+            return prompts;
+        }
+
+        var result = new InputPrompt[prompts.Count];
+        for (int i = 0; i < prompts.Count; i++)
+        {
+            result[i] = prompts[i].Button == PromptButton.South ? prompts[i] with { Verb = verb } : prompts[i];
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// What a surface offers by default, by the kind of claim it has on the pad. A scope may override, but most
     /// do not need to, and a default that is right nearly always is what stops prompts drifting per page.
     /// </summary>
@@ -105,7 +143,7 @@ public static class ButtonLabels
     {
         InputScopeKind.Chrome =>
         [
-            new(PromptButton.South, "Select"),
+            new(PromptButton.South, VerbSelect),
             new(PromptButton.East, "Back"),
 
             // The one prompt worth showing a keyboard user: a context menu is reachable by pad and by
@@ -115,7 +153,7 @@ public static class ButtonLabels
 
         InputScopeKind.Modal =>
         [
-            new(PromptButton.South, "Select"),
+            new(PromptButton.South, VerbSelect),
             new(PromptButton.East, "Cancel"),
         ],
 
