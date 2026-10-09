@@ -154,6 +154,18 @@ public sealed partial class NotConverter : IValueConverter
 }
 
 /// <summary>
+/// Shown as full opacity, hidden as none, for something that fades rather than switches: an element's
+/// <c>OpacityTransition</c> animates Opacity, and a Visibility change cannot be animated at all.
+/// </summary>
+public sealed partial class ShownOpacityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+        => value is true ? 1.0 : 0.0;
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language)
+        => throw new NotSupportedException();
+}
+/// <summary>
 /// Dims the primary action for a console that did not answer. Dimmed rather than removed or disabled: the card
 /// should still say what it is for, an unreachable console usually just needs switching on, and a probe's
 /// silence is not grounds for taking the action away — one lost datagram reads exactly like a console that is

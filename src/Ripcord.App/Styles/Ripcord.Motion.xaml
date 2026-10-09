@@ -10,8 +10,11 @@
     Naming them here is what lets a call site say WHY it is animating instead of how long for. A duration
     chosen at the call site is a value nobody can review; "this is a state change" is reviewable.
 
-    WHAT ANIMATES is a closed list, and it lives in the plan, not here — page transitions, the card/stage
-    handoff, items arriving over time, the pairing flow's single content swap, and exactly two celebrations.
+    WHAT ANIMATES is a closed list — page transitions, the card/stage handoff, items arriving over time, the
+    pairing flow's single content swap, a card's hover wash fading in, and exactly two celebrations: the mark
+    assembling on Welcome and on "Paired." (docs/showcase-plan.md, part 5). Plus one indicator: the connect
+    trail's current dash breathing while a wait runs, which is a progress indicator doing the job a ProgressRing
+    does, not ambient decoration. Each is in docs/showcase-plan.md's motion table.
 
     WHAT NEVER ANIMATES, because each has bitten something:
       · Numbers. A diagnostic must never appear to interpolate — the headroom bar already learned this, where
@@ -24,6 +27,8 @@
         on exactly the hardware where frames are scarcest.
       · Ambient motion and launch cascades. A stagger is the generic-app tell, and it costs first-input
         latency at the moment the user is pressing Play.
+        The mark's assembly is staggered and is the exception, deliberately: the stagger IS the mark (the wedge,
+        then the trail), it runs on screens where nothing waits on it, and focus is already on the way on.
 
     Whether motion runs at all is AppMotion's question, not this file's — XAML's own theme transitions
     consult the system setting themselves, but anything driven from code does not.
@@ -42,6 +47,9 @@
     <Duration x:Key="RipcordDurationInstant">0:0:0.083</Duration>
     <Duration x:Key="RipcordDurationStateChange">0:0:0.15</Duration>
     <Duration x:Key="RipcordDurationEnter">0:0:0.25</Duration>
+
+    <!--  Half of one breath of the connect trail: the dash fades down over this and back over the same.  -->
+    <Duration x:Key="RipcordDurationBreath">0:0:0.6</Duration>
 
     <!--
         Easings. Content arriving decelerates into place; content leaving accelerates out, because an exit

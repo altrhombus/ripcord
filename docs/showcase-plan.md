@@ -148,12 +148,12 @@ gated on `AppMotion.Enabled`.
 | Where | What | Token |
 |---|---|---|
 | Pages | The platform's entrance and drill-in | (system) |
-| Card hover | Wash fades in and out | 150 ms |
-| Card press | Settles inwards (exists) | 83 ms |
+| Card hover | Wash fades in and out | `RipcordDurationStateChange` |
+| Card press | Settles inwards (exists), instantly: felt, not watched | none |
 | Connect | The mark travels from the card (exists, now mark to mark) | 250 ms |
-| Trail | The current dash breathes | 1.2 s cycle |
+| Trail | The current dash breathes | `RipcordDurationBreath`, twice per cycle |
 | Welcome, Paired | The mark assembles | 3 × 150 ms, staggered |
-| HUD rungs | Fade between rungs | 150 ms |
+| HUD rungs | Fade in and out, by the compositor | `RipcordDurationStateChange` |
 | Status over the stream | Fades out on the first frame (exists) | 150 ms |
 
 **The rule over the stream stays:** opacity only, nothing that moves across the picture.

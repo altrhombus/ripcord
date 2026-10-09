@@ -93,8 +93,6 @@ public sealed partial class ConnectMark : UserControl
     /// <summary>How low the breathing dash fades: well above <see cref="Unlit"/>, so it never reads as unreached.</summary>
     private const double BreathLow = 0.45;
 
-    /// <summary>Half a breath. A full cycle of about 1.2 s is a resting pace, not an alarm.</summary>
-    private static readonly TimeSpan HalfBreath = TimeSpan.FromMilliseconds(600);
 
     private Storyboard? _breath;
     private Rectangle? _breathing;
@@ -146,7 +144,7 @@ public sealed partial class ConnectMark : UserControl
         {
             From = 1.0,
             To = BreathLow,
-            Duration = new Duration(HalfBreath),
+            // Half a breath (RipcordDurationBreath): a full cycle of about 1.2 s is a resting pace, not an alarm.
             AutoReverse = true,
             RepeatBehavior = RepeatBehavior.Forever,
             EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },

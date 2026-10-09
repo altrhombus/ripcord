@@ -675,6 +675,14 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             return;
         }
 
+        // The hover wash fades rather than switches, as Windows' own controls' hover does. Off with motion off.
+        if ((args.ItemContainer.ContentTemplateRoot as FrameworkElement)?.FindName("HoverWash") is Microsoft.UI.Xaml.Shapes.Rectangle wash)
+        {
+            wash.OpacityTransition = AppMotion.Enabled
+                ? new ScalarTransition { Duration = AppMotion.Duration("RipcordDurationStateChange") }
+                : null;
+        }
+
         // No focus handlers. Focus used to light the hover wash too, against "hover is a wash, focus is a ring";
         // in light theme that turned the focused hero grey. The ring is the container's focus visual, and it is
         // the only mark focus makes. See ConsoleCardViewModel.IsHighlighted.

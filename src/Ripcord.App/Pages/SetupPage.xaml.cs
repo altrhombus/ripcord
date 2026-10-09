@@ -241,8 +241,9 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         {
             From = 0,
             To = 1,
-            BeginTime = TimeSpan.FromMilliseconds(300),
-            Duration = new Duration(TimeSpan.FromMilliseconds(250)),
+            // As the mark's wedge and first dash land, and at the pace of content arriving.
+            BeginTime = AppMotion.Duration("RipcordDurationStateChange") * 2,
+            Duration = new Duration(AppMotion.Duration("RipcordDurationEnter")),
         };
         Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(fade, WelcomeWordmark);
         Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(fade, "Opacity");

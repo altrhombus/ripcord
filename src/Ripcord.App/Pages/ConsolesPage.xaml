@@ -71,9 +71,12 @@
                         is a different kind of mark on purpose: the two used to be one wash at two opacities,
                         0.10 and 0.22, and were indistinguishable on a real screen.
                     -->
+                    <!--  Faded in and out over RipcordDurationStateChange; the transition is set in code, and only with motion on.  -->
                     <Rectangle
+                        x:Name="HoverWash"
                         Fill="{ThemeResource RipcordCardHoverOverlayBrush}"
-                        Visibility="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        IsHitTestVisible="False"
+                        Opacity="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource ShownOpacity}}" />
 
                     <!--
                         The wedge, trailing edge, full height. 92 of the card's 280 - a third of it, which is
