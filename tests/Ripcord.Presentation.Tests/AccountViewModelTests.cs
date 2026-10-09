@@ -75,6 +75,43 @@ public class AccountViewModelTests
     }
 
     [Fact]
+    public async Task SignedIn_NamesTheCountry_NotTheServicesCode()
+    {
+        // The service reports a lowercase country code; printed verbatim it read "Signed in — us." (2026-10-08).
+        var session = new FakeAccountSession
+        {
+            HasStoredSession = true,
+            RestoreResult = new AccountIdentity("1", "somebody", "us"),
+        };
+        AccountViewModel vm = Build(session);
+
+        await vm.RestoreAsync();
+
+        Assert.Contains(new System.Globalization.RegionInfo("US").DisplayName, vm.State.Detail);
+        Assert.DoesNotContain("— us.", vm.State.Detail);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("1x")]
+    [InlineData("usa")]
+    public async Task SignedIn_WithNoUsableRegion_SaysNothingAboutOne(string region)
+    {
+        var session = new FakeAccountSession
+        {
+            HasStoredSession = true,
+            RestoreResult = new AccountIdentity("1", "somebody", region),
+        };
+        AccountViewModel vm = Build(session);
+
+        await vm.RestoreAsync();
+
+        // The region form is "Signed in — {country}."; without one the sentence carries no dash at all.
+        Assert.Equal(AccountStep.SignedIn, vm.State.Step);
+        Assert.DoesNotContain("—", vm.State.Detail);
+    }
+
+    [Fact]
     public async Task Restore_WithNothingStored_DoesNotTouchTheNetwork()
     {
         // Nothing stored is the common case on a fresh install, and it must not cost a request.

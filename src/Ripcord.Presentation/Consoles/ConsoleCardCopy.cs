@@ -69,6 +69,13 @@ public static class ConsoleCardCopy
         => string.Format(Strings.Console_RemovePrompt, displayName);
 
     /// <summary>
+    /// The card menu's accessible name. Named for the console, for the same reason as the remove prompt: a menu
+    /// that can open from any card should say whose it is. It had no name at all (visual audit, 2026-10-08).
+    /// </summary>
+    public static string MenuName(string displayName)
+        => string.Format(Strings.Console_MenuName, displayName);
+
+    /// <summary>
     /// The details rows, in display order, omitting anything this console does not know about itself.
     /// </summary>
     public static IReadOnlyList<ConsoleDetail> Details(ConsoleCardViewModel card)

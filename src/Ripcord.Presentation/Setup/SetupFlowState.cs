@@ -64,8 +64,10 @@ public sealed record SetupFlowState(
 
     // ---- console ----
     string ConsoleIntro,
-    // What to switch on at the console first, so pairing doesn't fail on a setting.
+    // What to switch on at the console first, so pairing doesn't fail on a setting: a line that introduces it,
+    // then the settings as numbered steps.
     string ConsolePreflight,
+    IReadOnlyList<PreflightStep> ConsolePreflightSteps,
     bool ConsoleAdded,
     // The console just paired, or empty.
     string ConsoleStatus,
@@ -93,3 +95,14 @@ public sealed record SetupFlowState(
     string SecondaryLabel,
     bool CanGoBack,
     string BackLabel);
+
+/// <summary>
+/// One thing to switch on at the console: what to turn on, and where the console keeps it.
+///
+/// <para>
+/// A list rather than a sentence. The console-side settings are what most often stop a first pairing, and they were
+/// one run-on paragraph in small grey caption text (visual audit, 2026-10-08), so the steps are separate and the
+/// menu path sits apart from the thing to turn on.
+/// </para>
+/// </summary>
+public sealed record PreflightStep(string TurnOn, string Where);

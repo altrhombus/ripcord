@@ -54,9 +54,16 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     }
 
     /// <summary>
-    /// Set while the pointer is over this card or it holds focus. The card's only hover cue — the container's
-    /// own background sits behind an opaque card, so without this a fully clickable card gives no sign that it
-    /// is one. How strongly that reads is a styling decision and lives in the front end, not here.
+    /// Set while the pointer is over this card. The card's only hover cue — the container's own background sits
+    /// behind an opaque card, so without this a fully clickable card gives no sign that it is one. How strongly
+    /// that reads is a styling decision and lives in the front end, not here.
+    ///
+    /// <para>
+    /// Pointer only, never focus. It was "hover or focus" until 2026-10-08, which broke the rule design.md states
+    /// in so many words — hover is a wash, focus is a ring — and in light theme it did worse: the wash darkens a
+    /// light card, the hero holds focus from launch, so the first thing a light-theme player saw was a grey card
+    /// darker than the page, the "hole cut in the page" the gradient rule exists to prevent.
+    /// </para>
     /// </summary>
     public bool IsHighlighted
     {
@@ -81,8 +88,8 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     }
 
     /// <summary>
-    /// The pointer is over this card. Distinct from <see cref="IsHighlighted"/>, which is hover <em>or</em>
-    /// focus and drives the card's wash.
+    /// The pointer is over this card, for the wedge. The same fact as <see cref="IsHighlighted"/>, which drives the
+    /// card's wash, kept as its own property so the wedge's response and the card's can change independently.
     ///
     /// <para>
     /// Separate because the wedge responds to this and must not respond to focus: focus is the ring's job,

@@ -97,6 +97,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
         RestoreBackdrop();
         AppEffects.Changed += OnEffectsChanged;
 
+        PaintCaptionButtons();
+        if (Content is FrameworkElement themedRoot)
+        {
+            themedRoot.ActualThemeChanged += (_, _) => PaintCaptionButtons();
+        }
+
         _settingsStore.Changed += s =>
             Post(() => _input.UseDeadzone(s.UiStickDeadzone));
 
@@ -234,6 +240,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // can stop: the app crashed on every close that raced a focus change (2026-09-30).
             _focusWatchdog.Dispose();
             _closed = true;
+            _focusTrace?.Dispose();
 
             AppEffects.Changed -= OnEffectsChanged;
             _input.IntentReceived -= OnNavIntent;
@@ -298,6 +305,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
     /// <summary>Set in <c>Closed</c>. Work posted before the close finds it set when it runs.</summary>
     private bool _closed;
+
+    /// <summary>
+    /// The whole window's focus moves, when <c>RIPCORD_TRACE_FOCUS</c> asks for them. It covered only the sign-in
+    /// dialog, and the pad bugs found on 2026-10-08 (focus landing on something with no focus visual) were on
+    /// ordinary pages, where there was nothing to read.
+    /// </summary>
+    private readonly FocusTrace? _focusTrace = FocusTrace.StartIfEnabled("shell");
 
     /// <summary>
     /// Queue work for the UI thread, to be dropped if the window has closed by the time it runs.
@@ -442,8 +456,58 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// wash and the family marks resolve through <c>AccentResources</c> on each binding pass, so they follow on
     /// the next render without anything being told.
     /// </summary>
+    /// <summary>
+    /// Colour the minimise, maximise and close buttons for the theme the window is actually in.
+    ///
+    /// <para>
+    /// Left to the platform, they came back from High Contrast on a white block: turning High Contrast off
+    /// restored the page but not the caption buttons, which kept a light background in a dark window until
+    /// relaunch (visual audit, 2026-10-08). So they are painted here on every theme or contrast change. In
+    /// High Contrast every colour is cleared, which hands the buttons back to the system's contrast theme,
+    /// the only correct answer there.
+    /// </para>
+    ///
+    /// <para>
+    /// The values are Windows 11's own caption-button fills: transparent at rest, the subtle fill on hover,
+    /// a fainter one pressed, the primary text colour for the glyphs and the disabled text colour when the
+    /// window is inactive.
+    /// </para>
+    /// </summary>
+    private void PaintCaptionButtons()
+    {
+        AppWindowTitleBar bar = AppWindow.TitleBar;
+
+        if (AppEffects.HighContrast)
+        {
+            bar.ButtonBackgroundColor = null;
+            bar.ButtonInactiveBackgroundColor = null;
+            bar.ButtonForegroundColor = null;
+            bar.ButtonInactiveForegroundColor = null;
+            bar.ButtonHoverBackgroundColor = null;
+            bar.ButtonHoverForegroundColor = null;
+            bar.ButtonPressedBackgroundColor = null;
+            bar.ButtonPressedForegroundColor = null;
+            return;
+        }
+
+        bool dark = (Content as FrameworkElement)?.ActualTheme == ElementTheme.Dark;
+        Windows.UI.Color glyph = dark ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0xE4, 0x00, 0x00, 0x00);
+        Windows.UI.Color inactive = dark ? Windows.UI.Color.FromArgb(0x5D, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x5C, 0x00, 0x00, 0x00);
+
+        bar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+        bar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        bar.ButtonForegroundColor = glyph;
+        bar.ButtonInactiveForegroundColor = inactive;
+        bar.ButtonHoverBackgroundColor = dark ? Windows.UI.Color.FromArgb(0x0F, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x09, 0x00, 0x00, 0x00);
+        bar.ButtonHoverForegroundColor = glyph;
+        bar.ButtonPressedBackgroundColor = dark ? Windows.UI.Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x06, 0x00, 0x00, 0x00);
+        bar.ButtonPressedForegroundColor = glyph;
+    }
+
     private void OnEffectsChanged()
     {
+        PaintCaptionButtons();
+
         // Not while streaming: the backdrop is deliberately off for the duration, and putting one back under
         // opaque video would undo the reason it was dropped.
         if (!IsStreaming)
@@ -823,7 +887,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
                     // On the stream layer Back leaves it, as its own "Back to consoles" does; going back in the
                     // collapsed chrome frame underneath did nothing visible. A pad only gets here while no stream
                     // is live (the session scope keeps its presses), so this is a connect, or a connect that failed.
-                    if (IsStreaming && StreamFrame.Content is SessionPage page)
+                    //
+                    // Or a prompt over a live stream, which is why a dialog closes first: the disconnect prompt
+                    // is the stream asking to leave, and B on it asked to leave again, which the page ignores while
+                    // it waits for the answer. So B did nothing there (owner, with a pad, 2026-10-09).
+                    if (_focus.TryDismissPopup())
+                    {
+                        // Closed what was on top.
+                    }
+                    else if (IsStreaming && StreamFrame.Content is SessionPage page)
                     {
                         page.Leave();
                     }
@@ -972,6 +1044,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             if (first is not ScrollViewer scroller)
             {
                 first.Focus(FocusState.Keyboard);
+                _seedRetries = 0;
                 return;
             }
 
@@ -983,9 +1056,48 @@ public sealed partial class MainWindow : Window, IShellNavigator
             scope = inner;
         }
 
-        // Nothing focusable on the page yet (it may still be populating). The title-bar commands are always
-        // there, so focus is at least somewhere a pad can move from.
+        // Nothing focusable on the page yet: it may still be populating. Ask again shortly, for up to half a
+        // second, before settling for the chrome. Without the wait a page that fills itself in after navigating -
+        // Keyboard controls builds its rows that way - opened every time with focus on the title-bar gear, so a
+        // pad user started in the window's furniture instead of the first row (visual audit, 2026-10-08).
+        if (_seedRetries < SeedRetryLimit)
+        {
+            _seedRetries++;
+            _seedRetry ??= CreateSeedRetry();
+            _seedRetry.Start();
+            return;
+        }
+
+        // The title-bar commands are always there, so focus is at least somewhere a pad can move from.
+        _seedRetries = 0;
         SettingsButton.Focus(FocusState.Keyboard);
+    }
+
+    private const int SeedRetryLimit = 10;
+    private int _seedRetries;
+    private DispatcherQueueTimer? _seedRetry;
+
+    private DispatcherQueueTimer CreateSeedRetry()
+    {
+        DispatcherQueueTimer timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(50);
+        timer.IsRepeating = false;
+
+        // Only if nothing has claimed focus in the meantime (the user may already have moved), and never behind a
+        // modal: ShellShouldSeedFocus is the guarded question every seeding path asks.
+        timer.Tick += (_, _) =>
+        {
+            if (ShellShouldSeedFocus())
+            {
+                FocusFirstContentElement();
+            }
+            else
+            {
+                _seedRetries = 0;
+            }
+        };
+
+        return timer;
     }
 
 }

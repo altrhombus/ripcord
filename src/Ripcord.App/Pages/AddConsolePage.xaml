@@ -145,7 +145,7 @@
                     </StackPanel.Transitions>
 
                     <TextBlock
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_WhichConsoleConnecting"
                         TextWrapping="Wrap" />
 
@@ -217,7 +217,7 @@
 
                     <TextBlock
                         x:Name="FindHeading"
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_LookingConsole"
                         TextWrapping="Wrap" />
                     <TextBlock
@@ -227,8 +227,14 @@
 
                     <ProgressBar x:Name="ScanProgress" IsIndeterminate="True" />
 
+                    <!--
+                        Not a tab stop itself: a plain ItemsControl is one by default, draws no focus visual, and
+                        sits exactly where its results are, so Up from "Search again" focused the list instead of
+                        the console in it and the console could never be reached with a pad (2026-10-08).
+                    -->
                     <ItemsControl
                         x:Name="DiscoveredList"
+                        IsTabStop="False"
                         ItemTemplate="{StaticResource DiscoveredConsoleTemplate}">
                         <ItemsControl.ItemContainerTransitions>
                             <TransitionCollection>
@@ -282,7 +288,7 @@
 
                     <TextBlock
                         x:Name="LinkHeading"
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_LinkPcConsole"
                         TextWrapping="Wrap" />
 
@@ -441,7 +447,7 @@
                     </StackPanel.Transitions>
 
                     <TextBlock
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_Pairing"
                         TextWrapping="Wrap" />
                     <ProgressBar IsIndeterminate="True" />

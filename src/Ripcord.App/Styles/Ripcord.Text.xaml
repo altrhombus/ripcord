@@ -39,6 +39,18 @@
         <Setter Property="AutomationProperties.HeadingLevel" Value="Level2" />
     </Style>
 
+    <!--
+        A step's heading inside a page, such as Add a console's "Looking for your console". The subtitle ramp, and a
+        level 2 heading to a screen reader: the steps used SubtitleTextBlockStyle directly, so Narrator could not
+        jump to them (visual audit, 2026-10-08).
+    -->
+    <Style
+        x:Key="RipcordStepHeadingStyle"
+        BasedOn="{StaticResource SubtitleTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="AutomationProperties.HeadingLevel" Value="Level2" />
+    </Style>
+
     <!--  A page's title: WinUI's title style, marked as the page's top heading for screen readers.  -->
     <Style
         x:Key="RipcordPageTitleStyle"
@@ -67,6 +79,25 @@
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="CharacterSpacing" Value="40" />
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+    </Style>
+
+    <!--
+        The hint bar's two texts: the label inside a button badge, and the verb beside it. Styles so their colour
+        follows a theme switch; see RipcordHintBadgeStyle.
+    -->
+    <Style
+        x:Key="RipcordHintKeyTextStyle"
+        BasedOn="{StaticResource CaptionTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <Style
+        x:Key="RipcordHintVerbStyle"
+        BasedOn="{StaticResource CaptionTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <!--  The same label on an accent fill, where the foreground has to come from the accent pair.  -->

@@ -350,9 +350,9 @@ public sealed class SessionController : IAsyncDisposable
                         isRetry ? SessionLifecycle.Reconnecting : SessionLifecycle.Connecting,
                         isRetry
                             ? $"Attempt {attempt} of {_options.MaxReconnectAttempts}."
-                              + (lastReason is null ? string.Empty : $" {lastReason}")
                             : "Connecting to your console…",
-                        isRetry ? attempt : 0);
+                        isRetry ? attempt : 0,
+                        reason: isRetry ? lastReason : null);
                 }
 
                 ConnectOutcome outcome = await ConnectWithinDeadlineAsync(cancellationToken)
@@ -462,9 +462,10 @@ public sealed class SessionController : IAsyncDisposable
                 {
                     Transition(
                         SessionLifecycle.Reconnecting,
-                        $"Connection failed. Retrying in {Math.Ceiling(backoff.TotalSeconds)}s… ({outcome.Detail})",
+                        $"Connection failed. Retrying in {Math.Ceiling(backoff.TotalSeconds)}s…",
                         attempt,
-                        backoff);
+                        backoff,
+                        reason: outcome.Detail);
                 }
                 else
                 {
@@ -718,7 +719,15 @@ public sealed class SessionController : IAsyncDisposable
             // Retryable: opening a session now reaches the network, so this covers a rendezvous that timed out
             // or a console that was busy -- transient things worth another attempt, where before it could only
             // be a construction error.
-            return new ConnectOutcome(false, Retryable: true, $"Couldn't start a session: {ex.Message}");
+            //
+            // Except an explicit refusal. The account route registers its session here, and a console that answers
+            // 401 or 403 has said no; retrying it twice, with a wake through PlayStation Network before each, spent
+            // over a minute before the same answer was shown (visual audit, 2026-10-08). Only those two codes:
+            // the rest of this path's failures, a rendezvous that never completed among them, do clear on a retry.
+            bool refused = ex.Message.Contains("(HTTP 403", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("(HTTP 401", StringComparison.OrdinalIgnoreCase);
+
+            return new ConnectOutcome(false, Retryable: !refused, $"Couldn't start a session: {ex.Message}");
         }
 
         lock (_gate)
@@ -1093,22 +1102,25 @@ public sealed class SessionController : IAsyncDisposable
         lifetime?.Dispose();
     }
 
-    private void Transition(SessionLifecycle lifecycle, string detail, int attempt = 0, TimeSpan? nextRetry = null)
+    private void Transition(
+        SessionLifecycle lifecycle, string detail, int attempt = 0, TimeSpan? nextRetry = null, string? reason = null)
     {
         Lifecycle = lifecycle;
-        var status = new SessionStatus(lifecycle, detail, attempt, nextRetry);
+        var status = new SessionStatus(lifecycle, detail, attempt, nextRetry, reason);
         CurrentStatus = status;
 
         // Trace every transition. A reconnect storm or a stall/recover cycle is invisible in an instantaneous UI
-        // but obvious in a capture timeline.
-        RipcordEventSource.Log.SessionStateChanged(lifecycle.ToString(), detail);
+        // but obvious in a capture timeline. The reason goes in the trace as it always did; only the screen
+        // shows it apart from the sentence.
+        string traced = reason is null ? detail : $"{detail} ({reason})";
+        RipcordEventSource.Log.SessionStateChanged(lifecycle.ToString(), traced);
         if (lifecycle == SessionLifecycle.Failed)
         {
-            RipcordEventSource.Log.SessionFailed(detail);
+            RipcordEventSource.Log.SessionFailed(traced);
         }
         else if (lifecycle == SessionLifecycle.Reconnecting && nextRetry is { } delay)
         {
-            RipcordEventSource.Log.ReconnectScheduled(attempt, delay.TotalMilliseconds, detail);
+            RipcordEventSource.Log.ReconnectScheduled(attempt, delay.TotalMilliseconds, traced);
         }
 
         _status.OnNext(status);

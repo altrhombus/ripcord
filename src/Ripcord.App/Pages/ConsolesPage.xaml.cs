@@ -17,6 +17,7 @@ using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
 using Ripcord_App.Input;
 using Ripcord_App.Accents;
+using Ripcord_App.Controls;
 using Ripcord_App.Converters;
 using Ripcord_App.Services;
 
@@ -277,9 +278,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// from the same two inputs and eventually disagreeing with itself.
     /// </para>
     /// </summary>
+    // Windows' text size, read once: the page is built fresh on each visit, and the rest of the app reads it at
+    // start-up too (see App.ScaleSettingsWrapToTextSize).
+    private static readonly double TextScale = new Windows.UI.ViewManagement.UISettings().TextScaleFactor;
+
     private CardLayout ApplyCardLayout(int consoleCount)
     {
-        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount);
+        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount, TextScale);
         _layout = layout;
 
         foreach (ConsoleCardViewModel card in _items.OfType<ConsoleCardViewModel>())
@@ -400,7 +405,12 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             // Always the container now. This used to branch on which layout was showing, because the hero
             // card sat outside any items control and had no container to ask for - so the one-console path
             // was the only one that cut to black when the branch was wrong. Every card is a GridViewItem.
-            UIElement? source = ConsoleGrid.ContainerFromItem(item) as GridViewItem;
+            //
+            // The card's mark, not the card: the stream page lands it on its own mark, top left. A whole card
+            // stretched over the window is what it used to be, and in Light that is a white screen.
+            UIElement? source = ConsoleGrid.ContainerFromItem(item) is GridViewItem container
+                ? FindMark(container)
+                : null;
 
             if (source is not null)
             {
@@ -412,6 +422,25 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         {
             // Purely decorative — never let it stand between the user and their game.
         }
+    }
+
+    private static FamilyMark? FindMark(DependencyObject root)
+    {
+        if (root is FamilyMark mark)
+        {
+            return mark;
+        }
+
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            if (FindMark(VisualTreeHelper.GetChild(root, i)) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -441,6 +470,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     private MenuFlyout BuildConsoleFlyout(ConsoleCardViewModel item)
     {
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
+
+        // A flyout is not an element, so its accessible name goes on the presenter it opens as.
+        var presenterStyle = new Style(typeof(MenuFlyoutPresenter));
+        presenterStyle.Setters.Add(new Setter(
+            Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty,
+            ConsoleCardCopy.MenuName(item.State.DisplayName)));
+        flyout.MenuFlyoutPresenterStyle = presenterStyle;
 
         // Glyphs escaped rather than pasted: a private-use codepoint sitting raw in a C# string is invisible
         // in a diff and quietly mangled by anything that re-encodes the file.
@@ -509,7 +545,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         args.Handled = true;
     }
 
-    // The card's hover/focus cue. Held as a flag on the item rather than by reaching into the template, so it
+    // The card's hover cue. Held as a flag on the item rather than by reaching into the template, so it
     // survives the markup being rearranged \u2014 see ConsoleCardViewModel.IsHighlighted.
     private void OnCardHighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, true);
 
@@ -526,9 +562,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         {
             item.IsHighlighted = on;
 
-            // Hover is reported separately from the wash's hover-or-focus, because the wedge answers this
-            // one and must not answer focus. Cleared on exit, which also clears any press left behind by a
-            // pointer that left the card mid-press.
+            // Reported twice, once for the card's wash and once for the wedge, so the two can be tuned apart.
+            // Cleared on exit, which also clears any press left behind by a pointer that left the card mid-press.
             item.IsPointerOver = on;
         }
 
@@ -627,10 +662,6 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         // The first moment the wrapping panel is guaranteed to exist. See SizePanel.
         SizePanel();
 
-        // Detach first: recycling means this container may still carry the last item's subscriptions.
-        container.GotFocus -= OnContainerFocus;
-        container.LostFocus -= OnContainerBlur;
-
         if (args.Item is not ConsoleCardViewModel item)
         {
             // The add tile has no per-console actions.
@@ -638,9 +669,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             return;
         }
 
+        // No focus handlers. Focus used to light the hover wash too, against "hover is a wash, focus is a ring";
+        // in light theme that turned the focused hero grey. The ring is the container's focus visual, and it is
+        // the only mark focus makes. See ConsoleCardViewModel.IsHighlighted.
         container.ContextFlyout = BuildConsoleFlyout(item);
-        container.GotFocus += OnContainerFocus;
-        container.LostFocus += OnContainerBlur;
 
         // Open the window, press A, playing - the promise the one-console layout exists to keep.
         //
@@ -656,18 +688,6 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         {
             _heroFocusTaken = true;
             _ = container.Focus(FocusState.Programmatic);
-        }
-    }
-
-    private static void OnContainerFocus(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, true);
-
-    private static void OnContainerBlur(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, false);
-
-    private static void SetContainerHighlight(object sender, bool on)
-    {
-        if (sender is GridViewItem { Content: ConsoleCardViewModel item })
-        {
-            item.IsHighlighted = on;
         }
     }
 

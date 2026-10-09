@@ -110,7 +110,7 @@
                     <ComboBox
                         x:Name="CodecCombo"
                         MinWidth="180"
-                        x:Uid="SettingsPage_VideoCodec" />
+                        x:Uid="SettingsPage_VideoCodecChoice" />
                 </tk:SettingsCard>
 
                 <!--
@@ -167,8 +167,13 @@
                 -->
                 <tk:SettingsCard x:Uid="SettingsPage_LivePadReadout">
                     <StackPanel MinWidth="260" HorizontalAlignment="Right">
+                        <!--
+                            Says something before the first frame. It was blank until a pad reported, so with none
+                            connected the row read as broken (visual audit, 2026-10-08). The first frame replaces it.
+                        -->
                         <TextBlock
                             x:Name="PadButtonsText"
+                            x:Uid="SettingsPage_PadReadoutWaiting"
                             HorizontalAlignment="Right"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
@@ -193,7 +198,7 @@
                     <ComboBox
                         x:Name="ExitGestureCombo"
                         MinWidth="180"
-                        x:Uid="SettingsPage_LeaveStreamController" />
+                        x:Uid="SettingsPage_LeaveStreamChoice" />
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
@@ -314,11 +319,17 @@
                 design position draws. A search box would also be the only control here that has to be
                 taught what every setting is called.
             -->
-            <Expander
-                HorizontalAlignment="Stretch"
-                HorizontalContentAlignment="Stretch"
-                x:Uid="SettingsPage_AdvancedExpander">
-                <StackPanel Spacing="4">
+            <!--
+                A SettingsExpander, like the HDR and account rows above it. It was a stock Expander, which drew
+                a different height, no icon and no description, and nested its rows as cards inside a card, so
+                the one section a reader opens on purpose looked like it came from another app (visual audit,
+                2026-10-08).
+            -->
+            <tk:SettingsExpander x:Uid="SettingsPage_AdvancedExpander">
+                <tk:SettingsExpander.HeaderIcon>
+                    <FontIcon Glyph="&#xE9F5;" />
+                </tk:SettingsExpander.HeaderIcon>
+                <tk:SettingsExpander.Items>
 
                     <!--  The first-run setup, for anyone who skipped it or wants the picture question again.  -->
                     <tk:SettingsCard x:Uid="SettingsPage_FirstRunSetup">
@@ -351,26 +362,34 @@
                             HorizontalAlignment="Stretch"
                             x:Uid="SettingsPage_SpecificGraphicsAdapter" />
                     </tk:SettingsCard>
+                </tk:SettingsExpander.Items>
 
-                    <InfoBar
-                        x:Name="AdapterWarning"
-                        IsClosable="False"
-                        IsOpen="False"
-                        Severity="Warning" />
+                <!--
+                    The two bars go in the footer, not among the items: the expander styles every item as a
+                    SettingsCard, and an InfoBar cannot take that style - opening Advanced crashed the app
+                    (caught while making this change, 2026-10-08).
+                -->
+                <tk:SettingsExpander.ItemsFooter>
+                    <StackPanel Padding="16,8" Spacing="8">
+                        <InfoBar
+                            x:Name="AdapterWarning"
+                            IsClosable="False"
+                            IsOpen="False"
+                            Severity="Warning" />
 
-
-                    <!--
-                        Moved here from a section of its own. It is one always-open InfoBar reporting whether
-                        pairing credentials are encrypted at rest - a fact about how the app stores things, which
-                        is what this section is for, and not something a heading of its own made easier to find.
-                    -->
-                    <InfoBar
-                        x:Name="CredentialProtectionBar"
-                        IsClosable="False"
-                        IsOpen="True"
-                        Severity="Informational" />
-                </StackPanel>
-            </Expander>
+                        <!--
+                            Moved here from a section of its own. It is one always-open InfoBar reporting whether
+                            pairing credentials are encrypted at rest - a fact about how the app stores things, which
+                            is what this section is for, and not something a heading of its own made easier to find.
+                        -->
+                        <InfoBar
+                            x:Name="CredentialProtectionBar"
+                            IsClosable="False"
+                            IsOpen="True"
+                            Severity="Informational" />
+                    </StackPanel>
+                </tk:SettingsExpander.ItemsFooter>
+            </tk:SettingsExpander>
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Ripcord_App.Dialogs;
@@ -13,6 +14,11 @@ public sealed partial class DisconnectDialog : ContentDialog
     {
         InitializeComponent();
         RestCheckBox.IsChecked = defaultRest;
+
+        // Focus on Disconnect, not the checkbox. DefaultButton makes it the Enter target but does not move focus,
+        // and WinUI focuses the first control in the content - the checkbox - so a pad user's reflexive A ticked
+        // "put the console into rest mode" instead of disconnecting (visual audit, 2026-10-08).
+        Opened += (_, _) => (GetTemplateChild("PrimaryButton") as Control)?.Focus(FocusState.Keyboard);
     }
 
     /// <summary>Whether to put the console into rest mode. Meaningful only when the dialog returned <c>Primary</c>.</summary>

@@ -1,4 +1,7 @@
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Core.Input;
@@ -36,6 +39,10 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         // the add-console page, which this page is cached across.
         Loaded += (_, _) => AttachPad();
         Unloaded += (_, _) => DetachPad();
+
+        // A contrast theme switched on or off while the page is up repaints the step trail; see StepDashPainter.
+        Loaded += (_, _) => AppEffects.Changed += OnEffectsChanged;
+        Unloaded += (_, _) => AppEffects.Changed -= OnEffectsChanged;
     }
 
     /// <summary>The primary button: the thing each step is for.</summary>
@@ -96,9 +103,8 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     {
         TitleText.Text = s.Title;
         StepDashes.Visibility = Vis(s.ShowsDashes);
-        StepDash1.Opacity = DashOpacity(1, s.ReachedDash);
-        StepDash2.Opacity = DashOpacity(2, s.ReachedDash);
-        StepDash3.Opacity = DashOpacity(3, s.ReachedDash);
+        _reachedDash = s.ReachedDash;
+        PaintDashes();
 
         WelcomePanel.Visibility = Vis(s.Step == SetupStep.Welcome);
         PicturePanel.Visibility = Vis(s.Step == SetupStep.Picture);
@@ -119,6 +125,15 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         RecommendedPill.Visibility = Vis(s.BestPictureAvailable);
         CompatibleLabelText.Text = s.CompatibleLabel;
         CompatibleDetailText.Text = s.CompatibleDetail;
+
+        // Named for a screen reader. Their content is a panel of text, which a RadioButton does not read as its
+        // name, so Narrator said "radio button, 1 of 2" and nothing else (visual audit, 2026-10-08). The label is
+        // the name, the pill joins it when shown, and the detail line is the help text.
+        AutomationProperties.SetName(
+            BestRadio, s.BestPictureAvailable ? $"{s.BestPictureLabel}, {s.RecommendedLabel}" : s.BestPictureLabel);
+        AutomationProperties.SetHelpText(BestRadio, s.BestPictureDetail);
+        AutomationProperties.SetName(CompatibleRadio, s.CompatibleLabel);
+        AutomationProperties.SetHelpText(CompatibleRadio, s.CompatibleDetail);
         BestRadio.IsEnabled = !s.Checking && s.BestPictureAvailable;
         CompatibleRadio.IsEnabled = !s.Checking;
         _rendering = true;
@@ -129,6 +144,7 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
 
         ConsoleIntroText.Text = s.ConsoleIntro;
         ConsolePreflightText.Text = s.ConsolePreflight;
+        BuildPreflight(s.ConsolePreflightSteps);
         ConsoleStatusRow.Visibility = Vis(s.ConsoleAdded);
         if (s.ConsoleAdded && ConsoleStatusText.Text != s.ConsoleStatus)
         {
@@ -260,7 +276,63 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
 
     private void OnPadFamilyChanged(PadFamily family) => _flow?.SetPadAttached(App.Input.PadAttached, family);
 
-    private static double DashOpacity(int index, int reached) => index <= reached ? 1.0 : 0.2;
+    // The last step reached, kept so the trail can be repainted when the contrast theme changes under the page.
+    private int _reachedDash;
+
+    private void PaintDashes() => StepDashPainter.Paint(_reachedDash, StepDash1, StepDash2, StepDash3);
+
+    private void OnEffectsChanged() => PaintDashes();
+
+    /// <summary>
+    /// The console-side settings as a numbered list: what to turn on, then where the console keeps it. Rebuilt only
+    /// when the steps change, since the flow re-renders on every state change.
+    /// </summary>
+    private void BuildPreflight(IReadOnlyList<PreflightStep> steps)
+    {
+        if (ReferenceEquals(steps, _preflightBuilt) || (_preflightBuilt is not null && steps.SequenceEqual(_preflightBuilt)))
+        {
+            return;
+        }
+
+        _preflightBuilt = steps;
+        ConsolePreflightList.Children.Clear();
+
+        for (int i = 0; i < steps.Count; i++)
+        {
+            var row = new Grid { ColumnSpacing = 12 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var number = new TextBlock
+            {
+                Text = (i + 1).ToString(System.Globalization.CultureInfo.CurrentCulture) + ".",
+                Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+            };
+            AutomationProperties.SetAccessibilityView(number, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            row.Children.Add(number);
+
+            var text = new StackPanel { Spacing = 2 };
+            text.Children.Add(new TextBlock
+            {
+                Text = steps[i].TurnOn,
+                Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+            text.Children.Add(new TextBlock
+            {
+                Text = steps[i].Where,
+                Style = (Style)Application.Current.Resources["RipcordSubtleCaptionStyle"],
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+            });
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+
+            ConsolePreflightList.Children.Add(row);
+        }
+    }
+
+    private IReadOnlyList<PreflightStep>? _preflightBuilt;
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 }

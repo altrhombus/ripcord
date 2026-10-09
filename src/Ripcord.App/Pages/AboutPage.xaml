@@ -10,6 +10,36 @@
     Loaded="Page_Loaded"
     mc:Ignorable="d">
 
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <!--  The identity card's tint: the user's accent, faded to nothing across the card.  -->
+                <ResourceDictionary x:Key="Default">
+                    <LinearGradientBrush x:Key="AboutHeroWashBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="{ThemeResource SystemAccentColorLight2}" />
+                        <GradientStop Offset="1" Color="Transparent" />
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <LinearGradientBrush x:Key="AboutHeroWashBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="{ThemeResource SystemAccentColorLight2}" />
+                        <GradientStop Offset="1" Color="Transparent" />
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+
+                <!--
+                    None in high contrast. The accent there is the contrast theme's highlight colour, and the
+                    tint turned the card a vivid gradient that washed the wordmark out to near-invisible and put
+                    a system backplate behind the tagline (visual audit, 2026-10-08). A contrast theme gets the
+                    plain card: its own background, its own text, its own border.
+                -->
+                <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="AboutHeroWashBrush" Color="Transparent" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Page.Resources>
+
     <ScrollViewer Padding="24,16,24,32">
         <StackPanel MaxWidth="820" Spacing="8">
 
@@ -22,16 +52,10 @@
                         parent Border to clip.
                     -->
                     <Rectangle
+                        Fill="{ThemeResource AboutHeroWashBrush}"
                         Opacity="0.12"
                         RadiusX="12"
-                        RadiusY="12">
-                        <Rectangle.Fill>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Offset="0" Color="{ThemeResource SystemAccentColorLight2}" />
-                                <GradientStop Offset="1" Color="Transparent" />
-                            </LinearGradientBrush>
-                        </Rectangle.Fill>
-                    </Rectangle>
+                        RadiusY="12" />
 
                     <Grid Padding="24" ColumnSpacing="20">
                         <Grid.ColumnDefinitions>
@@ -136,9 +160,17 @@
                                 that announced itself twice was the thing RipcordMark's own comment warns
                                 about.
                             -->
+                            <!--
+                                The page's top heading, for a screen reader. About had none: its first heading was
+                                "This device", a level 2 (visual audit, 2026-10-08). The wordmark is the page's title
+                                in all but markup, so it says so.
+                            -->
                             <controls:RipcordWordmark
+                                x:Uid="AboutPage_Wordmark"
                                 Height="30"
                                 HorizontalAlignment="Left"
+                                AutomationProperties.AccessibilityView="Content"
+                                AutomationProperties.HeadingLevel="Level1"
                                 Ink="{ThemeResource TextFillColorPrimaryBrush}" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"

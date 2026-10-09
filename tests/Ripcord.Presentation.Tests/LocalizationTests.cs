@@ -219,6 +219,33 @@ public class LocalizationTests
             + "at the right screen:\n  " + string.Join("\n  ", orphaned));
     }
 
+    /// <summary>
+    /// One x:Uid, one element. A uid applies every one of its entries to every element that carries it, so a
+    /// SettingsCard and the ComboBox inside it sharing "SettingsPage_VideoCodec" both took its <c>.Header</c>:
+    /// the title printed twice, and at large text the second copy crushed the description into a column one
+    /// word wide (visual audit, 2026-10-08).
+    /// </summary>
+    [Fact]
+    public void NoUid_IsUsedTwiceInOneFile()
+    {
+        List<string> repeated = [];
+        foreach (string file in Directory.EnumerateFiles(AppRoot().FullName, "*.xaml", SearchOption.AllDirectories))
+        {
+            string rel = file.Replace(Path.DirectorySeparatorChar, '/');
+            if (rel.Contains("/obj/") || rel.Contains("/bin/")) continue;
+
+            repeated.AddRange(UidUse.Matches(File.ReadAllText(file))
+                .GroupBy(m => m.Groups[1].Value)
+                .Where(g => g.Count() > 1)
+                .Select(g => $"{Path.GetFileName(file)}: {g.Key} x{g.Count()}"));
+        }
+
+        Assert.True(
+            repeated.Count == 0,
+            "x:Uid values on more than one element. Every entry for the uid lands on every element, so a "
+            + "card's header shows up again on the control inside it:\n  " + string.Join("\n  ", repeated));
+    }
+
     [Fact]
     public void EveryReswEntry_IsReferencedByMarkup()
     {
