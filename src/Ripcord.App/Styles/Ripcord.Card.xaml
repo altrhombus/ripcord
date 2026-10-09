@@ -228,9 +228,15 @@
                             <ColumnDefinition Width="56" />
                         </Grid.ColumnDefinitions>
 
+                        <!--
+                            HighContrastAdjustment None: the label's colours are already the contrast theme's own
+                            (AccentButtonForeground on AccentButtonBackground), and with the adjustment Windows put
+                            a black backplate behind it, white text in a box inside the button (showcase review, H2).
+                        -->
                         <ContentPresenter
                             x:Name="ContentPresenter"
                             Margin="{TemplateBinding Padding}"
+                            HighContrastAdjustment="None"
                             HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                             VerticalAlignment="Center"
                             AutomationProperties.AccessibilityView="Raw"

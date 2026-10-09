@@ -13,9 +13,33 @@ namespace Ripcord_App.Controls;
 /// </summary>
 public sealed partial class RipcordMark : UserControl
 {
+    // The dashes' own brushes, the three vendors' accents, kept to put back when a contrast theme goes off.
+    private readonly Brush[] _trailAccents;
+
     public RipcordMark()
     {
         InitializeComponent();
+        _trailAccents = [TrailOne.Fill, TrailTwo.Fill, TrailThree.Fill];
+
+        Loaded += (_, _) =>
+        {
+            ApplyContrast();
+            AppEffects.Changed += ApplyContrast;
+        };
+        Unloaded += (_, _) => AppEffects.Changed -= ApplyContrast;
+    }
+
+    /// <summary>
+    /// In a contrast theme the dashes take the wedge's colour, so the mark is shape alone, as the app icon is
+    /// there. The accents are brand colours with no contrast variant, and the mark kept its green, blue and red
+    /// under High Contrast (showcase review, H1).
+    /// </summary>
+    private void ApplyContrast()
+    {
+        bool contrast = AppEffects.HighContrast;
+        TrailOne.Fill = contrast ? WedgeFill : _trailAccents[0];
+        TrailTwo.Fill = contrast ? WedgeFill : _trailAccents[1];
+        TrailThree.Fill = contrast ? WedgeFill : _trailAccents[2];
     }
 
     /// <summary>
