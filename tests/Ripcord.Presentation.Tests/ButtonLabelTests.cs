@@ -91,4 +91,32 @@ public class ButtonLabelTests
 
         Assert.Contains(chrome, p => p.KeyLabel is not null);
     }
+
+    /// <summary>
+    /// The accept verb follows focus (showcase plan, part 6): only the accept button's verb changes, and the other
+    /// prompts, their order and their key labels stay as the scope declared them, so the bar does not jump.
+    /// </summary>
+    [Fact]
+    public void WithAcceptVerb_ChangesOnlyTheAcceptButton()
+    {
+        IReadOnlyList<InputPrompt> chrome = ButtonLabels.DefaultFor(InputScopeKind.Chrome);
+
+        IReadOnlyList<InputPrompt> onCard = ButtonLabels.WithAcceptVerb(chrome, "Wake & play");
+
+        Assert.Equal(chrome.Count, onCard.Count);
+        Assert.Equal("Wake & play", onCard.Single(p => p.Button == PromptButton.South).Verb);
+        Assert.Equal(
+            chrome.Where(p => p.Button != PromptButton.South),
+            onCard.Where(p => p.Button != PromptButton.South));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void WithAcceptVerb_LeavesThePromptsAloneWithoutOne(string? verb)
+    {
+        IReadOnlyList<InputPrompt> chrome = ButtonLabels.DefaultFor(InputScopeKind.Chrome);
+
+        Assert.Same(chrome, ButtonLabels.WithAcceptVerb(chrome, verb));
+    }
 }

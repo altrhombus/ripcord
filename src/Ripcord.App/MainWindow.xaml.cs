@@ -17,6 +17,7 @@ using Ripcord.Core.Input;
 using Ripcord.Core.Settings;
 using Ripcord.Input;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Setup;
 using Ripcord.Core.Launch;
 using Ripcord_App.Controls;
@@ -177,7 +178,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 Post(() => HintBar.Show(scope?.Prompts));
 
             _input.ModeChanged += mode =>
-                Post(() => HintBar.SetMode(mode));
+                Post(() =>
+                {
+                    HintBar.SetMode(mode);
+                    UseNavigationSounds(mode);
+                });
+            UseNavigationSounds(_input.Mode);
+
+            // A's verb follows focus: "Play" on a card, "Toggle" on a switch, "Type" in a field.
+            FocusManager.GotFocus += (_, e) => HintBar.SetAcceptVerb(AcceptVerbFor(e.NewFocusedElement));
 
             // Connection events arrive on a polling thread, hence the marshal — the router says so.
             _input.PadFamilyChanged += family =>
@@ -374,6 +383,30 @@ public sealed partial class MainWindow : Window, IShellNavigator
             });
         }
     }
+
+    /// <summary>
+    /// What the accept button does on <paramref name="focused"/>, for the hint bar, or null for the scope's own
+    /// "Select". Only where "Select" undersells it (showcase plan, part 6): a console card says its own action,
+    /// which is the difference between expecting a stream and expecting a wait.
+    /// </summary>
+    private static string? AcceptVerbFor(object? focused) => focused switch
+    {
+        GridViewItem { Content: ConsoleCardViewModel card } => card.State.PrimaryActionLabel,
+        ToggleSwitch or CheckBox => ButtonLabels.VerbToggle,
+        Microsoft.UI.Xaml.Controls.Primitives.ToggleButton and not RadioButton => ButtonLabels.VerbToggle,
+        TextBox or PasswordBox or RichEditBox => ButtonLabels.VerbType,
+        ComboBox => ButtonLabels.VerbOpen,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Windows' own navigation sounds, while a pad is in use and never otherwise: the convention the Xbox shell
+    /// set, where moving and pressing click and a mouse stays silent (showcase plan, decision D: try it and decide
+    /// by ear). ElementSoundPlayer plays only for its own controls' gestures, so FocusPilot plays the moves and
+    /// presses the pad makes through it.
+    /// </summary>
+    private static void UseNavigationSounds(InputMode mode)
+        => ElementSoundPlayer.State = mode == InputMode.Controller ? ElementSoundPlayerState.On : ElementSoundPlayerState.Off;
 
     /// <summary>
     /// The smallest the window may be made, in effective pixels. Below it the console card's play mark was cut
@@ -832,6 +865,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         if (ChromeFrame.CanGoBack)
         {
+            ElementSoundPlayer.Play(ElementSoundKind.GoBack);
             ChromeFrame.GoBack();
         }
     }

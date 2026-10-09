@@ -115,6 +115,10 @@ public sealed class FocusPilot(
             // visual, so directional navigation would move an invisible caret.
             candidate.Focus(FocusState.Keyboard);
 
+            // Windows' own focus sound, which it plays only for its own keyboard navigation, never for a move
+            // made in code. Silent unless a pad is in use; see MainWindow.UseNavigationSounds.
+            ElementSoundPlayer.Play(ElementSoundKind.Focus);
+
             // A candidate below the fold is useless if the list does not scroll to it.
             candidate.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
             RevealPageEdge(candidate);
@@ -508,6 +512,9 @@ public sealed class FocusPilot(
         var peer = FrameworkElementAutomationPeer.FromElement(focused)
             ?? FrameworkElementAutomationPeer.CreatePeerForElement(focused);
 
+        // An activation through the automation peer is silent, unlike a press on the control itself.
+        ElementSoundPlayer.Play(ElementSoundKind.Invoke);
+
         if (peer?.GetPattern(PatternInterface.Invoke) is IInvokeProvider invokeProvider)
         {
             invokeProvider.Invoke();
@@ -615,6 +622,7 @@ public sealed class FocusPilot(
 
                 flyout.Opened += SeedFirstItem;
                 flyout.ShowAt(anchor);
+                ElementSoundPlayer.Play(ElementSoundKind.Show);
                 return;
             }
         }
@@ -715,6 +723,8 @@ public sealed class FocusPilot(
         // off while a modal owns focus, ignored every press after it. Found with a pad on 2026-10-08 as "B on
         // the Details dialog leaves the app dark and unresponsive"; Esc never did it, because Esc goes through
         // the dialog. Hide() is what Esc does: ShowAsync returns None, the same answer as the close button.
+        ElementSoundPlayer.Play(ElementSoundKind.Hide);
+
         if (FindDialog(top.Child) is { } dialog)
         {
             dialog.Hide();
