@@ -33,7 +33,7 @@
         </Grid.RowDefinitions>
 
         <!--  ============ Header ============  -->
-        <StackPanel MaxWidth="720" HorizontalAlignment="Left" Spacing="12">
+        <StackPanel MaxWidth="{StaticResource RipcordPageColumnWidth}" Spacing="12">
             <TextBlock x:Name="TitleText" Style="{StaticResource RipcordPageTitleStyle}" TextWrapping="Wrap" />
             <!--  The mark's proportions, 9 : 16 : 12, as on the add-console page.  -->
             <Grid
@@ -59,214 +59,224 @@
         </StackPanel>
 
         <!--  ============ Steps ============  -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <Grid MaxWidth="720" HorizontalAlignment="Left">
+        <!--  The scroller gets a full-width child and the column centres inside it. Handed the 820 column directly, it drew it against the right edge (its own placement for content narrower than itself), and the steps sat off to the right of the title.  -->
+        <ScrollViewer
+            Grid.Row="1"
+            HorizontalScrollBarVisibility="Disabled"
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <Grid>
+                <Grid MaxWidth="{StaticResource RipcordPageColumnWidth}">
 
-                <!--  ======== Welcome ========  -->
-                <StackPanel x:Name="WelcomePanel" Spacing="18">
-                    <controls:RipcordMark
-                        Width="88"
-                        Height="88"
-                        HorizontalAlignment="Left"
-                        WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
-                    <TextBlock
-                        x:Name="WelcomeBodyText"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        TextWrapping="Wrap" />
-                </StackPanel>
-
-                <!--  ======== Picture ========  -->
-                <StackPanel
-                    x:Name="PicturePanel"
-                    Spacing="16"
-                    Visibility="Collapsed">
-                    <TextBlock
-                        x:Name="PictureIntroText"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        TextWrapping="Wrap" />
-
-                    <!--  A grid, not a horizontal StackPanel, so the note wraps beside the ring at any text size.  -->
-                    <Grid ColumnSpacing="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <ProgressRing
-                            x:Name="CheckingRing"
-                            Width="16"
-                            Height="16"
-                            VerticalAlignment="Top"
-                            IsActive="False" />
+                    <!--  ======== Welcome ========  -->
+                    <StackPanel x:Name="WelcomePanel" Spacing="18">
+                        <controls:RipcordMark
+                            Width="88"
+                            Height="88"
+                            HorizontalAlignment="Left"
+                            WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
                         <TextBlock
-                            x:Name="PictureNoteText"
-                            Grid.Column="1"
-                            AutomationProperties.LiveSetting="Polite"
+                            x:Name="WelcomeBodyText"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextWrapping="Wrap" />
-                    </Grid>
-
-                    <!--  Two choices, each a name and a line on what it means: a choice nobody can explain is a guess.  -->
-                    <StackPanel Spacing="12">
-                        <RadioButton
-                            x:Name="BestRadio"
-                            Checked="OnBestChecked"
-                            GroupName="SetupPicture">
-                            <StackPanel Spacing="2">
-                                <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <TextBlock x:Name="BestLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                    <Border x:Name="RecommendedPill" Style="{StaticResource RipcordAccentPillStyle}">
-                                        <TextBlock
-                                            x:Name="RecommendedText"
-                                            Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                            Style="{StaticResource RipcordPillTextStyle}" />
-                                    </Border>
-                                </StackPanel>
-                                <TextBlock
-                                    x:Name="BestDetailText"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
-                        </RadioButton>
-
-                        <RadioButton
-                            x:Name="CompatibleRadio"
-                            Checked="OnCompatibleChecked"
-                            GroupName="SetupPicture">
-                            <StackPanel Spacing="2">
-                                <TextBlock x:Name="CompatibleLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <TextBlock
-                                    x:Name="CompatibleDetailText"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
-                        </RadioButton>
                     </StackPanel>
 
-                    <TextBlock
-                        x:Name="PictureDefaultsText"
-                        Style="{StaticResource RipcordSubtleCaptionStyle}"
-                        TextWrapping="Wrap" />
-                </StackPanel>
-
-                <!--  ======== Console ========  -->
-                <StackPanel
-                    x:Name="ConsolePanel"
-                    Spacing="16"
-                    Visibility="Collapsed">
-                    <TextBlock
-                        x:Name="ConsoleIntroText"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        TextWrapping="Wrap" />
-                    <!--
-                        What to switch on at the console, as numbered steps at body size with each menu path set
-                        under it. It was one run-on paragraph in small grey caption text, and it is the thing most
-                        likely to stop a first pairing (visual audit, 2026-10-08). The steps are built in code from
-                        the flow's state; see BuildPreflight.
-                    -->
-                    <StackPanel Spacing="8">
-                        <TextBlock x:Name="ConsolePreflightText" TextWrapping="Wrap" />
-                        <StackPanel x:Name="ConsolePreflightList" Spacing="12" />
-                    </StackPanel>
+                    <!--  ======== Picture ========  -->
                     <StackPanel
-                        x:Name="ConsoleStatusRow"
-                        AutomationProperties.LiveSetting="Polite"
-                        Orientation="Horizontal"
-                        Spacing="10"
+                        x:Name="PicturePanel"
+                        Spacing="16"
                         Visibility="Collapsed">
-                        <FontIcon
-                            FontSize="{StaticResource RipcordIconSizeAction}"
-                            Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-                            Glyph="&#xE73E;" />
-                        <TextBlock x:Name="ConsoleStatusText" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                    </StackPanel>
-                </StackPanel>
+                        <TextBlock
+                            x:Name="PictureIntroText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
 
-                <!--  ======== Controller ========  -->
-                <StackPanel
-                    x:Name="ControllerPanel"
-                    Spacing="16"
-                    Visibility="Collapsed">
-                    <TextBlock
-                        x:Name="ControllerIntroText"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        TextWrapping="Wrap" />
-
-                    <!--  The pad glyph until a button is pressed; then a tick, and what was found.  -->
-                    <Grid ColumnSpacing="14">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon
-                            x:Name="ControllerIcon"
-                            VerticalAlignment="Top"
-                            FontSize="{StaticResource RipcordIconSizeHero}"
-                            Glyph="&#xE7FC;" />
-                        <StackPanel Grid.Column="1" Spacing="2">
+                        <!--  A grid, not a horizontal StackPanel, so the note wraps beside the ring at any text size.  -->
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ProgressRing
+                                x:Name="CheckingRing"
+                                Width="16"
+                                Height="16"
+                                VerticalAlignment="Top"
+                                IsActive="False" />
                             <TextBlock
-                                x:Name="ControllerStatusText"
+                                x:Name="PictureNoteText"
+                                Grid.Column="1"
                                 AutomationProperties.LiveSetting="Polite"
-                                Style="{StaticResource BodyStrongTextBlockStyle}"
-                                TextWrapping="Wrap" />
-                            <TextBlock
-                                x:Name="ControllerDetailText"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 TextWrapping="Wrap" />
+                        </Grid>
+
+                        <!--  Two choices, each a name and a line on what it means: a choice nobody can explain is a guess.  -->
+                        <StackPanel Spacing="12">
+                            <RadioButton
+                                x:Name="BestRadio"
+                                Checked="OnBestChecked"
+                                GroupName="SetupPicture">
+                                <StackPanel Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <TextBlock x:Name="BestLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <Border x:Name="RecommendedPill" Style="{StaticResource RipcordAccentPillStyle}">
+                                            <TextBlock
+                                                x:Name="RecommendedText"
+                                                Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                                Style="{StaticResource RipcordPillTextStyle}" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock
+                                        x:Name="BestDetailText"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </RadioButton>
+
+                            <RadioButton
+                                x:Name="CompatibleRadio"
+                                Checked="OnCompatibleChecked"
+                                GroupName="SetupPicture">
+                                <StackPanel Spacing="2">
+                                    <TextBlock x:Name="CompatibleLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock
+                                        x:Name="CompatibleDetailText"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </RadioButton>
                         </StackPanel>
-                    </Grid>
 
-                    <InfoBar
-                        x:Name="GameInputBar"
-                        IsClosable="False"
-                        IsOpen="False"
-                        Severity="Warning" />
-
-                    <TextBlock
-                        x:Name="ExitGestureText"
-                        Style="{StaticResource RipcordSubtleCaptionStyle}"
-                        TextWrapping="Wrap" />
-                </StackPanel>
-
-                <!--  ======== Done ========  -->
-                <StackPanel
-                    x:Name="DonePanel"
-                    Spacing="16"
-                    Visibility="Collapsed">
-                    <controls:RipcordMark
-                        Width="96"
-                        Height="96"
-                        HorizontalAlignment="Left"
-                        WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
-                    <StackPanel Spacing="6">
-                        <TextBlock x:Name="DonePictureText" TextWrapping="Wrap" />
-                        <TextBlock x:Name="DoneConsoleText" TextWrapping="Wrap" />
-                        <TextBlock x:Name="DoneControllerText" TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="PictureDefaultsText"
+                            Style="{StaticResource RipcordSubtleCaptionStyle}"
+                            TextWrapping="Wrap" />
                     </StackPanel>
-                </StackPanel>
+
+                    <!--  ======== Console ========  -->
+                    <StackPanel
+                        x:Name="ConsolePanel"
+                        Spacing="16"
+                        Visibility="Collapsed">
+                        <TextBlock
+                            x:Name="ConsoleIntroText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
+                        <!--
+                            What to switch on at the console, as numbered steps at body size with each menu path set
+                            under it. It was one run-on paragraph in small grey caption text, and it is the thing most
+                            likely to stop a first pairing (visual audit, 2026-10-08). The steps are built in code from
+                            the flow's state; see BuildPreflight.
+                        -->
+                        <StackPanel Spacing="8">
+                            <TextBlock x:Name="ConsolePreflightText" TextWrapping="Wrap" />
+                            <StackPanel x:Name="ConsolePreflightList" Spacing="12" />
+                        </StackPanel>
+                        <StackPanel
+                            x:Name="ConsoleStatusRow"
+                            AutomationProperties.LiveSetting="Polite"
+                            Orientation="Horizontal"
+                            Spacing="10"
+                            Visibility="Collapsed">
+                            <FontIcon
+                                FontSize="{StaticResource RipcordIconSizeAction}"
+                                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                                Glyph="&#xE73E;" />
+                            <TextBlock x:Name="ConsoleStatusText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!--  ======== Controller ========  -->
+                    <StackPanel
+                        x:Name="ControllerPanel"
+                        Spacing="16"
+                        Visibility="Collapsed">
+                        <TextBlock
+                            x:Name="ControllerIntroText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
+
+                        <!--  The pad glyph until a button is pressed; then a tick, and what was found.  -->
+                        <Grid ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon
+                                x:Name="ControllerIcon"
+                                VerticalAlignment="Top"
+                                FontSize="{StaticResource RipcordIconSizeHero}"
+                                Glyph="&#xE7FC;" />
+                            <StackPanel Grid.Column="1" Spacing="2">
+                                <TextBlock
+                                    x:Name="ControllerStatusText"
+                                    AutomationProperties.LiveSetting="Polite"
+                                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    x:Name="ControllerDetailText"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+
+                        <InfoBar
+                            x:Name="GameInputBar"
+                            IsClosable="False"
+                            IsOpen="False"
+                            Severity="Warning" />
+
+                        <TextBlock
+                            x:Name="ExitGestureText"
+                            Style="{StaticResource RipcordSubtleCaptionStyle}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!--  ======== Done ========  -->
+                    <StackPanel
+                        x:Name="DonePanel"
+                        Spacing="16"
+                        Visibility="Collapsed">
+                        <controls:RipcordMark
+                            Width="96"
+                            Height="96"
+                            HorizontalAlignment="Left"
+                            WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
+                        <StackPanel Spacing="6">
+                            <TextBlock x:Name="DonePictureText" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DoneConsoleText" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DoneControllerText" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
             </Grid>
         </ScrollViewer>
 
-        <!--  ============ Footer ============  -->
+        <!--
+            The footer every flow shares (AddConsolePage has the reasoning): Back at the leading edge when there
+            is a step behind, the way on at the trailing end with the primary last, declared in that order.
+        -->
         <Grid
             Grid.Row="2"
-            MaxWidth="720"
-            HorizontalAlignment="Left"
+            MaxWidth="{StaticResource RipcordPageColumnWidth}"
             ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Button x:Name="BackButton" Click="OnBackClick" />
             <Button
-                x:Name="PrimaryButton"
-                Grid.Column="1"
-                Click="OnPrimaryClick"
-                Style="{StaticResource AccentButtonStyle}" />
-            <Button
                 x:Name="SecondaryButton"
                 Grid.Column="2"
                 Click="OnSecondaryClick" />
+            <Button
+                x:Name="PrimaryButton"
+                Grid.Column="3"
+                Click="OnPrimaryClick"
+                Style="{StaticResource AccentButtonStyle}" />
         </Grid>
     </Grid>
 </Page>

@@ -386,6 +386,8 @@ public class AddConsoleFlowTests
 
         await h.Flow.StartAsync();
 
+        // And says so, so the page draws no Back of its own beside the title bar's.
+        Assert.False(h.Flow.State.HasPreviousStep);
         Assert.False(await h.Flow.BackAsync());
     }
 
@@ -660,6 +662,7 @@ public class AddConsoleFlowTests
         Task select = h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
         h.Flow.SelectDiscovered(h.Flow.Discovered.Single());
 
+        Assert.True(h.Flow.State.HasPreviousStep);
         Assert.True(await h.Flow.BackAsync());
 
         Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
@@ -1844,6 +1847,7 @@ public class AddConsoleFlowTests
         var h = new Harness();
         await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
 
+        Assert.True(h.Flow.State.HasPreviousStep);
         Assert.True(await h.Flow.BackAsync());
 
         Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
