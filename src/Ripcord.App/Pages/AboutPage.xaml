@@ -199,6 +199,7 @@
 
                                 <StackPanel
                                     Margin="-12,6,0,-4"
+                                    controls:StackWhenTight.IsEnabled="True"
                                     Orientation="Horizontal">
                                     <!--
                                         Each of these carries an explicit AutomationProperties.Name: a button whose

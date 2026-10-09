@@ -108,9 +108,15 @@
                                 Checked="OnBestChecked"
                                 GroupName="SetupPicture">
                                 <StackPanel Spacing="2">
-                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <StackPanel
+                                        controls:StackWhenTight.IsEnabled="True"
+                                        Orientation="Horizontal"
+                                        Spacing="10">
                                         <TextBlock x:Name="BestLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                        <Border x:Name="RecommendedPill" Style="{StaticResource RipcordAccentPillStyle}">
+                                        <Border
+                                            x:Name="RecommendedPill"
+                                            HorizontalAlignment="Left"
+                                            Style="{StaticResource RipcordAccentPillStyle}">
                                             <TextBlock
                                                 x:Name="RecommendedText"
                                                 Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
