@@ -134,7 +134,7 @@ a paragraph, and stock buttons at the window's corner. It becomes the identity r
 
 **The other setup steps and Add a console** keep their content and take the frame from part 1.
 
-**Paired.** The mark assembles at hero size, then "Paired." (with the period). The name field stays a
+**Paired.** The mark assembles (in the step, not at hero size: owner, 2026-10-09), then "Paired." (with the period). The name field stays a
 flourish. "Play now" is a `WedgeButton` and focused; "Done" is its peer, not a save button, because the
 console is already on disk.
 
