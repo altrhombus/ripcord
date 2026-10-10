@@ -135,6 +135,74 @@ public sealed class HalyardAccountPairingTests
         Assert.Null(registration.LastRequest);
     }
 
+    [SkippableFact]
+    public async Task PairAsync_MessagesTheConsoleOnlyOnceTheSessionServiceListsIt()
+    {
+        // From a hotspot, with the console woken from rest, our OFFER and our ack for the console's OFFER both
+        // 404'd "Member not joined session." although the push channel had reported the join (2026-10-10). The
+        // vendor client waits for its own session read. Here the service lags the join by two reads.
+        byte[] contextKey = BundledContextKeyOrSkip();
+
+        var socket = new ScriptedSocket();
+        var signaling = new FakeSignaling(socket, RandomNumberGenerator.GetBytes(16), contextKey) { ListedFromRead = 3 };
+        var registration = new CapturingRegistration();
+        var pairing = new HalyardAccountPairing(
+            signaling, _ => registration, contextKey,
+            new HalyardAccountPairingOptions { MembershipPollInterval = TimeSpan.FromMilliseconds(20) });
+
+        await using var channel = new HalyardPushChannel(socket);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        HalyardRegistrationResult result = await pairing.PairAsync(MessagingRequest(), channel, Server, "token", cts.Token);
+        await signaling.ResultSent.Task.WaitAsync(cts.Token);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        List<string> events;
+        lock (signaling.Events)
+        {
+            events = [.. signaling.Events];
+        }
+
+        int listed = events.IndexOf("listed");
+        Assert.Equal(["read", "read", "listed"], events.Take(3));
+        Assert.True(events.IndexOf("offer") > listed, string.Join(",", events));
+        Assert.True(events.IndexOf("result") > listed, string.Join(",", events));
+    }
+
+    [SkippableFact]
+    public async Task PairAsync_GoesOnAnyway_WhenTheSessionServiceNeverListsTheConsole()
+    {
+        // Bounded, so a read that never shows the console (an API that changed, a member we fail to recognise)
+        // costs a few seconds and nothing more: the route then messages the console as it did before the wait.
+        byte[] contextKey = BundledContextKeyOrSkip();
+
+        var socket = new ScriptedSocket();
+        var signaling = new FakeSignaling(socket, RandomNumberGenerator.GetBytes(16), contextKey) { ListedFromRead = 0 };
+        var registration = new CapturingRegistration();
+        var pairing = new HalyardAccountPairing(
+            signaling, _ => registration, contextKey,
+            new HalyardAccountPairingOptions
+            {
+                MembershipPollInterval = TimeSpan.FromMilliseconds(20),
+                MembershipTimeout = TimeSpan.FromMilliseconds(120),
+            });
+
+        await using var channel = new HalyardPushChannel(socket);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        HalyardRegistrationResult result = await pairing.PairAsync(MessagingRequest(), channel, Server, "token", cts.Token);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        Assert.Contains("offer", signaling.Events);
+        Assert.DoesNotContain("listed", signaling.Events);
+    }
+
+    private static HalyardAccountPairingRequest MessagingRequest() => new(
+        ConsoleId: "console-1", ConsoleHost: "192.168.1.50", ConsoleDuid: "duid-1",
+        AccountId: "acct-1", ClientDeviceId: RandomNumberGenerator.GetBytes(16),
+        LocalHashedId: RandomNumberGenerator.GetBytes(20),
+        LocalEndpoint: ("192.168.1.9", 51000));
+
     // ---- fakes ----
 
     private static readonly HalyardPushServerInfo Server = new(
@@ -213,11 +281,40 @@ public sealed class HalyardAccountPairingTests
         {
             OfferedHashedId = localHashedId;
             OfferedStreamIds.Add(sid);
+            Record("offer");
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// The session read that lists the console first: 1 lists it at once, a larger number makes the service
+        /// lag the console's join the way it did from rest, and 0 never lists it.
+        /// </summary>
+        public int ListedFromRead { get; init; } = 1;
+
+        private int _reads;
+
+        /// <summary>What the coordinator did, in order: "read", "listed", "offer", "result".</summary>
+        public List<string> Events { get; } = [];
+
+        private void Record(string what)
+        {
+            lock (Events)
+            {
+                Events.Add(what);
+            }
+        }
+
         public Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<HalyardCloudSession>>([]);
+        {
+            int read = Interlocked.Increment(ref _reads);
+            bool listed = ListedFromRead > 0 && read >= ListedFromRead;
+            Record(listed ? "listed" : "read");
+
+            HalyardSessionMember us = new("acct-1", "REMOTE_PLAY", "me");
+            HalyardSessionMember console = new("acct-1", "PROSPERO", "duid-1");
+            return Task.FromResult<IReadOnlyList<HalyardCloudSession>>(
+                [new HalyardCloudSession(sessionId, listed ? [us, console] : [us])]);
+        }
 
 
         private int _resultsSent;
@@ -238,6 +335,7 @@ public sealed class HalyardAccountPairingTests
             string sessionId, string accountId, string consoleDuid, int reqId, CancellationToken ct)
         {
             Interlocked.Increment(ref _resultsSent);
+            Record("result");
             ResultSent.TrySetResult();
             return Task.CompletedTask;
         }
