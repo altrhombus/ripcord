@@ -214,11 +214,11 @@ The acceptance pass, after part 7, and recorded in the captures folder like the 
 - **The stopwatch:** presses and seconds from launch to playing, with one console and with three.
 - **Fresh eyes:** a first run on a clean data folder (`RIPCORD_DATA_DIR`), pad only.
 
-**Status (2026-10-09):** Light, Dark and High Contrast, 200% scale, 225% text and animation effects off done,
-with mouse and keyboard at 640 × 480, 1280 × 800 and 1920 × 1080; the stopwatch; and the comparison with
-Windows' own apps. All findings fixed but the discovery row (audit 6) and a few minor ones the record lists;
-what the review settled is in `design.md`. Still to run: the pad, a stream, the Paired screen, 3440 × 1440, and
-timing on a Release build.
+**Done 2026-10-09.** Light, Dark and High Contrast, 200% scale, 225% text and animation effects off, at 640 × 480
+up to 3440 wide; mouse, keyboard and a pad-only first run; a stream on 16:10 and 32:9 displays; the Paired
+screen (rehearsed); the stopwatch, and timing on a Release build; and the comparison with Windows' own apps.
+What it settled is in `design.md`; what's left is on the roadmap. Skipped by the owner's choice: the failure
+screen.
 
 ## Decisions
 

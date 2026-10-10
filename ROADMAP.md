@@ -131,10 +131,18 @@ purchased signing certificate.
 
 ### The dotnet client
 
-- [ ] **Smaller things the hardware pass is likely to find more of.** Regression screenshots of the new card
-      and the session page (light, dark, high contrast); eyeballing high contrast and transparency-off; Narrator
+- [ ] **Smaller things the hardware pass is likely to find more of.** Regression screenshots of the session
+      page (light, dark, high contrast); eyeballing the stream in high contrast, and transparency-off; Narrator
       over the card grid; two open judgements (the connect screen's 112 px reserved gap, and whether the
       diagnostics strip should rise to a letterboxed picture's edge). Details in the history.
+- [ ] **Leftovers from the showcase review** (2026-10-09): the failure screen wasn't looked at; at 225% text
+      "Can't reach it" breaks onto two lines on the hero, and in the smallest window Settings opens with its
+      title half scrolled away; the discovery row's system version (audit 6).
+- [ ] **The title bar's gap at 200% scale** is WinUI's
+      ([microsoft-ui-xaml#10344](https://github.com/microsoft/microsoft-ui-xaml/issues/10344)). Check each
+      Windows App SDK release for the fix, and don't work around it before then.
+- [ ] **Ask about signing in before the console scan?** Signed in, the account already knows your consoles,
+      so finding them could become picking one. Worth deciding when the Xbox backend reshapes setup.
 - [ ] **A two-word name trims on a regular card at 150% text** ("Bedroom PS4" shows as "Bedroom…"): at that
       size the card has room for one line of name. Nothing is lost (the status line is kept, and the full name
       is in the tooltip), but taller cards or a smaller name at large text sizes would read better. A design
