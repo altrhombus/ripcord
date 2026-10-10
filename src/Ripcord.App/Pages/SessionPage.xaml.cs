@@ -1985,12 +1985,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // A sheet must not grow past the bar it is sitting in. Without this it keeps the window-height cap set
         // above and quietly covers the picture - which is the one thing claiming dead space exists to avoid.
-        // In a thin bar it may rise into the picture, but only as far as it needs (HudLayout.SheetRise).
         if (layout.Placement == DiagnosticsPlacement.Sheet)
         {
-            DiagnosticsPanel.MaxHeight = layout.SheetRise > 0
-                ? HudPlacement.SheetMinimumHeight
-                : Math.Max(120, layout.BarHeight - 32);
+            DiagnosticsPanel.MaxHeight = Math.Max(120, layout.BarHeight - 32);
         }
 
         // Centre the panel in the pillar it is claiming rather than pinning it to the window edge: a rail
