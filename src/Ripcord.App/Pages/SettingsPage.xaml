@@ -226,6 +226,16 @@
                                 Style="{StaticResource BodyStrongTextBlockStyle}" />
                         </StackPanel>
                     </tk:SettingsCard>
+
+                    <!--
+                        Windows' own navigation sounds with a pad (showcase plan, decision D). A switch because a sound
+                        is the one thing a player can't look away from (owner, pad pass, 2026-10-09).
+                    -->
+                    <tk:SettingsCard x:Uid="SettingsPage_NavigationSounds">
+                        <ToggleSwitch
+                            x:Name="NavigationSoundsToggle"
+                            x:Uid="SettingsPage_NavigationSoundsToggle" />
+                    </tk:SettingsCard>
                 </StackPanel>
 
                 <!--  ============ When you play ============  -->

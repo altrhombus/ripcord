@@ -456,6 +456,18 @@
     <value>Configure…</value>
     <comment>The label on a control on the Settings page. Keep it short; it sits on a control.</comment>
   </data>
+  <data name="SettingsPage_NavigationSounds.Header" xml:space="preserve">
+    <value>Navigation sounds</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_NavigationSounds.Description" xml:space="preserve">
+    <value>Windows' sounds as you move and press with a controller. The mouse and keyboard stay quiet.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_NavigationSoundsToggle.AutomationProperties.Name" xml:space="preserve">
+    <value>Navigation sounds</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
   <data name="SettingsPage_ConfirmsWhenEndStream.Description" xml:space="preserve">
     <value>Confirms when you end a stream, and lets you choose rest mode for that disconnect. Off leaves instantly, using the default below.</value>
     <comment>The description under a control on the Settings page.</comment>

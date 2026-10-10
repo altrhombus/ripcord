@@ -123,6 +123,18 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task NavigationSounds_AreOnByDefault_AndTheSwitchSavesThem()
+    {
+        (SettingsViewModel vm, RecordingSettingsStore store, _) = await BuildAsync();
+        Assert.True(vm.State.NavigationSounds);
+
+        vm.SetNavigationSounds(false);
+
+        Assert.False(store.Current.NavigationSounds);
+        Assert.False(vm.State.NavigationSounds);
+    }
+
+    [Fact]
     public async Task SetResolution_MapsTheIndexToGeometry()
     {
         // The label/geometry pairing lives in exactly one place, and nothing above the view-model converts
