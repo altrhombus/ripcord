@@ -648,6 +648,45 @@ public sealed class HalyardAccountPairing(
             }
         }
 
+        // Which session each push frame is about. Every frame names one (body.data.sessionId, in our captures of
+        // the vendor client), and nothing here checked it: a join or an OFFER from another of the account's
+        // sessions counted as ours. From a hotspot the console "joined" and offered, yet the service never listed
+        // it in our session and refused every message to it as not a member (2026-10-10). Diagnostic only: says
+        // whether the frame is ours, never the id itself.
+        void OnFrame(string frame)
+        {
+            if (_options.Log is null)
+            {
+                return;
+            }
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(frame);
+                System.Text.Json.JsonElement root = doc.RootElement;
+                string type = root.TryGetProperty("dataType", out System.Text.Json.JsonElement dt)
+                    && dt.GetString() is { } dataType
+                        ? string.Join(':', dataType.Split(':').TakeLast(2))
+                        : "?";
+                string? frameSession =
+                    root.TryGetProperty("body", out System.Text.Json.JsonElement fb)
+                    && fb.TryGetProperty("data", out System.Text.Json.JsonElement fd)
+                    && fd.TryGetProperty("sessionId", out System.Text.Json.JsonElement fs)
+                        ? fs.GetString()
+                        : null;
+
+                string whose = frameSession is null ? "no session id"
+                    : liveSessionId is null ? "before ours exists"
+                    : string.Equals(frameSession, liveSessionId, StringComparison.Ordinal) ? "OUR session"
+                    : "ANOTHER session";
+                Log($"push frame {type}: {whose}");
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Not JSON: a keep-alive. Nothing to say.
+            }
+        }
+
         // The console joining is the earliest moment we may message it, and the moment before it starts its
         // own control association. Everything the client wants to get in early hangs off this.
         var joined = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -656,6 +695,7 @@ public sealed class HalyardAccountPairing(
         pushChannel.CustomData1Received += OnCustomData1;
         pushChannel.SignalingReceived += OnSignaling;
         pushChannel.ConsoleJoined += OnJoined;
+        pushChannel.FrameReceived += OnFrame;
 
         // Start receiving before triggering the console, so a customData1 published the instant it joins is not
         // missed. The loop runs until lifetime is cancelled or the peer closes.
@@ -678,6 +718,9 @@ public sealed class HalyardAccountPairing(
                 .ConfigureAwait(false);
             liveSessionId = sessionId;
             joinedSessionId = sessionId;
+
+            // From here, only this session's frames reach the handlers above.
+            pushChannel.SessionId = sessionId;
             Log($"session created: {sessionId}");
 
             await _signaling.SendConnectCommandAsync(
@@ -898,6 +941,8 @@ public sealed class HalyardAccountPairing(
             // signaling for the life of the session, and one it does not get a RESULT for is one it gives up
             // on -- observed live as an ACCEPT, then a TERMINATE, then a control connection that never opened.
             // The lifetime object unsubscribes instead.
+            pushChannel.FrameReceived -= OnFrame;
+
             if (!handedOff)
             {
                 pushChannel.CustomData1Received -= OnCustomData1;

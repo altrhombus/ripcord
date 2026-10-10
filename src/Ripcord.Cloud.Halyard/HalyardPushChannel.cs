@@ -84,6 +84,25 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
     /// <summary>Raised for every text frame before parsing, for diagnostics/capture. Optional.</summary>
     public event Action<string>? FrameReceived;
 
+    private volatile string? _sessionId;
+
+    /// <summary>
+    /// The session this channel is for. Once set, a frame that names another session (<c>body.data.sessionId</c>)
+    /// raises only <see cref="FrameReceived"/>: no join, seed or signaling from it reaches a consumer.
+    ///
+    /// <para>
+    /// The push channel carries every session on the account, and nothing here told them apart. From a phone
+    /// hotspot the console joined, published its seed and offered in a session our own remote wake had created,
+    /// and the route took all three as its own; every message it then sent the console was refused as "Member not
+    /// joined session." (2026-10-10). Every frame in our captures of the vendor client names its session.
+    /// </para>
+    /// </summary>
+    public string? SessionId
+    {
+        get => _sessionId;
+        set => _sessionId = value;
+    }
+
     /// <summary>
     /// Connect and pump frames until the connection closes or <paramref name="cancellationToken"/> fires.
     /// Returns when the peer closes (a null receive) — normal at session teardown — so a caller can await the
@@ -146,6 +165,12 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
     {
         Raise(FrameReceived, frame);
 
+        if (_sessionId is { } ours && SessionOf(frame) is { } theirs
+            && !string.Equals(ours, theirs, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         HalyardSignalingMessage? message = HalyardSignalingMessage.TryParse(frame);
         if (message is not null)
         {
@@ -162,6 +187,27 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
         if (HalyardCustomDataNotification.IsConsoleJoined(frame))
         {
             Raise(ConsoleJoined);
+        }
+    }
+
+    /// <summary>The session a frame is about, or null when it names none or is not JSON.</summary>
+    internal static string? SessionOf(string frame)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(frame);
+            return doc.RootElement.TryGetProperty("body", out System.Text.Json.JsonElement body)
+                && body.ValueKind == System.Text.Json.JsonValueKind.Object
+                && body.TryGetProperty("data", out System.Text.Json.JsonElement data)
+                && data.ValueKind == System.Text.Json.JsonValueKind.Object
+                && data.TryGetProperty("sessionId", out System.Text.Json.JsonElement id)
+                && id.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? id.GetString()
+                    : null;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
         }
     }
 
