@@ -41,6 +41,8 @@ starts.
 
 ## 1. The frame
 
+**Done 2026-10-09.** What it decided is in `design.md`: [the frame](design.md#the-frame).
+
 **Window.** A minimum size of 640 × 480 effective pixels, through the presenter's preferred minimum. Below
 that the hero's play mark was cut off, the one thing the page exists for (audit item 3). 640 is also where the
 grid drops to one column, so the two rules meet.
@@ -58,6 +60,8 @@ grid drops to one column, so the two rules meet.
 cut off at 640 × 480; Add a console shows one Back.
 
 ## 2. Home
+
+**Done 2026-10-09.** What it decided is in `design.md`: [Home](design.md#home).
 
 **The hero (one console).** Today it's a fixed 520 × 176 card at every window size: a small strip in a large
 window and clipped in a small one.
@@ -89,6 +93,8 @@ centred; at 225% text nothing is cut; with a console paired, launch → playing 
 
 ## 3. Wake, connect and reconnect
 
+**Done 2026-10-09.** What it decided is in `design.md`: [connect](design.md#connect-no-ceremony).
+
 Today the wake wait and the connect are two different compositions (audit C2): a dim headline that reads as
 disabled, a still mark, and a headline that changes to say nothing new; then a different layout for connect.
 
@@ -111,6 +117,8 @@ disabled, a still mark, and a headline that changes to say nothing new; then a d
 visibly moves; reduced motion leaves it still and readable.
 
 ## 4. First run and the pairing celebration
+
+**Done 2026-10-09.** What it decided is in `design.md`: [first run](design.md#first-run) and [pairing](design.md#pairing).
 
 **`WedgeButton`**, a new control: the card's material and its wedge, as a button. Used only where `design.md`
 allows a wedge (a launch): first run's primary action and the celebration's "Play now". Focus is the system
@@ -140,6 +148,8 @@ as shape alone.
 
 ## 5. Motion
 
+**Done 2026-10-09.** What it decided is in `design.md`: [motion](design.md#motion).
+
 `Ripcord.Motion.xaml` defines three durations (83, 150 and 250 ms) and two easings, and the review of
 2026-10-05 found nothing using them. Every animation in the app takes its timing from these, and every one is
 gated on `AppMotion.Enabled`.
@@ -162,6 +172,8 @@ every screen works and nothing moves.
 
 ## 6. Pad and keyboard polish
 
+**Done 2026-10-09.** What it decided is in `design.md`: [pad and keyboard](design.md#pad-and-keyboard).
+
 - **The hint bar says what A does here.** Today it's always "A Select · B Back · Y Options". On a console card
   it should be "A Play" (or "A Wake & play"); on a toggle, "A Toggle"; on a text field, "A Type". Only the verb
   changes; the bar's shape doesn't.
@@ -178,11 +190,17 @@ on each focused control.
 
 ## 7. Leftovers
 
+**Done 2026-10-09, one part a draft.**
+
 - **Rung 3 on 16:10** (audit C6): the letterbox bars are 60 px, too small for the sheet. A compact one-row
-  sheet that fits a 60 px bar, so the overlay stays the 16:9-only case.
+  sheet that fits a 60 px bar, so the overlay stays the 16:9-only case. *Drafted differently:* the sheet starts
+  in the bar and rises into the picture only by the rest of its height. For the owner to judge on a stream.
 - **The High Contrast app icon:** contrast-qualified tile assets for the Store build, and a runtime icon swap
-  for the zip build.
+  for the zip build. *Done.*
 - **The title-bar buttons at 200%** (audit S1): compare against the WinUI Gallery before touching it.
+  *Settled:* a known WinUI bug
+  ([microsoft-ui-xaml#10344](https://github.com/microsoft/microsoft-ui-xaml/issues/10344)), left until a
+  Windows App SDK release fixes it.
 
 ## 8. The showcase review
 
@@ -195,10 +213,11 @@ The acceptance pass, after part 7, and recorded in the captures folder like the 
 - **The stopwatch:** presses and seconds from launch to playing, with one console and with three.
 - **Fresh eyes:** a first run on a clean data folder (`RIPCORD_DATA_DIR`), pad only.
 
-**Status (2026-10-09):** Light and Dark done at 640 × 480, 1280 × 800 and 1920 × 1080 with mouse and keyboard,
-the stopwatch, and the comparison with the Xbox app and Media Player. Ten findings; all but the discovery row
-(audit 6) fixed. Still to run: High Contrast, 200% scale, 225% text, animation effects off, the pad, a stream,
-the Paired screen, 3440 × 1440, and timing on a Release build.
+**Status (2026-10-09):** Light, Dark and High Contrast, 200% scale, 225% text and animation effects off done,
+with mouse and keyboard at 640 × 480, 1280 × 800 and 1920 × 1080; the stopwatch; and the comparison with
+Windows' own apps. All findings fixed but the discovery row (audit 6) and a few minor ones the record lists;
+what the review settled is in `design.md`. Still to run: the pad, a stream, the Paired screen, 3440 × 1440, and
+timing on a Release build.
 
 ## Decisions
 
