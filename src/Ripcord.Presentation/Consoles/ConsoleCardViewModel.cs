@@ -23,6 +23,7 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     private ConsoleReachability _reachability = ConsoleReachability.Checking;
     private bool _highlighted;
     private CardDensity _density = CardDensity.Grid;
+    private CardGeometry _geometry = CardMetrics.For(0, consoleCount: 2).Geometry;
     private bool _pointerOver;
     private bool _pressed;
 
@@ -85,6 +86,17 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     {
         get => _density;
         set => Mutate(() => _density = value);
+    }
+
+    /// <summary>
+    /// How this card is drawn at the size it is being given: the wedge, the insets and the type steps. Set with
+    /// <see cref="Density"/>, from the same <see cref="CardMetrics.For"/> answer, because the hero's size now
+    /// follows the window and a density alone no longer says how big it is.
+    /// </summary>
+    public CardGeometry Geometry
+    {
+        get => _geometry;
+        set => Mutate(() => _geometry = value);
     }
 
     /// <summary>
@@ -170,8 +182,9 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             DisplayName: _console.DisplayName,
             Host: _console.Host,
 
-            // Family first, because that is the fact being asked for.
-            Details: $"{family.ShortName} · {_console.Host}",
+            // The family alone. It carried the console's address too, which is noise to a player and was in every
+            // screenshot anyone posted (visual audit, 2026-10-08). Details keeps the address for whoever needs it.
+            Details: family.ShortName,
             Accent: family.Accent,
             Reachability: _reachability,
             StatusLabel: statusLabel,
@@ -214,6 +227,7 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             LastConnectedLabel: LastPlayed.Describe(_console.LastConnectedUtc, _clock()),
             IsHighlighted: _highlighted,
             Density: _density,
+            Geometry: _geometry,
             IsPointerOver: _pointerOver,
             IsPressed: _pressed,
 

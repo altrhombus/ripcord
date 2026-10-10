@@ -1252,6 +1252,11 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // a perfectly good thing to want, so it stays enabled rather than being a dead button on arrival.
             // On Done the console is already paired and going back would mean re-pairing it.
             CanGoBack: _step is not (AddConsoleStep.Pairing or AddConsoleStep.Done),
+
+            // The same answer BackAsync gives: Link goes back to the results, and Find goes back to the family
+            // question only when that is where it came from.
+            HasPreviousStep: _step == AddConsoleStep.Link
+                || (_step == AddConsoleStep.Find && (_chosenFamily is not null || _scanFoundNothing)),
             SuggestedName: _paired?.DisplayName ?? string.Empty,
             DoneSubtext: _paired is null
                 ? string.Empty

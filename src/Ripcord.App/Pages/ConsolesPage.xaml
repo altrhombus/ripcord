@@ -71,9 +71,12 @@
                         is a different kind of mark on purpose: the two used to be one wash at two opacities,
                         0.10 and 0.22, and were indistinguishable on a real screen.
                     -->
+                    <!--  Faded in and out over RipcordDurationStateChange; the transition is set in code, and only with motion on.  -->
                     <Rectangle
+                        x:Name="HoverWash"
                         Fill="{ThemeResource RipcordCardHoverOverlayBrush}"
-                        Visibility="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        IsHitTestVisible="False"
+                        Opacity="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource ShownOpacity}}" />
 
                     <!--
                         The wedge, trailing edge, full height. 92 of the card's 280 - a third of it, which is
@@ -81,7 +84,7 @@
                         the console did not answer; PlayWedge.xaml has the argument for that departure.
                     -->
                     <controls:PlayWedge
-                        Width="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Wedge}"
+                        Width="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=Wedge}"
                         HorizontalAlignment="Right"
                         Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}"
                         AccentColor="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentColor}}"
@@ -98,7 +101,7 @@
                         be cut through. "Played 31 min ago" lost its bottom third when the slack sat on a row
                         that could only be clipped.
                     -->
-                    <Grid Margin="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Margin}">
+                    <Grid Margin="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=Margin}">
                         <!--
                             Last-played gets its own row. It shared the status row for one build and "Played 11
                             Sep 2026" came out as "Played 11 Sep 2" - the text column here is about 164px once
@@ -130,16 +133,17 @@
                             </Grid.RowDefinitions>
 
                             <!--
-                                The name leads. Two lines at most, and the right margin holds the overflow button
-                                off its first line. The tooltip REPEATS the name rather than being the only copy:
+                                The name leads. Two lines at most; the overflow button lives in the wedge's corner
+                                now, so the name has the whole text column. The tooltip REPEATS the name rather than being the only copy:
                                 touch never hovers, so anything reachable by hover alone is unreachable on a
                                 handheld. Details in the overflow menu is the copy reachable by finger, pad and
                                 mouse.
                             -->
+                            <!--  Its own foreground, like every other line here: inherited, it took the grid item's pointer-over colour and greyed out under the pointer.  -->
                             <TextBlock
-                                Margin="0,0,36,0"
+                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                 MaxLines="2"
-                                Style="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=NameStyle}"
+                                Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=NameStyle}"
                                 Text="{x:Bind State.DisplayName, Mode=OneWay}"
                                 TextTrimming="CharacterEllipsis"
                                 TextWrapping="Wrap"
@@ -152,14 +156,14 @@
                                 Orientation="Horizontal"
                                 Spacing="8">
                                 <controls:FamilyMark
-                                    Width="9"
-                                    Height="16"
+                                    Width="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=MarkWidth}"
+                                    Height="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=MarkHeight}"
                                     VerticalAlignment="Center"
                                     Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}" />
                                 <TextBlock
                                     VerticalAlignment="Center"
                                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                                     Text="{x:Bind State.Details, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis" />
                             </StackPanel>
@@ -242,7 +246,7 @@
                                 Grid.Column="1"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                                 Text="{x:Bind State.StatusLabel, Mode=OneWay}"
                                 TextTrimming="CharacterEllipsis" />
 
@@ -251,7 +255,7 @@
                                 Grid.Column="2"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                                 Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
                                 TextTrimming="CharacterEllipsis"
                                 Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=OneLine}" />
@@ -269,26 +273,27 @@
                         2026-10-08). The hero's wedge is 184 wide; this keeps clear of its slant and wraps instead.
                     -->
                     <TextBlock
-                        MaxWidth="120"
+                        MaxWidth="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=ActionLabelWidth}"
                         Margin="0,0,20,18"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Style="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=StatusStyle}"
                         Text="{x:Bind State.PrimaryActionLabel, Mode=OneWay}"
                         TextAlignment="Right"
                         TextWrapping="Wrap"
                         Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=ActionLabel}" />
 
                     <!--
-                        The overflow floats over the content rather than sitting in it, so a 48px hit area
-                        does not push the title down. A button nested inside a clickable item is fine: it
-                        handles the pointer first, so opening the menu does not also start a connect.
+                        The overflow sits in the card's top-trailing corner, the place Windows and the console
+                        shells put a tile's "more". It used to float at the wedge's leading edge, mid-card, which
+                        read as misplaced (visual audit, 2026-10-08). A button nested inside a clickable item is
+                        fine: it handles the pointer first, so opening the menu does not also start a connect.
                     -->
                     <Button
                         MinWidth="{StaticResource RipcordTouchTarget}"
                         MinHeight="{StaticResource RipcordTouchTarget}"
-                        Margin="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Overflow}"
+                        Margin="0,4,4,0"
                         Padding="0"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"
@@ -386,24 +391,22 @@
     </Page.Resources>
 
     <!--
-        Capped and centred rather than stretched. On an ultrawide an uncapped card row spreads a handful of
-        consoles across a metre of glass with the eye travelling between them, so a row stops at four cards.
-        1500 fits four roomy cells (4 x 360) inside the 24px padding with room for rounding at fractional
-        scale. It was 1400, which fitted only three, so maximising the window LOST a column: a smaller window
-        showed four regular cards, a larger one three roomy ones (seen at 200% on 2026-10-01). Below the cap it
-        simply fills, so nothing changes on a handheld.
+        The page column every other page uses, centred, with the title on its left edge. Home had its own: a
+        1500 cap, sized to its content, so its title followed the cards and sat at three different places for one,
+        three and no consoles (showcase review, R1). Now the hero stops at the column's width, the grid fills the
+        column from its left edge (two cards a row), and the empty state is centred in it (decision E, 2026-10-09).
+        Stretched, not centred: centred, a grid sizes to its content and the title moves with it.
     -->
     <Grid
         Padding="24,16,24,0"
-        MaxWidth="1500"
-        HorizontalAlignment="Center"
+        MaxWidth="{StaticResource RipcordPageColumnWidthWithPadding}"
         RowSpacing="4">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
 
-            <!--  The one-console "add another" link, which is not part of the scrolling grid.  -->
+            <!--  The shortcut confirmation, below the grid. ("Add another console" moved into the grid's footer.)  -->
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -469,65 +472,68 @@
             Margin="0,0,0,8"
             IsOpen="False" />
 
-        <HyperlinkButton
-            x:Name="HeroAddLink"
-            Grid.Row="3"
-            Margin="0,4,0,24"
-            HorizontalAlignment="Center"
-            Click="OnAddConsoleClick"
-            Visibility="Collapsed"
-            x:Uid="ConsolesPage_AddAnotherConsole" />
 
-        <!--  Empty state — shown when no consoles are paired.  -->
-        <StackPanel
+        <!--
+            Empty state — shown when no consoles are paired. In a scroller: at 225% text in the smallest window the
+            composition is taller than the room, and it was clipped at both ends, the mark gone and "Add a console"
+            focused but off the window (showcase review, T1).
+        -->
+        <ScrollViewer
             x:Name="EmptyState"
             Grid.Row="2"
-            Margin="0,0,0,48"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            MaxWidth="520"
-            Spacing="18">
-            <!--
-                The FULL mark, not FamilyMark. This surface is about Ripcord rather than about a console, and
-                FamilyMark is the console badge - its own XAML says the wedge is left out because the wedge is
-                the app's identity.
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <!--  As tall as the scroller shows, so the composition still centres when it fits and only scrolls when it does not.  -->
+            <Grid MinHeight="{x:Bind EmptyState.ViewportHeight, Mode=OneWay}">
+                <StackPanel
+                    Margin="0,0,0,48"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="520"
+                    Spacing="18">
+                    <!--
+                        The FULL mark, not FamilyMark. This surface is about Ripcord rather than about a console, and
+                        FamilyMark is the console badge - its own XAML says the wedge is left out because the wedge is
+                        the app's identity.
 
-                **Still no wordmark, asked again and answered the same way (2026-09-24).** The first time,
-                there was no wordmark to add; there is one now, and RipcordWordmark beside this mark would
-                be a legitimate lockup rather than the bare word brand/README.md forbids. It is left out
-                anyway. The title bar already carries the name, so a lockup here is the third time it is on
-                screen - and this screen is a task, not an introduction, which is the same reason the
-                connect sequence stopped being a ceremony. About is the surface that gets the lockup,
-                because it is the one that is about Ripcord rather than about getting you to a console.
-            -->
-            <controls:RipcordMark
-                Width="88"
-                Height="88"
-                WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                Style="{StaticResource RipcordPageTitleStyle}"
-                x:Uid="ConsolesPage_FirstRunTitle"
-                TextAlignment="Center" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                x:Uid="ConsolesPage_AddConsoleOnceStays"
-                TextAlignment="Center"
-                TextWrapping="Wrap" />
-            <Button
-                x:Name="EmptyStateAddButton"
-                x:Uid="ConsolesPage_EmptyStateAdd"
-                Margin="0,4,0,0"
-                HorizontalAlignment="Center"
-                Click="OnAddConsoleClick"
-                Style="{StaticResource AccentButtonStyle}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
-                    <TextBlock x:Uid="ConsolesPage_AddConsoleButton" />
+                        **Still no wordmark, asked again and answered the same way (2026-09-24).** The first time,
+                        there was no wordmark to add; there is one now, and RipcordWordmark beside this mark would
+                        be a legitimate lockup rather than the bare word brand/README.md forbids. It is left out
+                        anyway. The title bar already carries the name, so a lockup here is the third time it is on
+                        screen - and this screen is a task, not an introduction, which is the same reason the
+                        connect sequence stopped being a ceremony. About is the surface that gets the lockup,
+                        because it is the one that is about Ripcord rather than about getting you to a console.
+                    -->
+                    <controls:RipcordMark
+                        Width="88"
+                        Height="88"
+                        WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Style="{StaticResource RipcordPageTitleStyle}"
+                        x:Uid="ConsolesPage_FirstRunTitle"
+                        TextAlignment="Center" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        x:Uid="ConsolesPage_AddConsoleOnceStays"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                    <Button
+                        x:Name="EmptyStateAddButton"
+                        x:Uid="ConsolesPage_EmptyStateAdd"
+                        Margin="0,4,0,0"
+                        HorizontalAlignment="Center"
+                        Click="OnAddConsoleClick"
+                        Style="{StaticResource AccentButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
+                            <TextBlock x:Uid="ConsolesPage_AddConsoleButton" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
-            </Button>
-        </StackPanel>
+            </Grid>
+        </ScrollViewer>
 
         <!--
             GridView rather than ItemsRepeater on purpose: it is the items control with real directional-focus
@@ -544,6 +550,21 @@
             ItemTemplateSelector="{StaticResource CardTemplateSelector}"
             SelectionMode="None"
             Visibility="Collapsed">
+            <!--
+                "Add another console" rides under the hero, 16 below the card, as part of the same centred block. It sat
+                in its own row at the window's bottom edge, a long way from the card it belongs with (visual audit,
+                2026-10-08). The grid's footer, so it moves with the card wherever the card goes. Collapsed below the
+                hero, where the ghost tile does this job.
+            -->
+            <GridView.Footer>
+                <HyperlinkButton
+                    x:Name="HeroAddLink"
+                    Margin="0,4,0,0"
+                    HorizontalAlignment="Center"
+                    Click="OnAddConsoleClick"
+                    Visibility="Collapsed"
+                    x:Uid="ConsolesPage_AddAnotherConsole" />
+            </GridView.Footer>
             <GridView.ItemsPanel>
                 <ItemsPanelTemplate>
                     <!--

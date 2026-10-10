@@ -8,6 +8,9 @@ describes an earlier state. Most of what that plan established — the 4 px toke
 the closed motion list, the tone guide — survives untouched and is restated here only where this review
 changed it. Where the two disagree, this file wins.
 
+Amended 2026-10-09 with what the showcase work decided ([`showcase-plan.md`](showcase-plan.md)): the page
+frame, Home in it, first run, motion, and the pad.
+
 This is not a style guide to apply mechanically. It is the set of decisions a new surface has to be
 consistent with, plus the reasoning that makes each one arguable rather than arbitrary.
 
@@ -67,11 +70,17 @@ Three rules keep it from becoming decoration:
   nothing else. The original *reasoning* is what survives, and it is the part worth keeping: an offline
   console is a normal state and not a fault, so there is no red, no error glyph, and nothing that reads as
   broken. What changed is the conclusion drawn from it, because the premise turned out to be false.
-- **It scales with its container, not as a fixed chip.** 92 px beside a 292×188 grid card, 184 px beside the
-  one-console hero. It is a proportion of the card, not a number.
+- **It scales with its container, not as a fixed chip.** It is 35% of the card at every size, so the
+  diagonal's angle never changes: 92 px beside a 292×188 grid card, and on the hero, which follows the window,
+  whatever 35% of the hero is.
 
 The diagonal is the loudest thing in the app. It stays on Ripcord's own surfaces and never reaches a
 settings row.
+
+**The wedge as a button.** `WedgeButton` is the card's material and wedge in a button, for the two launches
+that aren't a card: first run's "Get started" and the celebration's "Play now". Focus is the system ring and
+pressed is the card's press, as on the card. Everything else that's a primary action is the stock accent
+button, so a player learns the two meanings once.
 
 ### Hover and focus are different kinds of mark
 
@@ -119,12 +128,16 @@ chore.
   connect is the card becoming the window, not a new place navigated to.
 - One line of status, low and left, over a 3 px trail. The phase checklist is gone: it was a rung-3 fact
   sitting at rung 1.
-- "Usually about ten seconds" is reserved for waits that are genuinely long (the account route's 10–40 s
-  rendezvous) and appears only once seconds have already passed. Said every time, it teaches the player to
-  expect a wait.
+- **The trail tells the phase and breathes while it waits.** Waking lights the first dash, connecting the
+  second, the handshake the third. The current dash pulses slowly so a long wait looks alive; with animation
+  effects off it's lit and still. The headline keeps one style in every state and is dimmed only on failure.
+- **One headline per phase, and no time promised.** "Waking your console…" stays put. If the wait runs long,
+  one line is added, once: a console in rest mode can take a little longer. No figure. Amended 2026-10-09: this
+  bullet reserved "Usually about ten seconds" for long waits, but a wake over the internet has taken more than
+  forty, and a number the wait overruns is a broken promise (owner).
 
 **Reconnect and failure reuse this composition exactly**, so there is no second place to look when things go
-wrong. Verdict first, then what to do, then the buttons. The mark *dims* on failure rather than turning red,
+wrong. Reconnect draws it over the frozen last frame, on an acrylic plate. Verdict first, then what to do, then the buttons. The mark *dims* on failure rather than turning red,
 because a console entering rest mode is behaving normally. The reconnect escape reads "Stop trying", not
 "Cancel", which during a countdown is ambiguous about whether it abandons the session or just this attempt.
 
@@ -157,6 +170,12 @@ already carrying nothing. **Rung 3 claims dead space first and overlays only whe
   leaves 320). Nothing is covered, so it can stay up indefinitely.
 - Taller than 16:9 → the **sheet** in the letterbox bar beneath the picture.
 - Exactly 16:9 → the sheet **overlays**. The only case that does.
+- **The player can move it.** Dragged by its header and resized from any edge, it stays wholly inside the
+  window and is where it was put next stream, kept as a fraction of the room beside it so a corner stays a
+  corner when the window changes size. Wide and short, it lays its groups out as the sheet does. "Put back", or
+  a double-click on the header, returns it to the rule above. Pointer only: nothing on the stream layer takes
+  the pad. Settled 2026-10-09, after a draft that raised the sheet out of a 16:10 display's 60 px bar covered
+  too much picture (owner); a bar that thin keeps the overlay on the left.
 
 One set of facts in two arrangements, not two panels: the same groups reflow from a column into a row. The
 letterbox arithmetic is already being done — the swap chain knows the video size and the panel knows its
@@ -193,18 +212,71 @@ Fixed scales stay fixed and numbers still never animate, both for the reasons al
 **One thing moved rung:** the live pad readout (buttons, sticks, triggers at 500 ms) is a *controller*
 diagnostic, not a *stream* one. It belongs on the controls page beside the bindings it helps check.
 
+## The frame
+
+Settled 2026-10-09. Every page sits in one frame, so flipping between them moves nothing but the content.
+
+| Part | Rule |
+|---|---|
+| Window | A minimum of 640 × 480 effective pixels. Below it the hero's play mark was cut off, and 640 is where the grid drops to one column. |
+| Column | Centred, `MaxWidth` 820 (`RipcordPageColumnWidth`), on every page, Home included. |
+| Title | One style, one top offset, the column's left edge. |
+| Footer actions | Inside the column, primary at the trailing end, as Windows 11's own setup does. A step-back button only when there's a previous step; leaving a flow is the title bar's Back, so no page shows two. |
+| Page transitions | The platform's: entrance for a new page, drill-in for a detail. |
+
+**Focus is placed on arrival on every page**, on the thing the page is for, and it survives the page or step
+it replaces collapsing: Windows moves focus out of a collapsing control after any queued focus call, so it is
+set at once and checked again after the next layout.
+
+**The title bar is the stock one.** At 200% scale it leaves too wide a gap before the window buttons. That is a
+known WinUI bug ([microsoft-ui-xaml#10344](https://github.com/microsoft/microsoft-ui-xaml/issues/10344): the
+caption-button inset is read in physical pixels as effective ones), so it stays until a Windows App SDK release
+fixes it. A workaround now would collide with the window buttons the day it does.
+
 ## Home
 
-- **Nothing paired** → the first-run surface: mark, wordmark, one sentence, one primary action, and the
-  same-network limit stated before it is met. Because it is not an error it is not an `InfoBar`.
+- **Nothing paired** → mark, one sentence, one primary action, and the same-network limit stated before it is
+  met. No wordmark: this is a task screen, and Welcome and About are where the wordmark lives (2026-09-24,
+  asked again 2026-10-09). Because it is not an error it is not an `InfoBar`. At large text in a small window it
+  scrolls rather than clip, and stays centred when it fits.
 - **One console** → a hero card whose wedge holds focus on load. Open the window, press A, playing. The two
   secondary actions sit below as text, never as competing buttons.
 - **Two or more** → the card grid, ghost tile last.
 
-The card's rename / details / remove flyout moves from imperative code into markup and the string
-catalogue. It is currently built in `ConsolesPage.xaml.cs` with around fifteen hard-coded English strings
-that bypass the catalogue entirely, which is why the app's most important page is the one page that can
-neither be localised nor tested.
+**Home sits in the page column** (decision E, 2026-10-09). Its title was at a different place for one, three
+and no consoles, and never where the other pages put theirs. The grid fills the column from its left edge, two
+cards a row; the empty state is centred in it.
+
+**The hero follows the window.** Half the page, held between 440 and 880 px and never past the column, at the
+card's 2.95 : 1 plus the text-size allowance. A fixed card was a strip in a large window and clipped in a small
+one. Its text steps up the platform's type ramp rather than scaling: the name is Title below 720 px of card and
+Title Large above, and the status line is Body rather than Caption (decision A). A card twice as wide with the
+same small text reads as empty, and stepping the ramp at breakpoints is how Fluent pages respond to room; it is
+not a second text-size setting.
+
+**What a card says:** the name, the family ("PS5" with its mark), the status and when it was last played. **No
+address**: it's noise to a player and it's in every screenshot anyone posts; Details keeps it. The "…" sits in
+the card's top-trailing corner, and hover is a wash that can be seen, fading over 150 ms.
+
+The card's rename / details / remove flyout takes its strings from the catalogue (`ConsoleCardCopy`). It is
+still built in `ConsolesPage.xaml.cs` rather than markup.
+
+## First run
+
+Settled 2026-10-09. **Welcome is the identity room**, and the one introduction:
+
+- Centred. The mark assembles (the wedge, then the three dashes in turn), then the wordmark beside it, then one
+  sentence (decision B).
+- One primary, `WedgeButton` "Get started", focused on arrival; "Skip setup" beside it as a quiet text button.
+- The step dashes appear once you're past Welcome: Welcome is the door, not step zero.
+
+**The setup steps don't make anyone wait or press twice.**
+
+- Picking a picture mode moves on to the next step, so a pad press is the whole step.
+- Checking what the PC can decode happens while the choices are on screen, and they stay live. Pressing on
+  before the check is done goes on when it finishes. If the check takes away the choice made, it stays on the
+  step with the other one picked.
+- The last step lists what was set as three settings rows, not a paragraph.
 
 ## Pairing
 
@@ -242,9 +314,14 @@ editorialising; account-tier caveats belong in `README.md`'s limits section, whe
 
 **The celebration.** Personality has three rooms — first run, a successful pair, and the wake wait. Pairing
 earns the largest because it happens once per console, it is the only moment the player did something that
-could have failed, and the reward is why they installed the app. The full mark assembles at hero size: the
-wedge, then the trail. "Paired." with a period, never "Success!". The record is already on disk by the time
-this screen appears, so **Done** is a peer of **Play now** rather than a save button.
+could have failed, and the reward is why they installed the app. The full mark assembles, the wedge and then
+the trail, above "Paired." with a period, never "Success!". The record is already on disk by the time this
+screen appears, so **Done** is a peer of **Play now** rather than a save button. "Play now" is a `WedgeButton`
+and has focus.
+
+It stays a step of Add a console, in the page's column under its title, rather than becoming a centred room
+like Welcome (owner, 2026-10-09, having seen both). The mark assembling and the wedge on "Play now" are the
+celebration; the step around it keeps the player where they were.
 
 ## Settings
 
@@ -282,6 +359,40 @@ Each row's description says what it does *for you* rather than what it sets: "4 
 display" is the HDR readiness verdict promoted to the row, leaving the expander for people who want the four
 lines.
 
+## Motion
+
+Settled 2026-10-09. **Short, never between the player and the press, and gone when Windows' animation effects
+are off.** Every animation takes its timing from the tokens in `Ripcord.Motion.xaml`, and every one started from
+code checks `AppMotion.Enabled` when it runs; the platform's theme transitions check the setting themselves.
+Each one is garnish, never the mechanism: with motion off the screen is the same, arrived at at once.
+
+| Where | What | Timing |
+|---|---|---|
+| Pages | The platform's entrance and drill-in | the system's |
+| Card hover | The wash fades in and out | `RipcordDurationStateChange` |
+| Card press | Settles inwards, instantly: felt, not watched | none |
+| Connect | The mark travels from the card to the connect screen's mark | the system's (`ConnectedAnimation`) |
+| Trail | The current dash breathes | `RipcordDurationBreath`, twice a cycle |
+| Welcome, Paired | The mark assembles, then the wordmark fades in | `RipcordDurationStateChange` a part, staggered by half |
+| HUD rungs | Fade in and out, by the compositor | `RipcordDurationStateChange` |
+| Status over the stream | Fades out on the first frame | `RipcordDurationStateChange` |
+
+**Over the stream, opacity only:** nothing moves across the picture.
+
+## Pad and keyboard
+
+Settled 2026-10-09. A and B do the same thing on every screen, and the screen says what A will do.
+
+- **The hint bar names the verb.** A console card says its own action ("Play", "Wake & play"), a switch or
+  checkbox "Toggle", a text field "Type", a drop-down "Open", anything else "Select". Only the verb changes,
+  so the bar keeps its shape as focus moves.
+- **Moving with a pad clicks.** Windows' own navigation sounds, on while a pad is in use and off for the mouse
+  and keyboard, as the Xbox shell does (decision D, kept by ear). A switch under Controls turns them off.
+- **Left and Right stay in the row** when there's somewhere in it to go, rather than jumping to whatever is
+  nearest, such as the title bar's gear.
+- **Keyboard:** Ctrl+, opens Settings, F11 toggles full screen, Esc steps back a level, and Tab follows the
+  reading order.
+
 ## Accessibility renditions
 
 **High contrast is the test this direction was chosen to pass.** The gradient collapses to a system fill,
@@ -308,11 +419,28 @@ a blocker for the card redesign: the cell only had to grow because the app was g
 motion, and whatever the platform does with text scale. The one place it is deliberately more than a good
 citizen is **controller input**, because nothing in the desktop environment does that for it.
 
-The high-contrast rendition above remains a **drawing of what should happen, not a record of what does** —
-see [`../ROADMAP.md`](../ROADMAP.md).
+**Checked on screen, 2026-10-09** (the showcase review, kept in the captures folder), for every screen except
+a stream: High Contrast (Night sky), 200% scale, 225% text and animation effects off. What it
+settled:
+
+- **Under a contrast theme the mark is shape alone.** The dashes take the wedge's colour, as the app icon goes
+  one-colour, because the three accents are brand colours with no contrast variant.
+- **The wedge button's label has no backplate.** Windows draws one behind text in a contrast theme, and on the
+  wedge it put a black box inside the button. Stock accent buttons keep theirs when focused: that is Windows',
+  and stays (owner).
+- **A settings row's header is the theme's button-text colour** (yellow in Night sky),
+  because the row is a button. That is
+  Windows', and stays.
+- **At 225% text in the smallest window, a row that doesn't fit stacks** (`StackWhenTight`) rather than cutting
+  its last item off mid-word.
+
+The stream screens in High Contrast are still a drawing of what should happen, not a record of what does — see
+[`../ROADMAP.md`](../ROADMAP.md).
 
 ## Deliberately not redesigned
 
 `AboutPage` and `KeyBindingsPage` are utility surfaces the position says should stay stock Windows, and
-neither has an open design question. They inherit the token changes and nothing else. The account sign-in
+neither has an open design question. They inherit the token changes and the page frame. About carries the
+wordmark as its title, being the page about Ripcord itself; Keyboard controls groups its keys under headings in
+settings rows. The account sign-in
 dialog hosts a web view whose contents are not ours.

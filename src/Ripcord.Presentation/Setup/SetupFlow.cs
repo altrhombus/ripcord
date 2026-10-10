@@ -39,7 +39,11 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
     private bool _checking = true;
     private bool _hevcAvailable;
     private bool _displayHdr;
-    private PictureChoice _choice = PictureChoice.MostCompatible;
+    // The better picture while the check runs, as the likely answer: the choices stay live during the check, so a
+    // quick mover is never held on a step of greyed-out options (owner, 2026-10-09). The check settles it.
+    private PictureChoice _choice = PictureChoice.BestPicture;
+    private bool _choiceMadeWhileChecking;
+    private bool _goOnWhenChecked;
     private PairedConsole? _added;
     private bool _padAttached;
     private PadFamily _padFamily;
@@ -83,23 +87,48 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
     /// <summary>Check the PC for HEVC and an HDR display, which decide what the picture step offers.</summary>
     public async Task StartAsync()
     {
-        bool hevc = await ProbeAsync(_capabilities.IsHevcDecodeAvailableAsync).ConfigureAwait(false);
-        bool hdr = await ProbeAsync(_capabilities.IsHdrDisplayAvailableAsync).ConfigureAwait(false);
+        // Side by side: the two answers do not depend on each other, and the check is what a quick mover waits on.
+        Task<bool> hevcCheck = ProbeAsync(_capabilities.IsHevcDecodeAvailableAsync);
+        Task<bool> hdrCheck = ProbeAsync(_capabilities.IsHdrDisplayAvailableAsync);
+        bool hevc = await hevcCheck.ConfigureAwait(false);
+        bool hdr = await hdrCheck.ConfigureAwait(false);
 
+        // Off the UI thread here, so this posts: whether to go on is decided inside, where the fields are current.
         Mutate(() =>
         {
             _checking = false;
             _hevcAvailable = hevc;
             _displayHdr = hdr;
 
-            // The better picture preselected wherever the PC can decode it (the owner's decision, 2026-10-05).
-            _choice = hevc ? PictureChoice.BestPicture : PictureChoice.MostCompatible;
+            // The better picture preselected wherever the PC can decode it (the owner's decision, 2026-10-05). A
+            // choice made during the check stands, unless it was the better picture and the PC cannot decode it;
+            // the better picture is also what is shown while checking, so either way that is the one case where
+            // the answer changes the choice.
+            bool changed = _choice == PictureChoice.BestPicture && !hevc;
+            if (!_choiceMadeWhileChecking || changed)
+            {
+                _choice = hevc ? PictureChoice.BestPicture : PictureChoice.MostCompatible;
+            }
+
+            // Continue pressed during the check goes on now that there is an answer, except where the answer changed
+            // the choice: then the step stays, and its note says why.
+            bool goOn = _goOnWhenChecked && !changed && _step == SetupStep.Picture;
+            _goOnWhenChecked = false;
+            if (goOn)
+            {
+                GoOnFromPicture();
+            }
         });
     }
 
     public void Choose(PictureChoice choice) => Mutate(() =>
     {
-        if (!_checking && (choice == PictureChoice.MostCompatible || _hevcAvailable))
+        if (_checking)
+        {
+            _choice = choice;
+            _choiceMadeWhileChecking = true;
+        }
+        else if (choice == PictureChoice.MostCompatible || _hevcAvailable)
         {
             _choice = choice;
         }
@@ -117,19 +146,12 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
             case SetupStep.Picture:
                 if (_checking)
                 {
+                    // Taken as meant: go on as soon as the check answers. See StartAsync.
+                    Mutate(() => _goOnWhenChecked = true);
                     return;
                 }
 
-                ApplyPicture();
-                if (Scope == SetupScope.PictureOnly)
-                {
-                    Finish();
-                }
-                else
-                {
-                    Go(SetupStep.Console);
-                }
-
+                GoOnFromPicture();
                 break;
 
             case SetupStep.Console:
@@ -179,7 +201,13 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
             return false;
         }
 
-        Go(step);
+        // A Continue pressed during the check is taken back with the step, so the check finishing later does not
+        // carry the player forward from wherever they went.
+        Mutate(() =>
+        {
+            _goOnWhenChecked = false;
+            _step = step;
+        });
         return true;
     }
 
@@ -221,7 +249,7 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
         (string primary, bool primaryEnabled, string secondary) = _step switch
         {
             SetupStep.Welcome => (Strings.Setup_GetStarted, true, Strings.Setup_SkipSetup),
-            SetupStep.Picture => (full ? Strings.Setup_Continue : Strings.Setup_Done, !_checking,
+            SetupStep.Picture => (full ? Strings.Setup_Continue : Strings.Setup_Done, true,
                 full ? string.Empty : Strings.Setup_KeepMySettings),
             SetupStep.Console => _added is null
                 ? (Strings.Setup_AddConsole, true, Strings.Setup_Later)
@@ -340,6 +368,19 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
         => family == PadFamily.Vendor ? Strings.Setup_PadPlayStation : Strings.Setup_PadOther;
 
     private void Go(SetupStep step) => Mutate(() => _step = step);
+
+    private void GoOnFromPicture()
+    {
+        ApplyPicture();
+        if (Scope == SetupScope.PictureOnly)
+        {
+            Finish();
+        }
+        else
+        {
+            Go(SetupStep.Console);
+        }
+    }
 
     /// <summary>Saved as soon as it's chosen, so a setup left part-way still keeps the picture.</summary>
     private void ApplyPicture()

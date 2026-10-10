@@ -65,9 +65,17 @@ public class LocalizationTests
     private static HashSet<string> KeysUsedInSource()
     {
         HashSet<string> used = [];
-        foreach (string file in Directory.EnumerateFiles(PresentationRoot().FullName, "*.cs", SearchOption.AllDirectories))
+
+        // The app's code-behind reads this catalogue too, for the few strings no view-model owns (showcase review,
+        // R7), so its uses count and its keys must exist.
+        string appRoot = Path.Combine(PresentationRoot().Parent!.FullName, "Ripcord.App");
+        IEnumerable<string> files = Directory.EnumerateFiles(PresentationRoot().FullName, "*.cs", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(appRoot, "*.cs", SearchOption.AllDirectories));
+
+        foreach (string file in files)
         {
-            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")) continue;
+            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
 
             foreach (Match m in KeyUse.Matches(File.ReadAllText(file)))
             {

@@ -152,6 +152,13 @@ public sealed record AddConsoleFlowState(
     string PairingStatus,
     string PairingHint,
     bool CanGoBack,
+
+    /// <summary>
+    /// Whether going back stays in the flow, at an earlier step. False on the first step, where back means
+    /// leaving, which is the title bar's job; the page draws its own Back only when this is true, so the first
+    /// step no longer shows two Backs (visual audit, 2026-10-08).
+    /// </summary>
+    bool HasPreviousStep,
     string SuggestedName,
     string DoneSubtext)
 {

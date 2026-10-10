@@ -456,6 +456,18 @@
     <value>Configure…</value>
     <comment>The label on a control on the Settings page. Keep it short; it sits on a control.</comment>
   </data>
+  <data name="SettingsPage_NavigationSounds.Header" xml:space="preserve">
+    <value>Navigation sounds</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_NavigationSounds.Description" xml:space="preserve">
+    <value>Windows' sounds as you move and press with a controller. The mouse and keyboard stay quiet.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_NavigationSoundsToggle.AutomationProperties.Name" xml:space="preserve">
+    <value>Navigation sounds</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
   <data name="SettingsPage_ConfirmsWhenEndStream.Description" xml:space="preserve">
     <value>Confirms when you end a stream, and lets you choose rest mode for that disconnect. Off leaves instantly, using the default below.</value>
     <comment>The description under a control on the Settings page.</comment>
@@ -533,7 +545,7 @@
     <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_PVerifiedGoodDefault.Description" xml:space="preserve">
-    <value>1080p60 at 20 Mbps is the default. Higher settings need a strong network.</value>
+    <value>1080p 60 fps at 20 Mbps is the default. Higher settings need a strong network.</value>
     <comment>The description under a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_PVerifiedGoodDefault.Header" xml:space="preserve">
@@ -740,6 +752,14 @@
     <value>loss</value>
     <comment>Label under the packet loss percentage on the stream diagnostics summary.</comment>
   </data>
+  <data name="SessionPage_DiagnosticsPutBack.Content" xml:space="preserve">
+    <value>Put back</value>
+    <comment>A button on the stream's diagnostics panel, shown once the player has moved or resized it.</comment>
+  </data>
+  <data name="SessionPage_DiagnosticsPutBack.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Put the panel back where it goes by itself</value>
+    <comment>Tooltip for the Put back button on the stream's diagnostics panel.</comment>
+  </data>
   <data name="SessionPage_DiagnosticsLess.Content" xml:space="preserve">
     <value>Less</value>
     <comment>Button in the full instrument panel that goes back to the summary strip. The inverse of
@@ -809,5 +829,17 @@ lasts the rest of the session, because F3 restores the rung it was left on.</com
   <data name="AboutPage_Wordmark.AutomationProperties.Name" xml:space="preserve">
     <value>Ripcord</value>
     <comment>Screen-reader name of the drawn wordmark at the top of About, which is the page's level-1 heading. The app's name - do not translate.</comment>
+  </data>
+  <data name="SetupPage_DonePictureCard.Header" xml:space="preserve">
+    <value>Picture</value>
+    <comment>First-run setup, last step: the heading of the row summarising the picture choice.</comment>
+  </data>
+  <data name="SetupPage_DoneConsoleCard.Header" xml:space="preserve">
+    <value>Console</value>
+    <comment>First-run setup, last step: the heading of the row summarising the console choice.</comment>
+  </data>
+  <data name="SetupPage_DoneControllerCard.Header" xml:space="preserve">
+    <value>Controller</value>
+    <comment>First-run setup, last step: the heading of the row summarising the controller choice.</comment>
   </data>
 </root>

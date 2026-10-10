@@ -38,6 +38,8 @@
       <StronglyTypedLanguage>CSharp</StronglyTypedLanguage>
       <StronglyTypedNamespace>Ripcord.Presentation.Resources</StronglyTypedNamespace>
       <StronglyTypedClassName>Strings</StronglyTypedClassName>
+      <!-- Public so the app's code-behind reads the same catalogue rather than keeping literals (showcase review, R7). -->
+      <PublicClass>true</PublicClass>
     </EmbeddedResource>
   </ItemGroup>
 

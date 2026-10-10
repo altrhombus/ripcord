@@ -119,6 +119,10 @@ public sealed record RipcordSettings
     /// Turn off to leave instantly using <see cref="RestConsoleOnDisconnect"/> as the standing answer.</summary>
     public bool ConfirmOnDisconnect { get; set; } = true;
 
+    /// <summary>Windows' navigation sounds while a controller is in use (never for the mouse or keyboard). On by
+    /// default, the console convention; a switch because a sound is the one thing a player can't look away from.</summary>
+    public bool NavigationSounds { get; set; } = true;
+
     // ---- device ----
 
     public GpuPreference GpuPreference { get; set; } = GpuPreference.Auto;
@@ -202,6 +206,12 @@ public sealed record RipcordSettings
 
         return updated;
     }
+
+    /// <summary>
+    /// Where the player has put the full diagnostics panel, or null for where it goes by itself (beside the picture
+    /// where there is room, otherwise on the left). See <see cref="PanelFrame"/>.
+    /// </summary>
+    public PanelFrame? DiagnosticsPanelFrame { get; set; }
 
     /// <summary>Larger text and controls, for handhelds and TV viewing distances.</summary>
 

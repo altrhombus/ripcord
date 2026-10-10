@@ -90,7 +90,9 @@ public sealed class HalyardWakeCoordinator(
                 return WakeOutcome.Woke;
             }
 
-            progress?.Report("Waiting for the console to wake…");
+            // Nothing reported per poll. A second line here ("Waiting for the console to wake…") replaced the
+            // first headline a few seconds in and said nothing new; the front end says a long wake is normal
+            // itself, once, when it has run long enough to need saying (visual audit, 2026-10-08).
         }
 
         return WakeOutcome.TimedOut;

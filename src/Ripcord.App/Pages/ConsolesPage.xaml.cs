@@ -284,20 +284,28 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
     private CardLayout ApplyCardLayout(int consoleCount)
     {
-        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount, TextScale);
+        CardLayout layout = CardMetrics.For(
+            ActualWidth, consoleCount, TextScale, (double)Application.Current.Resources["RipcordPageColumnWidth"]);
         _layout = layout;
 
         foreach (ConsoleCardViewModel card in _items.OfType<ConsoleCardViewModel>())
         {
             card.Density = layout.Density;
+            card.Geometry = layout.Geometry;
         }
 
         SizePanel();
 
-        // A single hero-sized card is the page; anything denser is a list and reads from the top-left.
+        // A single hero-sized card is the page, centred in the column; anything denser is a list and reads from the
+        // column's top-left, under the title.
         bool hero = layout.Density == CardDensity.Hero;
         ConsoleGrid.HorizontalAlignment = hero ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
         ConsoleGrid.VerticalAlignment = hero ? VerticalAlignment.Center : VerticalAlignment.Stretch;
+
+        // The hero sits a little above the middle of the space it is centred in: the eye's centre of a page is
+        // above its geometric one, and dead centre read as sinking. A tenth of the page's height, given back at
+        // the bottom so the block rises by half that.
+        ConsoleGrid.Margin = hero ? new Thickness(0, 0, 0, Math.Round(ActualHeight * 0.1)) : new Thickness(0);
 
         return layout;
     }
@@ -667,6 +675,14 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             // The add tile has no per-console actions.
             container.ContextFlyout = null;
             return;
+        }
+
+        // The hover wash fades rather than switches, as Windows' own controls' hover does. Off with motion off.
+        if ((args.ItemContainer.ContentTemplateRoot as FrameworkElement)?.FindName("HoverWash") is Microsoft.UI.Xaml.Shapes.Rectangle wash)
+        {
+            wash.OpacityTransition = AppMotion.Enabled
+                ? new ScalarTransition { Duration = AppMotion.Duration("RipcordDurationStateChange") }
+                : null;
         }
 
         // No focus handlers. Focus used to light the hover wash too, against "hover is a wash, focus is a ring";

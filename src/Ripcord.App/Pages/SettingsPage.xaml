@@ -47,349 +47,364 @@
         visible right here: the exact alignment that broke this is the kind of thing markup changes silently.
     -->
     <ScrollViewer Padding="24,16,24,24">
-        <StackPanel
-            MaxWidth="820"
-            Spacing="24"
-            XYFocusDownNavigationStrategy="RectilinearDistance"
-            XYFocusUpNavigationStrategy="RectilinearDistance">
-            <TextBlock x:Uid="SettingsPage_Settings" Style="{StaticResource RipcordPageTitleStyle}" />
+        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column shifted right of the others (Keyboard controls sat 40 px off Settings).  -->
+        <Grid>
+            <StackPanel
+                MaxWidth="{StaticResource RipcordPageColumnWidth}"
+                Spacing="24"
+                XYFocusDownNavigationStrategy="RectilinearDistance"
+                XYFocusUpNavigationStrategy="RectilinearDistance">
+                <TextBlock x:Uid="SettingsPage_Settings" Style="{StaticResource RipcordPageTitleStyle}" />
 
 
-            <!--  ============ Picture ============  -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Picture" Style="{StaticResource RipcordSectionHeaderStyle}" />
+                <!--  ============ Picture ============  -->
+                <StackPanel Spacing="4">
+                    <TextBlock x:Uid="SettingsPage_Picture" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_PVerifiedGoodDefault">
-                    <ComboBox
-                        x:Name="ResolutionCombo"
-                        MinWidth="180"
-                        x:Uid="SettingsPage_ResolutionFrameRate" />
-                </tk:SettingsCard>
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_PVerifiedGoodDefault">
+                        <ComboBox
+                            x:Name="ResolutionCombo"
+                            MinWidth="180"
+                            x:Uid="SettingsPage_ResolutionFrameRate" />
+                    </tk:SettingsCard>
+
+                    <!--
+                        The slider sits in the content slot with its value beside it rather than under a header,
+                        because a number that moves needs to be next to the thing moving it.
+                    -->
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_StartingRateRipcordLowers">
+                        <StackPanel
+                            Orientation="Horizontal"
+                            Spacing="12"
+                            VerticalAlignment="Center">
+                            <Slider
+                                x:Name="BitrateSlider"
+                                MinWidth="220"
+                                VerticalAlignment="Center"
+                                x:Uid="SettingsPage_MaximumBitrateMegabitsPer"
+                                Maximum="40"
+                                Minimum="2"
+                                StepFrequency="1" />
+                            <TextBlock
+                                x:Name="BitrateValueText"
+                                MinWidth="72"
+                                VerticalAlignment="Center"
+                                TextAlignment="Right"
+                                Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        </StackPanel>
+                    </tk:SettingsCard>
+
+
+                    <tk:SettingsCard x:Uid="SettingsPage_HowStreamScaledUp">
+                        <ComboBox
+                            x:Name="UpscaleCombo"
+                            MinWidth="180"
+                            x:Uid="SettingsPage_ImageScaling" />
+                    </tk:SettingsCard>
+
+                    <!--
+                        HEVC is offered only when a decoder for it exists on this machine, so the option cannot be
+                        selected into a session that then fails to start. The Description is written from the
+                        view-model, because what it says depends on that answer.
+                    -->
+                    <tk:SettingsCard x:Uid="SettingsPage_VideoCodec" x:Name="CodecCard">
+                        <ComboBox
+                            x:Name="CodecCombo"
+                            MinWidth="180"
+                            x:Uid="SettingsPage_VideoCodecChoice" />
+                    </tk:SettingsCard>
+
+                    <!--
+                        HDR expands, because the readiness checklist is the reason someone opens it. Four things are
+                        needed and only one of them is this toggle, so a user whose picture stays SDR has no way to
+                        tell WHICH is missing from a sentence listing them all. Each row reports its own state and,
+                        when unmet, says what to do.
+
+                        The console row is deliberately neutral rather than a tick or a cross: whether the PS5 sends
+                        HDR cannot be known until a session runs, and a cross for "unknown" reads as a fault the
+                        user should go and fix.
+                    -->
+                    <tk:SettingsExpander x:Name="HdrExpander" x:Uid="SettingsPage_RequestHdr">
+                        <ToggleSwitch x:Uid="SettingsPage_RequestHdr2" x:Name="HdrToggle" />
+
+                        <tk:SettingsExpander.Items>
+                            <tk:SettingsCard HorizontalContentAlignment="Left" ContentAlignment="Left">
+                                <StackPanel Spacing="6">
+                                    <StackPanel x:Name="HdrChecklist" Spacing="3" />
+                                    <TextBlock
+                                        x:Name="HdrHelpText"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </tk:SettingsCard>
+                        </tk:SettingsExpander.Items>
+                    </tk:SettingsExpander>
+                </StackPanel>
+
+                <!--  ============ Controls ============  -->
+                <StackPanel Spacing="4">
+                    <TextBlock x:Uid="SettingsPage_Controls" Style="{StaticResource RipcordSectionHeaderStyle}" />
+
+                    <!--
+                        Keyboard input is off by default: with a pad connected there is no reason for stray typing to
+                        reach the game, and the default layout overlaps ordinary window shortcuts.
+                    -->
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_OffByDefaultPad">
+                        <ToggleSwitch
+                            x:Name="KeyboardToggle"
+                            x:Uid="SettingsPage_SendKeyboardInputConsole" />
+                    </tk:SettingsCard>
+
+                    <!--
+                        The live pad readout, moved here from the stream's rung 3.
+
+                        It is a CONTROLLER diagnostic, not a stream one: what it answers is "is this pad reaching
+                        Ripcord, and is that stick centred", and both questions are asked while looking at the
+                        bindings rather than while looking at a game. On rung 3 it was competing with twenty
+                        instruments about the picture, on a surface you have to be streaming to open - so the one
+                        place it could not be read was the place somebody would be holding the pad to test it.
+                    -->
+                    <tk:SettingsCard x:Uid="SettingsPage_LivePadReadout">
+                        <StackPanel MinWidth="260" HorizontalAlignment="Right">
+                            <!--
+                                Says something before the first frame. It was blank until a pad reported, so with none
+                                connected the row read as broken (visual audit, 2026-10-08). The first frame replaces it.
+                            -->
+                            <TextBlock
+                                x:Name="PadButtonsText"
+                                x:Uid="SettingsPage_PadReadoutWaiting"
+                                HorizontalAlignment="Right"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                x:Name="PadSticksText"
+                                HorizontalAlignment="Right"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </tk:SettingsCard>
+
+                    <tk:SettingsCard x:Uid="SettingsPage_KeysGamepadMapping" x:Name="KeyBindingsCard">
+                        <Button
+                            x:Name="KeyBindingsButton"
+                            Click="KeyBindings_Click"
+                            x:Uid="SettingsPage_Configure" />
+                    </tk:SettingsCard>
+
+                    <tk:SettingsCard x:Uid="SettingsPage_LeaveStreamController" x:Name="ExitGestureCard">
+                        <ComboBox
+                            x:Name="ExitGestureCombo"
+                            MinWidth="180"
+                            x:Uid="SettingsPage_LeaveStreamChoice" />
+                    </tk:SettingsCard>
+
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_HowFarMustPush">
+                        <StackPanel
+                            Orientation="Horizontal"
+                            Spacing="12"
+                            VerticalAlignment="Center">
+                            <Slider
+                                x:Name="DeadzoneSlider"
+                                MinWidth="220"
+                                VerticalAlignment="Center"
+                                x:Uid="SettingsPage_MenuStickSensitivity"
+                                Maximum="0.9"
+                                Minimum="0.1"
+                                StepFrequency="0.05" />
+                            <TextBlock
+                                x:Name="DeadzoneValueText"
+                                MinWidth="72"
+                                VerticalAlignment="Center"
+                                TextAlignment="Right"
+                                Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        </StackPanel>
+                    </tk:SettingsCard>
+
+                    <!--
+                        Windows' own navigation sounds with a pad (showcase plan, decision D). A switch because a sound
+                        is the one thing a player can't look away from (owner, pad pass, 2026-10-09).
+                    -->
+                    <tk:SettingsCard x:Uid="SettingsPage_NavigationSounds">
+                        <ToggleSwitch
+                            x:Name="NavigationSoundsToggle"
+                            x:Uid="SettingsPage_NavigationSoundsToggle" />
+                    </tk:SettingsCard>
+                </StackPanel>
+
+                <!--  ============ When you play ============  -->
+                <StackPanel Spacing="4">
+                    <TextBlock x:Uid="SettingsPage_WhenYouPlay" Style="{StaticResource RipcordSectionHeaderStyle}" />
+
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_HidesTitleBarNavigation">
+                        <ToggleSwitch
+                            x:Name="FullScreenToggle"
+                            x:Uid="SettingsPage_FullScreenWhenStream" />
+                    </tk:SettingsCard>
+
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_ConfirmsWhenEndStream">
+                        <ToggleSwitch
+                            x:Name="ConfirmOnDisconnectToggle"
+                            x:Uid="SettingsPage_AskBeforeDisconnecting" />
+                    </tk:SettingsCard>
+
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_DefaultAnswerRestMode">
+                        <ToggleSwitch
+                            x:Name="RestOnDisconnectToggle"
+                            x:Uid="SettingsPage_RestConsoleWhenI" />
+                    </tk:SettingsCard>
+
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_FrameRateLatencyPacket">
+                        <!--
+                            A picker, not a switch: there are three answers now. It is also the only control a
+                            pad-only player has over the HUD, since nothing in the stream layer takes gamepad
+                            input by design, so "which rung" has to be answerable before connecting.
+                        -->
+                        <ComboBox
+                            x:Name="DiagnosticsPicker"
+                            MinWidth="180"
+                            x:Uid="SettingsPage_ShowConnectionDiagnostics" />
+                    </tk:SettingsCard>
+                </StackPanel>
 
                 <!--
-                    The slider sits in the content slot with its value beside it rather than under a header,
-                    because a number that moves needs to be next to the thing moving it.
+                    ============ Account ============
+
+                    NOT first, though it was, and the argument for putting it there was a real one: it is the
+                    only section that changes what the others can do - signed in, pairing stops asking for an
+                    account ID and a console off this network can still be woken.
+
+                    That is about capability, not about use. LAN play against a paired console needs none of it,
+                    the README says so outright, and a settings page that opens on a sign-in prompt makes an
+                    optional account read as a prerequisite. Ordering follows what people change; a
+                    cross-cutting enabler does not earn the top by being cross-cutting.
                 -->
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_StartingRateRipcordLowers">
-                    <StackPanel
-                        Orientation="Horizontal"
-                        Spacing="12"
-                        VerticalAlignment="Center">
-                        <Slider
-                            x:Name="BitrateSlider"
-                            MinWidth="220"
-                            VerticalAlignment="Center"
-                            x:Uid="SettingsPage_MaximumBitrateMegabitsPer"
-                            Maximum="40"
-                            Minimum="2"
-                            StepFrequency="1" />
-                        <TextBlock
-                            x:Name="BitrateValueText"
-                            MinWidth="72"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource BodyStrongTextBlockStyle}" />
-                    </StackPanel>
-                </tk:SettingsCard>
+                <StackPanel Spacing="4">
+                    <TextBlock x:Uid="SettingsPage_Account" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
+                    <tk:SettingsCard x:Uid="SettingsPage_PlaystationNetwork" x:Name="AccountCard">
+                        <tk:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE77B;" />
+                        </tk:SettingsCard.HeaderIcon>
 
-                <tk:SettingsCard x:Uid="SettingsPage_HowStreamScaledUp">
-                    <ComboBox
-                        x:Name="UpscaleCombo"
-                        MinWidth="180"
-                        x:Uid="SettingsPage_ImageScaling" />
-                </tk:SettingsCard>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ProgressRing x:Name="AccountBusy" Width="20" Height="20" IsActive="False" />
+                            <Button x:Uid="SettingsPage_SignIn" x:Name="SignInButton" />
+                            <Button x:Uid="SettingsPage_SignOut" x:Name="SignOutButton" Visibility="Collapsed" />
+                        </StackPanel>
+                    </tk:SettingsCard>
 
+                    <!--  Only shown when there is something to say — an error, or the account's console list.  -->
+                    <InfoBar
+                        x:Name="AccountError"
+                        IsOpen="False"
+                        IsClosable="False"
+                        Severity="Warning" />
+
+                    <tk:SettingsExpander
+                        x:Name="CloudConsolesExpander"
+                        Visibility="Collapsed"
+                        x:Uid="SettingsPage_ConsolesAccount">
+                        <tk:SettingsExpander.HeaderIcon>
+                            <FontIcon Glyph="&#xE7F4;" />
+                        </tk:SettingsExpander.HeaderIcon>
+                    </tk:SettingsExpander>
+                </StackPanel>
+
+                <!--  ============ Advanced ============  -->
                 <!--
-                    HEVC is offered only when a decoder for it exists on this machine, so the option cannot be
-                    selected into a session that then fails to start. The Description is written from the
-                    view-model, because what it says depends on that answer.
-                -->
-                <tk:SettingsCard x:Uid="SettingsPage_VideoCodec" x:Name="CodecCard">
-                    <ComboBox
-                        x:Name="CodecCombo"
-                        MinWidth="180"
-                        x:Uid="SettingsPage_VideoCodecChoice" />
-                </tk:SettingsCard>
+                    Collapsed, and last. These are the settings a casual player should never scroll past, and
+                    an expander is the ordinary Windows way to say so - it is a Fluent behaviour, which is the
+                    half of the position the app borrows rather than invents.
 
+                    NO SEARCH BOX, and docs/design.md is amended in the same commit for prescribing one.
+                    Twenty settings on one scrolling page do not need search; it is a Windows Settings
+                    mannerism rather than a Fluent behaviour, and the distinction is exactly the line the
+                    design position draws. A search box would also be the only control here that has to be
+                    taught what every setting is called.
+                -->
                 <!--
-                    HDR expands, because the readiness checklist is the reason someone opens it. Four things are
-                    needed and only one of them is this toggle, so a user whose picture stays SDR has no way to
-                    tell WHICH is missing from a sentence listing them all. Each row reports its own state and,
-                    when unmet, says what to do.
-
-                    The console row is deliberately neutral rather than a tick or a cross: whether the PS5 sends
-                    HDR cannot be known until a session runs, and a cross for "unknown" reads as a fault the
-                    user should go and fix.
+                    A SettingsExpander, like the HDR and account rows above it. It was a stock Expander, which drew
+                    a different height, no icon and no description, and nested its rows as cards inside a card, so
+                    the one section a reader opens on purpose looked like it came from another app (visual audit,
+                    2026-10-08).
                 -->
-                <tk:SettingsExpander x:Uid="SettingsPage_RequestHdr">
-                    <ToggleSwitch x:Uid="SettingsPage_RequestHdr2" x:Name="HdrToggle" />
-
+                <tk:SettingsExpander x:Uid="SettingsPage_AdvancedExpander">
+                    <tk:SettingsExpander.HeaderIcon>
+                        <FontIcon Glyph="&#xE9F5;" />
+                    </tk:SettingsExpander.HeaderIcon>
                     <tk:SettingsExpander.Items>
-                        <tk:SettingsCard HorizontalContentAlignment="Left" ContentAlignment="Left">
-                            <StackPanel Spacing="6">
-                                <StackPanel x:Name="HdrChecklist" Spacing="3" />
-                                <TextBlock
-                                    x:Name="HdrHelpText"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
+
+                        <!--  The first-run setup, for anyone who skipped it or wants the picture question again.  -->
+                        <tk:SettingsCard x:Uid="SettingsPage_FirstRunSetup">
+                            <Button x:Uid="SettingsPage_RunSetupAgain" Click="OnRunSetupClick" />
+                        </tk:SettingsCard>
+
+                        <tk:SettingsCard
+                            x:Uid="SettingsPage_AutomaticPicksGpuDriving">
+                            <ComboBox
+                                x:Name="GpuCombo"
+                                MinWidth="180"
+                                x:Uid="SettingsPage_WhichGpuUse" />
+                        </tk:SettingsCard>
+
+                        <!--
+                            Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.
+
+                            The picker sits under its label, full width, rather than beside it. An adapter's name plus
+                            why it is a poor choice runs to eighty characters, and beside the label it squeezed
+                            "Specific adapter" to a letter a line (2026-10-02).
+                        -->
+                        <tk:SettingsCard
+                            x:Name="AdapterCard"
+                            ContentAlignment="Vertical"
+                            HorizontalContentAlignment="Stretch"
+                            x:Uid="SettingsPage_SpecificAdapter"
+                            Visibility="Collapsed">
+                            <ComboBox
+                                x:Name="AdapterCombo"
+                                HorizontalAlignment="Stretch"
+                                x:Uid="SettingsPage_SpecificGraphicsAdapter" />
                         </tk:SettingsCard>
                     </tk:SettingsExpander.Items>
-                </tk:SettingsExpander>
-            </StackPanel>
-
-            <!--  ============ Controls ============  -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Controls" Style="{StaticResource RipcordSectionHeaderStyle}" />
-
-                <!--
-                    Keyboard input is off by default: with a pad connected there is no reason for stray typing to
-                    reach the game, and the default layout overlaps ordinary window shortcuts.
-                -->
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_OffByDefaultPad">
-                    <ToggleSwitch
-                        x:Name="KeyboardToggle"
-                        x:Uid="SettingsPage_SendKeyboardInputConsole" />
-                </tk:SettingsCard>
-
-                <!--
-                    The live pad readout, moved here from the stream's rung 3.
-
-                    It is a CONTROLLER diagnostic, not a stream one: what it answers is "is this pad reaching
-                    Ripcord, and is that stick centred", and both questions are asked while looking at the
-                    bindings rather than while looking at a game. On rung 3 it was competing with twenty
-                    instruments about the picture, on a surface you have to be streaming to open - so the one
-                    place it could not be read was the place somebody would be holding the pad to test it.
-                -->
-                <tk:SettingsCard x:Uid="SettingsPage_LivePadReadout">
-                    <StackPanel MinWidth="260" HorizontalAlignment="Right">
-                        <!--
-                            Says something before the first frame. It was blank until a pad reported, so with none
-                            connected the row read as broken (visual audit, 2026-10-08). The first frame replaces it.
-                        -->
-                        <TextBlock
-                            x:Name="PadButtonsText"
-                            x:Uid="SettingsPage_PadReadoutWaiting"
-                            HorizontalAlignment="Right"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            x:Name="PadSticksText"
-                            HorizontalAlignment="Right"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                </tk:SettingsCard>
-
-                <tk:SettingsCard x:Uid="SettingsPage_KeysGamepadMapping" x:Name="KeyBindingsCard">
-                    <Button
-                        x:Name="KeyBindingsButton"
-                        Click="KeyBindings_Click"
-                        x:Uid="SettingsPage_Configure" />
-                </tk:SettingsCard>
-
-                <tk:SettingsCard x:Uid="SettingsPage_LeaveStreamController" x:Name="ExitGestureCard">
-                    <ComboBox
-                        x:Name="ExitGestureCombo"
-                        MinWidth="180"
-                        x:Uid="SettingsPage_LeaveStreamChoice" />
-                </tk:SettingsCard>
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_HowFarMustPush">
-                    <StackPanel
-                        Orientation="Horizontal"
-                        Spacing="12"
-                        VerticalAlignment="Center">
-                        <Slider
-                            x:Name="DeadzoneSlider"
-                            MinWidth="220"
-                            VerticalAlignment="Center"
-                            x:Uid="SettingsPage_MenuStickSensitivity"
-                            Maximum="0.9"
-                            Minimum="0.1"
-                            StepFrequency="0.05" />
-                        <TextBlock
-                            x:Name="DeadzoneValueText"
-                            MinWidth="72"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource BodyStrongTextBlockStyle}" />
-                    </StackPanel>
-                </tk:SettingsCard>
-            </StackPanel>
-
-            <!--  ============ When you play ============  -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_WhenYouPlay" Style="{StaticResource RipcordSectionHeaderStyle}" />
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_HidesTitleBarNavigation">
-                    <ToggleSwitch
-                        x:Name="FullScreenToggle"
-                        x:Uid="SettingsPage_FullScreenWhenStream" />
-                </tk:SettingsCard>
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_ConfirmsWhenEndStream">
-                    <ToggleSwitch
-                        x:Name="ConfirmOnDisconnectToggle"
-                        x:Uid="SettingsPage_AskBeforeDisconnecting" />
-                </tk:SettingsCard>
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_DefaultAnswerRestMode">
-                    <ToggleSwitch
-                        x:Name="RestOnDisconnectToggle"
-                        x:Uid="SettingsPage_RestConsoleWhenI" />
-                </tk:SettingsCard>
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_FrameRateLatencyPacket">
-                    <!--
-                        A picker, not a switch: there are three answers now. It is also the only control a
-                        pad-only player has over the HUD, since nothing in the stream layer takes gamepad
-                        input by design, so "which rung" has to be answerable before connecting.
-                    -->
-                    <ComboBox
-                        x:Name="DiagnosticsPicker"
-                        MinWidth="180"
-                        x:Uid="SettingsPage_ShowConnectionDiagnostics" />
-                </tk:SettingsCard>
-            </StackPanel>
-
-            <!--
-                ============ Account ============
-
-                NOT first, though it was, and the argument for putting it there was a real one: it is the
-                only section that changes what the others can do - signed in, pairing stops asking for an
-                account ID and a console off this network can still be woken.
-
-                That is about capability, not about use. LAN play against a paired console needs none of it,
-                the README says so outright, and a settings page that opens on a sign-in prompt makes an
-                optional account read as a prerequisite. Ordering follows what people change; a
-                cross-cutting enabler does not earn the top by being cross-cutting.
-            -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Account" Style="{StaticResource RipcordSectionHeaderStyle}" />
-
-                <tk:SettingsCard x:Uid="SettingsPage_PlaystationNetwork" x:Name="AccountCard">
-                    <tk:SettingsCard.HeaderIcon>
-                        <FontIcon Glyph="&#xE77B;" />
-                    </tk:SettingsCard.HeaderIcon>
-
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <ProgressRing x:Name="AccountBusy" Width="20" Height="20" IsActive="False" />
-                        <Button x:Uid="SettingsPage_SignIn" x:Name="SignInButton" />
-                        <Button x:Uid="SettingsPage_SignOut" x:Name="SignOutButton" Visibility="Collapsed" />
-                    </StackPanel>
-                </tk:SettingsCard>
-
-                <!--  Only shown when there is something to say — an error, or the account's console list.  -->
-                <InfoBar
-                    x:Name="AccountError"
-                    IsOpen="False"
-                    IsClosable="False"
-                    Severity="Warning" />
-
-                <tk:SettingsExpander
-                    x:Name="CloudConsolesExpander"
-                    Visibility="Collapsed"
-                    x:Uid="SettingsPage_ConsolesAccount">
-                    <tk:SettingsExpander.HeaderIcon>
-                        <FontIcon Glyph="&#xE7F4;" />
-                    </tk:SettingsExpander.HeaderIcon>
-                </tk:SettingsExpander>
-            </StackPanel>
-
-            <!--  ============ Advanced ============  -->
-            <!--
-                Collapsed, and last. These are the settings a casual player should never scroll past, and
-                an expander is the ordinary Windows way to say so - it is a Fluent behaviour, which is the
-                half of the position the app borrows rather than invents.
-
-                NO SEARCH BOX, and docs/design.md is amended in the same commit for prescribing one.
-                Twenty settings on one scrolling page do not need search; it is a Windows Settings
-                mannerism rather than a Fluent behaviour, and the distinction is exactly the line the
-                design position draws. A search box would also be the only control here that has to be
-                taught what every setting is called.
-            -->
-            <!--
-                A SettingsExpander, like the HDR and account rows above it. It was a stock Expander, which drew
-                a different height, no icon and no description, and nested its rows as cards inside a card, so
-                the one section a reader opens on purpose looked like it came from another app (visual audit,
-                2026-10-08).
-            -->
-            <tk:SettingsExpander x:Uid="SettingsPage_AdvancedExpander">
-                <tk:SettingsExpander.HeaderIcon>
-                    <FontIcon Glyph="&#xE9F5;" />
-                </tk:SettingsExpander.HeaderIcon>
-                <tk:SettingsExpander.Items>
-
-                    <!--  The first-run setup, for anyone who skipped it or wants the picture question again.  -->
-                    <tk:SettingsCard x:Uid="SettingsPage_FirstRunSetup">
-                        <Button x:Uid="SettingsPage_RunSetupAgain" Click="OnRunSetupClick" />
-                    </tk:SettingsCard>
-
-                    <tk:SettingsCard
-                        x:Uid="SettingsPage_AutomaticPicksGpuDriving">
-                        <ComboBox
-                            x:Name="GpuCombo"
-                            MinWidth="180"
-                            x:Uid="SettingsPage_WhichGpuUse" />
-                    </tk:SettingsCard>
 
                     <!--
-                        Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.
-
-                        The picker sits under its label, full width, rather than beside it. An adapter's name plus
-                        why it is a poor choice runs to eighty characters, and beside the label it squeezed
-                        "Specific adapter" to a letter a line (2026-10-02).
+                        The two bars go in the footer, not among the items: the expander styles every item as a
+                        SettingsCard, and an InfoBar cannot take that style - opening Advanced crashed the app
+                        (caught while making this change, 2026-10-08).
                     -->
-                    <tk:SettingsCard
-                        x:Name="AdapterCard"
-                        ContentAlignment="Vertical"
-                        HorizontalContentAlignment="Stretch"
-                        x:Uid="SettingsPage_SpecificAdapter"
-                        Visibility="Collapsed">
-                        <ComboBox
-                            x:Name="AdapterCombo"
-                            HorizontalAlignment="Stretch"
-                            x:Uid="SettingsPage_SpecificGraphicsAdapter" />
-                    </tk:SettingsCard>
-                </tk:SettingsExpander.Items>
+                    <tk:SettingsExpander.ItemsFooter>
+                        <StackPanel Padding="16,8" Spacing="8">
+                            <InfoBar
+                                x:Name="AdapterWarning"
+                                IsClosable="False"
+                                IsOpen="False"
+                                Severity="Warning" />
 
-                <!--
-                    The two bars go in the footer, not among the items: the expander styles every item as a
-                    SettingsCard, and an InfoBar cannot take that style - opening Advanced crashed the app
-                    (caught while making this change, 2026-10-08).
-                -->
-                <tk:SettingsExpander.ItemsFooter>
-                    <StackPanel Padding="16,8" Spacing="8">
-                        <InfoBar
-                            x:Name="AdapterWarning"
-                            IsClosable="False"
-                            IsOpen="False"
-                            Severity="Warning" />
-
-                        <!--
-                            Moved here from a section of its own. It is one always-open InfoBar reporting whether
-                            pairing credentials are encrypted at rest - a fact about how the app stores things, which
-                            is what this section is for, and not something a heading of its own made easier to find.
-                        -->
-                        <InfoBar
-                            x:Name="CredentialProtectionBar"
-                            IsClosable="False"
-                            IsOpen="True"
-                            Severity="Informational" />
-                    </StackPanel>
-                </tk:SettingsExpander.ItemsFooter>
-            </tk:SettingsExpander>
-        </StackPanel>
+                            <!--
+                                Moved here from a section of its own. It is one always-open InfoBar reporting whether
+                                pairing credentials are encrypted at rest - a fact about how the app stores things, which
+                                is what this section is for, and not something a heading of its own made easier to find.
+                            -->
+                            <InfoBar
+                                x:Name="CredentialProtectionBar"
+                                IsClosable="False"
+                                IsOpen="True"
+                                Severity="Informational" />
+                        </StackPanel>
+                    </tk:SettingsExpander.ItemsFooter>
+                </tk:SettingsExpander>
+            </StackPanel>
+        </Grid>
     </ScrollViewer>
 </Page>

@@ -123,6 +123,18 @@ public class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task NavigationSounds_AreOnByDefault_AndTheSwitchSavesThem()
+    {
+        (SettingsViewModel vm, RecordingSettingsStore store, _) = await BuildAsync();
+        Assert.True(vm.State.NavigationSounds);
+
+        vm.SetNavigationSounds(false);
+
+        Assert.False(store.Current.NavigationSounds);
+        Assert.False(vm.State.NavigationSounds);
+    }
+
+    [Fact]
     public async Task SetResolution_MapsTheIndexToGeometry()
     {
         // The label/geometry pairing lives in exactly one place, and nothing above the view-model converts
@@ -243,6 +255,28 @@ public class SettingsViewModelTests
         vm.SetCodec(1);
 
         Assert.Contains("ready for HDR", vm.State.HdrHelp);
+    }
+
+    [Fact]
+    public async Task HdrDescription_SaysWhyTheToggleIsGreyedOut()
+    {
+        // A setting that can't be changed says why on its own row, not only inside its collapsed expander
+        // (showcase review, R2).
+        (SettingsViewModel vm, _, _) = await BuildAsync();
+
+        vm.SetCodec(0);
+        Assert.False(vm.State.HdrToggleEnabled);
+        Assert.Contains("Video codec", vm.State.HdrDescription);
+
+        vm.SetCodec(1);
+        Assert.True(vm.State.HdrToggleEnabled);
+        Assert.DoesNotContain("Needs", vm.State.HdrDescription);
+
+        var noDecoder = new SettingsViewModel(
+            new RecordingSettingsStore(), new InMemoryPairedConsoleStore(), new FakeCapabilities { Hevc = false },
+            new ImmediateUiDispatcher());
+        await noDecoder.LoadAsync();
+        Assert.Contains("can't decode", noDecoder.State.HdrDescription);
     }
 
     // ---- graphics adapters ---------------------------------------------------------------------

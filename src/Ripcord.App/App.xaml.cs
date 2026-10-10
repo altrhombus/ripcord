@@ -105,7 +105,11 @@ public partial class App : Application
         var capabilities = new NativeVideoCapabilitiesProbe();
         _services = HalyardAppServices.Create(
             new DispatcherQueueUiDispatcher(uiThread),
-            capabilities);
+            capabilities
+#if DEBUG
+            , registrar: RehearsalRegistrar.IfRequested()
+#endif
+            );
 
         // The sign-in web view's profile, Sony's sign-in cookies included, lives with the rest of the app's data.
         // Left to its default it is a folder beside the exe, which a zip unpacked under Program Files cannot
