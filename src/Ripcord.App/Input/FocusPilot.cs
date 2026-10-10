@@ -528,13 +528,9 @@ public sealed class FocusPilot(
         var peer = FrameworkElementAutomationPeer.FromElement(focused)
             ?? FrameworkElementAutomationPeer.CreatePeerForElement(focused);
 
-        // An activation through the automation peer is silent, unlike a press on the control itself. Not for a menu
-        // item: the menu closing already sounds, and Details, which opens a dialog, was heard as two sounds back to
-        // back (owner, pad pass, 2026-10-09).
-        if (focused is not MenuFlyoutItemBase)
-        {
-            ElementSoundPlayer.Play(ElementSoundKind.Invoke);
-        }
+        // An activation through the automation peer is silent, unlike a press on the control itself. One press, one
+        // sound: a dialog it opens is silent itself (ModalHost).
+        ElementSoundPlayer.Play(ElementSoundKind.Invoke);
 
         if (peer?.GetPattern(PatternInterface.Invoke) is IInvokeProvider invokeProvider)
         {
