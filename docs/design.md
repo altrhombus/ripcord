@@ -170,10 +170,12 @@ already carrying nothing. **Rung 3 claims dead space first and overlays only whe
   leaves 320). Nothing is covered, so it can stay up indefinitely.
 - Taller than 16:9 → the **sheet** in the letterbox bar beneath the picture.
 - Exactly 16:9 → the sheet **overlays**. The only case that does.
-- **A thin bar still takes the sheet** (draft, 2026-10-09, for the owner to judge on a stream). A 1920×1200
-  display leaves 60 px bars, too thin for the sheet, and the panel used to fall back to the side overlay over a
-  fifth of the picture. From 48 px of bar the sheet starts in the bar and rises into the picture only by the
-  rest of its height. Under 48 px (a 1280×800 handheld's 40) it overlays.
+- **The player can move it.** Dragged by its header and resized from any edge, it stays wholly inside the
+  window and is where it was put next stream, kept as a fraction of the room beside it so a corner stays a
+  corner when the window changes size. Wide and short, it lays its groups out as the sheet does. "Put back", or
+  a double-click on the header, returns it to the rule above. Pointer only: nothing on the stream layer takes
+  the pad. Settled 2026-10-09, after a draft that raised the sheet out of a 16:10 display's 60 px bar covered
+  too much picture (owner); a bar that thin keeps the overlay on the left.
 
 One set of facts in two arrangements, not two panels: the same groups reflow from a column into a row. The
 letterbox arithmetic is already being done — the swap chain knows the video size and the panel knows its

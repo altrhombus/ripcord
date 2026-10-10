@@ -207,6 +207,12 @@ public sealed record RipcordSettings
         return updated;
     }
 
+    /// <summary>
+    /// Where the player has put the full diagnostics panel, or null for where it goes by itself (beside the picture
+    /// where there is room, otherwise on the left). See <see cref="PanelFrame"/>.
+    /// </summary>
+    public PanelFrame? DiagnosticsPanelFrame { get; set; }
+
     /// <summary>Larger text and controls, for handhelds and TV viewing distances.</summary>
 
     /// <summary>Build the session configuration these settings describe.</summary>
