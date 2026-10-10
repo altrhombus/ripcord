@@ -578,10 +578,6 @@ name.</comment>
     <value>Waiting for the session to start.</value>
     <comment>Stream-health detail shown before a session exists.</comment>
   </data>
-  <data name="Wake_AskingPsn" xml:space="preserve">
-    <value>Asking PlayStation Network to wake your console…</value>
-    <comment>Progress text while waking a console that is not on this network. 'PlayStation Network' is a product name - do not translate.</comment>
-  </data>
   <data name="Connect_NoConsoleHeadline" xml:space="preserve">
     <value>No console selected</value>
     <comment>Connect sequence: shown when the session page opens without a console.</comment>

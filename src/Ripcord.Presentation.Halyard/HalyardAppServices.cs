@@ -138,11 +138,12 @@ public static class HalyardAppServices
             Scanner = scanner ?? new HalyardConsoleScanner(),
             Registrar = registrar ?? new HalyardConsoleRegistrar(),
             ReachabilityProbe = reachabilityProbe ?? new HalyardReachabilityProbe(),
-            // Local wake first, with the account service as a fallback for a console that is not on this
-            // network. Wrapped here rather than inside the Halyard coordinator so the local path stays free of
-            // any account dependency — a build with no credential behaves exactly as it did.
-            WakeCoordinator = wakeCoordinator
-                ?? new CloudFallbackWakeCoordinator(new HalyardConsoleWakeCoordinator(), resolvedAccount),
+            // The local wake only. A console that is not on this network is woken by the account route's own
+            // connect command, which is the command the console has to answer anyway. A separate remote wake used
+            // to go first: it created a session of its own and sent the console a connect command for it, and the
+            // console joined that one, so the route's messages to it were refused as "Member not joined session."
+            // from rest and even awake (traced from a phone hotspot, 2026-10-10).
+            WakeCoordinator = wakeCoordinator ?? new HalyardConsoleWakeCoordinator(),
         };
     }
 
