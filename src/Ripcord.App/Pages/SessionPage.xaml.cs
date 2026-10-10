@@ -116,7 +116,6 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private string _renderedSummaryPillSignature = string.Empty;
 
-    private double _appliedDiagnosticsInset = 16;
 
     private StreamWriter? _trace;
 
@@ -364,6 +363,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         FadeHudRungs();
 
         _settings = _settingsStore.Current;
+        _panelFrame = _settings.DiagnosticsPanelFrame;
+        WireMovablePanel();
 
         // Re-stated here rather than trusted from construction: the page is built when it is navigated to, and
         // the user may have changed a setting between then and the frame actually loading.
@@ -1170,9 +1171,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// tall narrow column it has always been.
     /// </para>
     /// </summary>
-    private void ApplyDiagnosticsLayout(DiagnosticsPlacement placement)
+    private void ApplyDiagnosticsLayout(bool sheet)
     {
-        bool sheet = placement == DiagnosticsPlacement.Sheet;
         if (sheet == _diagnosticsIsSheet)
         {
             return;
@@ -1203,11 +1203,6 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
             index++;
         }
-
-        // The panel itself: a bar spans the width it was given, a rail keeps the width it was designed for.
-        DiagnosticsPanel.MaxWidth = sheet ? double.PositiveInfinity : 400;
-        DiagnosticsPanel.HorizontalAlignment = sheet ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
-        DiagnosticsPanel.VerticalAlignment = sheet ? VerticalAlignment.Bottom : VerticalAlignment.Top;
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
@@ -1935,14 +1930,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     public void SetBottomInset(double inset) => BottomBand.Margin = new Thickness(0, 0, 0, inset);
 
-    private void ApplyDiagnosticsHeightLimit()
-    {
-        // The panel's own 16px margins top and bottom, plus a little room so it never touches the edge.
-        double available = ActualHeight - 48;
-        DiagnosticsPanel.MaxHeight = available > 120 ? available : 120;
-
-        ApplyDiagnosticsPlacement();
-    }
+    private void ApplyDiagnosticsHeightLimit() => ApplyDiagnosticsPlacement();
 
     /// <summary>
     /// Put the instrument panel where the video isn't.
@@ -1981,14 +1969,17 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             ? pictureWidth
             : double.PositiveInfinity;
 
-        ApplyDiagnosticsLayout(layout.Placement);
+        DiagnosticsPutBackButton.Visibility = Vis(_panelFrame is not null);
 
-        // A sheet must not grow past the bar it is sitting in. Without this it keeps the window-height cap set
-        // above and quietly covers the picture - which is the one thing claiming dead space exists to avoid.
-        if (layout.Placement == DiagnosticsPlacement.Sheet)
+        // Where the player put it, once they have: their size, wholly inside the window.
+        if (_panelFrame is { } frame)
         {
-            DiagnosticsPanel.MaxHeight = Math.Max(120, layout.BarHeight - 32);
+            ApplyPanelRect(MovablePanel.Place(frame, ActualWidth, ActualHeight));
+            return;
         }
+
+        bool sheet = layout.Placement == DiagnosticsPlacement.Sheet;
+        ApplyDiagnosticsLayout(sheet);
 
         // Centre the panel in the pillar it is claiming rather than pinning it to the window edge: a rail
         // hard against the bezel reads as something that fell off the side.
@@ -1996,13 +1987,210 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             ? Math.Max(16, (layout.PillarWidth - panelWidth) / 2)
             : 16;
 
-        // Only when it actually moves. This runs on every state change, and reassigning a Thickness
-        // invalidates layout whether or not the value differs.
-        if (Math.Abs(inset - _appliedDiagnosticsInset) > 0.5)
+        // A bar spans the width it was given, a rail keeps the width it was designed for. A sheet must not grow
+        // past the bar it sits in, or it quietly covers the picture, the one thing claiming dead space exists to
+        // avoid; anything else is bounded by the window, less its 16 px margins and a little room, so its body
+        // scrolls rather than running off the bottom.
+        Assign(DiagnosticsPanel, WidthProperty, double.NaN);
+        Assign(DiagnosticsPanel, HeightProperty, double.NaN);
+        Assign(DiagnosticsPanel, MaxWidthProperty, sheet ? double.PositiveInfinity : 400d);
+        Assign(DiagnosticsPanel, MaxHeightProperty, Math.Max(120, sheet ? layout.BarHeight - 32 : ActualHeight - 48));
+        Assign(DiagnosticsPanel, HorizontalAlignmentProperty, sheet ? HorizontalAlignment.Stretch : HorizontalAlignment.Left);
+        Assign(DiagnosticsPanel, VerticalAlignmentProperty, sheet ? VerticalAlignment.Bottom : VerticalAlignment.Top);
+        Assign(DiagnosticsPanel, MarginProperty, new Thickness(inset, 16, 16, 16));
+    }
+
+    /// <summary>
+    /// Set a property only when it changes. Placement runs on every state change, and reassigning a value
+    /// invalidates layout whether or not it differs.
+    /// </summary>
+    private static void Assign(FrameworkElement element, DependencyProperty property, object value)
+    {
+        if (!Equals(element.GetValue(property), value))
         {
-            _appliedDiagnosticsInset = inset;
-            DiagnosticsPanel.Margin = new Thickness(inset, 16, 16, 16);
+            element.SetValue(property, value);
         }
+    }
+
+    // ---- the movable panel ----
+    //
+    // The full panel goes where HudPlacement puts it until the player moves it: dragged by its header, resized from
+    // any edge, and kept from one stream to the next (owner, 2026-10-09). "Put back", or a double-click on the
+    // header, returns it. Pointer only; nothing on the stream layer takes the pad, by design.
+
+    // Where the player put it, or null for where it goes by itself.
+    private PanelFrame? _panelFrame;
+    private bool _panelDragging;
+    private PanelEdges _panelGrip;
+    private PanelRect _panelDragStart;
+    private Windows.Foundation.Point _panelPointerStart;
+
+    private void ApplyPanelRect(PanelRect rect)
+    {
+        ApplyDiagnosticsLayout(MovablePanel.ArrangesAsRow(rect.Width, rect.Height));
+        Assign(DiagnosticsPanel, MaxWidthProperty, double.PositiveInfinity);
+        Assign(DiagnosticsPanel, MaxHeightProperty, double.PositiveInfinity);
+        Assign(DiagnosticsPanel, WidthProperty, rect.Width);
+        Assign(DiagnosticsPanel, HeightProperty, rect.Height);
+        Assign(DiagnosticsPanel, HorizontalAlignmentProperty, HorizontalAlignment.Left);
+        Assign(DiagnosticsPanel, VerticalAlignmentProperty, VerticalAlignment.Top);
+        Assign(DiagnosticsPanel, MarginProperty, new Thickness(rect.Left, rect.Top, 0, 0));
+    }
+
+    private void WireMovablePanel()
+    {
+        // handledEventsToo: the scroller inside takes its own presses, and an edge runs along it.
+        DiagnosticsPanel.AddHandler(PointerPressedEvent, new PointerEventHandler(OnPanelPointerPressed), true);
+        DiagnosticsPanel.AddHandler(PointerMovedEvent, new PointerEventHandler(OnPanelPointerMoved), true);
+        DiagnosticsPanel.AddHandler(PointerReleasedEvent, new PointerEventHandler(OnPanelPointerReleased), true);
+        DiagnosticsPanel.PointerCaptureLost += (_, _) => EndPanelDrag();
+        DiagnosticsPanel.PointerExited += (_, _) =>
+        {
+            if (!_panelDragging)
+            {
+                ProtectedCursor = null;
+            }
+        };
+        DiagnosticsHeader.DoubleTapped += (_, e) =>
+        {
+            if (!IsInsideButton(e.OriginalSource))
+            {
+                e.Handled = true;
+                PutPanelBack();
+            }
+        };
+    }
+
+    private void OnPanelPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        Microsoft.UI.Input.PointerPoint point = e.GetCurrentPoint(DiagnosticsPanel);
+        if (_panelDragging || !point.Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        PanelEdges edges = MovablePanel.EdgesAt(
+            DiagnosticsPanel.ActualWidth, DiagnosticsPanel.ActualHeight, point.Position.X, point.Position.Y);
+        if (edges == PanelEdges.None && (!IsInsideHeader(e) || IsInsideButton(e.OriginalSource)))
+        {
+            return;
+        }
+
+        Windows.Foundation.Point origin = DiagnosticsPanel.TransformToVisual(this).TransformPoint(default);
+        _panelDragStart = new PanelRect(origin.X, origin.Y, DiagnosticsPanel.ActualWidth, DiagnosticsPanel.ActualHeight);
+        _panelPointerStart = e.GetCurrentPoint(this).Position;
+        _panelGrip = edges;
+        _panelDragging = DiagnosticsPanel.CapturePointer(e.Pointer);
+        e.Handled = _panelDragging;
+    }
+
+    private void OnPanelPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_panelDragging)
+        {
+            Windows.Foundation.Point over = e.GetCurrentPoint(DiagnosticsPanel).Position;
+            PanelEdges edges = MovablePanel.EdgesAt(DiagnosticsPanel.ActualWidth, DiagnosticsPanel.ActualHeight, over.X, over.Y);
+            ProtectedCursor = CursorFor(edges, edges == PanelEdges.None && IsInsideHeader(e) && !IsInsideButton(e.OriginalSource));
+            return;
+        }
+
+        Windows.Foundation.Point now = e.GetCurrentPoint(this).Position;
+        double dx = now.X - _panelPointerStart.X;
+        double dy = now.Y - _panelPointerStart.Y;
+        PanelRect rect = _panelGrip == PanelEdges.None
+            ? MovablePanel.Move(_panelDragStart, dx, dy, ActualWidth, ActualHeight)
+            : MovablePanel.Resize(_panelDragStart, _panelGrip, dx, dy, ActualWidth, ActualHeight);
+
+        _panelFrame = MovablePanel.ToFrame(rect, ActualWidth, ActualHeight);
+        DiagnosticsPutBackButton.Visibility = Visibility.Visible;
+        ApplyPanelRect(rect);
+        e.Handled = true;
+    }
+
+    private void OnPanelPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_panelDragging)
+        {
+            DiagnosticsPanel.ReleasePointerCapture(e.Pointer);
+            EndPanelDrag();
+            e.Handled = true;
+        }
+    }
+
+    private void EndPanelDrag()
+    {
+        if (!_panelDragging)
+        {
+            return;
+        }
+
+        _panelDragging = false;
+        ProtectedCursor = null;
+        SavePanelFrame();
+        FocusStreamSurface();
+    }
+
+    private void DiagnosticsPutBackButton_Click(object sender, RoutedEventArgs e)
+    {
+        PutPanelBack();
+        FocusStreamSurface();
+    }
+
+    private void PutPanelBack()
+    {
+        _panelFrame = null;
+        SavePanelFrame();
+        ApplyDiagnosticsPlacement();
+    }
+
+    /// <summary>Kept for the next stream. Saved once a drag ends, never per move.</summary>
+    private void SavePanelFrame()
+    {
+        try
+        {
+            _settingsStore.Save(_settingsStore.Current with { DiagnosticsPanelFrame = _panelFrame });
+        }
+        catch (Exception)
+        {
+            // Where it sits now is still right; only the next stream would not remember it.
+        }
+    }
+
+    private bool IsInsideHeader(PointerRoutedEventArgs e)
+    {
+        Windows.Foundation.Point p = e.GetCurrentPoint(DiagnosticsHeader).Position;
+        return p.X >= 0 && p.Y >= 0 && p.X <= DiagnosticsHeader.ActualWidth && p.Y <= DiagnosticsHeader.ActualHeight;
+    }
+
+    private bool IsInsideButton(object source)
+    {
+        for (DependencyObject? node = source as DependencyObject;
+             node is not null && !ReferenceEquals(node, DiagnosticsPanel);
+             node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is Microsoft.UI.Xaml.Controls.Primitives.ButtonBase)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Microsoft.UI.Input.InputCursor? CursorFor(PanelEdges edges, bool header)
+    {
+        Microsoft.UI.Input.InputSystemCursorShape? shape = edges switch
+        {
+            PanelEdges.Left | PanelEdges.Top or PanelEdges.Right | PanelEdges.Bottom
+                => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthwestSoutheast,
+            PanelEdges.Right | PanelEdges.Top or PanelEdges.Left | PanelEdges.Bottom
+                => Microsoft.UI.Input.InputSystemCursorShape.SizeNortheastSouthwest,
+            PanelEdges.Left or PanelEdges.Right => Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast,
+            PanelEdges.Top or PanelEdges.Bottom => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthSouth,
+            _ => header ? Microsoft.UI.Input.InputSystemCursorShape.SizeAll : null,
+        };
+
+        return shape is { } s ? Microsoft.UI.Input.InputSystemCursor.Create(s) : null;
     }
 
     private void SaveDiagnosticsAccelerator_Invoked(

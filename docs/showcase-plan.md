@@ -190,11 +190,12 @@ on each focused control.
 
 ## 7. Leftovers
 
-**Done 2026-10-09, one part a draft.**
+**Done 2026-10-09.**
 
 - **Rung 3 on 16:10** (audit C6): the letterbox bars are 60 px, too small for the sheet. A compact one-row
-  sheet that fits a 60 px bar, so the overlay stays the 16:9-only case. *Drafted differently:* the sheet starts
-  in the bar and rises into the picture only by the rest of its height. For the owner to judge on a stream.
+  sheet that fits a 60 px bar, so the overlay stays the 16:9-only case. *Drafted differently,* rising out of
+  the bar, and reverted: it covered too much picture (owner, on a stream). *Instead* the panel keeps the overlay
+  on the left and the player can move and resize it; see `design.md`.
 - **The High Contrast app icon:** contrast-qualified tile assets for the Store build, and a runtime icon swap
   for the zip build. *Done.*
 - **The title-bar buttons at 200%** (audit S1): compare against the WinUI Gallery before touching it.

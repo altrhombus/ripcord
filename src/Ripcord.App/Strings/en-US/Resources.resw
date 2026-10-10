@@ -752,6 +752,14 @@
     <value>loss</value>
     <comment>Label under the packet loss percentage on the stream diagnostics summary.</comment>
   </data>
+  <data name="SessionPage_DiagnosticsPutBack.Content" xml:space="preserve">
+    <value>Put back</value>
+    <comment>A button on the stream's diagnostics panel, shown once the player has moved or resized it.</comment>
+  </data>
+  <data name="SessionPage_DiagnosticsPutBack.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Put the panel back where it goes by itself</value>
+    <comment>Tooltip for the Put back button on the stream's diagnostics panel.</comment>
+  </data>
   <data name="SessionPage_DiagnosticsLess.Content" xml:space="preserve">
     <value>Less</value>
     <comment>Button in the full instrument panel that goes back to the summary strip. The inverse of
