@@ -47,8 +47,10 @@ public sealed partial class AddConsolePage : Page, IStepBack
     // Guards against a second navigation if Completed were ever raised twice.
     private bool _leaving;
 
-    // What FocusForStep last seeded, so focus moves on a step change and not on every state change.
+    // What FocusForStep last seeded, so focus moves on a step change and not on every state change. The
+    // control too: on the link step, what there is to press changes without the step changing.
     private AddConsoleStep? _focusedStep;
+    private Control? _focusedTarget;
 
     // Keeps the caret on the same discovered console when the list reorders around it.
     private FocusAnchor? _discoveryAnchor;
@@ -389,17 +391,14 @@ public sealed partial class AddConsolePage : Page, IStepBack
     {
         AddConsoleStep step = s.Step;
 
-        if (_focusedStep == step)
-        {
-            return;
-        }
-
         Control? target = step switch
         {
-            // The one case where the step alone does not decide: a signed-in user whose console the account
-            // already knows never types a code, so seeding the code box would put the caret in a field they
-            // will not use.
-            AddConsoleStep.Link when s.CanPairWithAccount => SecondaryButton,
+            // The one step the step alone does not decide. A signed-in player whose console the account knows
+            // never types a code, so seeding the code box would put the caret in a field they will not use; it
+            // was SecondaryButton, which this step never shows, so focus fell to Back after signing in (owner,
+            // pad pass, 2026-10-09). Signed out, the offer to sign in leads, and the code box is hidden.
+            AddConsoleStep.Link when s.SignInLeads => SignInLeadButton,
+            AddConsoleStep.Link when s.Route == PairingRoute.Account && s.CanPairWithAccount => PrimaryButton,
             AddConsoleStep.Family => Ps5Button,
             AddConsoleStep.Link => PasscodeBox,
 
@@ -433,6 +432,12 @@ public sealed partial class AddConsolePage : Page, IStepBack
             _ => null,
         };
 
+        if (_focusedStep == step && (step != AddConsoleStep.Link || ReferenceEquals(_focusedTarget, target)
+                                     || IsTypingInto()))
+        {
+            return;
+        }
+
         // Recorded only once focus has actually landed. The first render runs from OnNavigatedTo, before the
         // page is in the tree, where Focus() returns false; marking the step seeded then meant it was never
         // seeded at all, and a pad arrived on the Find step with focus nowhere (2026-10-08). The flow starts
@@ -440,6 +445,7 @@ public sealed partial class AddConsolePage : Page, IStepBack
         if (target is null || target.Focus(FocusState.Keyboard))
         {
             _focusedStep = step;
+            _focusedTarget = target;
 
             // Seeded on Rescan because nothing has answered yet: the first console that does may take focus.
             _awaitingFirstResult = step == AddConsoleStep.Find && ReferenceEquals(target, RescanButton);
@@ -450,6 +456,19 @@ public sealed partial class AddConsolePage : Page, IStepBack
             }
         }
     }
+
+    /// <summary>
+    /// Whether the player has started typing into a field, which a change on the link step must not pull them
+    /// out of: the account lookup landing while somebody types the code would otherwise move them to "Pair with
+    /// my account" mid-code.
+    /// </summary>
+    private bool IsTypingInto()
+        => XamlRoot is not null && FocusManager.GetFocusedElement(XamlRoot) switch
+        {
+            TextBox box => box.Text.Length > 0,
+            PasswordBox box => box.Password.Length > 0,
+            _ => false,
+        };
 
     // ----------------------------------------------------------------------------------------------------
     // 1. Which console

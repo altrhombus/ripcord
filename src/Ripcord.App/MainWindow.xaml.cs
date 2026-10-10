@@ -115,7 +115,11 @@ public sealed partial class MainWindow : Window, IShellNavigator
         }
 
         _settingsStore.Changed += s =>
-            Post(() => _input.UseDeadzone(s.UiStickDeadzone));
+            Post(() =>
+            {
+                _input.UseDeadzone(s.UiStickDeadzone);
+                UseNavigationSounds(_input.Mode);
+            });
 
         _focus = new FocusPilot(
             contentRoot: () => Content as FrameworkElement,
@@ -428,10 +432,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Windows' own navigation sounds, while a pad is in use and never otherwise: the convention the Xbox shell
     /// set, where moving and pressing click and a mouse stays silent (showcase plan, decision D: try it and decide
     /// by ear). ElementSoundPlayer plays only for its own controls' gestures, so FocusPilot plays the moves and
-    /// presses the pad makes through it.
+    /// presses the pad makes through it. Settings can turn them off.
     /// </summary>
-    private static void UseNavigationSounds(InputMode mode)
-        => ElementSoundPlayer.State = mode == InputMode.Controller ? ElementSoundPlayerState.On : ElementSoundPlayerState.Off;
+    private void UseNavigationSounds(InputMode mode)
+        => ElementSoundPlayer.State = mode == InputMode.Controller && _settingsStore.Current.NavigationSounds
+            ? ElementSoundPlayerState.On
+            : ElementSoundPlayerState.Off;
 
     /// <summary>
     /// The smallest the window may be made, in effective pixels. Below it the console card's play mark was cut

@@ -284,6 +284,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
     public void SetConfirmOnDisconnect(bool on) => Apply(() => _draft with { ConfirmOnDisconnect = on });
 
+    public void SetNavigationSounds(bool on) => Apply(() => _draft with { NavigationSounds = on });
+
     public void SetRestOnDisconnect(bool on) => Apply(() => _draft with { RestConsoleOnDisconnect = on });
 
     /// <summary>
@@ -442,6 +444,7 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
             FullScreenOnConnect: _draft.FullScreenOnConnect,
             ConfirmOnDisconnect: _draft.ConfirmOnDisconnect,
+            NavigationSounds: _draft.NavigationSounds,
             RestConsoleOnDisconnect: _draft.RestConsoleOnDisconnect,
             DiagnosticsOptions: DiagnosticsLabels,
             DiagnosticsIndex: Array.IndexOf(DiagnosticsRungs, _draft.DiagnosticsRungOnConnect),

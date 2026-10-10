@@ -381,7 +381,7 @@ Settled 2026-10-09. A and B do the same thing on every screen, and the screen sa
   checkbox "Toggle", a text field "Type", a drop-down "Open", anything else "Select". Only the verb changes,
   so the bar keeps its shape as focus moves.
 - **Moving with a pad clicks.** Windows' own navigation sounds, on while a pad is in use and off for the mouse
-  and keyboard, as the Xbox shell does (decision D, kept by ear).
+  and keyboard, as the Xbox shell does (decision D, kept by ear). A switch under Controls turns them off.
 - **Left and Right stay in the row** when there's somewhere in it to go, rather than jumping to whatever is
   nearest, such as the title bar's gear.
 - **Keyboard:** Ctrl+, opens Settings, F11 toggles full screen, Esc steps back a level, and Tab follows the

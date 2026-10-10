@@ -246,6 +246,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         KeyboardToggle.Toggled += (_, _) => Edit(() => _viewModel.SetKeyboardEnabled(KeyboardToggle.IsOn));
         FullScreenToggle.Toggled += (_, _) => Edit(() => _viewModel.SetFullScreenOnConnect(FullScreenToggle.IsOn));
         ConfirmOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetConfirmOnDisconnect(ConfirmOnDisconnectToggle.IsOn));
+        NavigationSoundsToggle.Toggled += (_, _) => Edit(() => _viewModel.SetNavigationSounds(NavigationSoundsToggle.IsOn));
         RestOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetRestOnDisconnect(RestOnDisconnectToggle.IsOn));
         DiagnosticsPicker.SelectionChanged += (_, _) =>
             Edit(() => _viewModel.SetDiagnosticsRung(DiagnosticsPicker.SelectedIndex));
@@ -374,6 +375,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
 
             FullScreenToggle.IsOn = s.FullScreenOnConnect;
             ConfirmOnDisconnectToggle.IsOn = s.ConfirmOnDisconnect;
+            NavigationSoundsToggle.IsOn = s.NavigationSounds;
             RestOnDisconnectToggle.IsOn = s.RestConsoleOnDisconnect;
             FillCombo(DiagnosticsPicker, s.DiagnosticsOptions, s.DiagnosticsIndex);
 

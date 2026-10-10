@@ -119,6 +119,10 @@ public sealed record RipcordSettings
     /// Turn off to leave instantly using <see cref="RestConsoleOnDisconnect"/> as the standing answer.</summary>
     public bool ConfirmOnDisconnect { get; set; } = true;
 
+    /// <summary>Windows' navigation sounds while a controller is in use (never for the mouse or keyboard). On by
+    /// default, the console convention; a switch because a sound is the one thing a player can't look away from.</summary>
+    public bool NavigationSounds { get; set; } = true;
+
     // ---- device ----
 
     public GpuPreference GpuPreference { get; set; } = GpuPreference.Auto;

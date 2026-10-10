@@ -76,6 +76,7 @@ public sealed record SettingsViewState(
     string ExitGestureDescription,
     double UiStickDeadzone,
     string DeadzoneLabel,
+    bool NavigationSounds,
 
     // ---- session behaviour ----
     bool FullScreenOnConnect,

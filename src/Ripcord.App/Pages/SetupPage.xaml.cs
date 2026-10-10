@@ -283,7 +283,9 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     /// </summary>
     private void SeedFocus(Control target)
     {
-        target.Focus(FocusState.Programmatic);
+        // Keyboard, never Programmatic, as everywhere else that seeds focus: Programmatic draws no focus ring, and a
+        // pad went through every step not seeing where it was (owner, pad pass, 2026-10-09).
+        target.Focus(FocusState.Keyboard);
 
         void Recheck(object? sender, object e)
         {
@@ -293,7 +295,7 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
                 if (XamlRoot is not null && target.IsEnabled
                     && !ReferenceEquals(Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(XamlRoot), target))
                 {
-                    target.Focus(FocusState.Programmatic);
+                    target.Focus(FocusState.Keyboard);
                 }
             });
         }
