@@ -314,10 +314,14 @@ editorialising; account-tier caveats belong in `README.md`'s limits section, whe
 
 **The celebration.** Personality has three rooms — first run, a successful pair, and the wake wait. Pairing
 earns the largest because it happens once per console, it is the only moment the player did something that
-could have failed, and the reward is why they installed the app. The full mark assembles at hero size: the
-wedge, then the trail. "Paired." with a period, never "Success!". The record is already on disk by the time
-this screen appears, so **Done** is a peer of **Play now** rather than a save button. "Play now" is a
-`WedgeButton` and has focus.
+could have failed, and the reward is why they installed the app. The full mark assembles, the wedge and then
+the trail, above "Paired." with a period, never "Success!". The record is already on disk by the time this
+screen appears, so **Done** is a peer of **Play now** rather than a save button. "Play now" is a `WedgeButton`
+and has focus.
+
+It stays a step of Add a console, in the page's column under its title, rather than becoming a centred room
+like Welcome (owner, 2026-10-09, having seen both). The mark assembling and the wedge on "Play now" are the
+celebration; the step around it keeps the player where they were.
 
 ## Settings
 
