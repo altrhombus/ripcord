@@ -271,9 +271,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     }
 
     /// <summary>
-    /// The HUD's rungs fade in and out rather than cutting (showcase plan, part 5). Opacity only, over the video, as
-    /// Ripcord.Motion.xaml requires, and done by the compositor on the visibility change, so nothing in Render has
-    /// to know. Not set at all with Windows' animation effects off.
+    /// The HUD's rungs fade in and out rather than cutting (showcase plan, part 5): opacity only, over the video, as
+    /// Ripcord.Motion.xaml requires. Set once; <see cref="ShowRung"/> does the rest. Not set at all with Windows'
+    /// animation effects off.
     /// </summary>
     private void FadeHudRungs()
     {
@@ -282,25 +282,80 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             return;
         }
 
-        Microsoft.UI.Composition.Compositor compositor =
-            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(this).Compositor;
-        TimeSpan length = AppMotion.Duration("RipcordDurationStateChange");
-
-        Microsoft.UI.Composition.ScalarKeyFrameAnimation Fade(float from, float to)
-        {
-            Microsoft.UI.Composition.ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
-            fade.Target = "Opacity";
-            fade.InsertKeyFrame(0f, from);
-            fade.InsertKeyFrame(1f, to);
-            fade.Duration = length;
-            return fade;
-        }
-
         foreach (UIElement rung in new UIElement[] { HealthAlert, DiagnosticsSummary, DiagnosticsPanel })
         {
-            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetImplicitShowAnimation(rung, Fade(0f, 1f));
-            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetImplicitHideAnimation(rung, Fade(1f, 0f));
+            rung.OpacityTransition = new ScalarTransition { Duration = AppMotion.Duration("RipcordDurationStateChange") };
         }
+    }
+
+    // What each rung was last asked to be, so a render that changes nothing starts nothing.
+    private readonly Dictionary<UIElement, bool> _rungShown = [];
+
+    /// <summary>
+    /// Show or hide a rung of the HUD, fading.
+    ///
+    /// <para>
+    /// The fade was the compositor's implicit show and hide animations, and it read as no fade at all, and as the
+    /// summary sliding down as it went (owner, stream, 2026-10-09): a rung collapses at once, so the bottom band's
+    /// auto-height row shrank under the summary while it was still fading. Now a rung keeps its place while it
+    /// fades, and collapses after, when there is nothing left to see move.
+    /// </para>
+    /// </summary>
+    private void ShowRung(UIElement rung, bool show)
+    {
+        if (_rungShown.TryGetValue(rung, out bool was) && was == show)
+        {
+            return;
+        }
+
+        _rungShown[rung] = show;
+
+        if (rung.OpacityTransition is not { } fade)
+        {
+            rung.Opacity = 1;
+            rung.Visibility = Vis(show);
+            return;
+        }
+
+        if (show)
+        {
+            rung.IsHitTestVisible = true;
+            if (rung.Visibility == Visibility.Collapsed)
+            {
+                // From nothing: snap to clear without the transition, lay it out, then fade it in.
+                rung.OpacityTransition = null;
+                rung.Opacity = 0;
+                rung.OpacityTransition = fade;
+                rung.Visibility = Visibility.Visible;
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                {
+                    if (_rungShown[rung])
+                    {
+                        rung.Opacity = 1;
+                    }
+                });
+            }
+            else
+            {
+                rung.Opacity = 1;
+            }
+
+            return;
+        }
+
+        rung.IsHitTestVisible = false;
+        rung.Opacity = 0;
+        DispatcherQueueTimer done = DispatcherQueue.CreateTimer();
+        done.Interval = fade.Duration;
+        done.IsRepeating = false;
+        done.Tick += (_, _) =>
+        {
+            if (!_rungShown[rung])
+            {
+                rung.Visibility = Visibility.Collapsed;
+            }
+        };
+        done.Start();
     }
 
     private void Page_Loaded(object sender, RoutedEventArgs e)
@@ -818,7 +873,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // Rung 1. Cheap enough to keep current unconditionally, unlike the panel below: it is two
         // properties, and it has to be right the instant it becomes visible.
-        HealthAlert.Visibility = Vis(s.AlertVisible);
+        ShowRung(HealthAlert, s.AlertVisible);
         if (s.AlertVisible)
         {
             // The NOTICE, not the bare verdict: a verdict plus one clause saying what to do about it. Rung 1
@@ -843,8 +898,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         // The decoded size is not known until the first frame, so placement cannot be settled at load.
         ApplyDiagnosticsPlacement();
 
-        DiagnosticsSummary.Visibility = Vis(s.Rung == DiagnosticsRung.Summary);
-        DiagnosticsPanel.Visibility = Vis(s.Rung == DiagnosticsRung.Full);
+        ShowRung(DiagnosticsSummary, s.Rung == DiagnosticsRung.Summary);
+        ShowRung(DiagnosticsPanel, s.Rung == DiagnosticsRung.Full);
 
         if (s.Rung == DiagnosticsRung.Summary)
         {
