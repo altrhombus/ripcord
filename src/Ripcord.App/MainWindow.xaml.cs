@@ -377,6 +377,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
         if (args.DidPresenterChange)
         {
             ApplyMinimumSize();
+
+            // Back from full screen, where the caption strip was cleared: the title bar sets its own again.
+            if (!IsFullScreen)
+            {
+                Post(DispatcherQueuePriority.Low, () => SetTitleBar(AppTitleBar));
+            }
         }
 
         if ((args.DidPresenterChange || args.DidSizeChange) && IsFullScreen)
@@ -386,6 +392,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 if (IsFullScreen)
                 {
                     ContentBridge.PinToClientArea(WinRT.Interop.WindowNative.GetWindowHandle(this));
+                    ClearCaptionRegion();
                 }
             });
         }
@@ -662,6 +669,24 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         Grid.SetRow(StreamFrame, fullScreen ? 0 : 1);
         Grid.SetRowSpan(StreamFrame, fullScreen ? 2 : 1);
+    }
+
+    /// <summary>
+    /// Full screen has no title bar, but the window kept a caption strip across its top, so a press there moved the
+    /// window: the stream's diagnostics panel sits in it, and dragging it by its header dragged Ripcord instead
+    /// (owner, 2026-10-09). Cleared while full screen; the title bar sets its own again when it is back.
+    /// </summary>
+    private void ClearCaptionRegion()
+    {
+        try
+        {
+            Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(AppWindow.Id)
+                .SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Caption, []);
+        }
+        catch (Exception)
+        {
+            // Only a drag that lands on the window instead; nothing to recover.
+        }
     }
 
     private void TitleBar_BackRequested(TitleBar sender, object args) => GoBack();
