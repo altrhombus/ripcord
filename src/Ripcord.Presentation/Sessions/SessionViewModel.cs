@@ -84,6 +84,12 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     // A picture has been shown, so a frozen frame is what any later status sits on; see StatusOverPicture.
     private bool _hasShownPicture;
 
+    // The session is reconnecting, which is when the way out reads "Stop trying" (design.md; owner, 2026-10-09).
+    private bool _reconnecting;
+
+    // When the current wake began, for the one line a long wake earns; see TickConnect.
+    private DateTimeOffset? _wakingSince;
+
     // ConnectPlan.Notice, shown under each "Connecting" and "Reconnecting" of this stream. Set on the UI thread
     // before the session starts, so the status callbacks that read it come after the write.
     private string? _connectNotice;
@@ -320,6 +326,20 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             Apply(shown);
         }
 
+        // One line, once, on a wake that has run long: the headline stays "Waking your console…" and the
+        // detail says the wait is expected. It used to change the headline to "Waiting for the console to
+        // wake…", which said nothing new and read as a different, worse state (visual audit, 2026-10-08).
+        string note = Strings.Connect_WakeTakesAWhile;
+        if (_phase == ConnectPhase.Waking
+            && !_statusTerminal
+            && _wakingSince is { } since
+            && _clock() - since >= WakeNoteAfter
+            && !_statusDetail.Contains(note, StringComparison.Ordinal))
+        {
+            string detail = $"{_statusDetail} {note}".Trim();
+            Mutate(() => _statusDetail = detail);
+        }
+
         // The way out, once a connect has run long enough to feel stuck. Not offered on entry: a Cancel
         // shown the instant you press Play is the ceremony this composition exists to avoid, and it invites
         // abandoning a connect that was about to succeed.
@@ -348,8 +368,20 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         });
     }
 
-    private void Apply(ConnectStage stage) => Mutate(() =>
+    private void Apply(ConnectStage stage)
     {
+        // Decided here, not in the posted closure: when this wake began is a fact about now.
+        DateTimeOffset now = _clock();
+        DateTimeOffset? wakingSince = stage.Phase == ConnectPhase.Waking && !stage.Terminal
+            ? _wakingSince ?? now
+            : null;
+
+        Mutate(() => ApplyStage(stage, wakingSince));
+    }
+
+    private void ApplyStage(ConnectStage stage, DateTimeOffset? wakingSince)
+    {
+        _wakingSince = wakingSince;
         _statusVisible = true;
         _statusHeadline = stage.Headline;
         _statusDetail = stage.Detail;
@@ -358,7 +390,13 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusTerminal = stage.Terminal;
         _statusEndedByConsole = false;
         _phase = stage.Phase;
-    });
+    }
+
+    /// <summary>
+    /// How long a wake runs before the screen says that is normal. Most wakes finish inside it; one that does not
+    /// is the twenty-second kind that reads as stuck if nothing on screen changes.
+    /// </summary>
+    public static readonly TimeSpan WakeNoteAfter = TimeSpan.FromSeconds(10);
 
     public void HideStatus() => Mutate(() =>
     {
@@ -395,6 +433,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 {
                     _isStreamLive = true;
                     _hasShownPicture = true;
+                    _reconnecting = false;
                     _statusVisible = false;
                     _statusBusy = false;
                 });
@@ -427,7 +466,17 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                         : Strings.Session_Reconnecting,
                     _connectNotice is null ? detail : $"{detail} {_connectNotice}".Trim(),
                     terminal: false);
-                Mutate(() => _statusTechnical = status.Reason ?? string.Empty);
+                // The trail stays up, at its third dash, breathing: the session's own "Connecting" is the
+                // handshake the connect sequence was leading to, and a reconnect is that handshake again. It used
+                // to drop to an indeterminate bar here, so one connect changed composition halfway (visual audit,
+                // 2026-10-08, C2).
+                bool reconnecting = status.Lifecycle == SessionLifecycle.Reconnecting;
+                Mutate(() =>
+                {
+                    _statusTechnical = status.Reason ?? string.Empty;
+                    _phase = ConnectPhase.Connecting;
+                    _reconnecting = reconnecting;
+                });
                 break;
 
             case SessionLifecycle.Failed:
@@ -900,6 +949,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusLeadsBack: _statusTerminal && _statusEndedByConsole,
         StatusRetryLabel: _statusEndedByConsole ? Strings.Console_WakeAndPlay : Strings.Session_TryAgain,
         StatusOverPicture: _statusVisible && _hasShownPicture,
+        ConnectEscapeLabel: _reconnecting ? Strings.Session_StopTrying : Strings.Session_BackToConsoles,
         ConnectEscapeVisible: _connectEscapeVisible,
         IsStreamLive: _isStreamLive,
 

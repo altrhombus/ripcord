@@ -101,15 +101,100 @@ public class SetupFlowTests
         Assert.Equal(PictureChoice.MostCompatible, flow.State.Choice);
     }
 
-    [Fact]
-    public void Picture_WhileChecking_CantContinue()
+    // ---- the picture, while the PC is still being checked ---------------------------------------
+    //
+    // The choices stay live during the check, so a quick mover is never held on greyed-out options with focus
+    // nowhere (owner, 2026-10-09). What they do then is kept and acted on when the check answers.
+
+    private sealed class GatedCapabilities : IVideoCapabilitiesProbe
     {
-        var flow = new SetupFlow(
-            SetupScope.PictureOnly, new InMemorySettingsStore(), new InMemoryPairedConsoleStore(),
-            new FakeCapabilities(hevc: true), new ImmediateUiDispatcher());
+        public TaskCompletionSource<bool> Hevc { get; } = new();
+
+        public Task<bool> IsHevcDecodeAvailableAsync() => Hevc.Task;
+
+        public Task<bool> IsHardwareDecodeSupportedAsync() => Task.FromResult(true);
+
+        public Task<bool> IsHdrDisplayAvailableAsync() => Task.FromResult(false);
+
+        public Task<IReadOnlyList<VideoAdapterOption>> EnumerateAdaptersAsync()
+            => Task.FromResult<IReadOnlyList<VideoAdapterOption>>([]);
+    }
+
+    private static (SetupFlow Flow, InMemorySettingsStore Settings, GatedCapabilities Probe, Task Check) AtPictureWhileChecking()
+    {
+        var settings = new InMemorySettingsStore();
+        var probe = new GatedCapabilities();
+        var flow = new SetupFlow(SetupScope.Full, settings, new InMemoryPairedConsoleStore(), probe, new ImmediateUiDispatcher());
+        Task check = flow.StartAsync();
+        flow.Next();   // past Welcome
+        return (flow, settings, probe, check);
+    }
+
+    [Fact]
+    public void Picture_WhileChecking_OffersTheBestPicture_AndContinue()
+    {
+        (SetupFlow flow, _, _, _) = AtPictureWhileChecking();
 
         Assert.True(flow.State.Checking);
-        Assert.False(flow.State.PrimaryEnabled);
+        Assert.Equal(PictureChoice.BestPicture, flow.State.Choice);
+        Assert.True(flow.State.PrimaryEnabled);
+    }
+
+    [Fact]
+    public async Task Picture_ContinueWhileChecking_GoesOnWhenTheCheckAnswers()
+    {
+        (SetupFlow flow, InMemorySettingsStore settings, GatedCapabilities probe, Task check) = AtPictureWhileChecking();
+
+        flow.Next();
+        Assert.Equal(SetupStep.Picture, flow.State.Step);
+
+        probe.Hevc.SetResult(true);
+        await check;
+
+        Assert.Equal(SetupStep.Console, flow.State.Step);
+        Assert.Equal(VideoCodec.Hevc, settings.Current.Codec);
+    }
+
+    [Fact]
+    public async Task Picture_ContinueWhileChecking_StaysAndSaysWhy_WhenThePcCantDecodeHevc()
+    {
+        (SetupFlow flow, _, GatedCapabilities probe, Task check) = AtPictureWhileChecking();
+
+        flow.Next();
+        probe.Hevc.SetResult(false);
+        await check;
+
+        // The answer changed what was on screen, so the player sees why before anything is saved for them.
+        Assert.Equal(SetupStep.Picture, flow.State.Step);
+        Assert.Equal(PictureChoice.MostCompatible, flow.State.Choice);
+        Assert.Contains("can't decode HEVC", flow.State.PictureNote, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Picture_AChoiceMadeWhileChecking_Stands()
+    {
+        (SetupFlow flow, InMemorySettingsStore settings, GatedCapabilities probe, Task check) = AtPictureWhileChecking();
+
+        flow.Choose(PictureChoice.MostCompatible);
+        flow.Next();
+        probe.Hevc.SetResult(true);
+        await check;
+
+        Assert.Equal(SetupStep.Console, flow.State.Step);
+        Assert.Equal(VideoCodec.H264, settings.Current.Codec);
+    }
+
+    [Fact]
+    public async Task Picture_BackWhileChecking_TakesBackTheContinue()
+    {
+        (SetupFlow flow, _, GatedCapabilities probe, Task check) = AtPictureWhileChecking();
+
+        flow.Next();
+        Assert.True(flow.Back());
+        probe.Hevc.SetResult(true);
+        await check;
+
+        Assert.Equal(SetupStep.Welcome, flow.State.Step);
     }
 
     [Theory]

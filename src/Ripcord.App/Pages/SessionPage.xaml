@@ -625,10 +625,18 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!--  Header. Names itself and how to dismiss it, so the panel is self-explaining.  -->
-                <Grid Grid.Row="0" Padding="16,12,16,10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                <!--
+                    Header. Names itself and how to dismiss it, so the panel is self-explaining. It is also what the
+                    panel is dragged by; its edges resize it (MovablePanel, owner, 2026-10-09).
+                -->
+                <Grid
+                    x:Name="DiagnosticsHeader"
+                    Grid.Row="0"
+                    Padding="16,12,16,10"
+                    Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
@@ -643,9 +651,19 @@
                         design, so a promotion was permanent for the rest of the session. A one-way control is
                         the shape of the bug, and the inverse of Details belongs beside the thing it undoes.
                     -->
+                    <!--  Only once the panel has been moved or resized: back to where it goes by itself.  -->
+                    <Button
+                        x:Name="DiagnosticsPutBackButton"
+                        Grid.Column="1"
+                        Margin="0,0,8,0"
+                        MinHeight="{StaticResource RipcordTouchTargetCompact}"
+                        VerticalAlignment="Center"
+                        x:Uid="SessionPage_DiagnosticsPutBack"
+                        Click="DiagnosticsPutBackButton_Click"
+                        Visibility="Collapsed" />
                     <Button
                         x:Name="DiagnosticsLessButton"
-                        Grid.Column="1"
+                        Grid.Column="2"
                         Margin="0,0,8,0"
                         MinHeight="{StaticResource RipcordTouchTargetCompact}"
                         VerticalAlignment="Center"
@@ -653,7 +671,7 @@
                         Click="DiagnosticsLessButton_Click" />
 
                     <Border
-                        Grid.Column="2"
+                        Grid.Column="3"
                         Padding="6,1"
                         VerticalAlignment="Center"
                         Background="{ThemeResource ControlFillColorSecondaryBrush}"

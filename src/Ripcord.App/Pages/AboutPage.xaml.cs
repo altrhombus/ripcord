@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Win32;
 using Ripcord.Core.Platform;
+using Ripcord.Presentation.Resources;
 using Ripcord.Presentation.Settings;
 using Windows.ApplicationModel.DataTransfer;
 
@@ -46,7 +47,7 @@ public sealed partial class AboutPage : Page
     {
         _details.Clear();
 
-        VersionText.Text = $"Version {ResolveVersion()}";
+        VersionText.Text = string.Format(CultureInfo.CurrentCulture, Strings.About_Version, ResolveVersion());
         Record("Ripcord", ResolveVersion());
 
         WindowsText.Text = DescribeWindows();
@@ -66,13 +67,15 @@ public sealed partial class AboutPage : Page
 
         try
         {
-            ConfigPathText.Text = _paths.ConfigDirectory;
+            // Shown in its environment-variable form: the expanded path carries the Windows account name, and
+            // About is the page people screenshot into issues (showcase review, R4). Open uses the real path.
+            ConfigPathText.Text = WithoutUserProfile(_paths.ConfigDirectory);
         }
         catch (Exception ex)
         {
             // Nothing here is worth taking the page down for — the folder is a convenience, not the point.
             Debug.WriteLine($"[Ripcord] config path unavailable: {ex.Message}");
-            ConfigPathText.Text = "unavailable";
+            ConfigPathText.Text = Strings.About_Unavailable;
             OpenConfigButton.IsEnabled = false;
         }
 
@@ -91,12 +94,12 @@ public sealed partial class AboutPage : Page
 
         if (available)
         {
-            SetPill(ControllersPill, ControllersPillIcon, ControllersPillText, PillTone.Success, "Ready");
+            SetPill(ControllersPill, ControllersPillIcon, ControllersPillText, PillTone.Success, Strings.About_Ready);
             Record("Xbox controllers", "GameInput installed");
         }
         else
         {
-            SetPill(ControllersPill, ControllersPillIcon, ControllersPillText, PillTone.Caution, "GameInput not installed");
+            SetPill(ControllersPill, ControllersPillIcon, ControllersPillText, PillTone.Caution, Strings.About_GameInputMissing);
             ControllersNoteText.Visibility = Visibility.Visible;
             Record("Xbox controllers", "GameInput not installed");
         }
@@ -115,10 +118,10 @@ public sealed partial class AboutPage : Page
         if (probe.Failure is { } failure)
         {
             // A failed probe is itself a diagnostic, so say so rather than quietly reporting "not available".
-            SetPill(DecodePill, DecodePillIcon, DecodePillText, PillTone.Caution, "Couldn't check");
+            SetPill(DecodePill, DecodePillIcon, DecodePillText, PillTone.Caution, Strings.About_CouldntCheck);
             DecodeNoteText.Text = failure;
             DecodeNoteText.Visibility = Visibility.Visible;
-            SetPill(HevcPill, HevcPillIcon, HevcPillText, PillTone.Caution, "Couldn't check");
+            SetPill(HevcPill, HevcPillIcon, HevcPillText, PillTone.Caution, Strings.About_CouldntCheck);
             Record("Video decoding", $"could not be checked — {failure}");
             Record("HEVC", "could not be checked");
             return;
@@ -126,27 +129,26 @@ public sealed partial class AboutPage : Page
 
         if (probe.HardwareDecode)
         {
-            SetPill(DecodePill, DecodePillIcon, DecodePillText, PillTone.Success, "Hardware accelerated");
+            SetPill(DecodePill, DecodePillIcon, DecodePillText, PillTone.Success, Strings.About_HardwareAccelerated);
             Record("Video decoding", "hardware accelerated");
         }
         else
         {
-            SetPill(DecodePill, DecodePillIcon, DecodePillText, PillTone.Caution, "Software fallback");
-            DecodeNoteText.Text = "This GPU doesn't report H.264 decode support, so streaming may fall back to the "
-                                  + "CPU and cost more power.";
+            SetPill(DecodePill, DecodePillIcon, DecodePillText, PillTone.Caution, Strings.About_SoftwareFallback);
+            DecodeNoteText.Text = Strings.About_SoftwareFallbackNote;
             DecodeNoteText.Visibility = Visibility.Visible;
             Record("Video decoding", "no hardware support reported");
         }
 
         if (probe.Hevc)
         {
-            SetPill(HevcPill, HevcPillIcon, HevcPillText, PillTone.Success, "Available");
+            SetPill(HevcPill, HevcPillIcon, HevcPillText, PillTone.Success, Strings.About_Available);
             Record("HEVC", "available");
         }
         else
         {
             // Not a fault: HEVC is an option and H.264 is the default, so this is neutral, not a caution.
-            SetPill(HevcPill, HevcPillIcon, HevcPillText, PillTone.Neutral, "Not installed");
+            SetPill(HevcPill, HevcPillIcon, HevcPillText, PillTone.Neutral, Strings.About_NotInstalled);
             Record("HEVC", "not installed");
         }
     }
@@ -307,8 +309,8 @@ public sealed partial class AboutPage : Page
     ///
     /// <para>This button exists to be pasted into a public issue, and the "Settings folder" row is
     /// <c>%LocalAppData%\Ripcord</c> expanded — which on Windows contains the reader's Windows account name.
-    /// Nobody filing a bug report intends to publish that, and the row itself has to stay expanded because the
-    /// adjacent button opens it.</para>
+    /// Nobody filing a bug report intends to publish that. The row on screen is collapsed too, since a screenshot
+    /// publishes it just as well; its Open button reads the real path, not the label.</para>
     ///
     /// <para>Applied to every row rather than to that one, deliberately: a later row carrying a path would
     /// otherwise reintroduce this silently, and a copy button is exactly where nobody would think to look for
@@ -372,9 +374,9 @@ public sealed partial class AboutPage : Page
             package.SetText(text.ToString());
             Clipboard.SetContent(package);
 
-            CopyButtonText.Text = "Copied";
+            CopyButtonText.Text = Strings.About_Copied;
             await Task.Delay(TimeSpan.FromSeconds(2));
-            CopyButtonText.Text = "Copy details";
+            CopyButtonText.Text = Strings.About_CopyDetails;
         }
         catch (Exception ex)
         {
@@ -387,7 +389,7 @@ public sealed partial class AboutPage : Page
     {
         try
         {
-            Process.Start(new ProcessStartInfo(ConfigPathText.Text) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(_paths.ConfigDirectory) { UseShellExecute = true });
         }
         catch (Exception ex)
         {

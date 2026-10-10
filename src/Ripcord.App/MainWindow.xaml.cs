@@ -17,6 +17,7 @@ using Ripcord.Core.Input;
 using Ripcord.Core.Settings;
 using Ripcord.Input;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Setup;
 using Ripcord.Core.Launch;
 using Ripcord_App.Controls;
@@ -89,7 +90,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // unreachable by pad. Its children stay focusable; only the container stops volunteering.
         AppTitleBar.IsTabStop = false;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        ApplyAppIcon();
 
         // The backdrop is declared in markup, which cannot ask whether the user permits transparency — so the
         // first thing done with it is to re-decide it. Without this, someone who has turned transparency off
@@ -101,10 +102,24 @@ public sealed partial class MainWindow : Window, IShellNavigator
         if (Content is FrameworkElement themedRoot)
         {
             themedRoot.ActualThemeChanged += (_, _) => PaintCaptionButtons();
+
+            // The minimum is in physical pixels, so it needs the scale, which exists once the content is loaded.
+            themedRoot.Loaded += (_, _) =>
+            {
+                ApplyMinimumSize();
+                if (themedRoot.XamlRoot is { } xamlRoot)
+                {
+                    xamlRoot.Changed += (_, _) => ApplyMinimumSize();
+                }
+            };
         }
 
         _settingsStore.Changed += s =>
-            Post(() => _input.UseDeadzone(s.UiStickDeadzone));
+            Post(() =>
+            {
+                _input.UseDeadzone(s.UiStickDeadzone);
+                UseNavigationSounds(_input.Mode);
+            });
 
         _focus = new FocusPilot(
             contentRoot: () => Content as FrameworkElement,
@@ -132,7 +147,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // and back left nothing focused, so a pad user had to press a direction just to get the caret back onto
         // the console list — the new page has no idea the old one's focused element went away with it.
         ChromeFrame.Navigated += (_, _) =>
+        {
+            _arrivalSeedPending = true;
             Post(DispatcherQueuePriority.Low, FocusFirstContentElement);
+        };
 
         NavigateToFirstPage();
 
@@ -167,7 +185,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 Post(() => HintBar.Show(scope?.Prompts));
 
             _input.ModeChanged += mode =>
-                Post(() => HintBar.SetMode(mode));
+                Post(() =>
+                {
+                    HintBar.SetMode(mode);
+                    UseNavigationSounds(mode);
+                });
+            UseNavigationSounds(_input.Mode);
+
+            // A's verb follows focus: "Play" on a card, "Toggle" on a switch, "Type" in a field.
+            FocusManager.GotFocus += (_, e) => HintBar.SetAcceptVerb(AcceptVerbFor(e.NewFocusedElement));
 
             // Connection events arrive on a polling thread, hence the marshal — the router says so.
             _input.PadFamilyChanged += family =>
@@ -347,6 +373,18 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
     {
+        // Leaving full screen hands the window a fresh overlapped presenter, which knows nothing of the minimum.
+        if (args.DidPresenterChange)
+        {
+            ApplyMinimumSize();
+
+            // Back from full screen, where the caption strip was cleared: the title bar sets its own again.
+            if (!IsFullScreen)
+            {
+                Post(DispatcherQueuePriority.Low, () => SetTitleBar(AppTitleBar));
+            }
+        }
+
         if ((args.DidPresenterChange || args.DidSizeChange) && IsFullScreen)
         {
             Post(DispatcherQueuePriority.Low, () =>
@@ -354,9 +392,85 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 if (IsFullScreen)
                 {
                     ContentBridge.PinToClientArea(WinRT.Interop.WindowNative.GetWindowHandle(this));
+                    ClearCaptionRegion();
                 }
             });
         }
+    }
+
+    /// <summary>
+    /// The window's icon, which is also the taskbar's for the zip build: the tile normally, and the one-colour
+    /// mark under a contrast theme, white on the dark ones and black on the light one, the way Windows' inbox apps
+    /// change theirs (owner, 2026-10-08). The packaged build's Start and taskbar tiles switch by themselves through
+    /// their contrast-qualified assets; the zip build has no resource system, so it is done here, and again when
+    /// contrast is turned on or off while the app is open.
+    /// </summary>
+    private void ApplyAppIcon()
+    {
+        string icon = "Assets/AppIcon.ico";
+
+        if (AppEffects.HighContrast)
+        {
+            Windows.UI.Color window = new Windows.UI.ViewManagement.UISettings()
+                .UIElementColor(Windows.UI.ViewManagement.UIElementType.Window);
+            double luminance = (0.299 * window.R) + (0.587 * window.G) + (0.114 * window.B);
+            icon = luminance < 128 ? "Assets/AppIcon.contrast-black.ico" : "Assets/AppIcon.contrast-white.ico";
+        }
+
+        AppWindow.SetIcon(icon);
+    }
+
+    /// <summary>
+    /// What the accept button does on <paramref name="focused"/>, for the hint bar, or null for the scope's own
+    /// "Select". Only where "Select" undersells it (showcase plan, part 6): a console card says its own action,
+    /// which is the difference between expecting a stream and expecting a wait.
+    /// </summary>
+    private static string? AcceptVerbFor(object? focused) => focused switch
+    {
+        GridViewItem { Content: ConsoleCardViewModel card } => card.State.PrimaryActionLabel,
+        ToggleSwitch or CheckBox => ButtonLabels.VerbToggle,
+        Microsoft.UI.Xaml.Controls.Primitives.ToggleButton and not RadioButton => ButtonLabels.VerbToggle,
+        TextBox or PasswordBox or RichEditBox => ButtonLabels.VerbType,
+        ComboBox => ButtonLabels.VerbOpen,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Windows' own navigation sounds, while a pad is in use and never otherwise: the convention the Xbox shell
+    /// set, where moving and pressing click and a mouse stays silent (showcase plan, decision D: try it and decide
+    /// by ear). ElementSoundPlayer plays only for its own controls' gestures, so FocusPilot plays the moves and
+    /// presses the pad makes through it. Settings can turn them off.
+    /// </summary>
+    private void UseNavigationSounds(InputMode mode)
+        => ElementSoundPlayer.State = mode == InputMode.Controller && _settingsStore.Current.NavigationSounds
+            ? ElementSoundPlayerState.On
+            : ElementSoundPlayerState.Off;
+
+    /// <summary>
+    /// The smallest the window may be made, in effective pixels. Below it the console card's play mark was cut
+    /// off, the one thing the home page exists for (visual audit, 2026-10-08). 640 is also where the console grid
+    /// drops to one column (<c>CardMetrics.SingleColumnWidth</c>), so the two rules meet.
+    /// </summary>
+    private const double MinimumWidth = 640;
+
+    /// <inheritdoc cref="MinimumWidth"/>
+    private const double MinimumHeight = 480;
+
+    /// <summary>
+    /// Hold the window to <see cref="MinimumWidth"/> × <see cref="MinimumHeight"/>. The presenter takes physical
+    /// pixels, so this runs again whenever the scale changes, and whenever the presenter is replaced.
+    /// </summary>
+    private void ApplyMinimumSize()
+    {
+        if (AppWindow.Presenter is not OverlappedPresenter presenter
+            || (Content as FrameworkElement)?.XamlRoot is not { } root)
+        {
+            return;
+        }
+
+        double scale = root.RasterizationScale;
+        presenter.PreferredMinimumWidth = (int)Math.Ceiling(MinimumWidth * scale);
+        presenter.PreferredMinimumHeight = (int)Math.Ceiling(MinimumHeight * scale);
     }
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
@@ -507,6 +621,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private void OnEffectsChanged()
     {
         PaintCaptionButtons();
+        ApplyAppIcon();
 
         // Not while streaming: the backdrop is deliberately off for the duration, and putting one back under
         // opaque video would undo the reason it was dropped.
@@ -554,6 +669,24 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         Grid.SetRow(StreamFrame, fullScreen ? 0 : 1);
         Grid.SetRowSpan(StreamFrame, fullScreen ? 2 : 1);
+    }
+
+    /// <summary>
+    /// Full screen has no title bar, but the window kept a caption strip across its top, so a press there moved the
+    /// window: the stream's diagnostics panel sits in it, and dragging it by its header dragged Ripcord instead
+    /// (owner, 2026-10-09). Cleared while full screen; the title bar sets its own again when it is back.
+    /// </summary>
+    private void ClearCaptionRegion()
+    {
+        try
+        {
+            Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(AppWindow.Id)
+                .SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Caption, []);
+        }
+        catch (Exception)
+        {
+            // Only a drag that lands on the window instead; nothing to recover.
+        }
     }
 
     private void TitleBar_BackRequested(TitleBar sender, object args) => GoBack();
@@ -789,6 +922,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         if (ChromeFrame.CanGoBack)
         {
+            ElementSoundPlayer.Play(ElementSoundKind.GoBack);
             ChromeFrame.GoBack();
         }
     }
@@ -1025,6 +1159,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             && target.InitialFocus is { } preferred
             && preferred.Focus(FocusState.Keyboard))
         {
+            RecheckArrival(content);
             return;
         }
 
@@ -1045,6 +1180,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             {
                 first.Focus(FocusState.Keyboard);
                 _seedRetries = 0;
+                RecheckArrival(content);
                 return;
             }
 
@@ -1070,7 +1206,72 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         // The title-bar commands are always there, so focus is at least somewhere a pad can move from.
         _seedRetries = 0;
+        _arrivalSeedPending = false;
         SettingsButton.Focus(FocusState.Keyboard);
+    }
+
+    /// <summary>
+    /// A page change is under way and focus should end up in the new page. Cleared once it has, after the one
+    /// layout pass that can still move it.
+    /// </summary>
+    private bool _arrivalSeedPending;
+
+    /// <summary>
+    /// Whether focus, just after a page change, has ended up outside the new page: on the title bar, where Windows
+    /// puts it when the control that held it leaves with the old page.
+    ///
+    /// <para>
+    /// That fallback can come after the seed, and the seeding paths took any focused control as placed, so Keyboard
+    /// controls opened now and then on the title bar's Back and About on the About button: one press of A from a
+    /// pad and the player went back, or nowhere (showcase review, R10, 2026-10-09).
+    /// </para>
+    /// </summary>
+    private bool ArrivalFocusStrayed()
+    {
+        if (!_arrivalSeedPending || ModalOwnsFocus || _closed || IsStreaming || ChromeFrame.Content is not DependencyObject page
+            || Content?.XamlRoot is not { } root)
+        {
+            return false;
+        }
+
+        for (var node = FocusManager.GetFocusedElement(root) as DependencyObject; node is not null;
+             node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, page))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// After an arrival seed lands, look once more when the next layout has run, and seed again if focus has
+    /// strayed out of the page. One layout pass is too short for a person to have moved it themselves.
+    /// </summary>
+    private void RecheckArrival(FrameworkElement content)
+    {
+        if (!_arrivalSeedPending)
+        {
+            return;
+        }
+
+        void OnLayout(object? sender, object e)
+        {
+            content.LayoutUpdated -= OnLayout;
+            Post(DispatcherQueuePriority.Low, () =>
+            {
+                bool strayed = ArrivalFocusStrayed();
+                _arrivalSeedPending = false;
+                if (strayed)
+                {
+                    FocusFirstContentElement();
+                }
+            });
+        }
+
+        content.LayoutUpdated += OnLayout;
     }
 
     private const int SeedRetryLimit = 10;
@@ -1087,7 +1288,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // modal: ShellShouldSeedFocus is the guarded question every seeding path asks.
         timer.Tick += (_, _) =>
         {
-            if (ShellShouldSeedFocus())
+            if (ShellShouldSeedFocus() || ArrivalFocusStrayed())
             {
                 FocusFirstContentElement();
             }

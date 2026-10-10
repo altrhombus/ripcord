@@ -109,11 +109,24 @@ public sealed class FocusPilot(
             engine = row.Control;
         }
 
-        if ((engine ?? StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
+        // Left and Right stay in the row while the row has something that way. On Welcome, Right from "Skip setup"
+        // went to the gear, up in the title bar, past "Get started" beside it (owner, with a pad, 2026-10-09).
+        if (direction is NavDirection.Left or NavDirection.Right
+            && StraightLineCandidate(searchRoot, direction) is { } inRow
+            && (engine is null || !SharesRow(searchRoot, engine)))
+        {
+            engine = inRow;
+        }
+
+        if ((engine ??StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
         {
             // FocusState.Keyboard, never Programmatic: a Programmatic focus change does not draw the focus
             // visual, so directional navigation would move an invisible caret.
             candidate.Focus(FocusState.Keyboard);
+
+            // Windows' own focus sound, which it plays only for its own keyboard navigation, never for a move
+            // made in code. Silent unless a pad is in use; see MainWindow.UseNavigationSounds.
+            ElementSoundPlayer.Play(ElementSoundKind.Focus);
 
             // A candidate below the fold is useless if the list does not scroll to it.
             candidate.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
@@ -205,6 +218,13 @@ public sealed class FocusPilot(
     }
 
     private static bool Overlaps(double a0, double a1, double b0, double b1) => a0 < b1 && b0 < a1;
+
+    /// <summary>Whether <paramref name="candidate"/> overlaps the focused element vertically: beside it, not above or below.</summary>
+    private static bool SharesRow(UIElement searchRoot, UIElement candidate)
+        => FocusManager.GetFocusedElement(searchRoot.XamlRoot) is UIElement focused
+            && BoundsIn(focused, searchRoot) is { } from
+            && BoundsIn(candidate, searchRoot) is { } to
+            && Overlaps(from.Top, from.Bottom, to.Top, to.Bottom);
 
     /// <summary>
     /// How far apart two controls can sit vertically and still be one row: a button beside a text field is a few
@@ -508,6 +528,10 @@ public sealed class FocusPilot(
         var peer = FrameworkElementAutomationPeer.FromElement(focused)
             ?? FrameworkElementAutomationPeer.CreatePeerForElement(focused);
 
+        // An activation through the automation peer is silent, unlike a press on the control itself. One press, one
+        // sound: a dialog it opens is silent itself (ModalHost).
+        ElementSoundPlayer.Play(ElementSoundKind.Invoke);
+
         if (peer?.GetPattern(PatternInterface.Invoke) is IInvokeProvider invokeProvider)
         {
             invokeProvider.Invoke();
@@ -515,6 +539,13 @@ public sealed class FocusPilot(
         else if (peer?.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider selectionProvider)
         {
             selectionProvider.Select();
+
+            // A choice that carries a command runs it, as a click on it would: setup's picture choices are "choose
+            // and go on", and selecting through the peer raises no Click (owner, 2026-10-09).
+            if (focused is ButtonBase { Command: { } command } button && command.CanExecute(button.CommandParameter))
+            {
+                command.Execute(button.CommandParameter);
+            }
         }
         else if (peer?.GetPattern(PatternInterface.Toggle) is IToggleProvider toggleProvider)
         {
@@ -615,6 +646,7 @@ public sealed class FocusPilot(
 
                 flyout.Opened += SeedFirstItem;
                 flyout.ShowAt(anchor);
+                ElementSoundPlayer.Play(ElementSoundKind.Show);
                 return;
             }
         }
@@ -715,6 +747,8 @@ public sealed class FocusPilot(
         // off while a modal owns focus, ignored every press after it. Found with a pad on 2026-10-08 as "B on
         // the Details dialog leaves the app dark and unresponsive"; Esc never did it, because Esc goes through
         // the dialog. Hide() is what Esc does: ShowAsync returns None, the same answer as the close button.
+        ElementSoundPlayer.Play(ElementSoundKind.Hide);
+
         if (FindDialog(top.Child) is { } dialog)
         {
             dialog.Hide();

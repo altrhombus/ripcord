@@ -45,6 +45,7 @@ public sealed class InputHintBar : ContentControl
     private InputMode _mode = InputMode.Pointer;
     private PadFamily _family = PadFamily.Generic;
     private bool _padAttached;
+    private string? _acceptVerb;
 
     public InputHintBar()
     {
@@ -64,6 +65,21 @@ public sealed class InputHintBar : ContentControl
     public void Show(IReadOnlyList<InputPrompt>? prompts)
     {
         _current = prompts ?? [];
+        Rebuild();
+    }
+
+    /// <summary>
+    /// What the accept button does on the control that has focus ("Play", "Toggle", "Type"), or null for the
+    /// scope's own word. Set by the window as focus moves; see <see cref="ButtonLabels.WithAcceptVerb"/>.
+    /// </summary>
+    public void SetAcceptVerb(string? verb)
+    {
+        if (_acceptVerb == verb)
+        {
+            return;
+        }
+
+        _acceptVerb = verb;
         Rebuild();
     }
 
@@ -138,7 +154,7 @@ public sealed class InputHintBar : ContentControl
         switch (_mode)
         {
             case InputMode.Controller:
-                return _current;
+                return ButtonLabels.WithAcceptVerb(_current, _acceptVerb);
 
             // Only what a keyboard user would not already know, and only when a pad exists to make the
             // question live. A prompt earns its place by having a key label at all — see InputPrompt.KeyLabel.

@@ -35,6 +35,59 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The showcase: Ripcord's own screens, finished (2026-10-09)
+
+The audit fixed what was broken. This was the design work it left behind: making Ripcord a good Windows 11 app
+and a good couch app at once, for a visit that's usually a few seconds long. The plan is
+[`showcase-plan.md`](showcase-plan.md), and what it decided now lives in [`design.md`](design.md).
+
+- **One page frame.** Every page sits in the same 820 px column with its title in the same place, Home
+  included, and the window can't be made smaller than 640 × 480, where the play button used to get cut off.
+  Add a console shows one Back, not two.
+- **Home grows with the window.** One console is a hero card that scales up to the column, with its text a size
+  up the type ramp on a big card. The card no longer prints your console's address, and hovering it actually
+  shows now.
+- **Welcome says hello.** The logo builds itself, the wedge and then the three dashes, then "ripcord" beside it.
+  "Get started" and "Play now" wear the card's wedge, so the two buttons that launch something look like it.
+- **The wake wait looks alive.** Waking, connecting and reconnecting are one screen, and the current dash of the
+  trail breathes while you wait. A long wake adds one line, once, and never promises a number of seconds: a wake
+  over the internet has taken more than forty.
+- **Motion that gets out of the way.** Every animation takes its timing from the motion tokens, and with
+  Windows' animation effects off nothing moves at all.
+- **A controller knows what A does.** The hint bar says "Play" on a card, "Toggle" on a switch, "Type" in a
+  field. Moving with a pad plays Windows' own navigation sounds, the way the Xbox shell does, one sound per
+  press, and there's a switch for them in Settings.
+- **Setup doesn't make you wait or press twice.** Picking a picture mode moves on by itself, and the choices
+  stay live while the PC is checked, so a quick press isn't lost.
+- **The diagnostics panel moves.** Drag it by its header, resize it from any edge, and it's where you left it
+  next stream. "Put back" returns it. My first go at 16:10 raised it out of the thin black bar instead, and it
+  covered too much of the game, so that went.
+
+Then I went over every screen in Dark, Light and High Contrast, at 200% scale and 225% text, with animation
+effects off, at sizes from 640 × 480 to 3440 wide, beside Windows' own apps, with a pad and no mouse, and over
+a stream on a 16:10 and a 32:9 display. That turned up about two dozen things, and most were fixed on the
+spot. What's left:
+
+- **The title bar at 200% leaves a gap before the window buttons.** That's WinUI's stock title bar
+  ([microsoft-ui-xaml#10344](https://github.com/microsoft/microsoft-ui-xaml/issues/10344)), and it stays until
+  a Windows App SDK release fixes it. Working around it now would collide with the window buttons the day it's
+  fixed.
+- **The discovery row** still says things like the console's system version. That's audit 6, still open.
+- **Left as Windows draws them:** in High Contrast, a focused accent button keeps its text backplate, and a
+  settings row's heading takes the theme's button colour.
+- **A couple of small ones at 225% text** went on the roadmap.
+
+The ones worth knowing about: setup's focus ring didn't show, so a pad was flying blind (it was set in a way that
+draws no ring); signing in on Add a console left focus on Back; opening a dialog with a pad played two sounds;
+and in full screen, dragging the panel near the top dragged the whole window, because Windows kept a caption
+strip there with no title bar to own it.
+
+Release timing, three runs each: the window's up in about half a second, and the first thing to press is ready
+at about 1.6 seconds on Welcome and 1.7 on Home. Not timed: a first launch after a reboot, and press to playing.
+The failure screen didn't get looked at this round. A Debug build can rehearse a pairing now
+(`RIPCORD_REHEARSE_PAIRING=1`, best with a throwaway `RIPCORD_DATA_DIR`), which is how "Paired." got checked
+without a console to pair.
+
 ### Looking at it: the visual audit, and what it fixed (2026-10-08)
 
 Every review so far read the code. This time we ran the app and looked at it: Dark, Light, High Contrast, 200%

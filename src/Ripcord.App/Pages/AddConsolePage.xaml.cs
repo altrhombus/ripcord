@@ -24,7 +24,7 @@ namespace Ripcord_App.Pages;
 /// <see cref="AddConsoleFlowState"/> into control properties, and turns clicks back into flow calls.
 /// </para>
 /// </summary>
-public sealed partial class AddConsolePage : Page
+public sealed partial class AddConsolePage : Page, IStepBack
 {
     /// <summary>The navigation parameter that opens the page as the first-run setup's console step.</summary>
     public static readonly object FromSetup = new();
@@ -35,6 +35,9 @@ public sealed partial class AddConsolePage : Page
     // parameter, which only arrives there. OnNavigatedTo runs before Loaded, which starts the flow.
     private AddConsoleFlow _flow = null!;
 
+    // The step last drawn, so the celebration assembles once, on arrival, not on every state change after it.
+    private AddConsoleStep? _renderedStep;
+
     /// <summary>
     /// A view-model of this page's own over the shared account session, used only to run a sign-in from here.
     /// The flow reads the session itself; this is the surface half.
@@ -44,8 +47,10 @@ public sealed partial class AddConsolePage : Page
     // Guards against a second navigation if Completed were ever raised twice.
     private bool _leaving;
 
-    // What FocusForStep last seeded, so focus moves on a step change and not on every state change.
+    // What FocusForStep last seeded, so focus moves on a step change and not on every state change. The
+    // control too: on the link step, what there is to press changes without the step changing.
     private AddConsoleStep? _focusedStep;
+    private Control? _focusedTarget;
 
     // Keeps the caret on the same discovered console when the list reorders around it.
     private FocusAnchor? _discoveryAnchor;
@@ -334,6 +339,7 @@ public sealed partial class AddConsolePage : Page
             NameBox.Text = s.SuggestedName;
         }
 
+        BackButton.Visibility = Vis(s.HasPreviousStep);
         BackButton.IsEnabled = s.CanGoBack;
 
         // Nothing to pair while the form is still an offer: Pair would sit there permanently disabled under
@@ -342,6 +348,18 @@ public sealed partial class AddConsolePage : Page
         // Composed portably, including at Done - the label there used to be a literal in this file, which
         // put the one string the celebration turns on outside the catalogue.
         PrimaryButton.Content = s.PairActionLabel;
+
+        // "Play now" is a launch, so at the celebration it is the wedge (design.md; showcase plan, part 4). From
+        // setup the same button goes back to setup, which launches nothing, and stays an accent button.
+        bool launches = s.Step == AddConsoleStep.Done && !_flow.IsPartOfSetup;
+        PrimaryButton.Style = (Style)Application.Current.Resources[launches ? "RipcordWedgeButtonStyle" : "AccentButtonStyle"];
+
+        if (s.Step == AddConsoleStep.Done && _renderedStep != AddConsoleStep.Done)
+        {
+            DoneMark.Assemble();
+        }
+
+        _renderedStep = s.Step;
         PrimaryButton.IsEnabled = s.Step == AddConsoleStep.Done || s.CanPair;
 
         // One commit action, naming the route the step is set up for. There used to be two -- "Pair" and "Pair
@@ -373,17 +391,14 @@ public sealed partial class AddConsolePage : Page
     {
         AddConsoleStep step = s.Step;
 
-        if (_focusedStep == step)
-        {
-            return;
-        }
-
         Control? target = step switch
         {
-            // The one case where the step alone does not decide: a signed-in user whose console the account
-            // already knows never types a code, so seeding the code box would put the caret in a field they
-            // will not use.
-            AddConsoleStep.Link when s.CanPairWithAccount => SecondaryButton,
+            // The one step the step alone does not decide. A signed-in player whose console the account knows
+            // never types a code, so seeding the code box would put the caret in a field they will not use; it
+            // was SecondaryButton, which this step never shows, so focus fell to Back after signing in (owner,
+            // pad pass, 2026-10-09). Signed out, the offer to sign in leads, and the code box is hidden.
+            AddConsoleStep.Link when s.SignInLeads => SignInLeadButton,
+            AddConsoleStep.Link when s.Route == PairingRoute.Account && s.CanPairWithAccount => PrimaryButton,
             AddConsoleStep.Family => Ps5Button,
             AddConsoleStep.Link => PasscodeBox,
 
@@ -417,6 +432,12 @@ public sealed partial class AddConsolePage : Page
             _ => null,
         };
 
+        if (_focusedStep == step && (step != AddConsoleStep.Link || ReferenceEquals(_focusedTarget, target)
+                                     || IsTypingInto()))
+        {
+            return;
+        }
+
         // Recorded only once focus has actually landed. The first render runs from OnNavigatedTo, before the
         // page is in the tree, where Focus() returns false; marking the step seeded then meant it was never
         // seeded at all, and a pad arrived on the Find step with focus nowhere (2026-10-08). The flow starts
@@ -424,6 +445,7 @@ public sealed partial class AddConsolePage : Page
         if (target is null || target.Focus(FocusState.Keyboard))
         {
             _focusedStep = step;
+            _focusedTarget = target;
 
             // Seeded on Rescan because nothing has answered yet: the first console that does may take focus.
             _awaitingFirstResult = step == AddConsoleStep.Find && ReferenceEquals(target, RescanButton);
@@ -434,6 +456,19 @@ public sealed partial class AddConsolePage : Page
             }
         }
     }
+
+    /// <summary>
+    /// Whether the player has started typing into a field, which a change on the link step must not pull them
+    /// out of: the account lookup landing while somebody types the code would otherwise move them to "Pair with
+    /// my account" mid-code.
+    /// </summary>
+    private bool IsTypingInto()
+        => XamlRoot is not null && FocusManager.GetFocusedElement(XamlRoot) switch
+        {
+            TextBox box => box.Text.Length > 0,
+            PasswordBox box => box.Password.Length > 0,
+            _ => false,
+        };
 
     // ----------------------------------------------------------------------------------------------------
     // 1. Which console
@@ -601,6 +636,28 @@ public sealed partial class AddConsolePage : Page
                 _flow.Finish(NameBox.Text, connect: false);
                 break;
         }
+    }
+
+    /// <summary>
+    /// The shell's Back (the title bar, Esc, the pad's B) walks the flow's steps before it leaves the page, as it
+    /// does in setup. It used to leave from any step, so B on the code form threw away the search the player had
+    /// just waited for. During the pairing exchange it is held, as the footer's Back is.
+    /// </summary>
+    bool IStepBack.TryStepBack()
+    {
+        AddConsoleFlowState state = _flow.State;
+        if (state.IsPairing)
+        {
+            return true;
+        }
+
+        if (!state.HasPreviousStep)
+        {
+            return false;
+        }
+
+        _ = _flow.BackAsync();
+        return true;
     }
 
     private async void OnBackClick(object sender, RoutedEventArgs e)

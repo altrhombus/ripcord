@@ -1,3 +1,6 @@
+using System;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI.ViewManagement;
 
 namespace Ripcord_App.Services;
@@ -30,4 +33,30 @@ internal static class AppMotion
 
     /// <summary>False when the user has asked Windows for no animation. Check before starting any.</summary>
     public static bool Enabled => Settings.AnimationsEnabled;
-}
+
+    /// <summary>
+    /// A duration token from Ripcord.Motion.xaml, for an animation built in code. So a call site names why it
+    /// animates ("RipcordDurationStateChange") rather than how long for, as the markup already does.
+    /// </summary>
+    public static TimeSpan Duration(string key)
+        => Application.Current.Resources.TryGetValue(key, out object? value) && value is Duration duration
+            ? duration.TimeSpan
+            : TimeSpan.FromMilliseconds(150);
+
+    /// <summary>An easing token from Ripcord.Motion.xaml, copied, since a KeySpline cannot be shared between frames.</summary>
+    public static KeySpline Ease(string key)
+    {
+        KeySpline spline = new()
+        {
+            ControlPoint1 = new Windows.Foundation.Point(0.1, 0.9),
+            ControlPoint2 = new Windows.Foundation.Point(0.2, 1),
+        };
+
+        if (Application.Current.Resources.TryGetValue(key, out object? value) && value is KeySpline token)
+        {
+            spline.ControlPoint1 = token.ControlPoint1;
+            spline.ControlPoint2 = token.ControlPoint2;
+        }
+
+        return spline;
+    }}

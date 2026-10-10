@@ -104,6 +104,9 @@ public sealed record ConsoleCardState(
     /// layouts.</summary>
     CardDensity Density,
 
+    /// <summary>The wedge, insets and type steps at the size the card is drawn. See <see cref="CardGeometry"/>.</summary>
+    CardGeometry Geometry,
+
     /// <summary>The pointer is over the card. Hover only - focus is the ring's, not the wedge's.</summary>
     bool IsPointerOver,
 

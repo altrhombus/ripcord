@@ -48,7 +48,8 @@ public sealed record SetupFlowState(
 
     // ---- picture ----
     string PictureIntro,
-    // True while the PC is being checked for HEVC and an HDR display. Nothing can be chosen yet.
+    // True while the PC is being checked for HEVC and an HDR display. The choices stay live: a choice made, or
+    // Continue pressed, during the check is kept and acted on when it answers (owner, 2026-10-09).
     bool Checking,
     bool BestPictureAvailable,
     PictureChoice Choice,

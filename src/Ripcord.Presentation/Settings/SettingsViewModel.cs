@@ -284,6 +284,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
     public void SetConfirmOnDisconnect(bool on) => Apply(() => _draft with { ConfirmOnDisconnect = on });
 
+    public void SetNavigationSounds(bool on) => Apply(() => _draft with { NavigationSounds = on });
+
     public void SetRestOnDisconnect(bool on) => Apply(() => _draft with { RestConsoleOnDisconnect = on });
 
     /// <summary>
@@ -420,6 +422,9 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
                 // is missing leaves the reader to work out that nothing is; an affirmative line is shorter and
                 // is the answer they came for. An SDR display is ready too since 2026-10-02: Ripcord tone-maps.
                 : _displayHdr ? Strings.Settings_HdrReady : Strings.Settings_HdrReadySdrDisplay,
+            HdrDescription: HdrSelectable ? Strings.Settings_HdrDescription
+                : _hevcAvailable ? Strings.Settings_HdrNeedsHevc
+                : Strings.Settings_HdrNeedsHevcDecoder,
 
             GpuPreferenceIndex: (int)_draft.GpuPreference,
             AdapterPickerVisible: specific,
@@ -439,6 +444,7 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
             FullScreenOnConnect: _draft.FullScreenOnConnect,
             ConfirmOnDisconnect: _draft.ConfirmOnDisconnect,
+            NavigationSounds: _draft.NavigationSounds,
             RestConsoleOnDisconnect: _draft.RestConsoleOnDisconnect,
             DiagnosticsOptions: DiagnosticsLabels,
             DiagnosticsIndex: Array.IndexOf(DiagnosticsRungs, _draft.DiagnosticsRungOnConnect),

@@ -99,6 +99,18 @@
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\AppIcon.ico" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <!-- High contrast: the one-colour mark, white for the dark contrast themes, black for the light. The PNGs
+         are picked by the package's resource system; the .ico pair by MainWindow.ApplyAppIcon. -->
+    <Content Include="Assets\AppIcon.contrast-black.ico" />
+    <Content Include="Assets\AppIcon.contrast-white.ico" />
+    <Content Include="Assets\Square150x150Logo.scale-200_contrast-black.png" />
+    <Content Include="Assets\Square150x150Logo.scale-200_contrast-white.png" />
+    <Content Include="Assets\Square44x44Logo.scale-200_contrast-black.png" />
+    <Content Include="Assets\Square44x44Logo.scale-200_contrast-white.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated_contrast-black.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated_contrast-white.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-48_altform-unplated_contrast-black.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-48_altform-unplated_contrast-white.png" />
 
     <!-- Copy them next to the exe, on build AND on publish. The MSIX path does not need this - packaged
          resources come out of the PRI - but an unpackaged build reads two of them off disk by path:
