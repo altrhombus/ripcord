@@ -9,7 +9,8 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// <summary>
 /// The bundled default source for the v1 protocol's interoperability constants — the control-plane KDF
 /// tables (a PS5 pair and a PS4 pair), the four field context keys, the registration key table, the
-/// material-wrap table, and the context selector offset.
+/// material-wrap table, the context selector offset, and the v2 PlayStation 5 registration-authentication
+/// key.
 ///
 /// <para>
 /// <b>What these are.</b> Values the console itself computes against. They are read by every client that
@@ -101,6 +102,16 @@ public static partial class HalyardInteropConstants
         return (secrets, contextKey, versionSelector);
     }
 
+    /// <summary>
+    /// The bundled v2 PlayStation 5 registration-authentication key (16 bytes), or <see langword="null"/> if
+    /// this build omits the constants (or an older bundle predates it). It is the fixed value the console
+    /// checks a v2 pairing request's authentication code against — generic to the PS5 console family and tied
+    /// to no console or account (see <c>NOTICE</c> and CLAUDE.md "Bounded exception 1"). The other console
+    /// family's value is <b>[X]</b> (unconfirmed) and is not bundled.
+    /// </summary>
+    public static byte[]? RegistrationAuthKey()
+        => Loaded.Value?.RegistAuthKey is { } hex ? Hex(hex) : null;
+
     private static Bundle? Read()
     {
         try
@@ -138,6 +149,7 @@ public static partial class HalyardInteropConstants
         public string? Ps4MaterialWrapTable { get; set; }
         public int SelectorOffset { get; set; }
         public string? ContextKey { get; set; }
+        public string? RegistAuthKey { get; set; }
         public string? KdfTable1 { get; set; }
         public string? KdfTable2 { get; set; }
         public string? Ps4KdfTable1 { get; set; }

@@ -41,6 +41,14 @@ pub fn has_ps4_registration() -> bool {
     constants::PS4_REGISTRATION_TABLE.is_some()
 }
 
+/// Whether the v2 PlayStation 5 registration-authentication key is in this engine's bundle. The v2
+/// registration path (not yet ported) authenticates a pairing request with it; a build without it cannot
+/// PIN-pair a PS5 over v2, the way a PS4-less bundle cannot pair a PS4. Generic to the PS5 console family and
+/// tied to no console or account (CLAUDE.md "Bounded exception 1").
+pub fn v2_registration_auth_key_bundled() -> bool {
+    constants::REGIST_AUTH_KEY.is_some()
+}
+
 /// Entry `index` (0..32) of a 32-by-16 table.
 fn entry(table: &[u8; 512], index: usize) -> &[u8; 16] {
     table[index * 16..index * 16 + 16].try_into().expect("16-byte entry")
