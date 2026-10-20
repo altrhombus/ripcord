@@ -144,6 +144,25 @@ public static class HalyardRegistrationMessage
     }
 
     /// <summary>
+    /// Whether the registration response advertises <c>RP-SupportGcm</c> — the console's signal that it speaks
+    /// the v2 control plane. Captured at pairing and stored on the pairing record so the first session (before
+    /// any token has rolled) opens as v2.
+    /// </summary>
+    public static bool ResponseAdvertisesGcm(ReadOnlySpan<byte> response)
+    {
+        int sep = IndexOf(response, "\r\n\r\n"u8);
+        string head = Encoding.ASCII.GetString(sep < 0 ? response : response[..sep]);
+        foreach (string line in head.Split("\r\n"))
+        {
+            int colon = line.IndexOf(':');
+            if (colon > 0 && line[..colon].Trim().Equals("RP-SupportGcm", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Parse the decrypted registration response body (CRLF <c>Key: Value</c> lines) into a pairing record.
     /// Returns false if the required fields are absent.
     /// </summary>

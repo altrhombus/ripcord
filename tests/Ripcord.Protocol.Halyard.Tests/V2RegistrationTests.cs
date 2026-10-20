@@ -49,4 +49,14 @@ public class V2RegistrationTests
         Assert.Contains("RP-Hmac: " + hmacB64 + "\r\n", v2);
         Assert.DoesNotContain("RP-Hmac:", v1); // shipping v1 pairing stays byte-identical (no header)
     }
+
+    [Fact]
+    public void ResponseAdvertisesGcm_DetectsTheHeader()
+    {
+        byte[] withGcm = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nRP-SupportGcm: 1\r\nRP-Version: 1.0\r\n\r\nbody");
+        byte[] withoutGcm = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nRP-Version: 1.0\r\n\r\nbody");
+
+        Assert.True(HalyardRegistrationMessage.ResponseAdvertisesGcm(withGcm));
+        Assert.False(HalyardRegistrationMessage.ResponseAdvertisesGcm(withoutGcm));
+    }
 }

@@ -64,7 +64,7 @@ public sealed class HalyardTcpRegistrationTransport : IHalyardRegistrationTransp
         }
 
         string clientIp = local?.ToString() ?? IPAddress.Loopback.ToString();
-        byte[] requestBytes = HalyardRegistrationMessage.BuildRequest(request, clientIp, encryptedBody);
+        byte[] requestBytes = HalyardRegistrationMessage.BuildRequest(request, clientIp, encryptedBody, request.RegistrationHmacBase64);
 
         await using NetworkStream stream = client.GetStream();
         await stream.WriteAsync(requestBytes, cancellationToken).ConfigureAwait(false);
