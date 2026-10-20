@@ -91,6 +91,43 @@ public class AesGcmCoreTests
         Assert.Equal(Hex.String(tag), Hex.String(mac));
     }
 
+    [Fact]
+    public void Decrypt_ReproducesSpecCase5Plaintext()
+    {
+        var iv = Hex.Bytes("cafebabefacedbad"); // the non-96-bit J0 path again, now in reverse
+        var ct = Hex.Bytes(
+            "61353b4c2806934a777ff51fa22a4755699b2a714fcdc6f83766e5f97b6c7423" +
+            "73806900e49f24b22b097544d4896b424989b5e1ebac0f07c23f4598");
+        var tag = Hex.Bytes("3612d2e79e3b0785561be14aaca2fccb");
+
+        byte[]? plain = AesGcmCore.Decrypt(SpecKey, iv, SpecAad, ct, tag);
+        Assert.NotNull(plain);
+        Assert.Equal(Hex.String(SpecPlain), Hex.String(plain!));
+    }
+
+    [Fact]
+    public void Decrypt_RoundTripsEncrypt_AndRejectsTampering()
+    {
+        var rng = RandomNumberGenerator.Create();
+        var key = Random(rng, 16);
+        var iv = Random(rng, 16); // the 16-byte-IV case the primitive exists for
+        var aad = Random(rng, 20);
+        var plain = Random(rng, 50);
+
+        var (ct, tag) = AesGcmCore.Encrypt(key, iv, aad, plain);
+        Assert.Equal(Hex.String(plain), Hex.String(AesGcmCore.Decrypt(key, iv, aad, ct, tag)!));
+
+        // A flipped tag byte, a flipped ciphertext byte, a wrong AAD, and a wrong key each fail closed (null).
+        var badTag = (byte[])tag.Clone(); badTag[0] ^= 0xff;
+        Assert.Null(AesGcmCore.Decrypt(key, iv, aad, ct, badTag));
+
+        var badCt = (byte[])ct.Clone(); badCt[0] ^= 0xff;
+        Assert.Null(AesGcmCore.Decrypt(key, iv, aad, badCt, tag));
+
+        Assert.Null(AesGcmCore.Decrypt(key, iv, Random(rng, 20), ct, tag));
+        Assert.Null(AesGcmCore.Decrypt(Random(rng, 16), iv, aad, ct, tag));
+    }
+
     private static byte[] Random(RandomNumberGenerator rng, int length)
     {
         var b = new byte[length];
