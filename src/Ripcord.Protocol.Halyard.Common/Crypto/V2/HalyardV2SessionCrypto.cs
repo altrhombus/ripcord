@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using Ripcord.Core.Net.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
@@ -30,6 +33,17 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
 
     // Held for the launchSpec KDF (M) and the per-direction stream schedule, exactly as the v1 crypto holds it.
     private readonly HalyardControlSecrets _secrets;
+
+    // Path A (control plane). The purposes are the info-string's second byte: 0x09 client->console, 0x08 the
+    // other way (spec §4). The GCM tag is the full 16 bytes.
+    private const byte PurposeClientToConsole = 0x09;
+    private const byte PurposeConsoleToClient = 0x08;
+    private const int GcmTagLength = 16;
+
+    private ECDiffieHellman? _controlEcdh;
+    private byte[]? _n16;
+    private HalyardStreamKeySchedule.DirectionKeys? _skClientToConsole; // sk_9: AesKey = sk[0:16], BaseIv = sk[16:32]
+    private HalyardStreamKeySchedule.DirectionKeys? _skConsoleToClient; // sk_8
 
     public HalyardV2SessionCrypto(HalyardControlSecrets secrets)
         => _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
@@ -77,26 +91,92 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     public void SealCongestionPacket(Span<byte> packet) => throw new NotImplementedException(NotYet);
     public void SealFeedbackPacket(Span<byte> packet, int payloadOffset) => throw new NotImplementedException(NotYet);
 
-    // ---- IHalyardV2ControlCrypto: the GCM envelope (Path A) (Phase 1 step 2) ----
+    // ---- IHalyardV2ControlCrypto: the GCM envelope (Path A) ----
 
-    public byte[] GenerateControlPublicKey() => throw new NotImplementedException(NotYet);
+    public byte[] GenerateControlPublicKey()
+    {
+        _controlEcdh?.Dispose();
+        // The control ECDH is its own P-521 key pair, separate from the stream plane's.
+        var (keyPair, publicKey) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
+        _controlEcdh = keyPair;
+        return publicKey;
+    }
 
     public byte[] ComputeRpHmac(ReadOnlySpan<byte> k16, ReadOnlySpan<byte> publicKey)
-        => throw new NotImplementedException(NotYet);
+    {
+        // RP-Hmac is over the first 133 bytes (the uncompressed P-521 point); the base64 RP-Pubkey decodes to 135.
+        const int point = HalyardStreamKeySchedule.PublicKeyLengthP521;
+        if (publicKey.Length < point)
+            throw new ArgumentException($"Public key must be at least {point} bytes.", nameof(publicKey));
+        return HMACSHA256.HashData(k16, publicKey[..point]);
+    }
 
     public bool EstablishControl(ReadOnlySpan<byte> consolePublicKey, ReadOnlySpan<byte> consoleNonce, ReadOnlySpan<byte> k16)
-        => throw new NotImplementedException(NotYet);
+    {
+        if (_controlEcdh is null)
+            throw new InvalidOperationException("Call GenerateControlPublicKey before establishing the control plane.");
+        if (consoleNonce.Length != 16 || k16.Length != 16)
+            return false;
 
-    bool IHalyardV2ControlCrypto.IsControlEstablished => false;
+        byte[] z;
+        try
+        {
+            z = HalyardStreamKeySchedule.DeriveSharedSecret(_controlEcdh, consolePublicKey);
+        }
+        catch (Exception ex) when (ex is ArgumentException or CryptographicException)
+        {
+            return false;
+        }
+
+        // sk_p = HMAC-SHA256(Z, 01|p|00|K16|0100) — the v1 DeriveDirection form with K16 in the handshakeKey role.
+        _skClientToConsole = HalyardStreamKeySchedule.DeriveDirection(z, k16, PurposeClientToConsole);
+        _skConsoleToClient = HalyardStreamKeySchedule.DeriveDirection(z, k16, PurposeConsoleToClient);
+        _n16 = consoleNonce.ToArray();
+        return true;
+    }
+
+    bool IHalyardV2ControlCrypto.IsControlEstablished => _skClientToConsole is not null && _n16 is not null;
 
     public byte[] SealClientToConsole(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> aad, ulong counter)
-        => throw new NotImplementedException(NotYet);
+    {
+        var sk = _skClientToConsole ?? throw new InvalidOperationException("Control plane not established.");
+        byte[] iv = DeriveControlIv(sk, counter);
+        var (ciphertext, tag) = AesGcmCore.Encrypt(sk.AesKey, iv, aad, plaintext);
+
+        byte[] result = new byte[ciphertext.Length + tag.Length];
+        ciphertext.CopyTo(result, 0);
+        tag.CopyTo(result, ciphertext.Length);
+        return result;
+    }
 
     public byte[]? OpenConsoleToClient(ReadOnlySpan<byte> ciphertextAndTag, ReadOnlySpan<byte> aad, ulong counter)
-        => throw new NotImplementedException(NotYet);
+    {
+        var sk = _skConsoleToClient ?? throw new InvalidOperationException("Control plane not established.");
+        if (ciphertextAndTag.Length < GcmTagLength)
+            return null;
+
+        ReadOnlySpan<byte> ciphertext = ciphertextAndTag[..^GcmTagLength];
+        ReadOnlySpan<byte> tag = ciphertextAndTag[^GcmTagLength..];
+        byte[] iv = DeriveControlIv(sk, counter);
+        return AesGcmCore.Decrypt(sk.AesKey, iv, aad, ciphertext, tag);
+    }
+
+    // IV = HMAC-SHA256(N16, sk_p[16:32] ‖ be64(counter))[0:16]. BaseIv is sk_p[16:32]. The counter restarts per
+    // TCP connection (0 for init2 and the ctrl request), so those reuse key+IV — the caller passes the counter.
+    private byte[] DeriveControlIv(in HalyardStreamKeySchedule.DirectionKeys sk, ulong counter)
+    {
+        Span<byte> data = stackalloc byte[HalyardStreamKeySchedule.BaseIvLength + sizeof(ulong)];
+        sk.BaseIv.CopyTo(data);
+        BinaryPrimitives.WriteUInt64BigEndian(data[HalyardStreamKeySchedule.BaseIvLength..], counter);
+
+        Span<byte> mac = stackalloc byte[32];
+        HMACSHA256.HashData(_n16!, data, mac);
+        return mac[..16].ToArray();
+    }
 
     public void Dispose()
     {
-        // Nothing to dispose yet; the ECDH key pairs and packet ciphers arrive with their phases.
+        _controlEcdh?.Dispose();
+        _controlEcdh = null;
     }
 }
