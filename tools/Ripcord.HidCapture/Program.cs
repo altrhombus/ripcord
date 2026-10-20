@@ -26,6 +26,7 @@ static int Run(string[] args)
     int deviceIndex = -1;
     string? outPath = null;
     bool listOnly = false;
+    bool activate = false;
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -33,6 +34,9 @@ static int Run(string[] args)
         {
             case "--list":
                 listOnly = true;
+                break;
+            case "--activate":
+                activate = true;   // read DualSense feature 0x05 first → switches BT to the full 0x31 report
                 break;
             case "--device" when i + 1 < args.Length:
                 int.TryParse(args[++i], out deviceIndex);
@@ -98,6 +102,28 @@ static int Run(string[] args)
         $"\"product\":{System.Text.Json.JsonSerializer.Serialize(dev.Product)},\"usagePage\":{dev.UsagePage}," +
         $"\"usage\":{dev.Usage},\"inputReportLen\":{dev.InputReportByteLength}}}\n";
     output.Write(System.Text.Encoding.UTF8.GetBytes(header));
+
+    if (activate)
+    {
+        // Reading feature 0x05 (calibration) activates full-report mode on a Bluetooth DualSense; 0x09 (pairing
+        // info / MAC) and 0x02 are logged too. Each is written as a normal [u16 len][bytes] record (its report ID
+        // in byte 0 distinguishes it from the input stream), and printed as hex.
+        foreach (byte fid in new byte[] { 0x05, 0x09, 0x02 })
+        {
+            byte[]? feat = HidNative.GetFeature(handle, fid);
+            if (feat is not null)
+            {
+                output.Write((ushort)feat.Length);
+                output.Write(feat, 0, feat.Length);
+                Console.WriteLine($"feature 0x{fid:X2} ({feat.Length} B): {Convert.ToHexString(feat)}");
+            }
+            else
+            {
+                Console.WriteLine($"feature 0x{fid:X2}: not available");
+            }
+        }
+        Console.WriteLine("activation: read feature 0x05 — a Bluetooth DualSense should now send full 0x31 reports.\n");
+    }
 
     long count = 0;
     bool stop = false;
