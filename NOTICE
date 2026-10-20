@@ -41,12 +41,13 @@ Interoperability constants
 --------------------------
 
 Ripcord includes a small set of constants (approximately 4 KB of constant
-data, stored hex-encoded in an 8.7 KB JSON file: four control
+data, stored hex-encoded in an 8.8 KB JSON file: four control
 key-derivation tables — a PlayStation 5 pair and a PlayStation 4 pair — four field
 context keys (the registration context key is one of those four, stored a second
 time under its own name), two registration key tables — a PlayStation 5 and a PlayStation 4 —
-two material-transform tables likewise, and a byte offset) that the console itself
-computes against. A client cannot speak this protocol without them, and they
+two material-transform tables likewise, a byte offset, and the PlayStation 5
+registration-authentication key — the fixed value the console checks a pairing
+request's authentication code against) that the console itself computes against. A client cannot speak this protocol without them, and they
 cannot be altered without breaking interoperability.
 They are data, kept in one committed file, and every client reads that file
 rather than keeping a copy. The dotnet client includes it as a resource, read at
