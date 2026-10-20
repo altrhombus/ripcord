@@ -1,3 +1,5 @@
+using System.Text;
+using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 using Xunit;
 
@@ -30,5 +32,21 @@ public class V2RegistrationTests
         Assert.Throws<ArgumentException>(() => HalyardV2Registration.ParsePin("12ab5678"));
         Assert.Throws<ArgumentException>(() => HalyardV2Registration.ParsePin("-1"));
         Assert.Throws<ArgumentException>(() => HalyardV2Registration.ParsePin(" 12 "));
+    }
+
+    [Fact]
+    public void BuildRequest_AddsRpHmacHeader_OnlyWhenProvided()
+    {
+        var request = new HalyardRegistrationRequest(
+            ConsoleId: "c", ConsoleHost: "1.2.3.4", AccountId: "0", Passcode: "12345678",
+            ClientDeviceId: new byte[16]);
+        byte[] body = new byte[8];
+        string hmacB64 = Convert.ToBase64String(HalyardV2Registration.ComputeRegistrationHmac(K16Reg, 12345678));
+
+        string v2 = Encoding.ASCII.GetString(HalyardRegistrationMessage.BuildRequest(request, "192.0.2.1", body, hmacB64));
+        string v1 = Encoding.ASCII.GetString(HalyardRegistrationMessage.BuildRequest(request, "192.0.2.1", body));
+
+        Assert.Contains("RP-Hmac: " + hmacB64 + "\r\n", v2);
+        Assert.DoesNotContain("RP-Hmac:", v1); // shipping v1 pairing stays byte-identical (no header)
     }
 }
