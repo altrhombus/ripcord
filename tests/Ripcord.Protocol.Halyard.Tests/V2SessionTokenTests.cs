@@ -87,4 +87,17 @@ public class V2SessionTokenTests
         Assert.Equal(Convert.ToHexString(minted),
             Convert.ToHexString(HalyardSessionToken.ResolveK16(rolled.RolledToken, K16Reg)));
     }
+
+    [Fact]
+    public void PairingRecord_RoundTripsSupportsGcm()
+    {
+        var withGcm = new HalyardPairingRecord("abcd1234"u8.ToArray(), new byte[16], 2) { SupportsGcm = true };
+        Assert.True(HalyardPairingRecord.TryDeserialize(withGcm.Serialize(), out var restored));
+        Assert.True(restored!.SupportsGcm);
+
+        var withoutGcm = new HalyardPairingRecord("abcd1234"u8.ToArray(), new byte[16], 2);
+        Assert.False(withoutGcm.SupportsGcm);
+        Assert.True(HalyardPairingRecord.TryDeserialize(withoutGcm.Serialize(), out var restored2));
+        Assert.False(restored2!.SupportsGcm);
+    }
 }

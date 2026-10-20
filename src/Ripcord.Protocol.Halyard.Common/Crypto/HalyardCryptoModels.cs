@@ -55,6 +55,14 @@ public sealed record HalyardRegistrationRequest(
     /// <see cref="Passcode"/> is ignored; empty means the PIN route.
     /// </summary>
     public ReadOnlyMemory<byte> AccountSeed { get; init; } = ReadOnlyMemory<byte>.Empty;
+
+    /// <summary>
+    /// The v2 PIN-registration <c>RP-Hmac</c> header value (base64 of <c>HMAC-SHA256(K16_reg, PIN u32 LE)</c>),
+    /// when this is a v2-capable PS5 PIN pairing; <see langword="null"/> otherwise (v1, PS4, the account route).
+    /// The registration client fills it from the bundled <c>K16_reg</c>; the transport emits it as the
+    /// <c>RP-Hmac</c> header, which is what makes the console pair the client as v2-capable.
+    /// </summary>
+    public string? RegistrationHmacBase64 { get; init; }
 }
 
 /// <summary>Which console family is being paired - picks the registration endpoint path (spec §2.0).</summary>
