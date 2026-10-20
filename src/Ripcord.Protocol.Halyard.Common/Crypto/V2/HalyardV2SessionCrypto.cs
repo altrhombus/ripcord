@@ -33,6 +33,12 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
 
     // Held for the launchSpec KDF (M) and the per-direction stream schedule, exactly as the v1 crypto holds it.
     private readonly HalyardControlSecrets _secrets;
+    private readonly HalyardControlKdf _kdf;
+
+    // The launchSpec cipher is v1's unchanged: AES-128-OFB under M = KDF(RP-Nonce, RP-Key), IV keyed by the
+    // selectorOne context key (confirmed: the v2 launchSpec differs from v1 only by counter 0 and dropping
+    // handshakeKey, LAUNCHSPEC-CTRL-FIELDS §1), so v2 reuses the v1 field crypto rather than re-deriving it.
+    private HalyardControlFieldCrypto? _field;
 
     // Path A (control plane). The purposes are the info-string's second byte: 0x09 client->console, 0x08 the
     // other way (spec §4). The GCM tag is the full 16 bytes.
@@ -46,7 +52,10 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private HalyardStreamKeySchedule.DirectionKeys? _skConsoleToClient; // sk_8
 
     public HalyardV2SessionCrypto(HalyardControlSecrets secrets)
-        => _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
+    {
+        _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
+        _kdf = new HalyardControlKdf(_secrets);
+    }
 
     // ---- IHalyardSessionCrypto: control plane ----
 
@@ -55,10 +64,19 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private const string NoFieldCrypto =
         "v2 has no per-field control crypto; use the IHalyardV2ControlCrypto GCM envelope.";
 
-    /// <summary>Establishes the control KDF (M) used for the launchSpec OFB — the v1 derivation, reused by v2.</summary>
-    public void EstablishControl(in HalyardControlKeyMaterial material) => throw new NotImplementedException(NotYet);
+    /// <summary>
+    /// Establish the control KDF material (M) used for the launchSpec OFB — the v1 derivation, reused unchanged
+    /// by v2. This is NOT the GCM control plane (that is <see cref="EstablishControl(ReadOnlySpan{byte},
+    /// ReadOnlySpan{byte}, ReadOnlySpan{byte})"/> on <see cref="IHalyardV2ControlCrypto"/>); it only sets up the
+    /// launchSpec cipher, so v2 needs both.
+    /// </summary>
+    public void EstablishControl(in HalyardControlKeyMaterial material)
+        => _field = HalyardControlFieldCrypto.FromKdf(
+            _kdf, _secrets.ContextKeys,
+            material.Nonce.Span, material.Companion.Span,
+            material.CodecSelector, material.VersionSelector);
 
-    bool IHalyardSessionCrypto.IsControlEstablished => false;
+    bool IHalyardSessionCrypto.IsControlEstablished => _field is not null;
 
     public byte[] EncryptControlField(ulong counter, ReadOnlySpan<byte> plaintext)
         => throw new NotSupportedException(NoFieldCrypto);
@@ -66,7 +84,13 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     public byte[] DecryptControlField(ulong counter, ReadOnlySpan<byte> ciphertext)
         => throw new NotSupportedException(NoFieldCrypto);
 
-    public byte[] CryptStreaminfo(ulong counter, ReadOnlySpan<byte> data) => throw new NotImplementedException(NotYet);
+    /// <summary>
+    /// Encrypt/decrypt the launchSpec config (AES-128-OFB), byte-identical to v1. v2 uses it at counter 0 (v1
+    /// used 5, after its five field-crypt headers), over the v1 template minus <c>handshakeKey</c>.
+    /// </summary>
+    public byte[] CryptStreaminfo(ulong counter, ReadOnlySpan<byte> data)
+        => (_field ?? throw new InvalidOperationException("launchSpec crypto not established (call EstablishControl first)."))
+            .StreaminfoCrypt(counter, data);
 
     // ---- IHalyardSessionCrypto: stream key agreement (Phase 2) ----
 

@@ -37,8 +37,8 @@ public class V2SessionCryptoStubTests
     public void UnbuiltTransforms_ThrowNotImplemented()
     {
         using var crypto = New();
-        // Phase 2 (stream) and the launchSpec OFB are not built yet.
+        // The stream plane (Phase 2) is not built yet. (Control + launchSpec now are — covered elsewhere.)
         Assert.Throws<NotImplementedException>(() => crypto.GenerateEphemeralPublicKey(0x11));
-        Assert.Throws<NotImplementedException>(() => crypto.CryptStreaminfo(0, new byte[16]));
+        Assert.Throws<NotImplementedException>(() => crypto.TryEstablishStream(new byte[133], new byte[16]));
     }
 }
