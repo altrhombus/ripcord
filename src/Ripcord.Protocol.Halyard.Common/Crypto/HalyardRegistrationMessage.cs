@@ -62,8 +62,12 @@ public static class HalyardRegistrationMessage
             .Append("Content-Length: ").Append(encryptedBody.Length).Append("\r\n")
             .Append("RP-Version: ").Append(RpVersion(request.Platform)).Append("\r\n");
 
+        // v2 registration also advertises the capability mask (120000) alongside the RP-Hmac; v1 sends neither.
         if (registrationHmacBase64 is not null)
-            head.Append("RP-Hmac: ").Append(registrationHmacBase64).Append("\r\n");
+        {
+            head.Append("RP-SupportCmd: 120000\r\n")
+                .Append("RP-Hmac: ").Append(registrationHmacBase64).Append("\r\n");
+        }
 
         head.Append("\r\n");
         string headText = head.ToString();

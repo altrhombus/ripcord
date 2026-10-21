@@ -1,26 +1,24 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
 using System.Text;
+using Ripcord.Core.Net.Crypto;
 using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Crypto.V1;
+using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 using Ripcord.Protocol.Halyard.Session;
 using Xunit;
 
 namespace Ripcord.Protocol.Halyard.Tests;
 
-/// <summary>The v2 /sess/init request builder (spec §4): the v1 header set plus RP-Pubkey + RP-Hmac.</summary>
+/// <summary>
+/// The v2 control-plane HTTP request builders (spec §4): the /sess/init header set, and /sess/init2 (the
+/// GCM-sealed RP-VerifyKey). init2 is round-tripped against a synthetic console that strips RP-Data/RP-Tag,
+/// recomputes the AAD from the bytes we sent, and opens the envelope.
+/// </summary>
 public class V2RequestsTests
 {
-    private static Dictionary<string, string> HeadersOf(SessRequest request)
-    {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (string line in Encoding.ASCII.GetString(request.Serialize()).Split("\r\n"))
-        {
-            int i = line.IndexOf(": ", StringComparison.Ordinal);
-            if (i > 0)
-                map[line[..i]] = line[(i + 2)..];
-        }
-
-        return map;
-    }
+    private static readonly byte[] N16 = TestSecrets.SyntheticControlSecrets().ContextKeys.SelectorOne.ToArray();
 
     [Fact]
     public void V2InitRequest_CarriesPubkeyHmacSupportCmdAndFeature()
@@ -38,8 +36,76 @@ public class V2RequestsTests
         var headers = HeadersOf(request);
         Assert.Equal(Convert.ToBase64String(pubkey), headers[SessProtocol.HeaderPubKey]);
         Assert.Equal(Convert.ToBase64String(hmac), headers[SessProtocol.HeaderHmac]);
-        Assert.Equal(SessProtocol.DefaultSupportCmd, headers[SessProtocol.HeaderSupportCmd]);
+        Assert.Equal(SessProtocol.V2SupportCmd, headers[SessProtocol.HeaderSupportCmd]); // 120000, not the v1 value
         Assert.Equal("1", headers[SessProtocol.HeaderFeature]);
         Assert.Equal("1.0", headers["Rp-Version"]);
+    }
+
+    [Fact]
+    public void V2Init2Request_SealsTheVerifyKey_AndTheConsoleOpensIt()
+    {
+        using var client = new HalyardV2SessionCrypto(TestSecrets.SyntheticControlSecrets());
+        byte[] clientPub = client.GenerateControlPublicKey();
+        var (consoleEcdh, consolePub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
+        byte[] k16 = RandomNumberGenerator.GetBytes(16);
+        Assert.True(client.EstablishControl(consolePub, k16));
+        byte[] z = HalyardStreamKeySchedule.DeriveSharedSecret(consoleEcdh, clientPub);
+        var skC2S = HalyardStreamKeySchedule.DeriveDirection(z, k16, 0x09); // purpose 9 = client->console
+        consoleEcdh.Dispose();
+
+        byte[] verifyKey = HalyardSessionToken.Mint();
+        SessRequest init2 = HalyardV2Requests.BuildInit2Request(client, verifyKey, HalyardConsolePlatform.Ps5, "192.0.2.1:9295");
+
+        Assert.Contains("/sess/init2", init2.Path);
+        Assert.Equal("HTTP/1.2", init2.HttpVersion);
+
+        // Console side: strip RP-Data/RP-Tag, rebuild the AAD from what we sent, open at purpose 9 / counter 0.
+        (byte[] aad, byte[] ct, byte[] tag) = ConsoleView(init2);
+        byte[] iv = Iv(skC2S, 0);
+        byte[]? plaintext = AesGcmCore.Decrypt(skC2S.AesKey, iv, aad, ct, tag);
+
+        Assert.NotNull(plaintext);
+        Assert.Equal($"RP-VerifyKey: {Convert.ToBase64String(verifyKey)}\r\n", Encoding.ASCII.GetString(plaintext!));
+    }
+
+    // What the console receives: AAD = the header lines minus RP-Data/RP-Tag (CRLF-joined + CRLF), and the two
+    // base64 values. Mirrors how a console would read our request off the wire.
+    private static (byte[] Aad, byte[] Ct, byte[] Tag) ConsoleView(SessRequest request)
+    {
+        string[] lines = Encoding.ASCII.GetString(request.Serialize()).Split("\r\n");
+        var kept = new List<string>();
+        string? data = null, tag = null;
+        for (int i = 1; i < lines.Length; i++) // skip the request line
+        {
+            string line = lines[i];
+            if (line.Length == 0) break; // blank line ends the headers
+            if (line.StartsWith("RP-Data: ", StringComparison.Ordinal)) { data = line["RP-Data: ".Length..]; continue; }
+            if (line.StartsWith("RP-Tag: ", StringComparison.Ordinal)) { tag = line["RP-Tag: ".Length..]; continue; }
+            kept.Add(line);
+        }
+
+        byte[] aad = Encoding.ASCII.GetBytes(string.Join("\r\n", kept) + "\r\n");
+        return (aad, Convert.FromBase64String(data!), Convert.FromBase64String(tag!));
+    }
+
+    private static byte[] Iv(in HalyardStreamKeySchedule.DirectionKeys sk, ulong counter)
+    {
+        byte[] data = new byte[16 + sizeof(ulong)];
+        sk.BaseIv.CopyTo(data, 0);
+        BinaryPrimitives.WriteUInt64BigEndian(data.AsSpan(16), counter);
+        return HMACSHA256.HashData(N16, data)[..16];
+    }
+
+    private static Dictionary<string, string> HeadersOf(SessRequest request)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string line in Encoding.ASCII.GetString(request.Serialize()).Split("\r\n"))
+        {
+            int i = line.IndexOf(": ", StringComparison.Ordinal);
+            if (i > 0)
+                map[line[..i]] = line[(i + 2)..];
+        }
+
+        return map;
     }
 }
