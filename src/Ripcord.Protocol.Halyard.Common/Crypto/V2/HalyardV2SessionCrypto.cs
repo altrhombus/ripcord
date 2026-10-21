@@ -19,13 +19,27 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 ///   <see cref="IHalyardSessionCrypto"/> therefore throw here.</description></item>
 ///   <item><description><b>launchSpec</b> — still AES-128-OFB under the v1 control KDF (M = KDF(RP-Nonce,
 ///   RP-Key)), counter 0, so <see cref="CryptStreaminfo"/> is reused (Phase 1).</description></item>
-///   <item><description><b>Stream key agreement</b> — the v1 schedule with the client-minted <c>X</c> in the
+///   <item><description><b>Stream key agreement</b> — the v1 schedule with the per-session secret <c>X</c> in the
 ///   <c>handshakeKey</c> role (<see cref="HalyardStreamKeySchedule"/>), so the agreement methods carry over
-///   (Phase 2).</description></item>
-///   <item><description><b>Per-packet</b> — v2 shifts the header offsets (A/V tag@18, key_pos@22), rotates the
-///   GMAC key with a <em>double</em> fold over the window-0 key, and increments the AES-CTR block counter
-///   <b>little-endian</b> — so the per-packet methods need a v2 packet-crypto variant (Phase 2).</description></item>
+///   (Phase 2, implemented here). <c>X</c> arrives as the <c>handshakeKey</c> argument exactly as v1's launchSpec
+///   X did.</description></item>
+///   <item><description><b>Per-packet</b> — v2 shifts the A/V header offsets (tag@18, key_pos@22, the caller's
+///   <see cref="HalyardPacketLayout"/>) and rotates the GMAC key one window earlier
+///   (<see cref="HalyardGmacWindowRule.FromKeyPosMinusOne"/>); AES-CTR is the v1 little-endian block counter
+///   unchanged. So the per-packet methods reuse <see cref="HalyardPacketCrypto"/> with the v2 window rule
+///   (Phase 2, implemented here for the s2c A/V receive path + key agreement).</description></item>
 /// </list>
+///
+/// <para><b>Phase 2 open [X] — how <c>X</c> is produced.</b> <c>X</c> is a per-session secret that BOTH sides
+/// hold (the console signs its stream pubkey with it), is on no wire, and whose derivation is unresolved
+/// (captures <c>X-ORIGIN-CORRECTION-2026-10-20.md</c>; ~1,450 candidates miss). This class never derives X; it
+/// consumes whatever the caller supplies as <c>handshakeKey</c>. Until the derivation is found, the live caller
+/// cannot produce X, so the stream plane is exercised only by the known-answer vectors (a captured X), never
+/// live. Do NOT invent an X derivation.</para>
+///
+/// <para>The c2s send-authentication methods (<c>SealControlMessage</c>/<c>SealCongestionPacket</c>/
+/// <c>SealFeedbackPacket</c>) use v2-specific, per-format header offsets (AV-CTR-FEC-FEEDBACK.md) and are the
+/// remaining Phase 2 piece; they throw until wired.</para>
 /// </summary>
 public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2ControlCrypto, IDisposable
 {
@@ -49,6 +63,13 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private ECDiffieHellman? _controlEcdh;
     private HalyardStreamKeySchedule.DirectionKeys? _skClientToConsole; // sk_9: AesKey = sk[0:16], BaseIv = sk[16:32]
     private HalyardStreamKeySchedule.DirectionKeys? _skConsoleToClient; // sk_8
+
+    // Stream plane (Phase 2): its own ephemeral ECDH, separate from the control plane's, and the per-direction
+    // packet crypto. v2 rotates the GMAC key one window earlier than v1 (confirmed on s2c A/V).
+    private const HalyardGmacWindowRule StreamWindowRule = HalyardGmacWindowRule.FromKeyPosMinusOne;
+    private ECDiffieHellman? _streamEcdh;
+    private HalyardPacketCrypto? _send;    // client -> console (feedback/input)
+    private HalyardPacketCrypto? _receive; // console -> client (A/V)
 
     public HalyardV2SessionCrypto(HalyardControlSecrets secrets)
     {
@@ -92,27 +113,91 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
             .StreaminfoCrypt(counter, data);
 
     // ---- IHalyardSessionCrypto: stream key agreement (Phase 2) ----
+    // Identical to v1: the stream ECDH + per-direction KDF (HalyardStreamKeySchedule), with X in the handshakeKey
+    // role. v2 differs from v1 only in the per-packet window rule below, so these carry over unchanged.
 
-    public byte[] GenerateEphemeralPublicKey(int protocolVersion) => throw new NotImplementedException(NotYet);
+    public byte[] GenerateEphemeralPublicKey(int protocolVersion)
+    {
+        _streamEcdh?.Dispose();
+        var curve = HalyardStreamKeySchedule.CurveForVersion(protocolVersion);
+        var (keyPair, publicKey) = HalyardStreamKeySchedule.GenerateKeyPair(curve);
+        _streamEcdh = keyPair;
+        return publicKey;
+    }
 
+    /// <summary><c>ecdhSignature = HMAC-SHA256(X, publicKey)</c> — X in the handshakeKey role (confirmed 003/004).</summary>
     public byte[] ComputeEcdhSignature(ReadOnlySpan<byte> handshakeKey, ReadOnlySpan<byte> publicKey)
-        => throw new NotImplementedException(NotYet);
+        => HalyardStreamKeySchedule.ComputeEcdhSignature(handshakeKey, publicKey);
 
     public bool VerifyEcdhSignature(ReadOnlySpan<byte> handshakeKey, ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> signature)
-        => throw new NotImplementedException(NotYet);
+        => HalyardStreamKeySchedule.VerifyEcdhSignature(handshakeKey, publicKey, signature);
 
+    /// <summary>
+    /// Complete the stream key agreement. <paramref name="handshakeKey"/> is the per-session secret <c>X</c>
+    /// (<see cref="HalyardV2SessionCrypto"/> class remarks): the caller supplies it; this class does not derive
+    /// it. Per-direction keys follow the v1 schedule <c>HMAC(Z_stream, 01|dir|00|X|0100)</c>, dir 2 = c2s,
+    /// dir 3 = s2c — the packet crypto then applies the v2 window rule.
+    /// </summary>
     public bool TryEstablishStream(ReadOnlySpan<byte> peerPublicKey, ReadOnlySpan<byte> handshakeKey)
-        => throw new NotImplementedException(NotYet);
+    {
+        if (_streamEcdh is null)
+            throw new InvalidOperationException("Call GenerateEphemeralPublicKey before establishing the stream.");
 
-    public bool IsStreamEstablished => false;
+        byte[] sharedSecret;
+        try
+        {
+            sharedSecret = HalyardStreamKeySchedule.DeriveSharedSecret(_streamEcdh, peerPublicKey);
+        }
+        catch (Exception ex) when (ex is ArgumentException or CryptographicException)
+        {
+            return false;
+        }
+
+        var sendKeys = HalyardStreamKeySchedule.DeriveDirection(sharedSecret, handshakeKey, HalyardStreamKeySchedule.DirectionClientToServer);
+        var recvKeys = HalyardStreamKeySchedule.DeriveDirection(sharedSecret, handshakeKey, HalyardStreamKeySchedule.DirectionServerToClient);
+        _send = new HalyardPacketCrypto(sendKeys, StreamWindowRule);
+        _receive = new HalyardPacketCrypto(recvKeys, StreamWindowRule);
+        return true;
+    }
+
+    public bool IsStreamEstablished => _send is not null && _receive is not null;
 
     // ---- IHalyardSessionCrypto: per-packet stream crypto (Phase 2) ----
 
-    public bool TryOpenPacket(Span<byte> packet, in HalyardPacketLayout layout) => throw new NotImplementedException(NotYet);
-    public void SealPacket(Span<byte> packet, in HalyardPacketLayout layout) => throw new NotImplementedException(NotYet);
-    public void SealControlMessage(Span<byte> packet) => throw new NotImplementedException(NotYet);
-    public void SealCongestionPacket(Span<byte> packet) => throw new NotImplementedException(NotYet);
-    public void SealFeedbackPacket(Span<byte> packet, int payloadOffset) => throw new NotImplementedException(NotYet);
+    /// <summary>Verify the 4-byte GMAC then AES-CTR-decrypt an incoming (s2c A/V) packet in place. The caller's
+    /// <paramref name="layout"/> carries the v2 offsets (A/V tag@18, key_pos@22, payload@26).</summary>
+    public bool TryOpenPacket(Span<byte> packet, in HalyardPacketLayout layout)
+    {
+        var receive = _receive;
+        if (receive is null)
+            return false; // stream not yet established — drop rather than throw
+        if (!receive.VerifyPacket(layout.KeyPos, packet, layout.TagOffset))
+            return false;
+
+        receive.CryptPayloadInPlace(layout.KeyPos, packet[layout.PayloadOffset..]);
+        return true;
+    }
+
+    /// <summary>AES-CTR encrypt an outgoing packet's payload in place, then write the 4-byte GMAC (encrypt-then-MAC).</summary>
+    public void SealPacket(Span<byte> packet, in HalyardPacketLayout layout)
+    {
+        var send = _send ?? throw new InvalidOperationException("Stream crypto not established.");
+        var encrypted = send.CryptPayload(layout.KeyPos, packet[layout.PayloadOffset..]);
+        encrypted.CopyTo(packet[layout.PayloadOffset..]);
+
+        var tag = send.ComputeTag(layout.KeyPos, packet, layout.TagOffset);
+        tag.CopyTo(packet.Slice(layout.TagOffset, HalyardPacketCrypto.TagLength));
+    }
+
+    // c2s send-authentication: v2 uses per-format header offsets distinct from v1 (base 0x00 control = tag@5/
+    // keypos@9 zero-both; 0x05 congestion = tag@15/keypos@19 zero-both; 0x01 feedback = tag@16/keypos@12 tag-only;
+    // 0x0e input CTR payload@21), confirmed byte-exact c2s (AV-CTR-FEC-FEEDBACK.md) but not yet wired here. The
+    // advancing key-position counter the three share is also not yet modelled. Remaining Phase 2 piece.
+    private const string SendAuthNotYet =
+        "v2 c2s send-authentication is not wired yet (per-format offsets are in AV-CTR-FEC-FEEDBACK.md).";
+    public void SealControlMessage(Span<byte> packet) => throw new NotImplementedException(SendAuthNotYet);
+    public void SealCongestionPacket(Span<byte> packet) => throw new NotImplementedException(SendAuthNotYet);
+    public void SealFeedbackPacket(Span<byte> packet, int payloadOffset) => throw new NotImplementedException(SendAuthNotYet);
 
     // ---- IHalyardV2ControlCrypto: the GCM envelope (Path A) ----
 
@@ -202,5 +287,11 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     {
         _controlEcdh?.Dispose();
         _controlEcdh = null;
+        _streamEcdh?.Dispose();
+        _streamEcdh = null;
+        _send?.Dispose();
+        _send = null;
+        _receive?.Dispose();
+        _receive = null;
     }
 }

@@ -1,4 +1,5 @@
 using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 using Xunit;
 
@@ -34,11 +35,25 @@ public class V2SessionCryptoStubTests
     }
 
     [Fact]
-    public void UnbuiltTransforms_ThrowNotImplemented()
+    public void StreamKeyAgreementAndAvPackets_AreBuilt()
     {
         using var crypto = New();
-        // The stream plane (Phase 2) is not built yet. (Control + launchSpec now are — covered elsewhere.)
-        Assert.Throws<NotImplementedException>(() => crypto.GenerateEphemeralPublicKey(0x11));
-        Assert.Throws<NotImplementedException>(() => crypto.TryEstablishStream(new byte[133], new byte[16]));
+        // Phase 2: the stream key agreement + s2c A/V per-packet crypto are implemented (KATs in
+        // V2StreamPacketVectorTests). They no longer throw; X arrives as the handshakeKey argument.
+        byte[] pub = crypto.GenerateEphemeralPublicKey(0x11);
+        Assert.Equal(HalyardStreamKeySchedule.PublicKeyLengthP521, pub.Length);
+        Assert.True(crypto.TryEstablishStream(
+            New().GenerateEphemeralPublicKey(0x11), new byte[16]));
+        Assert.True(crypto.IsStreamEstablished);
+    }
+
+    [Fact]
+    public void C2sSendAuth_IsTheRemainingUnbuiltPiece()
+    {
+        using var crypto = New();
+        // The c2s send-authentication path (per-format offsets, AV-CTR-FEC-FEEDBACK.md) is the last Phase 2 piece.
+        Assert.Throws<NotImplementedException>(() => crypto.SealControlMessage(new byte[32]));
+        Assert.Throws<NotImplementedException>(() => crypto.SealCongestionPacket(new byte[32]));
+        Assert.Throws<NotImplementedException>(() => crypto.SealFeedbackPacket(new byte[32], 0xc));
     }
 }
