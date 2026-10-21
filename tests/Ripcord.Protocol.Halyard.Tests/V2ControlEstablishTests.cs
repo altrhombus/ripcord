@@ -57,7 +57,7 @@ public class V2ControlEstablishTests
         Assert.True(SessResponse.TryParse(
             Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"), out SessResponse? bare, out _));
         Assert.False(HalyardV2Control.TryEstablish(bare!, new byte[16], client, out string? problem));
-        Assert.Contains("RP-Nonce", problem);
+        Assert.Contains("RP-Pubkey", problem);
     }
 
     private static byte[] ConsolePublicKey()

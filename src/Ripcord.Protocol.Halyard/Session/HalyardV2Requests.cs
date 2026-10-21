@@ -26,7 +26,8 @@ internal static class HalyardV2Requests
             ? string.Empty
             : Convert.ToHexString(registrationKey).ToLowerInvariant();
 
-        return new SessRequest(SessHttpMethod.Get, SessProtocol.PathFor(platform, "init"), "HTTP/1.1")
+        // v2 /sess/init is HTTP/1.2 on the wire (confirmed, cap 004); ctrl stays HTTP/1.1.
+        return new SessRequest(SessHttpMethod.Get, SessProtocol.PathFor(platform, "init"), "HTTP/1.2")
             .Header("Host", hostHeader)
             .Header("User-Agent", "remoteplay Windows")
             .Header("Connection", "close")

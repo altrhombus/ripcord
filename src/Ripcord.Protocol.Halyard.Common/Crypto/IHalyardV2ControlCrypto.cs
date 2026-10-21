@@ -16,12 +16,13 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto;
 ///   <item><description>The client offers a P-521 control ECDH public key on <c>/sess/init</c>, authenticated
 ///   by <c>RP-Hmac = HMAC-SHA256(K16, publicKey[:133])</c>. The base64 <c>RP-Pubkey</c> decodes to 135 bytes;
 ///   the HMAC is over the first 133 (the uncompressed P-521 point).</description></item>
-///   <item><description>The console answers with its own public key and a 16-byte nonce (<c>N16</c>).
-///   <c>Z</c> is the ECDH-P-521 shared X-coordinate (66 bytes).</description></item>
+///   <item><description>The console answers with its own public key (its <c>RP-Nonce</c> is for the launchSpec,
+///   not here). <c>Z</c> is the ECDH-P-521 shared X-coordinate (66 bytes).</description></item>
 ///   <item><description><c>sk_p = HMAC-SHA256(Z, 01 ‖ p ‖ 00 ‖ K16 ‖ 01 ‖ 00)</c>, with <c>p = 0x09</c> for
 ///   client→console and <c>p = 0x08</c> for console→client.</description></item>
 ///   <item><description>Each direction is AES-128-GCM, key <c>sk_p[0:16]</c>, with a 16-byte IV
-///   <c>HMAC-SHA256(N16, sk_p[16:32] ‖ be64(ctr))[0:16]</c>.</description></item>
+///   <c>HMAC-SHA256(N16, sk_p[16:32] ‖ be64(ctr))[0:16]</c>, where <b>N16 is the fixed <c>selectorOne</c> context
+///   key from the interop bundle</b> (confirmed against captures 004/009; NOT the per-session RP-Nonce).</description></item>
 ///   <item><description><b>The per-direction counter restarts at 0 per TCP connection</b>, so init2 and the
 ///   ctrl request on one connection reuse key+IV — a client MUST reproduce this to interoperate. The RPCS
 ///   channel on the same connection then continues the counter (1, 2, …), so the counter is the caller's to
@@ -50,11 +51,11 @@ public interface IHalyardV2ControlCrypto
 
     /// <summary>
     /// Complete Path A: derive <c>Z</c> by ECDH against the console's control public key, then the two
-    /// per-direction GCM keys from <c>Z</c>, the console nonce <paramref name="consoleNonce"/> (<c>N16</c>) and
-    /// the session <paramref name="k16"/>. Returns <see langword="false"/> if the inputs are unusable (the
-    /// instance is left not-established).
+    /// per-direction GCM keys from <c>Z</c> and the session <paramref name="k16"/>. (The IV's N16 is the fixed
+    /// bundle constant, not a session value, so no nonce is needed here.) Returns <see langword="false"/> if the
+    /// inputs are unusable (the instance is left not-established).
     /// </summary>
-    bool EstablishControl(ReadOnlySpan<byte> consolePublicKey, ReadOnlySpan<byte> consoleNonce, ReadOnlySpan<byte> k16);
+    bool EstablishControl(ReadOnlySpan<byte> consolePublicKey, ReadOnlySpan<byte> k16);
 
     /// <summary>Whether <see cref="EstablishControl"/> has succeeded.</summary>
     bool IsControlEstablished { get; }

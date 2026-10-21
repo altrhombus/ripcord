@@ -34,6 +34,7 @@ public class V2RequestsTests
             HalyardConsolePlatform.Ps5, "192.0.2.1:9295", registrationKey: null, pubkey, hmac);
 
         Assert.Contains("/sess/init", request.Path);
+        Assert.Equal("HTTP/1.2", request.HttpVersion); // v2 init is HTTP/1.2 (cap 004)
         var headers = HeadersOf(request);
         Assert.Equal(Convert.ToBase64String(pubkey), headers[SessProtocol.HeaderPubKey]);
         Assert.Equal(Convert.ToBase64String(hmac), headers[SessProtocol.HeaderHmac]);

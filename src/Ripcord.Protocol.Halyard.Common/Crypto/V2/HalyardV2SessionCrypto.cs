@@ -47,7 +47,6 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private const int GcmTagLength = 16;
 
     private ECDiffieHellman? _controlEcdh;
-    private byte[]? _n16;
     private HalyardStreamKeySchedule.DirectionKeys? _skClientToConsole; // sk_9: AesKey = sk[0:16], BaseIv = sk[16:32]
     private HalyardStreamKeySchedule.DirectionKeys? _skConsoleToClient; // sk_8
 
@@ -135,11 +134,11 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         return HMACSHA256.HashData(k16, publicKey[..point]);
     }
 
-    public bool EstablishControl(ReadOnlySpan<byte> consolePublicKey, ReadOnlySpan<byte> consoleNonce, ReadOnlySpan<byte> k16)
+    public bool EstablishControl(ReadOnlySpan<byte> consolePublicKey, ReadOnlySpan<byte> k16)
     {
         if (_controlEcdh is null)
             throw new InvalidOperationException("Call GenerateControlPublicKey before establishing the control plane.");
-        if (consoleNonce.Length != 16 || k16.Length != 16)
+        if (k16.Length != 16)
             return false;
 
         byte[] z;
@@ -155,11 +154,10 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         // sk_p = HMAC-SHA256(Z, 01|p|00|K16|0100) — the v1 DeriveDirection form with K16 in the handshakeKey role.
         _skClientToConsole = HalyardStreamKeySchedule.DeriveDirection(z, k16, PurposeClientToConsole);
         _skConsoleToClient = HalyardStreamKeySchedule.DeriveDirection(z, k16, PurposeConsoleToClient);
-        _n16 = consoleNonce.ToArray();
         return true;
     }
 
-    bool IHalyardV2ControlCrypto.IsControlEstablished => _skClientToConsole is not null && _n16 is not null;
+    bool IHalyardV2ControlCrypto.IsControlEstablished => _skClientToConsole is not null;
 
     public byte[] SealClientToConsole(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> aad, ulong counter)
     {
@@ -185,8 +183,10 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         return AesGcmCore.Decrypt(sk.AesKey, iv, aad, ciphertext, tag);
     }
 
-    // IV = HMAC-SHA256(N16, sk_p[16:32] ‖ be64(counter))[0:16]. BaseIv is sk_p[16:32]. The counter restarts per
-    // TCP connection (0 for init2 and the ctrl request), so those reuse key+IV — the caller passes the counter.
+    // IV = HMAC-SHA256(N16, sk_p[16:32] ‖ be64(counter))[0:16]. N16 is the FIXED selectorOne context key from the
+    // bundle (confirmed against captures 004/009 via validate_path_a.py — NOT the per-session RP-Nonce, which is
+    // used only for the launchSpec M). BaseIv is sk_p[16:32]. The counter restarts per TCP connection (0 for
+    // init2 and the ctrl request, each on its own connection), so those reuse key+IV — the caller passes it.
     private byte[] DeriveControlIv(in HalyardStreamKeySchedule.DirectionKeys sk, ulong counter)
     {
         Span<byte> data = stackalloc byte[HalyardStreamKeySchedule.BaseIvLength + sizeof(ulong)];
@@ -194,7 +194,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         BinaryPrimitives.WriteUInt64BigEndian(data[HalyardStreamKeySchedule.BaseIvLength..], counter);
 
         Span<byte> mac = stackalloc byte[32];
-        HMACSHA256.HashData(_n16!, data, mac);
+        HMACSHA256.HashData(_secrets.ContextKeys.SelectorOne.Span, data, mac);
         return mac[..16].ToArray();
     }
 
