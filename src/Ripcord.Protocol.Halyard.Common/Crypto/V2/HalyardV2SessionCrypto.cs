@@ -6,7 +6,7 @@ using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 /// <summary>
-/// The v2 (PS5, 8.5-class) session crypto. A <b>seam-and-stub</b> at present (CLAUDE.md, "Prefer this
+/// The v2 (PS5) session crypto. A <b>seam-and-stub</b> at present (CLAUDE.md, "Prefer this
 /// seam-and-stub shape for new unsolved work"): the shape is fixed and the design is captured, and the real
 /// transforms land phase by phase, each gated by the known-answer vectors in docs/protocol/captures
 /// (V2-STREAM-VALIDATION.md). It is wired to nothing live until the control-plane and state machine are done,

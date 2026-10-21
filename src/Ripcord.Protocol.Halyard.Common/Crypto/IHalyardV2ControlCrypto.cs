@@ -1,7 +1,7 @@
 namespace Ripcord.Protocol.Halyard.Common.Crypto;
 
 /// <summary>
-/// THE v2 CONTROL-PLANE SEAM ("Path A"). The v2 (PS5, 8.5-class) control plane replaces v1's per-field
+/// THE v2 CONTROL-PLANE SEAM ("Path A"). The v2 (PS5) control plane replaces v1's per-field
 /// AES-128-CFB (<see cref="IHalyardSessionCrypto.EncryptControlField"/> /
 /// <see cref="IHalyardSessionCrypto.DecryptControlField"/>) with a single AES-128-GCM <em>envelope</em> over
 /// the whole <c>/sess/init2</c> and <c>/sess/ctrl</c> body. It is a different mechanism, so it lives on its own
@@ -11,7 +11,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto;
 /// <c>handshakeKey</c> role, and the launchSpec is still AES-128-OFB under the v1 control KDF — so those stay on
 /// <see cref="IHalyardSessionCrypto"/>.
 ///
-/// <para><b>The scheme</b> (spec §4, confirmed against our own 8.5 captures 003/004/009):</para>
+/// <para><b>The scheme</b> (spec §4, confirmed against our own captures 003/004/009):</para>
 /// <list type="bullet">
 ///   <item><description>The client offers a P-521 control ECDH public key on <c>/sess/init</c>, authenticated
 ///   by <c>RP-Hmac = HMAC-SHA256(K16, publicKey[:133])</c>. The base64 <c>RP-Pubkey</c> decodes to 135 bytes;

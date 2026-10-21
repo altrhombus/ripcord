@@ -104,7 +104,7 @@ message SessionRequestPayload {
   required bytes encryptedKey = 4;
   optional bytes ecdhPublicKey = 5;     // 65-byte uncompressed P-256 point (v2: 133-byte P-521)
   optional bytes ecdhSignature = 6;     // HMAC-SHA256(handshakeKey, ecdhPublicKey) (v2: keyed by X)
-  optional string sessionId = 7;        // v2 only: always the sentinel "InvalidSessionId" in our 8.5 caps (purpose [X])
+  optional string sessionId = 7;        // v2 only: always the sentinel "InvalidSessionId" in our captures (purpose [X])
 }
 
 // SESSION_REPLY (server -> client): acceptance + server ECDH public key.

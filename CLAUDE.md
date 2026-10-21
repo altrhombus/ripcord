@@ -107,6 +107,11 @@ neutral layer never names a console. A comment explaining a layer above is fine;
 | Takion | The vendor's own codename, recovered from our binary | The SCTP-over-UDP transport |
 | Senkusha | The vendor's own codename, recovered from our binary | The echo/MTU/bandwidth probe |
 
+- **`v1` / `v2` name the control-plane scheme, not a console generation.** `v1` is the per-field AES-CFB control
+  plane keyed from a nonce + companion; the **v2 control plane** is the AES-GCM envelope keyed from a rolled
+  token (with X minted for the stream and shifted packet headers). This axis is orthogonal to
+  Halyard/HalyardLegacy: a PS4 (HalyardLegacy) is `v1` only, while a PS5 (Halyard) speaks `v1` or the v2 control
+  plane. Say "the v2 control plane" in prose; do not tie `v1`/`v2` to any vendor application version.
 - Takion and Senkusha are the **one stated exception** to "never use the vendor's own names". Don't extend it
   without recording it here.
 - Protobuf message and enum names: rename the vendor's coined ones, keep the plain-English descriptive ones,
