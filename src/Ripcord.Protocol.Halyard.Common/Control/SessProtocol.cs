@@ -57,6 +57,7 @@ public static class SessProtocol
     public const string HeaderClientType = "RP-ClientType";
     public const string HeaderConPath = "RP-ConPath";
     public const string HeaderPadProcNo = "RP-PadProcNo";
+    public const string HeaderReqMoreInfo = "RP-ReqMoreInfo";
 
     public const string ProtocolVersion = "1.0";
 
