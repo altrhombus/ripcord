@@ -10,13 +10,19 @@ namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
 /// The v2 Path-A GCM envelope, end to end with no captures: the test plays the console (its own P-521 key pair,
-/// the same Z, the same per-direction sk_p and IV rule) so it can open what the client seals and seal what the
-/// client opens. Exercises <see cref="HalyardV2SessionCrypto.EstablishControl"/>, the 16-byte-IV GCM, both
-/// directions (sk_9 up / sk_8 down), and that a tampered message is rejected. The byte-exactness of the schedule
-/// itself against real hardware is <see cref="V2ControlKeyScheduleTests"/>.
+/// the same Z, the same per-direction sk_p, and the same IV rule keyed by the fixed N16 = selectorOne) so it can
+/// open what the client seals and seal what the client opens. Exercises
+/// <see cref="HalyardV2SessionCrypto.EstablishControl(System.ReadOnlySpan{byte}, System.ReadOnlySpan{byte})"/>,
+/// the 16-byte-IV GCM, both directions (sk_9 up / sk_8 down), and rejection of a tampered message. The schedule's
+/// byte-exactness against hardware is <see cref="V2ControlKeyScheduleTests"/>, and the envelope's against the
+/// banked ctrl capture is <see cref="V2ControlEnvelopeKatTests"/>.
 /// </summary>
 public class V2ControlEnvelopeTests
 {
+    // N16, the control IV's HMAC key, is the fixed selectorOne context key — the same value the crypto reads from
+    // its secrets, so the test-as-console derives identical IVs.
+    private static readonly byte[] N16 = TestSecrets.SyntheticControlSecrets().ContextKeys.SelectorOne.ToArray();
+
     [Fact]
     public void Envelope_RoundTrips_InBothDirections()
     {
@@ -24,9 +30,8 @@ public class V2ControlEnvelopeTests
         byte[] clientPub = client.GenerateControlPublicKey();
 
         var (consoleEcdh, consolePub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
-        byte[] n16 = RandomNumberGenerator.GetBytes(16);
         byte[] k16 = RandomNumberGenerator.GetBytes(16);
-        Assert.True(client.EstablishControl(consolePub, n16, k16));
+        Assert.True(client.EstablishControl(consolePub, k16));
 
         // The console derives the same Z from the client's public key and the same two sk_p.
         byte[] z = HalyardStreamKeySchedule.DeriveSharedSecret(consoleEcdh, clientPub);
@@ -39,11 +44,11 @@ public class V2ControlEnvelopeTests
         // client -> console (sk_9): the client seals, the console opens.
         byte[] up = RandomNumberGenerator.GetBytes(40);
         byte[] sealedUp = client.SealClientToConsole(up, aad, counter: 0);
-        Assert.Equal(up, ConsoleOpen(skC2S, n16, aad, sealedUp, 0));
+        Assert.Equal(up, ConsoleOpen(skC2S, aad, sealedUp, 0));
 
         // console -> client (sk_8): the console seals, the client opens.
         byte[] down = RandomNumberGenerator.GetBytes(24);
-        byte[] sealedDown = ConsoleSeal(skS2C, n16, aad, down, 0);
+        byte[] sealedDown = ConsoleSeal(skS2C, aad, down, 0);
         Assert.Equal(down, client.OpenConsoleToClient(sealedDown, aad, 0));
 
         // A tampered tag (or body) is rejected, not silently returned.
@@ -57,15 +62,14 @@ public class V2ControlEnvelopeTests
         using var client = new HalyardV2SessionCrypto(TestSecrets.SyntheticControlSecrets());
         byte[] clientPub = client.GenerateControlPublicKey();
         var (consoleEcdh, consolePub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
-        byte[] n16 = RandomNumberGenerator.GetBytes(16);
         byte[] k16 = RandomNumberGenerator.GetBytes(16);
-        Assert.True(client.EstablishControl(consolePub, n16, k16));
+        Assert.True(client.EstablishControl(consolePub, k16));
         byte[] z = HalyardStreamKeySchedule.DeriveSharedSecret(consoleEcdh, clientPub);
         var skS2C = HalyardStreamKeySchedule.DeriveDirection(z, k16, 0x08);
         consoleEcdh.Dispose();
 
         byte[] aad = Encoding.ASCII.GetBytes("a\r\n\r\n");
-        byte[] sealedDown = ConsoleSeal(skS2C, n16, aad, RandomNumberGenerator.GetBytes(16), counter: 1);
+        byte[] sealedDown = ConsoleSeal(skS2C, aad, RandomNumberGenerator.GetBytes(16), counter: 1);
 
         Assert.NotNull(client.OpenConsoleToClient(sealedDown, aad, 1));          // right counter + AAD
         Assert.Null(client.OpenConsoleToClient(sealedDown, aad, 2));             // wrong counter -> wrong IV
@@ -80,27 +84,26 @@ public class V2ControlEnvelopeTests
         var (ecdh, consolePub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
         ecdh.Dispose();
 
-        Assert.False(client.EstablishControl(consolePub, new byte[15], new byte[16])); // nonce not 16
-        Assert.False(client.EstablishControl(consolePub, new byte[16], new byte[15])); // k16 not 16
-        Assert.False(client.EstablishControl(new byte[10], new byte[16], new byte[16])); // bad public key
+        Assert.False(client.EstablishControl(consolePub, new byte[15]));   // k16 not 16
+        Assert.False(client.EstablishControl(new byte[10], new byte[16])); // bad public key
     }
 
     // The console half of the envelope, mirroring HalyardV2SessionCrypto's own IV + GCM rules.
-    private static byte[] ConsoleSeal(in HalyardStreamKeySchedule.DirectionKeys sk, byte[] n16, byte[] aad, byte[] pt, ulong counter)
+    private static byte[] ConsoleSeal(in HalyardStreamKeySchedule.DirectionKeys sk, byte[] aad, byte[] pt, ulong counter)
     {
-        var (ct, tag) = AesGcmCore.Encrypt(sk.AesKey, Iv(sk, n16, counter), aad, pt);
+        var (ct, tag) = AesGcmCore.Encrypt(sk.AesKey, Iv(sk, counter), aad, pt);
         return [.. ct, .. tag];
     }
 
-    private static byte[]? ConsoleOpen(in HalyardStreamKeySchedule.DirectionKeys sk, byte[] n16, byte[] aad, byte[] ctTag, ulong counter)
-        => AesGcmCore.Decrypt(sk.AesKey, Iv(sk, n16, counter), aad,
+    private static byte[]? ConsoleOpen(in HalyardStreamKeySchedule.DirectionKeys sk, byte[] aad, byte[] ctTag, ulong counter)
+        => AesGcmCore.Decrypt(sk.AesKey, Iv(sk, counter), aad,
                               ctTag.AsSpan(0, ctTag.Length - 16), ctTag.AsSpan(ctTag.Length - 16));
 
-    private static byte[] Iv(in HalyardStreamKeySchedule.DirectionKeys sk, byte[] n16, ulong counter)
+    private static byte[] Iv(in HalyardStreamKeySchedule.DirectionKeys sk, ulong counter)
     {
         byte[] data = new byte[16 + sizeof(ulong)];
         sk.BaseIv.CopyTo(data, 0);
         BinaryPrimitives.WriteUInt64BigEndian(data.AsSpan(16), counter);
-        return HMACSHA256.HashData(n16, data)[..16];
+        return HMACSHA256.HashData(N16, data)[..16];
     }
 }

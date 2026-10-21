@@ -24,16 +24,11 @@ internal static class HalyardV2Control
     internal static bool TryEstablish(
         SessResponse initResponse, ReadOnlySpan<byte> k16, IHalyardV2ControlCrypto crypto, out string? problem)
     {
-        if (!TryDecodeHeader(initResponse, SessProtocol.HeaderNonce, out byte[] nonce, out problem) ||
-            !TryDecodeHeader(initResponse, SessProtocol.HeaderPubKey, out byte[] consolePublicKey, out problem) ||
+        // The GCM control plane needs only the console's RP-Pubkey (+ its RP-Hmac to authenticate it). The
+        // response's RP-Nonce is consumed separately for the launchSpec M, not here.
+        if (!TryDecodeHeader(initResponse, SessProtocol.HeaderPubKey, out byte[] consolePublicKey, out problem) ||
             !TryDecodeHeader(initResponse, SessProtocol.HeaderHmac, out byte[] consoleHmac, out problem))
         {
-            return false;
-        }
-
-        if (nonce.Length != 16)
-        {
-            problem = $"/sess/init RP-Nonce is {nonce.Length} bytes, expected 16.";
             return false;
         }
 
@@ -51,7 +46,7 @@ internal static class HalyardV2Control
             return false;
         }
 
-        if (!crypto.EstablishControl(consolePublicKey.AsSpan(0, PointLength), nonce, k16))
+        if (!crypto.EstablishControl(consolePublicKey.AsSpan(0, PointLength), k16))
         {
             problem = "The console's RP-Pubkey did not yield a control key (bad P-521 point).";
             return false;
