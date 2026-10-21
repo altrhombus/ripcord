@@ -40,6 +40,7 @@ public static class SessProtocol
     public const string HeaderFeature = "RP-Feature";
     public const string HeaderData = "RP-Data";
     public const string HeaderTag = "RP-Tag";
+    public const string HeaderVerifyKey = "RP-VerifyKey";
     public const string HeaderDevAuthChallenge = "RP-DevACha";
     public const string HeaderDevAuthChallengeTag = "RP-DevAChaTag";
 
@@ -58,7 +59,13 @@ public static class SessProtocol
     public const string HeaderPadProcNo = "RP-PadProcNo";
 
     public const string ProtocolVersion = "1.0";
+
+    /// <summary>The v1 control path's RP-SupportCmd capability value.</summary>
     public const string DefaultSupportCmd = "130000";
+
+    /// <summary>The v2 control path's RP-SupportCmd capability value (client), on rgst/init/ctrl. Distinct from
+    /// the v1 value; both are confirmed from our captures (the console answers 141000 on the v2 path).</summary>
+    public const string V2SupportCmd = "120000";
 }
 
 public enum SessHttpMethod
