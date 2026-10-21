@@ -37,6 +37,7 @@ public static class SessProtocol
     public const string HeaderPubKey = "RP-Pubkey";
     public const string HeaderHmac = "RP-Hmac";
     public const string HeaderNonce = "RP-Nonce";
+    public const string HeaderApplicationReason = "RP-Application-Reason";
     public const string HeaderFeature = "RP-Feature";
     public const string HeaderData = "RP-Data";
     public const string HeaderTag = "RP-Tag";
