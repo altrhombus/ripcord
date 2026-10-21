@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Common.Crypto;
@@ -67,6 +68,45 @@ internal static class HalyardV2Requests
         request.Header(SessProtocol.HeaderData, Convert.ToBase64String(sealed_[..^16]));
         request.Header(SessProtocol.HeaderTag, Convert.ToBase64String(sealed_[^16..]));
         return request;
+    }
+
+    /// <summary>
+    /// The v2 <c>/sess/ctrl</c> request (spec §4): the v1 ctrl field set, with the binary values base64'd (not
+    /// field-encrypted), assembled as a CRLF header block and GCM-sealed as one envelope (purpose 0x09, counter
+    /// 0, <b>AAD empty</b>) into <c>RP-Data</c>/<c>RP-Tag</c> on <c>GET /sess/ctrl HTTP/1.1</c>. Field order is the
+    /// confirmed one from the decrypted capture. <paramref name="crypto"/> must already be established.
+    /// </summary>
+    internal static SessRequest BuildCtrlRequest(
+        IHalyardV2ControlCrypto crypto, HalyardConsolePlatform platform, string hostHeader,
+        ReadOnlySpan<byte> registrationKey, ReadOnlySpan<byte> deviceId, int osMajor, int osMinor,
+        int startBitrate, int streamingType, int connectionPath)
+    {
+        var block = new StringBuilder();
+        void Field(string name, string value) => block.Append(name).Append(": ").Append(value).Append("\r\n");
+        void Sealed(string name, byte[] plaintext) => Field(name, Convert.ToBase64String(plaintext));
+
+        Sealed(SessProtocol.HeaderAuth, HalyardSessCtrlFields.BuildAuthPlaintext(registrationKey));
+        Field(SessProtocol.HeaderVersion, SessProtocol.VersionFor(platform));
+        Sealed(SessProtocol.HeaderDid, HalyardSessCtrlFields.BuildDidPlaintext(deviceId));
+        Field(SessProtocol.HeaderControllerType, "0");
+        Field(SessProtocol.HeaderClientType, "11");
+        Sealed(SessProtocol.HeaderOsType, HalyardSessCtrlFields.BuildOsTypePlaintext(osMajor, osMinor));
+        Field(SessProtocol.HeaderConPath, connectionPath.ToString(CultureInfo.InvariantCulture));
+        Sealed(SessProtocol.HeaderStartBitrate, HalyardSessCtrlFields.BuildInt32Plaintext(startBitrate));
+        Sealed(SessProtocol.HeaderStreamingType, HalyardSessCtrlFields.BuildInt32Plaintext(streamingType));
+        Field(SessProtocol.HeaderPadProcNo, "3");
+        Field(SessProtocol.HeaderSupportCmd, SessProtocol.V2SupportCmd);
+        Field(SessProtocol.HeaderReqMoreInfo, "4097");
+
+        // AAD is empty for ctrl (unlike init2); the whole block is one GCM envelope.
+        byte[] sealed_ = crypto.SealClientToConsole(Encoding.ASCII.GetBytes(block.ToString()), ReadOnlySpan<byte>.Empty, counter: 0);
+
+        return new SessRequest(SessHttpMethod.Get, SessProtocol.PathFor(platform, "ctrl"), "HTTP/1.1")
+            .Header("Host", hostHeader)
+            .Header("User-Agent", "remoteplay Windows")
+            .Header("Connection", "keep-alive")
+            .Header(SessProtocol.HeaderData, Convert.ToBase64String(sealed_[..^16]))
+            .Header(SessProtocol.HeaderTag, Convert.ToBase64String(sealed_[^16..]));
     }
 
     /// <summary>The request's header-lines block (each line + CRLF), i.e. the serialization minus the request
