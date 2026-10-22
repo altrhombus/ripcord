@@ -288,8 +288,9 @@ carries the fields that seed the *direct* session:
   **`accountId` is a JSON *number*, not a string** `[C]` — a bare 19-digit integer in cap96/cap97/cap107, and
   the only field in this body whose *type* differs from the obvious serialization. Note also that only these
   six fields appear (`accountId`, `roomId`, `sessionId`, `clientType`, `data1`, `data2`); `data3`,
-  `supportCmd` and `protocolVer` are **not** in this call in any capture, despite appearing in the field list
-  below — that list was written from an earlier reading and the three captures settle it.
+  `supportCmd` and `protocolVer` are **not** in this call in the **v1** (no-PIN pairing) captures
+  (cap96/cap97/cap107). **They are present in a `v2` session command**, however — see "The v2 session
+  secret" below; this is a v1/v2 control-plane delta, not a contradiction.
 - Every cloud REST call carries **`User-Agent: RpNetHttpUtilImpl`** `[C]`.
 - `supportCmd` (`"130000"`) and `protocolVer` (`"1.0"`) — **the same values that appear as
   `RP-SupportCmd` and `RP-Version` in the direct console handshake** (`ps5-session-establishment.md`).
@@ -339,6 +340,37 @@ Every primitive is one we already own (`HalyardControlFieldCrypto` + the bundled
 **received, not derived**, which is why it appears in no plaintext channel and matched no local KDF. This
 retro-corrects the earlier "`data1/2/3` open `[X]`" and "`customData1` open `[X]`" readings: they were the
 ephemeral key/material and the encrypted seed the whole time.
+
+### The v2 `remotePlay` command and `customData1` — delivers the registration SEED (not the stream key) `[C]`
+
+The **`v2`** `remotePlay` command carries three ephemerals and, unlike the v1 pairing command, `supportCmd`
+and `protocolVer`. The console returns the registration **seed** in `customData1` — the same v1
+account-seed-delivery value — which the client recovers with the v1 field cipher. **This is not the stream
+`handshakeKey` `X`** (that is client-random; see the correction below). Captured end to end over three `v2`
+sessions (`rp_cdd.log` / `rp_aeskey*.log`, 2026-10-21/22; live values in `X-RESOLUTION-BATCH-2026-10-20.md`,
+not reproduced here), cross-checked across the `remotePlay` POST, the `remotePlaySessions` readback, the native
+`setHandshakeKey` value, and Ghidra decompilation:
+
+1. The client mints **three** ephemeral 16-byte values and sends them in the `remotePlay` `commands` call as
+   `data1`, `data2`, `data3` — plus `supportCmd` (`"120000"`) and `protocolVer` (`"1.0"`). `data1`/`data2` are
+   the field-cipher key/material (`osslRAND`-generated); `data3` is the control companion `= K16`. Field order:
+   `accountId, roomId, sessionId, clientType, data1, data2, supportCmd, protocolVer, data3` `[C]`.
+2. The console joins as the **`PROSPERO`** member and sets **`customData1`** (double-base64 over a 17-byte
+   ciphertext), readable from `GET remotePlaySessions` as well as the push channel.
+3. The client recovers the 16-byte **seed** with the v1 field cipher — **byte-exact confirmed, three sessions**:
+   `seed = AES-128-CFB-decrypt(key = data1, IV = HMAC-SHA256(selectorOne, data2 ‖ be64(0))[:16], ct[:16])`
+   — i.e. exactly `HalyardAccountSeedDelivery.RecoverSeed(data1, data2, customData1, selectorOne)`. The vendor's
+   own decrypt (`FUN_1f5a70`, OpenSSL CFB128) produces the same bytes. The seed feeds registration/auth
+   (`RP-Auth`), as in v1.
+
+> **Correction (2026-10-22): the stream `handshakeKey` `X` is NOT in `customData1`.** Earlier notes here and in
+> `X-ORIGIN-*` guessed that `customData1` sealed `X` and chased a seed→X KDF (~7,700 candidates, all missing).
+> Static RE of the vendor's launchSpec builder (`FUN_9ee50`) settled it: `X` is **16 client-random bytes**
+> (a no-input RNG callback, `osslRAND` fallback) base64-encoded into the launchSpec `handshakeKey` field and sent
+> to the console — the unchanged v1 handshakeKey mechanism. It is not derived from `customData1`, the seed, or
+> `data1/2/3`; it is random, which is why no derivation reproduced it. The console "holds" `X` only because it
+> received it in the launchSpec (and then signs its stream pubkey with it). `customData1 → seed` and
+> `launchSpec.handshakeKey = random X` are two independent things.
 
 This command is what makes a *sleeping* console wake and connect (subject to
 `wakeupEnabledPowerModes` from the console-list call) `[V]` — but it is not reliable, and the failure has a

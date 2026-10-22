@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
 using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Crypto.V2;
+using Ripcord.Protocol.Halyard.Session;
 
 namespace Ripcord.Protocol.Halyard.Discovery;
 
@@ -47,6 +49,28 @@ public sealed class HalyardRegistrationClient(
         if (!_cipher.IsAvailable)
             return Fail("Registration cipher is not available (the captures-folder tables are not injected).");
 
+        // v2 PIN pairing (PS5): add the RP-Hmac header derived from the bundled K16_reg, which is what makes the
+        // console pair us as v2-capable (and advertise RP-SupportGcm back). Only the PIN route (no account seed)
+        // on a PS5, and only when K16_reg is bundled; everything else registers exactly as v1.
+        if (request.AccountSeed.Length != 16
+            && request.Platform == HalyardConsolePlatform.Ps5
+            && HalyardInteropConstants.RegistrationAuthKey() is { } k16Reg)
+        {
+            try
+            {
+                uint pin = HalyardV2Registration.ParsePin(request.Passcode);
+                request = request with
+                {
+                    RegistrationHmacBase64 =
+                        Convert.ToBase64String(HalyardV2Registration.ComputeRegistrationHmac(k16Reg, pin)),
+                };
+            }
+            catch (ArgumentException)
+            {
+                // A non-numeric passcode can't key the v2 RP-Hmac; register as v1 (no header) rather than fail.
+            }
+        }
+
         // The console must first hear a UDP search probe (SRC3/SRC2) or it rejects the POST as 80108bff
         // (and won't have the control TCP listener armed). Shared with the session connect path.
         try
@@ -92,7 +116,10 @@ public sealed class HalyardRegistrationClient(
         if (!HalyardRegistrationMessage.TryParsePairingRecord(decrypted, out HalyardPairingRecord? record))
             return Fail("Registration response did not contain a valid pairing record.");
 
-        return new HalyardRegistrationResult(true, null, record);
+        // Remember whether the console advertised the v2 control plane, so the first session (no rolled token
+        // yet) knows to open as v2. The token starts empty from a fresh pairing, which is the bootstrap signal.
+        bool supportsGcm = HalyardRegistrationMessage.ResponseAdvertisesGcm(response);
+        return new HalyardRegistrationResult(true, null, record! with { SupportsGcm = supportsGcm });
     }
 
 

@@ -138,6 +138,20 @@ public class BundledInteropConstantsTests
         RoundTrip(new HalyardRegistrationCipher(new HalyardRegistrationKdf(secrets, versionSelector), contextKey));
     }
 
+    [SkippableFact]
+    public void Registration_BundleCarriesTheV2RegistrationAuthKey()
+    {
+        Skip.IfNot(HalyardInteropConstants.IsBundled, "Build omitted the interop constants bundle.");
+
+        // The v2 PS5 registration-authentication key must be present and the full 16 bytes, and not the all-zero
+        // placeholder an absent constant would read as. Shape only — the value is pinned nowhere but the bundle
+        // (CLAUDE.md "Bounded exception 1"); the live-vector tests own the bytes.
+        byte[]? key = HalyardInteropConstants.RegistrationAuthKey();
+        Assert.NotNull(key);
+        Assert.Equal(16, key!.Length);
+        Assert.NotEqual(new byte[16], key);
+    }
+
     // Build a request, then recover the field from the transmitted context exactly as the console would —
     // proving the key + material wrap are self-consistent for whichever family variant the cipher carries.
     private static void RoundTrip(HalyardRegistrationCipher cipher)

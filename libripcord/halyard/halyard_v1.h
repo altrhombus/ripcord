@@ -73,6 +73,14 @@ extern const uint8_t halyard_v1_material_wrap_table[HALYARD_MATERIAL_WRAP_TABLE_
 extern const uint8_t halyard_v1_ps4_registration_table[HALYARD_REGISTRATION_TABLE_LENGTH];
 extern const uint8_t halyard_v1_ps4_material_wrap_table[HALYARD_MATERIAL_WRAP_TABLE_LENGTH];
 
+/* v2 PlayStation 5 registration-authentication key: the fixed value the console checks a v2 pairing request's
+ * authentication code against (CLAUDE.md "Bounded exception 1"). Emitted only with --registration, like the
+ * tables above; the other console family's value is [X] and not bundled. No v2 C consumer yet, but declared so
+ * the generated unit links and so a future port finds it here. */
+#define HALYARD_REGISTRATION_AUTH_KEY_LENGTH 16
+extern const int halyard_v1_registration_auth_bundled;
+extern const uint8_t halyard_v1_registration_auth_key[HALYARD_REGISTRATION_AUTH_KEY_LENGTH];
+
 /*
  * Registration's field-cipher context key is NOT a fifth key. It is halyard_v1_ctx_selector_one for a
  * PS5 and halyard_v1_ctx_selector_zero for a PS4 - the same two the control plane already uses. The

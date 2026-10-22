@@ -487,7 +487,7 @@ public class PublishedTreeSweepTests
     private static readonly Dictionary<string, string> PinnedDataFiles = new(StringComparer.OrdinalIgnoreCase)
     {
         ["src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json"] =
-            "97a0f5fe80c7f63d4d950776c49d15cee6a259b51958d4ac324fff1ec55349ff",
+            "776b67b485d47b8dfbdd59e5b62ed5e6d6c68515aaecaa5a185bab0115c2a2f2",
         ["src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json"] =
             "7a7426e4c114753f934e31c83359a9151d059e0167e359987d19a8d264f6e9f0",
     };

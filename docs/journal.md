@@ -35,6 +35,41 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The v2 handshakeKey, chased the long way round, turns out to be v1's (2026-10-22)
+
+Five v2 hardware captures and a headless-Ghidra dig to answer one question — where the v2 stream `handshakeKey`
+`X` comes from — and the answer is: it was v1's all along. Worth recording the wrong turn, because the wrong
+turn was most of the work.
+
+The lead was `customData1`. On a v2 connect the client mints three ephemerals (`data1`/`data2`/`data3`,
+`osslRAND`-generated), sends them in the `remotePlay` command (with `supportCmd`/`protocolVer`, which v1 pairing
+omits), the console joins as `PROSPERO` and returns `customData1`, and the client decrypts it. That decrypt
+**is** the v1 account-seed-delivery, byte-exact over three sessions: `seed = AES-128-CFB(key=data1,
+IV=HMAC-SHA256(selectorOne, data2‖be64(0)))` — literally `HalyardAccountSeedDelivery.RecoverSeed`. Confirmed by
+hooking the vendor's own cipher (`FUN_1f5a70`): its output equals ours. So `customData1 → seed` is solved and
+already in our code.
+
+The mistake was assuming that seed **was** `X` (or derived into it). It is not — the recovered seed never
+matched the handshakeKey the client fed `setHandshakeKey`, and no construction over {seed, data1/2/3, the
+bundled tables, the control keys} reproduced `X` (thousands of candidates, three clean KATs, raw-SHA and
+AES-NI paths included). Capture after capture, `X` appeared in no cipher output, no HMAC, no GCM/EVP message,
+and on no wire — only at `setHandshakeKey`. Decompiling the vendor's launchSpec builder (`FUN_9ee50`) finally
+showed why: `X` is **16 client-random bytes** — a no-input RNG callback (`osslRAND` fallback) → base64 → the
+launchSpec `handshakeKey` field → sent to the console. The unchanged v1 mechanism. It isn't derived from
+anything, which is exactly why nothing derived it; the console "holds" it only because the client sent it.
+
+So the earlier "X is a per-session shared secret on no wire" framing (the one that launched the `customData1`
+hunt) was wrong twice over: `customData1` carries the registration seed, and `X` is just the client's random
+handshakeKey. The corrections: deleted the mistaken `IHalyardV2HandshakeKeySeal` seam/stub (and its KAT
+fixture and tests); fixed `HalyardStreamingSession.BuildLaunchSpecJson`, which had been **dropping** the
+handshakeKey for v2 — it now carries the random key exactly like v1; and corrected the remarks in
+`HalyardV2SessionCrypto` and the cloud session model. Kept the genuinely-confirmed pieces: the v2
+`SendRemotePlayCommandV2Async` (data3/supportCmd/protocolVer, captured order) and `customData1` on the session
+model (it is the seed readback). Suite 1049 passed / 6 skipped.
+
+The full forensic trail — five captures, the Ghidra RVA map, every ruled-out derivation — is in the
+captures-folder notes (`X-RESOLUTION-BATCH-2026-10-20.md`, `GHIDRA-WORKLIST-X-SEAL.md`).
+
 ### The showcase: Ripcord's own screens, finished (2026-10-09)
 
 The audit fixed what was broken. This was the design work it left behind: making Ripcord a good Windows 11 app

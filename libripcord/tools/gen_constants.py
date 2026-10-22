@@ -41,6 +41,7 @@ KDF_TABLE_LENGTH = 512
 CONTEXT_KEY_LENGTH = 16
 REGISTRATION_TABLE_LENGTH = 512
 MATERIAL_WRAP_TABLE_LENGTH = 512
+REGISTRATION_AUTH_KEY_LENGTH = 16
 
 
 def unhex(name, value, expected_length=None):
@@ -117,6 +118,11 @@ def main(argv):
     selector_offset = bundle.get("selectorOffset")
 
     context_key = unhex("contextKey", bundle.get("contextKey"), CONTEXT_KEY_LENGTH)
+
+    # The v2 PS5 registration-authentication key (CLAUDE.md Bounded exception 1). Separate from the v1 PIN
+    # registration tables above: a v1-only port needs those but not this, and the other console family's value
+    # is [X] and not bundled, so it is emitted independently under its own flag.
+    regist_auth = unhex("registAuthKey", bundle.get("registAuthKey"), REGISTRATION_AUTH_KEY_LENGTH)
 
     context_keys = bundle.get("contextKeys") or {}
     codec_in_high = unhex("codecInHigh", context_keys.get("codecInHigh"), CONTEXT_KEY_LENGTH)
@@ -204,6 +210,12 @@ def main(argv):
             "",
             emit_array("halyard_v1_ps4_material_wrap_table", ps4_wrap, MATERIAL_WRAP_TABLE_LENGTH),
             "",
+            "/* v2 PS5 registration-authentication key (CLAUDE.md Bounded exception 1); the other console",
+            " * family's value is [X] and not bundled. */",
+            f"const int halyard_v1_registration_auth_bundled = {1 if regist_auth else 0};",
+            "",
+            emit_array("halyard_v1_registration_auth_key", regist_auth, REGISTRATION_AUTH_KEY_LENGTH),
+            "",
         ]
     else:
         parts += [
@@ -211,6 +223,7 @@ def main(argv):
             "const int halyard_v1_registration_bundled = 0;",
             "const int halyard_v1_has_ps4_registration = 0;",
             "const int halyard_v1_selector_offset = 0;",
+            "const int halyard_v1_registration_auth_bundled = 0;",
             "",
         ]
 

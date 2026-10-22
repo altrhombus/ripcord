@@ -8,12 +8,16 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// <param name="ClientVersion">Protocol/client version reported in the request.</param>
 /// <param name="SessionKey">The session key string carried in the request.</param>
 /// <param name="LaunchSpecJson">The streaminfo/launchSpec field value (out1-encrypted + base64 by the caller).</param>
-/// <param name="HandshakeKey">The 16 random bytes that authenticate the ECDH exchange (also placed in the launchSpec).</param>
+/// <param name="HandshakeKey">The 16 random bytes that authenticate the ECDH exchange (v1 also places them in
+/// the launchSpec as handshakeKey; v2 mints them as X, used only for the signature and the stream KDF).</param>
+/// <param name="SessionId">v2 only: the SESSION_REQUEST field-7 sessionId sentinel (<c>"InvalidSessionId"</c>);
+/// null for v1, which omits the field.</param>
 public readonly record struct TakionSessionRequest(
     uint ClientVersion,
     string SessionKey,
     string LaunchSpecJson,
-    byte[] HandshakeKey);
+    byte[] HandshakeKey,
+    string? SessionId = null);
 
 /// <summary>Outcome of the session negotiation.</summary>
 public readonly record struct TakionSessionResult(bool Success, string? FailureReason, ControlMessage? Reply)
@@ -101,6 +105,13 @@ public sealed class TakionSessionNegotiator
                 EcdhSignature = ByteString.CopyFrom(signature),
             },
         };
+
+        // v2 SESSION_REQUEST carries field 7, the sessionId sentinel "InvalidSessionId" (purpose [X]); v1 omits
+        // it, so set it only when the caller supplies one.
+        if (request.SessionId is not null)
+        {
+            message.SessionRequestPayload.SessionId = request.SessionId;
+        }
 
         await _channel.SendMessageAsync(TakionDataChunk.ChannelSession, message, cancellationToken).ConfigureAwait(false);
 

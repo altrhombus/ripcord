@@ -107,6 +107,11 @@ neutral layer never names a console. A comment explaining a layer above is fine;
 | Takion | The vendor's own codename, recovered from our binary | The SCTP-over-UDP transport |
 | Senkusha | The vendor's own codename, recovered from our binary | The echo/MTU/bandwidth probe |
 
+- **`v1` / `v2` name the control-plane scheme, not a console generation.** `v1` is the per-field AES-CFB control
+  plane keyed from a nonce + companion; the **v2 control plane** is the AES-GCM envelope keyed from a rolled
+  token (with X minted for the stream and shifted packet headers). This axis is orthogonal to
+  Halyard/HalyardLegacy: a PS4 (HalyardLegacy) is `v1` only, while a PS5 (Halyard) speaks `v1` or the v2 control
+  plane. Say "the v2 control plane" in prose; do not tie `v1`/`v2` to any vendor application version.
 - Takion and Senkusha are the **one stated exception** to "never use the vendor's own names". Don't extend it
   without recording it here.
 - Protobuf message and enum names: rename the vendor's coined ones, keep the plain-English descriptive ones,
@@ -151,9 +156,11 @@ anything crypto-related:
 ### Bounded exception 1: the v1 interoperability constants
 
 `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` is committed on purpose: about 4 KB of constant
-data (8.7 KB as hex-encoded JSON) in four control KDF tables (a PS5 pair and a PS4 pair), four field context
+data (8.8 KB as hex-encoded JSON) in four control KDF tables (a PS5 pair and a PS4 pair), four field context
 keys (the registration context key is one of them, stored twice), two registration key tables, two
-material-wrap tables, and a byte offset.
+material-wrap tables, a byte offset, and the v2 PS5 registration-authentication key (`K16_reg`): one 16-byte
+generic value selected by device family and mode, identical for every PS5 and account. The other console
+family's value is `[X]` (unconfirmed) and is **not** bundled.
 
 - **The test is generic versus personal.** These are identical for every console and account, and the console
   computes against them; `NOTICE` describes them. Anything tied to one console, user or

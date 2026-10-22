@@ -27,14 +27,34 @@ public sealed record HalyardPairingRecord(
     int KeyType,
     HalyardConsolePlatform Platform = HalyardConsolePlatform.Ps5)
 {
+    /// <summary>
+    /// The v2 rolled session token (the stored type-11 token): the 16-byte <c>RP-VerifyKey</c> a previous v2
+    /// session minted and the console accepted, used as <b>this</b> session's K16. Empty until the first v2
+    /// session rolls one — the first session after pairing bootstraps from the bundled <c>K16_reg</c> instead.
+    /// It is a non-positional <c>init</c> property so the registration call sites that build a record need no
+    /// change, and a session rolls it forward with <c>record with { RolledToken = … }</c> only once the console
+    /// has accepted the new token. v1 (PS4 / HalyardLegacy) never sets it.
+    /// </summary>
+    public byte[] RolledToken { get; init; } = [];
+
+    /// <summary>
+    /// Whether the console advertised <c>RP-SupportGcm</c> at registration, i.e. it speaks the v2 control plane.
+    /// It drives the <b>first</b> session's init selection (before any token has rolled): a v2-registered PS5
+    /// opens that session as v2, a v1 pairing as v1 (<see cref="Crypto.V2.HalyardInitSelection"/>). Reconnects
+    /// are driven by <see cref="RolledToken"/> instead. v1/PS4 pairings leave it false.
+    /// </summary>
+    public bool SupportsGcm { get; init; }
+
     // v1 blobs predate the Platform field; they are all PS5 pairings and deserialize with Platform = Ps5.
+    // v2 adds the platform byte; v3 appends the rolled session token (length-prefixed) + the SupportsGcm flag.
     private const byte FormatVersionLegacy = 1;
-    private const byte FormatVersion = 2;
+    private const byte FormatVersionPlatform = 2;
+    private const byte FormatVersion = 3;
 
     /// <summary>Serialize to the opaque blob the credential store persists.</summary>
     public byte[] Serialize()
     {
-        var blob = new byte[1 + 2 + RegistrationKey.Length + 2 + Companion.Length + 4 + 1];
+        var blob = new byte[1 + 2 + RegistrationKey.Length + 2 + Companion.Length + 4 + 1 + 2 + RolledToken.Length + 1];
         var span = blob.AsSpan();
         span[0] = FormatVersion;
         int o = 1;
@@ -43,7 +63,10 @@ public sealed record HalyardPairingRecord(
         BinaryPrimitives.WriteUInt16BigEndian(span[o..], (ushort)Companion.Length); o += 2;
         Companion.CopyTo(span[o..]); o += Companion.Length;
         BinaryPrimitives.WriteInt32BigEndian(span[o..], KeyType); o += 4;
-        span[o] = (byte)Platform;
+        span[o] = (byte)Platform; o += 1;
+        BinaryPrimitives.WriteUInt16BigEndian(span[o..], (ushort)RolledToken.Length); o += 2;
+        RolledToken.CopyTo(span[o..]); o += RolledToken.Length;
+        span[o] = (byte)(SupportsGcm ? 1 : 0);
         return blob;
     }
 
@@ -83,7 +106,8 @@ public sealed record HalyardPairingRecord(
     public static bool TryDeserialize(ReadOnlySpan<byte> blob, out HalyardPairingRecord? record)
     {
         record = null;
-        if (blob.Length < 1 || (blob[0] != FormatVersion && blob[0] != FormatVersionLegacy))
+        if (blob.Length < 1 ||
+            (blob[0] != FormatVersion && blob[0] != FormatVersionPlatform && blob[0] != FormatVersionLegacy))
         {
             return false;
         }
@@ -99,15 +123,15 @@ public sealed record HalyardPairingRecord(
 
         int keyType = BinaryPrimitives.ReadInt32BigEndian(blob[o..]); o += 4;
 
-        // v1 records carry no platform byte — they are all PS5 pairings. v2 appends it.
+        // v1 records carry no platform byte — they are all PS5 pairings. v2 and v3 append it.
         HalyardConsolePlatform platform = HalyardConsolePlatform.Ps5;
-        if (version == FormatVersion)
+        if (version is FormatVersionPlatform or FormatVersion)
         {
             if (blob.Length - o < 1)
             {
                 return false;
             }
-            byte p = blob[o];
+            byte p = blob[o]; o += 1;
             if (p > (byte)HalyardConsolePlatform.Ps4)
             {
                 return false; // unknown platform tag — a corrupt or newer blob, not a guess to make
@@ -115,7 +139,28 @@ public sealed record HalyardPairingRecord(
             platform = (HalyardConsolePlatform)p;
         }
 
-        record = new HalyardPairingRecord(registrationKey, companion, keyType, platform);
+        // v3 appends the rolled session token then the SupportsGcm flag; earlier versions have neither.
+        byte[] rolledToken = [];
+        bool supportsGcm = false;
+        if (version == FormatVersion)
+        {
+            if (!TryReadLengthPrefixed(blob, ref o, out rolledToken))
+            {
+                return false;
+            }
+
+            // The flag byte is read when present; a v3 blob that predates it reads as false.
+            if (blob.Length - o >= 1)
+            {
+                supportsGcm = blob[o] != 0;
+            }
+        }
+
+        record = new HalyardPairingRecord(registrationKey, companion, keyType, platform)
+        {
+            RolledToken = rolledToken,
+            SupportsGcm = supportsGcm,
+        };
         return true;
     }
 
