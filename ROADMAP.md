@@ -216,6 +216,14 @@ purchased signing certificate.
 
 ### Streaming quality and the protocol
 
+- [ ] **v2 (the PS5 GCM control plane): the persistent control channel.** The v2 crypto is done and tested — the
+      GCM control envelope, the launchSpec, the stream key agreement, both A/V directions, and the c2s send-auth —
+      and the opt-in handshake path (`RIPCORD_V2_HANDSHAKE`) runs `/sess/init`→`init2`→`ctrl` live against a
+      v2-capable pairing, then stops. What's left is the channel that rides the same association after `ctrl`: the
+      GCM/RPCS keep-alive, the probe report, and the control-message framing the console gates streaming on, all of
+      which are v1 field-crypto only today. Derivable from the v2 spec and the 003/004 captures; confirmable only
+      on hardware. First hardware step is cheap — point the opt-in at a real PS5 and see whether it accepts our
+      handshake. The default v1 path is untouched and still streams PS5.
 - [ ] **Do the senkusha probes succeed, or fall back silently?** `MtuConfirmed` answers the MTU half in two
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
