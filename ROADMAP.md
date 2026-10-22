@@ -118,6 +118,16 @@ purchased signing certificate.
       clean Windows every launch, good for "does it start with nothing installed", though it won't pass
       pads or the GPU through.
 
+### Discovery and the console list
+
+- [ ] **LAN discovery / console status regressed** (seen 2026-10-22, during the v2 handshake hardware run). The
+      consoles screen showed a previously-paired console as **"away"** and the freshly re-paired one as
+      **"offline"**, yet the console was plainly reachable: the session pcap has the mDNS responses, the ARP, the
+      SRC3 probe and a **successful** LAN TCP connect + v2 handshake to it. So the LAN discovery/status *display*
+      is wrong while connectivity is fine — and a re-pair left **two** entries (old + new) instead of updating
+      one. Suspected a pre-existing regression from a change landed before the v2 work; a `git bisect` candidate
+      against the discovery/scan + console-list status path. Separate from v2.
+
 ### Stated as a limit, not fixed for 1.0
 
 - **Internet play to a console in rest mode** probably fails in the dotnet client: `EnsureSignedInAsync`
