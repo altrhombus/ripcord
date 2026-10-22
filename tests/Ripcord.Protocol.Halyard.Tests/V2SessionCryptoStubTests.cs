@@ -48,12 +48,22 @@ public class V2SessionCryptoStubTests
     }
 
     [Fact]
-    public void C2sSendAuth_IsTheRemainingUnbuiltPiece()
+    public void C2sSendAuth_IsImplemented_AndNoOpsBeforeStreamEstablished()
     {
         using var crypto = New();
-        // The c2s send-authentication path (per-format offsets, AV-CTR-FEC-FEEDBACK.md) is the last Phase 2 piece.
-        Assert.Throws<NotImplementedException>(() => crypto.SealControlMessage(new byte[32]));
-        Assert.Throws<NotImplementedException>(() => crypto.SealCongestionPacket(new byte[32]));
-        Assert.Throws<NotImplementedException>(() => crypto.SealFeedbackPacket(new byte[32], 0xc));
+        // The c2s send-authentication path is implemented (byte-level round-trip in V2C2sSendAuthTests). Before
+        // the stream key agreement it has no key, so each Seal is a safe no-op — not a throw — leaving the packet
+        // untouched (nothing is ever sent before keys exist anyway).
+        byte[] control = new byte[32];
+        crypto.SealControlMessage(control);
+        Assert.All(control, b => Assert.Equal(0, b));
+
+        byte[] congestion = new byte[32];
+        crypto.SealCongestionPacket(congestion);
+        Assert.All(congestion, b => Assert.Equal(0, b));
+
+        byte[] feedback = new byte[32];
+        crypto.SealFeedbackPacket(feedback, 20);
+        Assert.All(feedback, b => Assert.Equal(0, b));
     }
 }
