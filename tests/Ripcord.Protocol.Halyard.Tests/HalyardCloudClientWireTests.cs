@@ -107,6 +107,56 @@ public class HalyardCloudClientWireTests
         }
     }
 
+    // The v2 remotePlay command is the v1 body plus data3/supportCmd/protocolVer, in the captured field order.
+    // The exact initialParams string (the part that reaches the console) is pinned; the outer envelope is shared
+    // with v1 and already covered above.
+    private const string V2InitialParams =
+        "{\"accountId\":1234567890123456789, \"roomId\":0, \"sessionId\":\"s-1\", \"clientType\":\"ct\", "
+        + "\"data1\":\"a\", \"data2\":\"b\",\"supportCmd\":\"120000\",\"protocolVer\":\"1.0\", \"data3\":\"c\"}";
+
+    [Fact]
+    public async Task V2RemotePlayCommand_AddsData3AndV2Markers_InCapturedOrder()
+    {
+        var (client, wire) = Build();
+        string id = await client.SendRemotePlayCommandV2Async(
+            "d-1", "1234567890123456789", "s-1", "ct", ("a", "b", "c"), CancellationToken.None);
+        Assert.Equal("c-1", id);
+
+        var (_, _, body) = Assert.Single(wire.Sent);
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        string initialParams = doc.RootElement
+            .GetProperty("commandDetail").GetProperty("parameters").GetProperty("initialParams").GetString()!;
+
+        Assert.Equal(V2InitialParams, initialParams);                 // byte-exact initialParams
+        Assert.Contains("\"data3\":\"c\"", initialParams);            // v1 omits data3; v2 carries it
+        Assert.Contains("\"supportCmd\":\"120000\"", initialParams);  // v2 markers, captured verbatim
+        Assert.Contains("\"protocolVer\":\"1.0\"", initialParams);
+        Assert.DoesNotContain("\"accountId\":\"", initialParams);     // accountId stays a bare JSON number
+    }
+
+    [Fact]
+    public async Task GetSession_ReadsCustomData1_WhenTheConsoleHasSealedIt()
+    {
+        var wire = new CustomDataWire();
+        var auth = new HalyardAuthClient(new HttpClient(wire), new HalyardClientConfig("id", "secret", HalyardClientConfig.DefaultRedirectUri, HalyardClientConfig.DefaultScopes));
+        var tokens = new HalyardTokenProvider(auth);
+        tokens.Seed(new HalyardTokens("access", "refresh", DateTimeOffset.UtcNow.AddHours(1)));
+        var client = new HalyardCloudClient(new HttpClient(wire), tokens);
+
+        HalyardCloudSession session = Assert.Single(await client.GetSessionAsync("s-1", CancellationToken.None));
+        Assert.Equal("double-b64-value", session.CustomData1);
+    }
+
+    private sealed class CustomDataWire : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            const string reply =
+                """{"remotePlaySessions":[{"sessionId":"s-1","members":[{"accountId":"42","platform":"PROSPERO","deviceUniqueId":"d-1"}],"customData1":"double-b64-value"}]}""";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(reply, Encoding.UTF8, "application/json") });
+        }
+    }
+
     [Fact]
     public async Task EveryResponse_StillReads()
     {

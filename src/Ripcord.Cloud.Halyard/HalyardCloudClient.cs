@@ -135,6 +135,55 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     }
 
     /// <summary>
+    /// Send the <b>v2</b> <c>remotePlay</c> command. It is the v1 <see cref="SendConnectCommandAsync"/> plus three
+    /// <c>initialParams</c> fields that the v2 session flow carries and v1 pairing does not: <c>data3</c> (the
+    /// third client ephemeral — the stream companion / K16), <c>supportCmd</c> and <c>protocolVer</c>. Field order
+    /// and comma spacing match our own single-session v2 capture exactly (accountId, roomId, sessionId,
+    /// clientType, data1, data2, supportCmd, protocolVer, data3 — captures/X-RESOLUTION-BATCH-2026-10-20.md); the
+    /// v1 path is left untouched because its two-field form is the one three pairing captures settle. accountId is
+    /// a bare JSON number for the same wire-faithfulness reason documented on the v1 method.
+    /// </summary>
+    public async Task<string> SendRemotePlayCommandV2Async(
+        string consoleDuid,
+        string accountId,
+        string sessionId,
+        string clientType,
+        (string Data1, string Data2, string Data3) seeds,
+        CancellationToken cancellationToken,
+        string supportCmd = HalyardEndpoints.V2SupportCmd,
+        string protocolVersion = HalyardEndpoints.V2ProtocolVersion)
+    {
+        string accountIdJson = ulong.TryParse(accountId, out ulong numericAccountId)
+            ? numericAccountId.ToString(CultureInfo.InvariantCulture)
+            : JsonSerializer.Serialize(accountId, HalyardCloudJsonContext.Default.String);
+
+        string S(string v) => JsonSerializer.Serialize(v, HalyardCloudJsonContext.Default.String);
+        string initialParams =
+            $"{{\"accountId\":{accountIdJson}, "
+            + "\"roomId\":0, "
+            + $"\"sessionId\":{S(sessionId)}, "
+            + $"\"clientType\":{S(clientType)}, "
+            + $"\"data1\":{S(seeds.Data1)}, "
+            + $"\"data2\":{S(seeds.Data2)},"
+            + $"\"supportCmd\":{S(supportCmd)},"
+            + $"\"protocolVer\":{S(protocolVersion)}, "
+            + $"\"data3\":{S(seeds.Data3)}}}";
+
+        var body = new CommandBody(new CommandDetail(
+            Platform: HalyardEndpoints.CurrentGenPlatformTag,
+            Duid: consoleDuid,
+            CommandType: HalyardEndpoints.StreamingCommandType,
+            Parameters: new CommandParameters(initialParams),
+            MessageDestination: "SQS"));
+
+        var response = await SendJsonAsync(
+            HttpMethod.Post, HalyardEndpoints.Commands, body, HalyardCloudJsonContext.Default.CommandBody, HalyardCloudJsonContext.Default.HalyardCommandResponse,
+            cancellationToken).ConfigureAwait(false)
+            ?? throw new HalyardCloudException("v2 remotePlay command returned no commandId.");
+        return response.CommandId;
+    }
+
+    /// <summary>
     /// Send a signaling OFFER (candidate list) to the console over the session's message channel.
     ///
     /// <para>

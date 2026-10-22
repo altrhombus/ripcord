@@ -41,20 +41,38 @@ public static class HalyardRegistrationMessage
     /// <c>User-Agent: remoteplay Windows</c>, <c>Connection: close</c>, <c>RP-Version</c>. There is no
     /// <c>Np-AccountId</c> or <c>Content-Type</c> header — the account id travels inside the encrypted body.
     /// </summary>
-    public static byte[] BuildRequest(HalyardRegistrationRequest request, string clientIp, ReadOnlySpan<byte> encryptedBody)
+    /// <param name="registrationHmacBase64">
+    /// The v2 PIN-registration <c>RP-Hmac</c> (base64 of <c>HMAC-SHA256(K16_reg, PIN u32 LE)</c>,
+    /// <see cref="Crypto.V2.HalyardV2Registration"/>), or <see langword="null"/> for a v1 registration, which
+    /// omits the header. Sending it is what makes the console pair the client as v2-capable. <b>[X]</b> the
+    /// header encoding (base64 assumed, by analogy with the other 32-byte headers) and its position are not yet
+    /// confirmed against a console — a hardware capture pins them; until then this stays an opt-in capability and
+    /// the shipping v1 pairing never sends it.
+    /// </param>
+    public static byte[] BuildRequest(
+        HalyardRegistrationRequest request, string clientIp, ReadOnlySpan<byte> encryptedBody,
+        string? registrationHmacBase64 = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(clientIp);
-        string head = new StringBuilder()
+        var head = new StringBuilder()
             .Append("POST ").Append(EndpointPath(request.Platform)).Append(" HTTP/1.1\r\n")
             .Append("HOST: ").Append(clientIp).Append("\r\n")
             .Append("User-Agent: remoteplay Windows\r\n")
             .Append("Connection: close\r\n")
             .Append("Content-Length: ").Append(encryptedBody.Length).Append("\r\n")
-            .Append("RP-Version: ").Append(RpVersion(request.Platform)).Append("\r\n")
-            .Append("\r\n")
-            .ToString();
+            .Append("RP-Version: ").Append(RpVersion(request.Platform)).Append("\r\n");
 
-        byte[] headBytes = Encoding.ASCII.GetBytes(head);
+        // v2 registration also advertises the capability mask (120000) alongside the RP-Hmac; v1 sends neither.
+        if (registrationHmacBase64 is not null)
+        {
+            head.Append("RP-SupportCmd: 120000\r\n")
+                .Append("RP-Hmac: ").Append(registrationHmacBase64).Append("\r\n");
+        }
+
+        head.Append("\r\n");
+        string headText = head.ToString();
+
+        byte[] headBytes = Encoding.ASCII.GetBytes(headText);
         var buf = new byte[headBytes.Length + encryptedBody.Length];
         headBytes.CopyTo(buf, 0);
         encryptedBody.CopyTo(buf.AsSpan(headBytes.Length));
@@ -127,6 +145,25 @@ public static class HalyardRegistrationMessage
 
         body = response[(sep + 4)..].ToArray();
         return statusCode is >= 200 and < 300;
+    }
+
+    /// <summary>
+    /// Whether the registration response advertises <c>RP-SupportGcm</c> — the console's signal that it speaks
+    /// the v2 control plane. Captured at pairing and stored on the pairing record so the first session (before
+    /// any token has rolled) opens as v2.
+    /// </summary>
+    public static bool ResponseAdvertisesGcm(ReadOnlySpan<byte> response)
+    {
+        int sep = IndexOf(response, "\r\n\r\n"u8);
+        string head = Encoding.ASCII.GetString(sep < 0 ? response : response[..sep]);
+        foreach (string line in head.Split("\r\n"))
+        {
+            int colon = line.IndexOf(':');
+            if (colon > 0 && line[..colon].Trim().Equals("RP-SupportGcm", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

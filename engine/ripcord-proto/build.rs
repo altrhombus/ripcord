@@ -91,7 +91,9 @@ fn main() {
         ] {
             emit_optional(&mut out, name, None, 512);
         }
-        for name in ["CTX_CODEC_IN_HIGH", "CTX_SELECTOR_ONE", "CTX_SELECTOR_ZERO", "CTX_FALLBACK_ZERO"] {
+        for name in
+            ["CTX_CODEC_IN_HIGH", "CTX_SELECTOR_ONE", "CTX_SELECTOR_ZERO", "CTX_FALLBACK_ZERO", "REGIST_AUTH_KEY"]
+        {
             emit_optional(&mut out, name, None, 16);
         }
         writeln!(out, "pub(crate) const SELECTOR_OFFSET: Option<usize> = None;").unwrap();
@@ -135,6 +137,9 @@ fn emit_bundle(manifest: &std::path::Path, out: &mut String) {
     let ps4_kdf2 = unhex("ps4KdfTable2", &b["ps4KdfTable2"], 512);
     let ps4_registration = unhex("ps4RegistrationTable", &b["ps4RegistrationTable"], 512);
     let ps4_wrap = unhex("ps4MaterialWrapTable", &b["ps4MaterialWrapTable"], 512);
+    // The v2 PS5 registration-authentication key (CLAUDE.md Bounded exception 1). Optional like the PS4
+    // tables: the other console family's value is [X] and not bundled.
+    let regist_auth = unhex("registAuthKey", &b["registAuthKey"], 16);
     // A family's pair is both or neither: half a PS4 set would build and fail at the console.
     assert_eq!(ps4_kdf1.is_some(), ps4_kdf2.is_some(), "the bundle has half of the PS4 KDF pair");
     assert_eq!(
@@ -156,4 +161,5 @@ fn emit_bundle(manifest: &std::path::Path, out: &mut String) {
     emit_optional(out, "PS4_KDF_TABLE2", ps4_kdf2.as_deref(), 512);
     emit_optional(out, "PS4_REGISTRATION_TABLE", ps4_registration.as_deref(), 512);
     emit_optional(out, "PS4_MATERIAL_WRAP_TABLE", ps4_wrap.as_deref(), 512);
+    emit_optional(out, "REGIST_AUTH_KEY", regist_auth.as_deref(), 16);
 }

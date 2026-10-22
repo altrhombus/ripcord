@@ -55,6 +55,41 @@ public static class AesGcmCore
     }
 
     /// <summary>
+    /// GCM decrypt. Verifies the authentication <paramref name="tag"/> (constant time, over the full 16 bytes)
+    /// and, only if it matches, returns the plaintext; otherwise returns <see langword="null"/> and no
+    /// plaintext is produced. The caller supplies the same 16-byte tag <see cref="Encrypt"/> emitted.
+    /// </summary>
+    public static byte[]? Decrypt(
+        ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv, ReadOnlySpan<byte> aad,
+        ReadOnlySpan<byte> ciphertext, ReadOnlySpan<byte> tag)
+    {
+        using var aes = CreateEcb(key);
+
+        Span<byte> h = stackalloc byte[BlockSize];
+        aes.EncryptEcb(stackalloc byte[BlockSize], h, PaddingMode.None); // H = E_K(0^128)
+
+        Span<byte> j0 = stackalloc byte[BlockSize];
+        ComputeJ0(aes, h, iv, j0);
+
+        // Verify first: S = GHASH over AAD||C||lengths, expected tag = E_K(J0) XOR S.
+        Span<byte> s = stackalloc byte[BlockSize];
+        GHashAadAndCipher(h, aad, ciphertext, s);
+        Span<byte> expected = stackalloc byte[BlockSize];
+        aes.EncryptEcb(j0, expected, PaddingMode.None);
+        for (int i = 0; i < BlockSize; i++)
+            expected[i] ^= s[i];
+
+        if (tag.Length != BlockSize || !CryptographicOperations.FixedTimeEquals(expected, tag))
+            return null;
+
+        // plaintext = GCTR(inc32(J0), ciphertext) — GCTR is symmetric with encryption.
+        Span<byte> icb = stackalloc byte[BlockSize];
+        j0.CopyTo(icb);
+        Inc32(icb);
+        return GCtr(aes, icb, ciphertext);
+    }
+
+    /// <summary>
     /// GMAC: the GCM authentication tag over <paramref name="aad"/> with an empty plaintext. Equivalent to
     /// <see cref="Encrypt"/> with no plaintext but avoids the (unused) ciphertext allocation.
     /// </summary>

@@ -12,6 +12,7 @@ using Ripcord.Core.Sessions;
 using Ripcord.Protocol.Halyard.Discovery;
 using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 using Ripcord.Protocol.Halyard.Common.Input;
 using Ripcord.Protocol.Halyard.Common.Streaming;
 using Ripcord.Protocol.Halyard.Takion;
@@ -80,6 +81,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private readonly HalyardConnectionParameters _parameters;
     private readonly IHalyardControlChannel _control;
     private readonly IHalyardSessionCrypto _crypto;
+
+    // Opt-in v2 control crypto (factory-gated by RIPCORD_V2_HANDSHAKE). Non-null only when the v2 handshake
+    // diagnostic is enabled; the v2 branch in ConnectAsync runs only when the pairing also selects v2.
+    private readonly HalyardV2SessionCrypto? _v2Crypto;
     private readonly IConsoleCredentialStore _credentials;
 
     private readonly Subject<EncodedVideoFrame> _video = new();
@@ -136,13 +141,15 @@ public sealed class HalyardStreamingSession : IStreamingSession
         IConsoleCredentialStore credentials,
         Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null,
         TimeSpan? controlPlaneDeadline = null,
-        HalyardStreamTransportFactory? streamTransportFactory = null)
+        HalyardStreamTransportFactory? streamTransportFactory = null,
+        HalyardV2SessionCrypto? v2Crypto = null)
     {
         _streamTransportFactory = streamTransportFactory;
         _controlPlaneDeadline = controlPlaneDeadline ?? DefaultControlPlaneDeadline;
         _parameters = parameters;
         _control = control;
         _crypto = crypto;
+        _v2Crypto = v2Crypto;
         _credentials = credentials;
         _loginPinProvider = loginPinProvider;
         _demuxer = new HalyardStreamDemuxer(crypto);
@@ -278,6 +285,18 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // deserializes as PS5, which is what every pre-PS4 pairing is.
             HalyardConsolePlatform platform = _pairing?.Platform ?? HalyardConsolePlatform.Ps5;
 
+            // Opt-in v2 control-handshake path (RIPCORD_V2_HANDSHAKE, factory-gated so _v2Crypto is null
+            // otherwise): when this console's pairing selects v2, run the built v2 HTTP handshake instead of the
+            // v1 control plane below. It stops at the persistent v2 control channel, which is not yet
+            // implemented; the v1 path is untouched when v2 is not selected.
+            if (_v2Crypto is not null && _pairing is not null
+                && HalyardInitSelection.Select(
+                       HalyardSessionToken.HasRolledToken(_pairing.RolledToken),
+                       _pairing.SupportsGcm, v2PreviouslyFailed: false) == HalyardInitFlavor.V2)
+            {
+                return await RunV2ControlHandshakeAsync(platform, token).ConfigureAwait(false);
+            }
+
             // Arm the console's control TCP listener before connecting: the console opens :9295 only after
             // hearing the UDP search probe (SRC3 for PS5, SRC2 for PS4); a cold TCP connect is refused with a
             // RST. (The same probe the registration path uses — wire-confirmed a single probe arms init + ctrl.)
@@ -410,6 +429,72 @@ public sealed class HalyardStreamingSession : IStreamingSession
         {
             return Fail($"{_connectStep}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// The opt-in v2 control-handshake diagnostic (<see cref="HalyardSessionFactory.V2HandshakeOptIn"/>). Runs the
+    /// built v2 HTTP control handshake live — <c>/sess/init</c> → GCM establish → <c>/sess/init2</c> →
+    /// <c>/sess/ctrl</c> → decrypt — so a hardware run can confirm a real PS5 accepts it. It deliberately STOPS
+    /// there: the persistent v2 control channel (the GCM/RPCS keep-alive + probe report that gate streaming) is
+    /// not yet implemented, so this never reaches the stream plane. The v1 session path is unaffected.
+    /// </summary>
+    private async Task<SessionHandshakeResult> RunV2ControlHandshakeAsync(HalyardConsolePlatform platform, CancellationToken token)
+    {
+        HalyardV2SessionCrypto crypto = _v2Crypto!;
+        HalyardPairingRecord pairing = _pairing!;
+
+        // Arm the console's control listener exactly as the v1 path does (LAN only).
+        if (_parameters.ConnectionPath == HalyardConnectionPath.Local)
+        {
+            _connectStep = "probing the console's control listener (v2)";
+            await HalyardControlSearch.ProbeAsync(
+                _parameters.ControlEndpoint.Address.ToString(), ps5: platform == HalyardConsolePlatform.Ps5, token)
+                .ConfigureAwait(false);
+        }
+
+        // K16 is the held rolled token, or the bundled K16_reg on the first (bootstrap) session after pairing.
+        byte[] k16;
+        try
+        {
+            k16 = HalyardSessionToken.ResolveK16(
+                pairing.RolledToken, HalyardInteropConstants.RegistrationAuthKey() ?? ReadOnlySpan<byte>.Empty);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Fail($"v2 handshake cannot start: {ex.Message}", SessionFailureKind.Permanent);
+        }
+
+        byte[] deviceId = (_parameters.DeviceId.IsEmpty
+            ? HalyardDeviceIdentity.Current().Span
+            : _parameters.DeviceId.Span).ToArray();
+        Version os = Environment.OSVersion.Version;
+        int bitrate = _config?.InitialBitrateKbps ?? 10_000;
+        byte[] verifyKey = HalyardSessionToken.Mint();
+
+        _connectStep = "v2 control handshake (init/init2/ctrl)";
+        V2ControlHandshakeResult result = await HalyardV2ControlHandshake.RunAsync(
+            _control, crypto, _parameters.ControlEndpoint, HostHeader(), platform,
+            pairing.RegistrationKey, pairing.Companion, k16, deviceId,
+            os.Major, os.Minor, startBitrate: bitrate,
+            streamingType: 0, // [X] mirrors v1's /sess/ctrl value; confirm the v2 value on hardware
+            connectionPath: (int)_parameters.ConnectionPath, verifyKey: verifyKey,
+            cancellationToken: token).ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            return Fail(
+                result.Failure ?? "v2 control handshake failed.",
+                result.TokenDesync ? SessionFailureKind.Permanent : SessionFailureKind.Unknown);
+        }
+
+        // Handshake accepted. Streaming needs the persistent v2 control channel, which is not built yet — so this
+        // is as far as the diagnostic goes. The minted verifyKey is intentionally NOT persisted: the token only
+        // rolls once the console accepts a full session (HalyardSessionToken remarks), which this never reaches.
+        return Fail(
+            "v2 control handshake completed: the console accepted /sess/init, /sess/init2 and /sess/ctrl. The "
+            + "persistent v2 control channel (GCM/RPCS keep-alive + probe report) that gates streaming is not yet "
+            + "implemented, so the session stops here. See ROADMAP.md (v2 persistent control channel).",
+            SessionFailureKind.Permanent);
     }
 
     /// <summary>
@@ -1288,6 +1373,12 @@ public sealed class HalyardStreamingSession : IStreamingSession
         _measuredRttMs);
 
     /// <inheritdoc cref="BuildLaunchSpecJson(byte[])"/>
+    /// <remarks><paramref name="handshakeKey"/> is a fresh 16-byte client-random value in BOTH v1 and v2: the
+    /// vendor's v2 launchSpec builder generates it the same way v1 does (confirmed by static RE of
+    /// <c>FUN_9ee50</c> — a no-input RNG callback, osslRAND fallback — and against three live v2 sessions whose
+    /// captured handshakeKey was high-entropy and not derivable from any session value). An earlier reading had
+    /// v2 dropping the field ("X rides the control plane"); that was wrong — X is just the v1 client-random
+    /// handshakeKey, carried in the launchSpec and fed to the stream crypto.</remarks>
     internal static string BuildLaunchSpecJson(
         byte[] handshakeKey,
         int w,
@@ -1307,7 +1398,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // the caller). Converting again here would subtract the IP/UDP allowance twice.
         int mtu = declaredMtu is int value && value > 0 ? value : LinkMetrics.VendorMtu;
         int rtt = (int)Math.Round(Math.Clamp(measuredRttMs ?? 0, 0, 1000));
-        string handshakeKeyB64 = Convert.ToBase64String(handshakeKey);
+        // Both v1 and v2 carry a fresh client-random handshakeKey here (see the remarks above).
+        string handshakeKeyField = "\"handshakeKey\":\"" + Convert.ToBase64String(handshakeKey) + "\",";
 
         return "{"
             + "\"sessionId\":\"sessionId4321\","
@@ -1320,7 +1412,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             + "\"userProfile\":{\"onlineId\":\"psnId\",\"npId\":\"npId\",\"region\":\"US\",\"languagesUsed\":[\"en\",\"jp\"]},"
             + "\"videoCodec\":\"" + VideoCodecName(codec) + "\","
             + "\"dynamicRange\":\"" + DynamicRangeName(dynamicRange) + "\","
-            + "\"handshakeKey\":\"" + handshakeKeyB64 + "\","
+            + handshakeKeyField
             + AudioChannelsJson
             + "}";
     }

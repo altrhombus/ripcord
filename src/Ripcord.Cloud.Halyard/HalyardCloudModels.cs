@@ -37,6 +37,16 @@ public static class HalyardEndpoints
     /// <summary>Required command-type wire value that triggers a streaming session on the console.</summary>
     public const string StreamingCommandType = "remotePlay";
 
+    /// <summary>
+    /// The <c>supportCmd</c> value in the v2 <c>remotePlay</c> command's <c>initialParams</c> — a capability
+    /// marker the v2 flow carries. Observed verbatim in our own single-session capture; whether the console
+    /// requires this exact value is <c>[X]</c> (no run has varied it). Kept as the captured wire value.
+    /// </summary>
+    public const string V2SupportCmd = "120000";
+
+    /// <summary>The <c>protocolVer</c> value in the v2 <c>remotePlay</c> command's <c>initialParams</c> (captured verbatim).</summary>
+    public const string V2ProtocolVersion = "1.0";
+
     /// <summary>Required signaling channel wire value.</summary>
     public const string SignalingChannel = "remote_play:1";
 
@@ -95,7 +105,13 @@ public sealed record HalyardSessionMember(
 
 public sealed record HalyardCloudSession(
     [property: JsonPropertyName("sessionId")] string SessionId,
-    [property: JsonPropertyName("members")] HalyardSessionMember[]? Members);
+    [property: JsonPropertyName("members")] HalyardSessionMember[]? Members,
+    // The console delivers the account-registration SEED here (double-base64 over a field-encrypted 17-byte
+    // value), set once it has joined as the PROSPERO member; the client can read it back from GET
+    // remotePlaySessions as well as from the push channel. It is the v1 account-seed-delivery value
+    // (HalyardAccountSeedDelivery.RecoverSeed), NOT the stream handshakeKey — that is client-random and rides the
+    // launchSpec, not customData1. Absent on a freshly created session, so nullable.
+    [property: JsonPropertyName("customData1")] string? CustomData1 = null);
 
 public sealed record HalyardSessionsResponse(
     [property: JsonPropertyName("remotePlaySessions")] HalyardCloudSession[] RemotePlaySessions);

@@ -90,7 +90,7 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
         // dotted quad. There is no connect to learn it from here, so ask the routing table which interface
         // would be used to reach this console.
         string clientIp = LocalAddressFor(_console.Address);
-        byte[] requestBytes = HalyardRegistrationMessage.BuildRequest(request, clientIp, encryptedBody);
+        byte[] requestBytes = HalyardRegistrationMessage.BuildRequest(request, clientIp, encryptedBody, request.RegistrationHmacBase64);
 
         // Begun already if the caller prepared us, which it should have; beginning here too is harmless
         // because the association only opens once.

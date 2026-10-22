@@ -3,6 +3,7 @@ using Ripcord.Core.Discovery;
 using Ripcord.Core.Sessions;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
+using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 using Ripcord.Protocol.Halyard.Transport;
 
 namespace Ripcord.Protocol.Halyard.Session;
@@ -77,10 +78,30 @@ public sealed class HalyardSessionFactory
         IHalyardSessionCrypto crypto = _controlSecrets is null
             ? new PassthroughHalyardSessionCrypto()
             : new HalyardV1SessionCrypto(_controlSecrets);
+
+        // Opt-in v2 diagnostic (RIPCORD_V2_HANDSHAKE): with real control secrets present, also build the v2
+        // session crypto and hand it to the session. The session runs the v2 control handshake only when the
+        // console's pairing actually selects v2 (HalyardInitSelection: RP-SupportGcm or a held rolled token);
+        // otherwise it uses the v1 crypto above, byte-for-byte as before. The v2 handshake path stops at the
+        // persistent v2 control channel, which is not yet implemented, so this changes nothing for a normal
+        // connect unless the flag is deliberately set against a v2-capable console.
+        HalyardV2SessionCrypto? v2Crypto =
+            _controlSecrets is not null && V2HandshakeOptIn
+                ? new HalyardV2SessionCrypto(_controlSecrets)
+                : null;
+
         return new HalyardStreamingSession(
             parameters, control, crypto, _credentials, loginPinProvider, controlPlaneDeadline,
-            streamTransportFactory);
+            streamTransportFactory, v2Crypto);
     }
+
+    /// <summary>
+    /// The opt-in for the v2 control-handshake diagnostic path (<c>RIPCORD_V2_HANDSHAKE</c>). Off by default:
+    /// the live v2 path stops at the persistent control channel (not yet implemented), so it is gated behind this
+    /// flag and never changes a normal (v1) connect.
+    /// </summary>
+    internal static bool V2HandshakeOptIn =>
+        Environment.GetEnvironmentVariable("RIPCORD_V2_HANDSHAKE") is { Length: > 0 };
 
     /// <summary>Convenience overload: build the parameters for a console reached at <paramref name="address"/>,
     /// using the standard control/stream ports. <paramref name="consoleId"/> keys the credential store.

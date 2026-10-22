@@ -6,6 +6,25 @@ using Ripcord.Core.Net.Crypto;
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
 /// <summary>
+/// Which key position the rotating GMAC key's window index is computed from. The whole packet cipher is shared
+/// between the v1 and the v2 (GCM control plane) stream planes; the <b>only</b> difference in the per-packet
+/// crypto is this one rule.
+/// </summary>
+public enum HalyardGmacWindowRule
+{
+    /// <summary>v1: <c>window = keyPos / 45000</c>. Verified byte-for-byte on a live v1 console (223 windows).</summary>
+    FromKeyPos,
+
+    /// <summary>
+    /// v2: <c>window = (keyPos - 1) / 45000</c> (keyPos 0 → window 0) — the v2 stream rotates one window earlier.
+    /// Confirmed byte-exact on the s2c A/V direction across 73 windows / 7,297 packets (003/004,
+    /// <c>validate_v2_av_packets.py</c>). The c2s direction stays within window 0 in every capture, so its use of
+    /// this same rule beyond window 0 is consistent but <b>[X]</b> (untested above window 0).
+    /// </summary>
+    FromKeyPosMinusOne,
+}
+
+/// <summary>
 /// The v1 per-packet stream crypto for one channel direction: AES-128-CTR payload encryption plus a
 /// 4-byte GMAC, both keyed off the packet's 64-bit key position. Encrypt-then-MAC — the tag is computed
 /// over the (already encrypted) packet with its tag field zeroed, so a receiver verifies the GMAC first,
@@ -40,6 +59,7 @@ public sealed class HalyardPacketCrypto : IDisposable
     private readonly byte[] _aesKey;
     private readonly byte[] _baseIv;
     private readonly byte[] _gmacBaseKey; // key0 = sha256_fold(aesKey || baseIv); the window-0 GMAC key
+    private readonly HalyardGmacWindowRule _windowRule;
 
     /// <summary>
     /// The payload block cipher, created once. The payload key does NOT rotate — <see cref="_aesKey"/> is fixed
@@ -48,19 +68,24 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// </summary>
     private readonly Aes _payloadAes;
 
-    public HalyardPacketCrypto(ReadOnlySpan<byte> aesKey, ReadOnlySpan<byte> baseIv)
+    public HalyardPacketCrypto(
+        ReadOnlySpan<byte> aesKey, ReadOnlySpan<byte> baseIv,
+        HalyardGmacWindowRule windowRule = HalyardGmacWindowRule.FromKeyPos)
     {
         if (aesKey.Length != BlockSize) throw new ArgumentException("AES key must be 16 bytes.", nameof(aesKey));
         if (baseIv.Length != BlockSize) throw new ArgumentException("Base IV must be 16 bytes.", nameof(baseIv));
         _aesKey = aesKey.ToArray();
         _baseIv = baseIv.ToArray();
+        _windowRule = windowRule;
         _gmacBaseKey = new byte[BlockSize];
         Fold(_aesKey, _baseIv, _gmacBaseKey);
         _payloadAes = AesKeystreamModes.CreateReusableEcb(_aesKey);
     }
 
-    public HalyardPacketCrypto(in HalyardStreamKeySchedule.DirectionKeys keys)
-        : this(keys.AesKey, keys.BaseIv) { }
+    public HalyardPacketCrypto(
+        in HalyardStreamKeySchedule.DirectionKeys keys,
+        HalyardGmacWindowRule windowRule = HalyardGmacWindowRule.FromKeyPos)
+        : this(keys.AesKey, keys.BaseIv, windowRule) { }
 
     // ---- payload cipher (§5.5a) ----------------------------------------------------------------
 
@@ -141,7 +166,9 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// </summary>
     public void GmacKey(ulong keyPos, Span<byte> destination)
     {
-        long window = (long)(keyPos / (ulong)RotationWindow);
+        long window = _windowRule == HalyardGmacWindowRule.FromKeyPosMinusOne
+            ? (keyPos == 0 ? 0 : (long)((keyPos - 1) / (ulong)RotationWindow)) // v2: rotate one window earlier
+            : (long)(keyPos / (ulong)RotationWindow);                          // v1
         if (window == 0)
         {
             _gmacBaseKey.CopyTo(destination);
