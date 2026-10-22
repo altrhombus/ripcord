@@ -1,6 +1,8 @@
+using System.IO;
 using System.Net;
 using Ripcord.Core.Net.Tcp;
 using Ripcord.Protocol.Halyard.Common.Control;
+using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 namespace Ripcord.Protocol.Halyard.Transport;
 
@@ -23,8 +25,28 @@ public interface IHalyardControlChannel : IAsyncDisposable
     Task<HalyardCtrlMessage?> ReadCtrlMessageAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// The v2 during-stream RPCS channel's raw frame I/O, over whatever connection carried <c>/sess/ctrl</c> (it
+/// stays open). Only the plain-TCP channel implements it today; the datagram (rendezvous) channels do not yet, so
+/// the session checks for it with <c>is IHalyardRpcsTransport</c>. Frames are the
+/// <see cref="HalyardRpcsChannel"/> wire form (<c>"RPCS"‖be32(len)‖ct‖tag16</c>); the GCM seal/open and the
+/// per-direction counters live in <see cref="HalyardRpcsChannel"/>, so this moves bytes only.
+/// </summary>
+public interface IHalyardRpcsTransport
+{
+    /// <summary>Send one complete RPCS frame (serialized by <see cref="HalyardRpcsChannel.Seal"/>).</summary>
+    Task SendRpcsFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Read the next complete RPCS frame (reassembled from the <c>"RPCS"‖be32(len)</c> header), or
+    /// <see langword="null"/> if the connection closed. Throws <see cref="InvalidDataException"/> if the bytes on
+    /// the channel are not a well-formed RPCS frame.
+    /// </summary>
+    Task<byte[]?> ReadRpcsFrameAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>Plain-TCP control channel for a directly-reachable LAN console (control port pool, 9295 observed).</summary>
-public sealed class HalyardTcpControlChannel : IHalyardControlChannel
+public sealed class HalyardTcpControlChannel : IHalyardControlChannel, IHalyardRpcsTransport
 {
     private readonly byte[] _receiveBuffer = new byte[16 * 1024];
     private readonly List<byte> _pending = [];
@@ -91,6 +113,47 @@ public sealed class HalyardTcpControlChannel : IHalyardControlChannel
             {
                 _pending.RemoveRange(0, consumed);
                 return message;
+            }
+
+            int read = await FillAsync(cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return null; // channel closed
+            }
+        }
+    }
+
+    public async Task SendRpcsFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken)
+    {
+        EnsureConnected();
+        // Share the write lock with the binary ctrl path so RPCS frames and any other writer never interleave.
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _channel!.SendAsync(frame, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    public async Task<byte[]?> ReadRpcsFrameAsync(CancellationToken cancellationToken)
+    {
+        EnsureConnected();
+        while (true)
+        {
+            if (_pending.Count >= HalyardRpcsChannel.HeaderLength)
+            {
+                byte[] header = [.. _pending.GetRange(0, HalyardRpcsChannel.HeaderLength)];
+                if (!HalyardRpcsChannel.TryGetFrameLength(header, out int frameLength))
+                    throw new InvalidDataException("Non-RPCS data on the control channel after /sess/ctrl.");
+                if (_pending.Count >= frameLength)
+                {
+                    byte[] frame = [.. _pending.GetRange(0, frameLength)];
+                    _pending.RemoveRange(0, frameLength);
+                    return frame;
+                }
             }
 
             int read = await FillAsync(cancellationToken).ConfigureAwait(false);

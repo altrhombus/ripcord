@@ -487,13 +487,67 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 result.TokenDesync ? SessionFailureKind.Permanent : SessionFailureKind.Unknown);
         }
 
-        // Handshake accepted. Streaming needs the persistent v2 control channel, which is not built yet — so this
-        // is as far as the diagnostic goes. The minted verifyKey is intentionally NOT persisted: the token only
-        // rolls once the console accepts a full session (HalyardSessionToken remarks), which this never reaches.
+        // Handshake accepted. Keep the (still-open) ctrl connection and bring up the RPCS during-stream channel on
+        // it. The minted verifyKey is intentionally NOT persisted: the token only rolls once the console accepts a
+        // full session (HalyardSessionToken remarks), which this diagnostic does not yet reach.
+        if (_control is IHalyardRpcsTransport rpcsTransport)
+            return await RunRpcsDiagnosticAsync(crypto, rpcsTransport, token).ConfigureAwait(false);
+
         return Fail(
-            "v2 control handshake completed: the console accepted /sess/init, /sess/init2 and /sess/ctrl. The "
-            + "persistent v2 control channel (GCM/RPCS keep-alive + probe report) that gates streaming is not yet "
-            + "implemented, so the session stops here. See ROADMAP.md (v2 persistent control channel).",
+            "v2 control handshake completed: the console accepted /sess/init, /sess/init2 and /sess/ctrl. This "
+            + "control transport carries no RPCS channel, so the session stops here.",
+            SessionFailureKind.Permanent);
+    }
+
+    /// <summary>
+    /// Opt-in RPCS diagnostic: after the v2 handshake, bring up the RPCS during-stream channel on the still-open
+    /// ctrl connection — send the probe report + keepalives and read what the console sends — for a bounded window,
+    /// then report what came back. This is the hardware probe for the <c>[X]</c> RPCS send schedule and the stream
+    /// handoff; it does not yet continue into the stream plane (senkusha + stream key agreement over RPCS).
+    /// </summary>
+    private async Task<SessionHandshakeResult> RunRpcsDiagnosticAsync(
+        HalyardV2SessionCrypto crypto, IHalyardRpcsTransport transport, CancellationToken token)
+    {
+        // The RPCS channel reuses the control-plane GCM keys and continues the per-direction counter from ctrl's 0.
+        var channel = new HalyardRpcsChannel(crypto);
+        var loop = new HalyardRpcsLoop(transport, channel);
+        var received = new List<HalyardRpcsMessage>();
+        loop.MessageReceived += message =>
+        {
+            lock (received)
+                received.Add(message);
+        };
+
+        _connectStep = "v2 RPCS channel (diagnostic)";
+        using var window = CancellationTokenSource.CreateLinkedTokenSource(token);
+        window.CancelAfter(TimeSpan.FromSeconds(10));
+        try
+        {
+            await loop.RunAsync(window.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (window.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            // The diagnostic window elapsed — expected; the console kept the channel open the whole time.
+        }
+
+        string seen = "nothing";
+        lock (received)
+        {
+            if (received.Count > 0)
+            {
+                var labels = new List<string>();
+                var distinct = new HashSet<ushort>();
+                foreach (HalyardRpcsMessage message in received)
+                    if (distinct.Add(message.Cmd))
+                        labels.Add($"0x{message.Cmd:X4}");
+                seen = string.Join(", ", labels);
+            }
+        }
+
+        return Fail(
+            $"v2 control handshake completed and the RPCS channel came up. Over a 10 s window the console sent: {seen}. "
+            + "The stream handoff (continuing into senkusha + stream key agreement) is the next piece; the diagnostic "
+            + "stops after the window.",
             SessionFailureKind.Permanent);
     }
 
