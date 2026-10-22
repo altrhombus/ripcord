@@ -90,6 +90,35 @@ public sealed class HalyardRpcsChannel
     }
 
     /// <summary>
+    /// Frame and seal one outgoing RPCS <em>message</em>: build the inner plaintext with <see cref="SendCounter"/>
+    /// as its <c>seq</c> (the value the frame is sealed under), then <see cref="Seal"/> it. The <paramref name="cmd"/>
+    /// and <paramref name="payload"/> come from <see cref="HalyardRpcsCommands"/>; <paramref name="flags"/> is 0 in
+    /// every observed message.
+    /// </summary>
+    public byte[] SealMessage(ushort cmd, ReadOnlySpan<byte> payload, ushort flags = 0)
+    {
+        // Seal() will use (and advance) _sendCounter; the inner seq must equal that same counter, so read it now.
+        var message = new HalyardRpcsMessage(_sendCounter, cmd, flags, payload.ToArray());
+        return Seal(message.Encode());
+    }
+
+    /// <summary>
+    /// Open one incoming RPCS frame and decode its inner message. Returns <see langword="null"/> if the frame is
+    /// malformed, does not authenticate, or carries an inner message whose <c>seq</c> disagrees with the receive
+    /// counter it was sealed under (a desync the GCM alone would not catch, since <c>seq</c> is plaintext).
+    /// </summary>
+    public HalyardRpcsMessage? OpenMessage(ReadOnlySpan<byte> frame)
+    {
+        ulong expectedSeq = _recvCounter;
+        byte[]? inner = Open(frame);
+        if (inner is null)
+            return null;
+        if (!HalyardRpcsMessage.TryDecode(inner, out HalyardRpcsMessage message) || message.Seq != expectedSeq)
+            return null;
+        return message;
+    }
+
+    /// <summary>
     /// Read an RPCS header and report the full frame length (<see cref="HeaderLength"/> + the declared body), so a
     /// stream reader knows how many bytes to pull before calling <see cref="Open"/>. Returns <see langword="false"/>
     /// if the span is too short or does not begin with the <see cref="Magic"/>.

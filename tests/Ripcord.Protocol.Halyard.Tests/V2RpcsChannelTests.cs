@@ -1,6 +1,4 @@
 using System.Buffers.Binary;
-using System.Security.Cryptography;
-using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 using Xunit;
 
@@ -19,7 +17,7 @@ public class V2RpcsChannelTests
     [Fact]
     public void Seal_ProducesTheRpcsWireShape()
     {
-        var channel = new HalyardRpcsChannel(new FakeControlCrypto());
+        var channel = new HalyardRpcsChannel(new FakeV2ControlCrypto());
         byte[] inner = [1, 2, 3, 4, 5];
         byte[] frame = channel.Seal(inner);
 
@@ -32,8 +30,8 @@ public class V2RpcsChannelTests
     [Fact]
     public void RoundTrips_InOrder_WithCountersContinuingFromCtrl()
     {
-        var sender = new HalyardRpcsChannel(new FakeControlCrypto());   // client: seals sk_0x09
-        var receiver = new HalyardRpcsChannel(new FakeControlCrypto()); // peer deriving the same keys
+        var sender = new HalyardRpcsChannel(new FakeV2ControlCrypto());   // client: seals sk_0x09
+        var receiver = new HalyardRpcsChannel(new FakeV2ControlCrypto()); // peer deriving the same keys
 
         // The first message in each direction is counter 1 (ctrl was 0 on this connection).
         Assert.Equal(1ul, sender.SendCounter);
@@ -60,8 +58,8 @@ public class V2RpcsChannelTests
     [Fact]
     public void Open_WithTheWrongCounterOrder_FailsAndLeavesTheCounterUntouched()
     {
-        var sender = new HalyardRpcsChannel(new FakeControlCrypto());
-        var receiver = new HalyardRpcsChannel(new FakeControlCrypto());
+        var sender = new HalyardRpcsChannel(new FakeV2ControlCrypto());
+        var receiver = new HalyardRpcsChannel(new FakeV2ControlCrypto());
 
         byte[] first = sender.Seal("a"u8);     // sealed at counter 1
         byte[] second = sender.Seal("b"u8);    // sealed at counter 2
@@ -79,8 +77,8 @@ public class V2RpcsChannelTests
     [Fact]
     public void Open_RejectsATamperedTag_WithoutAdvancing()
     {
-        var sender = new HalyardRpcsChannel(new FakeControlCrypto());
-        var receiver = new HalyardRpcsChannel(new FakeControlCrypto());
+        var sender = new HalyardRpcsChannel(new FakeV2ControlCrypto());
+        var receiver = new HalyardRpcsChannel(new FakeV2ControlCrypto());
 
         byte[] frame = sender.Seal("payload"u8);
         frame[^1] ^= 0xFF; // corrupt the last tag byte
@@ -104,44 +102,9 @@ public class V2RpcsChannelTests
     [Fact]
     public void Open_RejectsAFrameWhoseLengthDisagreesWithTheHeader()
     {
-        var channel = new HalyardRpcsChannel(new FakeControlCrypto());
+        var channel = new HalyardRpcsChannel(new FakeV2ControlCrypto());
         byte[] frame = channel.Seal("x"u8);
         Assert.Null(channel.Open(frame.AsSpan(0, frame.Length - 1).ToArray())); // one byte short of the declared body
     }
 
-    /// <summary>
-    /// A deterministic AEAD double matching <see cref="IHalyardV2ControlCrypto"/>'s shape: ciphertext equals the
-    /// plaintext (same length), the 16-byte "tag" binds the AAD + counter, and open reverses seal. It does not
-    /// distinguish the two directions — it stands in for the GCM envelope so these tests exercise the framing, not
-    /// AES-GCM.
-    /// </summary>
-    private sealed class FakeControlCrypto : IHalyardV2ControlCrypto
-    {
-        public bool IsControlEstablished => true;
-        public byte[] GenerateControlPublicKey() => throw new NotSupportedException();
-        public byte[] ComputeRpHmac(ReadOnlySpan<byte> k16, ReadOnlySpan<byte> publicKey) => throw new NotSupportedException();
-        public bool EstablishControl(ReadOnlySpan<byte> consolePublicKey, ReadOnlySpan<byte> k16) => true;
-
-        public byte[] SealClientToConsole(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> aad, ulong counter)
-            => [.. plaintext, .. Tag(aad, plaintext, counter)];
-
-        public byte[]? OpenConsoleToClient(ReadOnlySpan<byte> ciphertextAndTag, ReadOnlySpan<byte> aad, ulong counter)
-        {
-            if (ciphertextAndTag.Length < 16)
-                return null;
-            ReadOnlySpan<byte> ct = ciphertextAndTag[..^16];
-            ReadOnlySpan<byte> tag = ciphertextAndTag[^16..];
-            if (!CryptographicOperations.FixedTimeEquals(tag, Tag(aad, ct, counter)))
-                return null;
-            return ct.ToArray();
-        }
-
-        private static byte[] Tag(ReadOnlySpan<byte> aad, ReadOnlySpan<byte> data, ulong counter)
-        {
-            Span<byte> ctr = stackalloc byte[8];
-            BinaryPrimitives.WriteUInt64BigEndian(ctr, counter);
-            byte[] input = [.. aad, .. data, .. ctr];
-            return SHA256.HashData(input)[..16];
-        }
-    }
 }
