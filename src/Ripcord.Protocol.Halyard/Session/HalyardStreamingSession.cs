@@ -1288,10 +1288,14 @@ public sealed class HalyardStreamingSession : IStreamingSession
         _measuredRttMs);
 
     /// <inheritdoc cref="BuildLaunchSpecJson(byte[])"/>
-    /// <remarks><paramref name="handshakeKey"/> is <see langword="null"/> for v2, which drops the field from the
-    /// launchSpec (X no longer rides in the JSON; LAUNCHSPEC-CTRL-FIELDS §1). Everything else is unchanged.</remarks>
+    /// <remarks><paramref name="handshakeKey"/> is a fresh 16-byte client-random value in BOTH v1 and v2: the
+    /// vendor's v2 launchSpec builder generates it the same way v1 does (confirmed by static RE of
+    /// <c>FUN_9ee50</c> — a no-input RNG callback, osslRAND fallback — and against three live v2 sessions whose
+    /// captured handshakeKey was high-entropy and not derivable from any session value). An earlier reading had
+    /// v2 dropping the field ("X rides the control plane"); that was wrong — X is just the v1 client-random
+    /// handshakeKey, carried in the launchSpec and fed to the stream crypto.</remarks>
     internal static string BuildLaunchSpecJson(
-        byte[]? handshakeKey,
+        byte[] handshakeKey,
         int w,
         int h,
         int fps,
@@ -1309,10 +1313,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // the caller). Converting again here would subtract the IP/UDP allowance twice.
         int mtu = declaredMtu is int value && value > 0 ? value : LinkMetrics.VendorMtu;
         int rtt = (int)Math.Round(Math.Clamp(measuredRttMs ?? 0, 0, 1000));
-        // v2 passes null and the field is omitted entirely (not an empty handshakeKey); v1 passes its 16 bytes.
-        string handshakeKeyField = handshakeKey is null
-            ? string.Empty
-            : "\"handshakeKey\":\"" + Convert.ToBase64String(handshakeKey) + "\",";
+        // Both v1 and v2 carry a fresh client-random handshakeKey here (see the remarks above).
+        string handshakeKeyField = "\"handshakeKey\":\"" + Convert.ToBase64String(handshakeKey) + "\",";
 
         return "{"
             + "\"sessionId\":\"sessionId4321\","

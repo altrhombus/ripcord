@@ -12,36 +12,37 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// v2 launchSpec + SESSION_REQUEST (spec §5/§6). The launchSpec is the v1 template minus <c>handshakeKey</c>,
-/// AES-128-OFB under the v1 control KDF at counter 0 — so the cipher is v1's (already KAT'd against captures) and
-/// v2 reuses it; only the counter and the dropped key differ. SESSION_REQUEST gains field 7, the sentinel
-/// sessionId <c>"InvalidSessionId"</c>.
+/// v2 launchSpec + SESSION_REQUEST (spec §5/§6). The launchSpec is byte-for-byte the v1 template, AES-128-OFB
+/// under the v1 control KDF (only the counter differs: v2 uses 0), carrying the same client-random
+/// <c>handshakeKey</c> — v2 does NOT drop it (static RE of the vendor's launchSpec builder <c>FUN_9ee50</c> plus
+/// three live v2 sessions confirm the handshakeKey is a no-input client-random value, identical to v1).
+/// SESSION_REQUEST gains field 7, the sentinel sessionId <c>"InvalidSessionId"</c>.
 /// </summary>
 public class V2LaunchSpecTests
 {
     [Fact]
-    public void LaunchSpec_V2_DropsHandshakeKey_OtherwiseMatchesV1()
+    public void LaunchSpec_V2_CarriesHandshakeKey_SameAsV1()
     {
+        // The builder is version-agnostic for this field: both v1 and v2 pass a fresh 16-byte client-random key,
+        // so the template (given the same key) is byte-identical. X is that key — not a customData1-sealed secret.
         byte[] key = Enumerable.Range(0, 16).Select(i => (byte)i).ToArray();
-        string v1 = HalyardStreamingSession.BuildLaunchSpecJson(key, 1280, 720, 60, 10_000, VideoCodec.H264);
-        string v2 = HalyardStreamingSession.BuildLaunchSpecJson(null, 1280, 720, 60, 10_000, VideoCodec.H264);
+        string a = HalyardStreamingSession.BuildLaunchSpecJson(key, 1280, 720, 60, 10_000, VideoCodec.H264);
+        string b = HalyardStreamingSession.BuildLaunchSpecJson(key, 1280, 720, 60, 10_000, VideoCodec.H264);
 
-        using var d1 = JsonDocument.Parse(v1);
-        using var d2 = JsonDocument.Parse(v2);
+        using var da = JsonDocument.Parse(a);
+        using var db = JsonDocument.Parse(b);
 
-        Assert.True(d1.RootElement.TryGetProperty("handshakeKey", out _));
-        Assert.False(d2.RootElement.TryGetProperty("handshakeKey", out _));
+        // handshakeKey is present and is the supplied key, base64-encoded.
+        Assert.True(da.RootElement.TryGetProperty("handshakeKey", out JsonElement hk));
+        Assert.Equal(Convert.ToBase64String(key), hk.GetString());
 
-        // Every other top-level field is byte-identical, and v2 has exactly one fewer.
-        foreach (JsonProperty p in d1.RootElement.EnumerateObject())
+        // Same field set, same values (no v2 divergence in the JSON).
+        Assert.Equal(da.RootElement.EnumerateObject().Count(), db.RootElement.EnumerateObject().Count());
+        foreach (JsonProperty p in da.RootElement.EnumerateObject())
         {
-            if (p.Name == "handshakeKey")
-                continue;
-            Assert.True(d2.RootElement.TryGetProperty(p.Name, out JsonElement v2p), $"v2 launchSpec missing {p.Name}");
-            Assert.Equal(p.Value.GetRawText(), v2p.GetRawText());
+            Assert.True(db.RootElement.TryGetProperty(p.Name, out JsonElement bp), $"launchSpec missing {p.Name}");
+            Assert.Equal(p.Value.GetRawText(), bp.GetRawText());
         }
-
-        Assert.Equal(d1.RootElement.EnumerateObject().Count() - 1, d2.RootElement.EnumerateObject().Count());
     }
 
     [Fact]
