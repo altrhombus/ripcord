@@ -30,12 +30,14 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 ///   (Phase 2, implemented here for the s2c A/V receive path + key agreement).</description></item>
 /// </list>
 ///
-/// <para><b>Phase 2 open [X] — how <c>X</c> is produced.</b> <c>X</c> is a per-session secret that BOTH sides
-/// hold (the console signs its stream pubkey with it), is on no wire, and whose derivation is unresolved
-/// (captures <c>X-ORIGIN-CORRECTION-2026-10-20.md</c>; ~1,450 candidates miss). This class never derives X; it
-/// consumes whatever the caller supplies as <c>handshakeKey</c>. Until the derivation is found, the live caller
-/// cannot produce X, so the stream plane is exercised only by the known-answer vectors (a captured X), never
-/// live. Do NOT invent an X derivation.</para>
+/// <para><b>How <c>X</c> is produced — SOLVED.</b> <c>X</c> is simply the v1 <c>handshakeKey</c>: 16
+/// <b>client-random</b> bytes the client generates, carries base64 in the launchSpec, and feeds here. It is not
+/// derived from <c>customData1</c> or anything else — static RE of the vendor's launchSpec builder
+/// (<c>FUN_9ee50</c>: a no-input RNG callback, osslRAND fallback) and three live v2 sessions confirm it. The
+/// console "holds" X only because it received it in the launchSpec (then signs its stream pubkey with it). This
+/// class consumes whatever the caller supplies as <c>handshakeKey</c>, exactly as v1 does; the earlier belief
+/// that X was an unresolved per-session derivation (the <c>customData1</c> seal line) was wrong — that path
+/// carries the registration seed, a separate value.</para>
 ///
 /// <para>The c2s send-authentication methods (<c>SealControlMessage</c>/<c>SealCongestionPacket</c>/
 /// <c>SealFeedbackPacket</c>) use v2-specific, per-format header offsets (AV-CTR-FEC-FEEDBACK.md) and are the
@@ -50,8 +52,8 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private readonly HalyardControlKdf _kdf;
 
     // The launchSpec cipher is v1's unchanged: AES-128-OFB under M = KDF(RP-Nonce, RP-Key), IV keyed by the
-    // selectorOne context key (confirmed: the v2 launchSpec differs from v1 only by counter 0 and dropping
-    // handshakeKey, LAUNCHSPEC-CTRL-FIELDS §1), so v2 reuses the v1 field crypto rather than re-deriving it.
+    // selectorOne context key. The v2 launchSpec differs from v1 only by counter 0 — it still carries the same
+    // client-random handshakeKey (it is NOT dropped; see the class remarks) — so v2 reuses the v1 field crypto.
     private HalyardControlFieldCrypto? _field;
 
     // Path A (control plane). The purposes are the info-string's second byte: 0x09 client->console, 0x08 the
