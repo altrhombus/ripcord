@@ -20,8 +20,10 @@ pub const OPUS_CODEC: u8 = 5;
 pub const MAX_UNIT_STRIDE: usize = 4096;
 /// Slots per frame, which is not the FEC group size: a 1080p frame needs well over a hundred units,
 /// and FEC recovers groups of up to [`fec::MAX_TOTAL_UNITS`]. See `stream_demux.h` for what conflating
-/// the two cost.
-pub const MAX_UNITS_PER_FRAME: usize = 512;
+/// the two cost. 256 is the bound the console's own Cauchy builder implies: every coefficient is the
+/// GF(2^8) inverse of `(m + j) ^ i`, defined only below 256, so a codable frame has `k + m <= 256`
+/// (spec §6.2). The largest frame in any of our captures is 130 units.
+pub const MAX_UNITS_PER_FRAME: usize = 256;
 pub const VIDEO_HEADER_CAPACITY: usize = 512;
 pub const ASSEMBLY_CAPACITY: usize = MAX_UNITS_PER_FRAME * MAX_UNIT_STRIDE + VIDEO_HEADER_CAPACITY;
 
