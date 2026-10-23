@@ -33,6 +33,21 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### One home per claim (2026-10-22)
+
+The provenance story was written in five places–the README, `NOTICE`, the protocol README, `CLAUDE.md` and a
+`.proto` header–and no two of them quite agreed. That's how the `.proto` header came to claim every name in it was
+mine while the README next to it said two-thirds weren't. The fix is a rule, not a rewrite: each claim lives in
+one place and everything else points there.
+
+- `NOTICE` is the home for how the protocol was worked out and for the two generic values that ship (the
+  interop constants and the application's OAuth credential). It ships with every build, so it was already the
+  copy that mattered.
+- `docs/protocol-research-log.md` stays the per-reference record, and the `[X]` tags stay where they sit.
+- `docs/protocol/README.md` keeps the naming rules and what the specification reproduces.
+- The README's provenance section is now two paragraphs and a pointer. Users get the front door; anyone
+  evaluating the project gets `NOTICE`.
+
 ### A number with no story behind it (2026-10-22)
 
 The stream demuxer capped a frame at 512 units, a number with no derivation behind it. It isn't a protocol value–the console never checks it–but a number I can't trace is a number I don't keep.
