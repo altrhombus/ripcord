@@ -62,6 +62,7 @@ public class PublishedTreeSweepTests
     // <sweep:fixtures>
     private static readonly Dictionary<string, string> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["00000000000005ae"] = "the v2 probe-report payload carrying MTU 1454 - a protocol constant, identical for every console",
         ["271fa4e2"] = "SHA-256 prefix of the vendor DLL we analysed - provenance evidence",
         ["fddb4"] = "the suffix half of that same vendor DLL hash",
         ["464687b3"] = "the bundled contextKey, published in full in halyard-v1-constants.json anyway",
