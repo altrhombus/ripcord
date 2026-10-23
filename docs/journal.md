@@ -48,6 +48,10 @@ one place and everything else points there.
 - The README's provenance section is now two paragraphs and a pointer. Users get the front door; anyone
   evaluating the project gets `NOTICE`.
 
+`NOTICE`'s third-party section got the same treatment: it now holds the inventory, the two licence elections and
+what ships in the PS3 package, and the reasoning behind each decision moved to the port's own licensing notes.
+The file is 229 lines, down from 313, which is a length one person can actually read.
+
 ### A number with no story behind it (2026-10-22)
 
 The stream demuxer capped a frame at 512 units, a number with no derivation behind it. It isn't a protocol value–the console never checks it–but a number I can't trace is a number I don't keep.
