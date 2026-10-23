@@ -35,11 +35,8 @@ Placeholders like `<token>`, `<accountId>`, `<duid>`, `<uuid>`, `<ip>` stand in 
 
 **One value from these captures is deliberately committed, and it is not in the list above:** the vendor
 desktop client's own OAuth `client_id`/`client_secret`, which ships populated in
-`src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json`. It authenticates an *application*, not a person
-— identical for every user, tied to no account and no console — which is why it is not personal data and why
-it is treated separately here. That is a deliberate, argued exception, not an oversight: see
-[`NOTICE`](../../NOTICE), which makes the case on its own grounds, and
-[`CLAUDE.md`](../../CLAUDE.md)'s "Bounded exception 2". Nothing else from these captures is committed, and no
+`src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json`. It authenticates an application, not a person, and
+[`NOTICE`](../../NOTICE) describes it; `CLAUDE.md`'s "Bounded exception 2" holds the rule. Nothing else from these captures is committed, and no
 *user* credential is: the signed-in account's refresh token lives encrypted in the user's own
 `account.json`.
 
