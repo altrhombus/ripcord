@@ -35,6 +35,37 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A number with no story behind it (2026-10-22)
+
+An audit turned up a comment in the stream demuxer that I couldn't back up. The cap on how many units a frame may
+occupy was 512, and the comment said it "matched the reference implementation". Nothing in Ripcord defines any such
+thing, and the constant had been there since the first commit, so the history couldn't say where it came from
+either. It isn't a protocol value–the console never checks it–but a number I can't trace is a number I don't keep.
+
+So I derived one. Two bounds were already sitting in our own notes. The header's total-units field is 11 bits, so the
+wire could say 2048. More usefully, the console's own FEC builder (§6.2, read off our own binary) forms every
+coefficient as the GF(2⁸) inverse of `(m + j) XOR i`, and that lookup is only an inverse below 256–so a frame the
+console can actually code has at most 256 units, source and parity together. Then I counted: a header scan over
+sixteen of our captures, about 29,000 complete frames, v1 and v2, clean LAN and lossy. The biggest frame anyone ever
+sent us was 130 units. Parity tops out at 45, which is a new observation in its own right.
+
+The cap is 256 now, in the dotnet client, the C core and the engine alike, and the comments say why. The C core's
+fixed slot buffer gets a megabyte back in the bargain. (The console ports haven't been re-run against hardware with
+it; nothing they have ever received comes near the old cap, let alone the new one.)
+
+Three smaller records were straightened out at the same time:
+
+- `adaptive_stream_index` is a name I gave to three bits inside a binary header, and the spec never said where
+  the words came from. They came from the launch spec's `adaptiveStreamMode` key, which sits in our own copy of
+  the client and in our own memory dumps of it. The spec now says so, and says the field's meaning is still
+  unconfirmed.
+- There is now a `docs/protocol/evidence-manifest.tsv`: a SHA-256 of every file in the captures folder, paths
+  hashed too, so it names nothing, with `tools/evidence-manifest.py` to regenerate and check it. A commit of that
+  file dates the evidence; it carries none of it.
+- The `.proto` header claimed every name in the file was mine. The protocol README, which is accurate, says
+  about two-thirds of the message names are the vendor's plain-English ones, kept on purpose. The header now
+  says what the README says, and `CLAUDE.md` no longer calls Takion and Senkusha the "one" exception.
+
 ### The v2 handshakeKey, chased the long way round, turns out to be v1's (2026-10-22)
 
 Five v2 hardware captures and a headless-Ghidra dig to answer one question — where the v2 stream `handshakeKey`

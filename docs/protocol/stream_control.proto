@@ -1,11 +1,15 @@
 // stream_control.proto — control-plane message schema for the PS5 Remote Play v1 (older) streaming
-// protocol, expressed with our own descriptive names.
+// protocol, with the vendor's coined names replaced.
 //
 // PROVENANCE / INDEPENDENCE NOTE: message/field/enum *numbers, wire types, and structure* are interface
 // facts recovered from our own copy of the client binary and are reproduced here because they are
-// required for interoperability (protobuf transmits field numbers, never names). All *names* in this
-// file are our own descriptive choices, not the vendor's — the vendor's coined names are deliberately
-// not reproduced. Final implementation names may differ again; this file fixes only the wire contract.
+// required for interoperability (protobuf transmits field numbers, never names). The names are of three
+// kinds, as README.md ("What is reproduced here") sets out: the vendor's coined or arbitrary names are
+// replaced with our own (SESSION_REQUEST, BANDWIDTH_PROBE, SYSTEM_MENU_COMMAND, ...); names that are
+// simply the plain-English description of a message or constant are kept as interface labels, and about
+// two-thirds of the message names are of that kind; and some field names are most likely the vendor's
+// own, read from the binary's reflection metadata, kept because they never reach the wire. Final
+// implementation names may differ again; this file fixes only the wire contract.
 //
 // Interoperability invariant: DO NOT change any field number or enum value below. Names may be changed
 // freely (they never appear on the wire).

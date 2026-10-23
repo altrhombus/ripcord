@@ -28,8 +28,15 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     /// </summary>
     private const int VideoUnitPrefixLength = 2;
 
-    /// <summary>Sanity cap on units per frame (matches the reference implementation's UNIT_SLOTS_MAX).</summary>
-    private const int MaxUnitsPerFrame = 512;
+    /// <summary>
+    /// Sanity cap on unit slots per frame (source + parity), from our own evidence: the console's Cauchy matrix
+    /// builder forms every coefficient as the GF(2^8) inverse of <c>(m + j) XOR i</c> (spec §6.2, read off our
+    /// own binary), and that lookup is an inverse only while both operands are below 256, so a frame the console
+    /// can FEC-code has <c>k + m &lt;= 256</c>. The header's 11-bit total-units field could carry up to 2048
+    /// <c>[C]</c>, but nothing in our captures comes near either bound: the largest frame seen is 130 units
+    /// (spec §6.2). A frame over the cap is skipped; the console never checks this number.
+    /// </summary>
+    private const int MaxUnitsPerFrame = 256;
 
     private readonly IHalyardSessionCrypto _crypto = crypto;
     // Scratch for the assembled Annex-B frame. A plain array rather than List<byte> so it can be handed to

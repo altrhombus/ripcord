@@ -16,7 +16,7 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming;
 /// off 9      u8   codec
 /// off 10..13 u32  4-byte GMAC tag (zeroed for the GMAC computation)
 /// off 14..17 u32  key position (running byte counter; drives the crypto nonce - NOT a timestamp)
-/// off 18..   ...  media payload; +3 bytes for video (size_extension u16 + adaptive_stream_index),
+/// off 18..   ...  media payload; +3 bytes for video (size_extension u16 + adaptive_stream_index, our name: spec §6.1),
 ///                 +3 more if the extended-header flag is set
 /// </code>
 /// </summary>

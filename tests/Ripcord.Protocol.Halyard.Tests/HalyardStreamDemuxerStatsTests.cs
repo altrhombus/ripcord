@@ -64,4 +64,39 @@ public class HalyardStreamDemuxerStatsTests
         Assert.Equal(0, received);
         Assert.Equal(0, lost);
     }
+
+    /// <summary>
+    /// The per-frame slot cap is 256, the largest block the console's GF(2^8) Cauchy construction can code
+    /// (spec §6.2): a frame of exactly 256 units is assembled and counted, one of 257 is skipped and counts nothing.
+    /// </summary>
+    [Fact]
+    public void UnitSlotCap_AcceptsTwoFiftySixUnits_RefusesTwoFiftySeven()
+    {
+        var d = new HalyardStreamDemuxer(new PassthroughHalyardSessionCrypto());
+        var losses = new List<(int, int)>();
+        d.VideoLossDetected += (s, e) => losses.Add((s, e));
+
+        // Frame 0: 255 source + 1 FEC = 256 slots, every unit delivered.
+        for (int u = 0; u < 256; u++)
+        {
+            d.Ingest(VideoPacket(0, u, 256, 1));
+        }
+        d.Ingest(VideoPacket(1, 0, 1, 0)); // flush frame 0
+
+        (long received, long lost) = d.TakePacketStats();
+        Assert.Equal(256, received);
+        Assert.Equal(0, lost);
+
+        // Frame 2: 256 source + 1 FEC = 257 slots, every unit delivered; the frame is over the cap and skipped.
+        for (int u = 0; u < 257; u++)
+        {
+            d.Ingest(VideoPacket(2, u, 257, 1));
+        }
+        d.Ingest(VideoPacket(3, 0, 1, 0)); // flush: frame 1 (one unit) counts, frame 2 contributed nothing
+
+        (received, lost) = d.TakePacketStats();
+        Assert.Equal(1, received);
+        Assert.Equal(0, lost);
+        Assert.Empty(losses);
+    }
 }

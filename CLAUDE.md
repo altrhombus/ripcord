@@ -112,8 +112,9 @@ neutral layer never names a console. A comment explaining a layer above is fine;
   token (with X minted for the stream and shifted packet headers). This axis is orthogonal to
   Halyard/HalyardLegacy: a PS4 (HalyardLegacy) is `v1` only, while a PS5 (Halyard) speaks `v1` or the v2 control
   plane. Say "the v2 control plane" in prose; do not tie `v1`/`v2` to any vendor application version.
-- Takion and Senkusha are the **one stated exception** to "never use the vendor's own names". Don't extend it
-  without recording it here.
+- The stated exceptions to "never use the vendor's own names" are Takion and Senkusha, the kept protobuf names
+  (the next bullet; `docs/protocol/README.md` lists which), and the required on-wire values below. Don't extend
+  them without recording it here.
 - Protobuf message and enum names: rename the vendor's coined ones, keep the plain-English descriptive ones,
   never change field numbers or enum values. `docs/protocol/README.md` has the rule in full.
 - Never use vendor symbol names (classes, functions, log strings). Name things for what they do; cite the

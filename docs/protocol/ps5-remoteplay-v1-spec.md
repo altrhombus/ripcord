@@ -502,7 +502,9 @@ message SessionReplyPayload {                     // MessageType SESSION_REPLY (
 `sessionId`, `streamResolutions[{resolution{width,height},maxFps,score}]`, `network{bwKbpsSent, bwLoss,
 mtu, rtt, ports}`, `videoCodec` (`avc`), `dynamicRange` (`SDR`), **`handshakeKey`** (base64 of 16 random
 bytes), `audioChannels{encoderType:"opus", audioChannelSettings[{sampleRate:48000, channels:2,
-samplesPerFrame:480, maxFrameDataSize:1920, bitrate, fecMode}]}`, and a `disableRPEncryption` toggle.
+samplesPerFrame:480, maxFrameDataSize:1920, bitrate, fecMode}]}`, and a `disableRPEncryption` toggle. The
+vendor's own template also closes `requestGameSpecification` with `adaptiveStreamMode:"resize"` **[V]** (seen in our
+own memory dumps of the client; omitting it is harmless, verified on hardware 2026-08-12).
 
 > **Template corroborated first-party (2026-07-22):** the `appSpecification` section (`minFps`, `minBandwidth`,
 > `timeLimit`, `startTimeout`, `afkTimeout`) was read directly from our own client's launchSpec buffer in
@@ -723,6 +725,16 @@ The frame parameters come straight from the A/V header (§6.1,
 DLL-confirmed): **`m` = `parity_units`** (off5..8 bits[9:0]) and **`k` = `total_units − m`**
 (source units).
 
+**Units per frame are bounded by the Galois field, not by the header [C][W].** The header's `total_units − 1` field is
+11 bits wide (§6.1), so the wire could carry up to 2048 units per frame, but the matrix builder above forms every
+coefficient as the GF(2⁸) inverse of `(m + j) XOR i`, looked up in the inverse row of a 256-entry table, and that
+lookup is an inverse only while both operands are below 256: a frame the console can code has `k + m ≤ 256`. The
+console sends parity with every frame (`m ≥ 1` on every complete frame in our captures), so 256 is the cap our
+demuxers apply to unit slots per frame. On the wire it is never approached: across sixteen of our own captures
+(about 29,000 complete frames; v1 and v2; clean LAN and lossy), the largest frame is 130 units (`k` = 85, `m` = 45),
+and `m` is never seen above 45 [W]. Superseding here: the demuxers had carried a cap of 512 with no derivation
+behind it.
+
 **Coded unit length = the frame's longest source unit rounded up to a multiple of 4 [C][W]**, constant within
 a frame, and it is what FEC codes over. Two independent confirmations: `FUN_101035e0` rejects any fragment
 length with `(len & 3) != 0`, and the console lays its units out contiguously at `base + len * unit_index` —
@@ -792,6 +804,10 @@ off 18..     …     media payload. Header base = 0x12 (18); +3 bytes for video,
                      if nalu_info  : a further 3-byte NALU-info struct
                      then the (AES-CTR-encrypted, §5.5a) unit payload
 ```
+> **Naming note [X]:** `adaptive_stream_index` is our own name for the top three bits of the byte after the
+> size-extension (the parser isolates them; what the console puts there is unconfirmed). It is named after the
+> launchSpec key `adaptiveStreamMode` (§4.3), a key read from our own copy of the client and our own memory
+> dumps of it; no other source supplied the words.
 > **Correction [C]/[X]:** our earlier trace labeled `off5..8` bits[9:0] as a *frame index* and `off3..4` as a
 > *channel/frame selector*. Re-reading our own parser `FUN_100fcb10` confirms **`off3..4` → the `frame_index`
 > setter (`vtable+0x3c`)** and **bits[9:0] (`dword & 0x3ff`) → the FEC-count setter (`vtable+0x34`) =
