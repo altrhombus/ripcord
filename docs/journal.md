@@ -50,6 +50,10 @@ one place and everything else points there.
 - The README's provenance section is now two paragraphs and a pointer. Users get the front door; anyone
   evaluating the project gets `NOTICE`.
 
+`NOTICE`'s third-party section got the same treatment: it now holds the inventory, the two licence elections and
+what ships in the PS3 package, and the reasoning behind each decision moved to the port's own licensing notes.
+The file is 229 lines, down from 313, which is a length one person can actually read.
+
 Old journal entries and `docs/history/` are left as they were. They're dated records, and a record that
 repeats itself is still a record.
 

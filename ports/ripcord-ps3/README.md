@@ -627,3 +627,42 @@ out writing the entropy decoder ourselves.
 Worth separating two things that get conflated: ffmpeg as a *development* tool is fine and this project
 already uses it that way — `mvdreplay`'s own comment cites `ffmpeg -i video.264` for ground truth. The
 constraint is only on what gets linked into a shipped client.
+
+### Shipped notices: the reasoning behind `NOTICE`
+
+`NOTICE` records the inventory, the two licence elections and what ships in the package. The reasoning lives
+here so that file stays short enough to read in full.
+
+- **Why the elections are written down.** Mbed TLS and FreeType are each dual-licensed, and the arms are not
+  interchangeable for this project: Apache-2.0 is what Ripcord is distributed under, and GPLv2 is not compatible
+  with it. A build that drifted into the GPL arm by nobody choosing would be a licensing problem discovered
+  late, so the choice is stated rather than left implicit. openh264 and Opus were checked against their own
+  `LICENSE` and `COPYING` files, not assumed, and are single-licence.
+- **The GPL text that travels anyway.** Upstream's Mbed TLS licence file carries both arms in full, so roughly
+  250 lines of the GNU General Public License ride inside every package as upstream's unmodified text. The
+  generated notices say so at the head of that section, because a GPL text under an Apache heading with nothing
+  joining the two invites exactly the wrong conclusion.
+- **Why PSL1GHT's and FreeType's texts come from the generator, not the toolchain.** The generator originally
+  looked for licence files under `$PS3DEV` and emitted nothing when it found none, which was every build: the
+  ps3dev prebuilt archive ships no licence file for any component (a search of the whole unpacked toolchain
+  finds exactly one, for a library this port does not link). MIT's notice requirement and the FTL's disclaimer
+  are unconditional, so what satisfies them cannot depend on an optional file. zlib asks nothing of a binary
+  distribution and is included as a courtesy when a licence file is available, which at present it is not.
+- **The FTL asks for two different things, and a binary triggers both.** Section 2 asks for a credit; section 1
+  separately requires, of binary redistribution, a disclaimer that the software is based in part on the work of
+  the FreeType Team, "in the distribution documentation". Until 2026-09-18 only the credit was emitted, and it
+  carried no year. Both lines now ship inside every package, because the distribution documentation for someone
+  who downloads a `.pkg` is what is inside the `.pkg`, not a file in this repository they never receive.
+- **Why the `.self` is not published.** A `.self` is a bare executable with no container: it links every
+  component statically and carries no notice text, so publishing one means publishing the notices beside it
+  and depending on whoever downloads it to take both files. Not publishing it removes the question instead of
+  answering it. An earlier revision shipped a `.self` in CI artifacts with no notices file, on the reasoning
+  that the notices travel inside the package: true of the package, not of the `.self` next to it in the same
+  download. It remains a local build product, what `ps3load` loads, and anyone who wants one builds it.
+- **Whose obligations these are.** This project publishes `ripcord-ps3` packages itself, on every CI run and on
+  tagged releases, so the notice obligations are its own; they apply equally to anyone who builds and publishes
+  their own package.
+- **Why generated rather than committed.** The same reason as the interop constants: a checked-in copy of
+  somebody else's licence is a second copy that drifts, and the one that matters is the licence of the version
+  actually linked. The generator exits non-zero if a licence that requires reproduction is missing, and the
+  package does not build without it.
