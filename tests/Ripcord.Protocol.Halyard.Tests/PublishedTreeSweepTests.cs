@@ -392,7 +392,7 @@ public class PublishedTreeSweepTests
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
          ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw",
          ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme", ".rs", ".toml",
-         ".entitlements", ".plist", ".xcstrings", ".txt"];
+         ".entitlements", ".plist", ".xcstrings", ".txt", ".tsv"];
 
     private static readonly string[] NamedFiles =
         ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock", "pre-commit", "commit-msg", "pre-push", "find-python"];

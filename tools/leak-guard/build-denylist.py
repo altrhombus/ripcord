@@ -98,7 +98,10 @@ def own_text_files(captures):
     for top, dirs, files in os.walk(captures, followlinks=True):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for name in files:
-            if name in (OUTPUT_NAME, "leak-allow.tsv"):
+            # The guard's own files, and the evidence manifest's private path map: that map is SHA-256 of
+            # relative paths, derived from nothing secret, and the committed manifest carries the same
+            # hashes on purpose (tools/evidence-manifest.py). Harvesting it would deny the manifest itself.
+            if name in (OUTPUT_NAME, "leak-allow.tsv", "evidence-manifest-paths.tsv"):
                 continue
             path = os.path.join(top, name)
             if os.path.splitext(name)[1].lower() not in TEXT_SUFFIXES:

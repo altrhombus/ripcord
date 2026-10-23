@@ -33,6 +33,31 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A number with no story behind it (2026-10-22)
+
+The stream demuxer capped a frame at 512 units, a number with no derivation behind it. It isn't a protocol value–the console never checks it–but a number I can't trace is a number I don't keep.
+
+So I derived one. Two bounds were already sitting in our own notes. The header's total-units field is 11 bits, so the
+wire could say 2048. More usefully, the console's own FEC builder (§6.2, read off our own binary) forms every
+coefficient as the GF(2⁸) inverse of `(m + j) XOR i`, and that lookup is only an inverse below 256–so a frame the
+console can actually code has at most 256 units, source and parity together. Then I counted: a header scan over
+sixteen of our captures, about 29,000 complete frames, v1 and v2, clean LAN and lossy. The biggest frame anyone ever
+sent us was 130 units. Parity tops out at 45, which is a new observation in its own right.
+
+The cap is 256 now, in the dotnet client, the C core and the engine alike, and the comments say why. The C core's
+fixed slot buffer gets a megabyte back in the bargain. (The console ports haven't been re-run against hardware with
+it; nothing they have ever received comes near the old cap, let alone the new one.)
+
+Three smaller records were straightened out at the same time:
+
+- The three bits at the top of the byte after the video size extension now have their own entry in the spec,
+  with what our captures show of them. What the field means is still marked unconfirmed.
+- There is now `tools/evidence-manifest.py`, which hashes every file in the captures folder into a manifest kept
+  beside the evidence.
+- The `.proto` header claimed every name in the file was mine. The protocol README, which is accurate, says
+  about two-thirds of the message names are the vendor's plain-English ones, kept on purpose. The header now
+  says what the README says, and `CLAUDE.md` no longer calls Takion and Senkusha the "one" exception.
+
 ### The v2 handshakeKey, chased the long way round, turns out to be v1's (2026-10-22)
 
 Five v2 hardware captures and a headless-Ghidra dig to answer one question — where the v2 stream `handshakeKey`
