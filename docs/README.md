@@ -44,6 +44,9 @@ interchangeable:
 - **`protocol-research-log.md` is the provenance record.** One row per external reference
   consulted, what it informed, and which spec section it fed. It exists to make the independence claim
   checkable by someone who does not trust it. It is evidence, not narrative.
+- **`protocol/evidence-manifest.tsv` is the dated fingerprint of the private evidence.** SHA-256 of every
+  file in the captures folder, paths hashed too, so a commit of it shows the evidence existed in that form
+  by that date without publishing any of it. `tools/evidence-manifest.py` regenerates and checks it.
 
 ### The console ports
 

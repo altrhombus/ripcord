@@ -502,7 +502,9 @@ message SessionReplyPayload {                     // MessageType SESSION_REPLY (
 `sessionId`, `streamResolutions[{resolution{width,height},maxFps,score}]`, `network{bwKbpsSent, bwLoss,
 mtu, rtt, ports}`, `videoCodec` (`avc`), `dynamicRange` (`SDR`), **`handshakeKey`** (base64 of 16 random
 bytes), `audioChannels{encoderType:"opus", audioChannelSettings[{sampleRate:48000, channels:2,
-samplesPerFrame:480, maxFrameDataSize:1920, bitrate, fecMode}]}`, and a `disableRPEncryption` toggle.
+samplesPerFrame:480, maxFrameDataSize:1920, bitrate, fecMode}]}`, and a `disableRPEncryption` toggle. The
+vendor's own template also closes `requestGameSpecification` with `adaptiveStreamMode:"resize"` **[V]** (seen in our
+own memory dumps of the client; omitting it is harmless, verified on hardware 2026-08-12).
 
 > **Template corroborated first-party (2026-07-22):** the `appSpecification` section (`minFps`, `minBandwidth`,
 > `timeLimit`, `startTimeout`, `afkTimeout`) was read directly from our own client's launchSpec buffer in
@@ -802,6 +804,10 @@ off 18..     …     media payload. Header base = 0x12 (18); +3 bytes for video,
                      if nalu_info  : a further 3-byte NALU-info struct
                      then the (AES-CTR-encrypted, §5.5a) unit payload
 ```
+> **Naming note [X]:** `adaptive_stream_index` is our own name for the top three bits of the byte after the
+> size-extension (the parser isolates them; what the console puts there is unconfirmed). It is named after the
+> launchSpec key `adaptiveStreamMode` (§4.3), a key read from our own copy of the client and our own memory
+> dumps of it; no other source supplied the words.
 > **Correction [C]/[X]:** our earlier trace labeled `off5..8` bits[9:0] as a *frame index* and `off3..4` as a
 > *channel/frame selector*. Re-reading our own parser `FUN_100fcb10` confirms **`off3..4` → the `frame_index`
 > setter (`vtable+0x3c`)** and **bits[9:0] (`dword & 0x3ff`) → the FEC-count setter (`vtable+0x34`) =

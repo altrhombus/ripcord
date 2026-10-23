@@ -53,6 +53,19 @@ The cap is 256 now, in the dotnet client, the C core and the engine alike, and t
 fixed slot buffer gets a megabyte back in the bargain. (The console ports haven't been re-run against hardware with
 it; nothing they have ever received comes near the old cap, let alone the new one.)
 
+Three smaller records were straightened out at the same time:
+
+- `adaptive_stream_index` is a name I gave to three bits inside a binary header, and the spec never said where
+  the words came from. They came from the launch spec's `adaptiveStreamMode` key, which sits in our own copy of
+  the client and in our own memory dumps of it. The spec now says so, and says the field's meaning is still
+  unconfirmed.
+- There is now a `docs/protocol/evidence-manifest.tsv`: a SHA-256 of every file in the captures folder, paths
+  hashed too, so it names nothing, with `tools/evidence-manifest.py` to regenerate and check it. A commit of that
+  file dates the evidence; it carries none of it.
+- The `.proto` header claimed every name in the file was mine. The protocol README, which is accurate, says
+  about two-thirds of the message names are the vendor's plain-English ones, kept on purpose. The header now
+  says what the README says, and `CLAUDE.md` no longer calls Takion and Senkusha the "one" exception.
+
 ### The v2 handshakeKey, chased the long way round, turns out to be v1's (2026-10-22)
 
 Five v2 hardware captures and a headless-Ghidra dig to answer one question — where the v2 stream `handshakeKey`
