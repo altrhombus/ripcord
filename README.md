@@ -232,90 +232,20 @@ the reasoning.
 
 ## Provenance
 
-This section is load-bearing, so it is stated plainly rather than gestured at.
+Ripcord is an interoperability implementation: it connects your own client to your own console, under your
+own account. The protocol was worked out from the authors' own installed copies of the vendor client, the
+authors' own captures of their own console and account, and public references (RFCs, NIST test vectors,
+platform documentation). **No other implementation of these protocols is used as a source**, not for
+implementation detail, constants, byte layouts or naming. Where a value is an assumption rather than something
+our own evidence established, it carries an `[X]` tag next to it in [`docs/protocol/`](docs/protocol/).
+Vendor code is cited by address only; no vendor source, symbol names or log strings are reproduced.
 
-Ripcord is an **interoperability** implementation: it connects a user's own client to a user's own console,
-under that user's own account. The specification was derived from:
-
-- analysis of the authors' own installed copies of the publicly distributed vendor client, on hardware the
-  authors own: static (disassembly and decompilation) and dynamic (a debugger and an instrumentation
-  framework reading the client's memory, live session keys included);
-- the authors' own captures of their own console and account, including TLS traffic read through a proxy on
-  their own machine, with the client's certificate pinning defeated by a hook in that client;
-- an attempt against the current release's anti-debugging protection, abandoned in favour of an older,
-  unprotected official release of the same client, installed from archived copies of Sony's installers on the
-  Internet Archive;
-- public references — RFCs, NIST test vectors, platform crypto documentation.
-
-It reproduces the **values a client needs to interoperate**: protocol field numbers, enum values, byte
-offsets, JSON configuration keys, and HTTP header names. Those cannot be changed without breaking
-interoperability. It does **not** reproduce vendor source
-code, symbol names, or log strings; vendor code is cited only by relative virtual address.
-
-**No other implementation of these protocols is used as a source** — not for implementation detail, not for
-byte-level constructions, not for naming. Where a value in the spec is an *assumption* rather than something
-our own evidence established, it carries an explicit `[X]` tag, in the spec text itself rather than buried in a
-separate list; they live throughout [`docs/protocol/`](docs/protocol/). If you are evaluating this
-project's provenance, reading those tags where they sit — next to the value each one qualifies — is a better
-guide than this paragraph.
-
-### Interoperability constants
-
-Ripcord includes roughly **4 KB of protocol constants** (8.7 KB on disk: the JSON stores them
-hex-encoded) — four key-derivation tables (a PS5 pair and a PS4
-pair), two registration key tables, two material-wrap tables, four field context keys — the registration
-context key is one of those four, stored a second time under its own name, so the file holds four distinct
-16-byte keys rather than five — and a byte offset. The console computes against these values; a client
-cannot speak the protocol without them, and changing them breaks interoperability. They are **data**, in one
-committed file that no client copies. The dotnet client
-reads it at run time through the same configuration seam that accepts a local override; the Rust engine (the
-Apple clients) and the C core (the console ports) generate lookup tables from it at build time, never committed.
-
-They are **generic to the protocol**: identical for every user and every console.
-
-**Nothing user-specific is included.** No registration key, pairing record, session key, device identifier, or
-account identifier — not in the repository and not in its history. Those are generated or captured per user and
-never leave the user's machine. The distinction matters and is enforced by a test: the bundled data is checked
-for the absence of any per-console or per-account field.
-
-A build without the constants can be produced at any time:
-
-```
-msbuild Ripcord.slnx -p:BundleInteropConstants=false
-cargo build --release -p ripcord-ffi --no-default-features   # the Rust engine, in engine/
-```
-
-That omits the data entirely. For the Apple clients, `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` does the same in the
-engine they build; the C core's console ports have no such switch. The app then reports the constants as unavailable and declines to pair, exactly
-as it behaves on a machine that has none — a clean failure, not a crash.
-
-### The application OAuth credential
-
-Ripcord also includes the OAuth 2.0 `client_id`/`client_secret` with which the vendor's own desktop client
-authenticates to PSN. **This is a different kind of thing from the constants above.** Those constants are values the console computes against, and a client cannot speak the
-protocol without them. This is an *access credential*, and a client demonstrably speaks the protocol without
-it — a LAN session works against a console with no internet connection at all.
-
-It is included for a narrower reason: PSN operates no third-party client registration, so there is no
-credential an independent client could obtain instead. Without it the account tier — signing in, reading the
-account's own console list, waking a console remotely — is unreachable by any client that is not Sony's.
-
-It passes the same generic-versus-personal test: identical for every user, tied to no account or console,
-authenticating an *application* rather than a person. It was recovered from the authors' own capture of their
-own traffic; it was separately confirmed to be already published, but that confirmation came afterwards and
-is not the basis for including it. **No user credential is bundled** — the signed-in account's tokens are
-obtained per user at sign-in and stored encrypted on that user's own machine.
-
-```
-msbuild Ripcord.slnx -p:BundleOAuthClient=false
-```
-
-That produces a build with no credential: account sign-in reports itself unavailable and LAN play is
-unaffected. At run time the bundled value is the last resort, overridden by `RIPCORD_CLIENT_ID` /
-`RIPCORD_CLIENT_SECRET` or a `client.json`, so an operator with their own registered client can substitute it
-without rebuilding.
-
-Sony may rotate this credential at any time, which would disable the account features until it is updated.
+Two generic values recovered from the vendor client are committed on purpose: about 4 KB of protocol
+constants the console computes against, and the application OAuth credential the vendor's own client signs
+in with. Each is identical for every user and console, each can be left out of a build
+(`-p:BundleInteropConstants=false`, `-p:BundleOAuthClient=false`), and nothing tied to any user, console or
+account is included. [`NOTICE`](NOTICE) describes the methods and both values in full, and
+[`docs/protocol-research-log.md`](docs/protocol-research-log.md) records each reference consulted.
 
 *Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.*
 
@@ -344,23 +274,13 @@ Ripcord has been developed with heavy use of AI coding assistants, including its
 implementation, tests, and documentation. This is disclosed deliberately: this is a sensitive area, and a
 consistent record of candour is worth more than the ambiguity of silence.
 
-**The assistant works under the same provenance rules as everyone else, and they are why this disclosure
-matters.** Everything in the protocol comes from this project's own work:
-- the authors' own captures of their own console and account;
-- static and dynamic analysis of the authors' own installed copies of the vendor client;
-- public references: RFCs, NIST test vectors and platform documentation.
-
-The assistant is never used to obtain implementation detail from another Remote Play implementation: not
-its source, its constants, its byte layouts or its naming. That is the same line
-[Provenance](#provenance) draws for people, and routing around it through a model would be
-the same breach.
-
-It also carries a specific obligation, which [`CONTRIBUTING.md`](CONTRIBUTING.md) spells out. A language
-model may have another implementation in its training data and can reproduce that implementation's
-structure or constants without being asked to, fluently enough to pass for derivation. So the method here
-is to **derive first, then confirm against our own evidence**. A value that can't be traced to a capture,
-our own analysis or a public reference is not kept: it is marked `[X]` and derived properly. Guarding against
-this is part of the independent-implementation discipline, not an afterthought.
+The assistant works under the same rules as everyone else: everything in the protocol comes from this
+project's own evidence (see [Provenance](#provenance)), and the assistant is never used to obtain
+implementation detail from another Remote Play implementation, not its source, constants, byte layouts or
+naming. A language model may have another implementation in its training data and can reproduce it fluently
+without being asked, so the method is **derive first, then confirm against our own evidence**: a value that
+can't be traced to a capture, our own analysis or a public reference is marked `[X]` and derived properly.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) spells out the habits that go with that.
 
 ---
 

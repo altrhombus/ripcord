@@ -156,12 +156,10 @@ anything crypto-related:
 
 ### Bounded exception 1: the v1 interoperability constants
 
-`src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` is committed on purpose: about 4 KB of constant
-data (8.8 KB as hex-encoded JSON) in four control KDF tables (a PS5 pair and a PS4 pair), four field context
-keys (the registration context key is one of them, stored twice), two registration key tables, two
-material-wrap tables, a byte offset, and the v2 PS5 registration-authentication key (`K16_reg`): one 16-byte
-generic value selected by device family and mode, identical for every PS5 and account. The other console
-family's value is `[X]` (unconfirmed) and is **not** bundled.
+`src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` is committed on purpose: about 4 KB of generic
+constant data the console computes against, including the v2 PS5 registration-authentication key (`K16_reg`).
+`NOTICE` holds the inventory. The other console family's registration-authentication key is `[X]` (unconfirmed)
+and is **not** bundled.
 
 - **The test is generic versus personal.** These are identical for every console and account, and the console
   computes against them; `NOTICE` describes them. Anything tied to one console, user or

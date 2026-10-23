@@ -119,8 +119,13 @@ Sony Interactive Entertainment may rotate this credential at any time, which wou
 disable Ripcord's account features until it is updated. No warranty of continued
 function is offered or implied.
 
-No vendor source code is included in any form. See docs/protocol/README.md for
-the full provenance writeup.
+No vendor source code is included in any form.
+
+This file is the one place the methods above and the two bundled values are
+described; other documents point here rather than restating them.
+docs/protocol-research-log.md records each reference consulted, dated, with
+what it informed. docs/protocol/README.md sets out what the specification
+reproduces and how vendor names are handled.
 
 Nothing here is legal advice, and Ripcord makes no claim about how any law
 applies to it.
