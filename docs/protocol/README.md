@@ -63,19 +63,10 @@ Two corrections to earlier framing, recorded because they were wrong for a while
 
 ## Provenance & method
 
-- The substance here was derived **primarily from our own copies of the vendor's client** and **our own
-  captures** of our own console and account. The methods included:
-  - static analysis of the client: disassembly, decompilation, and the protobuf reflection metadata it embeds;
-  - running it under a debugger and an instrumentation framework to read its memory, live session keys
-    included;
-  - capturing its traffic, including through a TLS-terminating proxy on our own machine, with the client's
-    certificate pinning defeated by a hook in that client;
-  - an attempt against the current release's anti-debugging protection, abandoned in favour of an older,
-    unprotected official release of the same client, installed from archived copies of Sony's installers on
-    the Internet Archive.
-
-  Each is recorded, dated and with what it informed, in
-  [`../protocol-research-log.md`](../protocol-research-log.md).
+- **Where the substance came from** is stated once, in [`NOTICE`](../../NOTICE): our own copies of the vendor's
+  client, analysed statically and dynamically, and our own captures of our own console and account. Each
+  reference consulted is recorded, dated and with what it informed, in
+  [`../protocol-research-log.md`](../protocol-research-log.md). Neither is restated here.
 - **No other implementation of these protocols is used as a source.** Not for implementation detail, not for
   byte-level constructions, not for naming. Where a value here is an *assumption* rather than something our own
   evidence established, it is tagged **[X]** so it cannot be mistaken for a finding.
@@ -121,12 +112,10 @@ Two corrections to earlier framing, recorded because they were wrong for a while
 
 ## What the repository holds
 
-This is an interoperability specification for connecting a user's own client to a user's own console under
-the user's own account. It reproduces the values a client needs to interoperate, not vendor code. Key material tied to a
-console, an account or a session is derived at runtime from the user's own registration and is never
-committed; it stays in the gitignored captures folder. **Two things recovered from the vendor client are
-committed, deliberately:** about 4 KB of protocol constants that every client computes against, and the
-application's OAuth client credential. Each is identical for every user and console, each can be left out
-of a build, and [`NOTICE`](../../NOTICE) describes each.
+An interoperability specification reproduces the values a client needs to interoperate, not vendor code. Key
+material tied to a console, an account or a session is derived at runtime from the user's own registration and
+is never committed. Two generic values recovered from the vendor client are committed on purpose, the v1
+interoperability constants and the application's OAuth client credential; [`NOTICE`](../../NOTICE) is where
+each is described and where the build switches that omit them are listed.
 
 Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.

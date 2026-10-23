@@ -35,6 +35,28 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### One home per claim (2026-10-22)
+
+The provenance story was written in five places–the README, `NOTICE`, the protocol README, `CLAUDE.md` and a
+`.proto` header–and no two of them quite agreed. That's how the `.proto` header came to claim every name in it was
+mine while the README next to it said two-thirds weren't. The fix is a rule, not a rewrite: each claim lives in
+one place and everything else points there.
+
+- `NOTICE` is the home for how the protocol was worked out and for the two generic values that ship (the
+  interop constants and the application's OAuth credential). It ships with every build, so it was already the
+  copy that mattered.
+- `docs/protocol-research-log.md` stays the per-reference record, and the `[X]` tags stay where they sit.
+- `docs/protocol/README.md` keeps the naming rules and what the specification reproduces.
+- The README's provenance section is now two paragraphs and a pointer. Users get the front door; anyone
+  evaluating the project gets `NOTICE`.
+
+`NOTICE`'s third-party section got the same treatment: it now holds the inventory, the two licence elections and
+what ships in the PS3 package, and the reasoning behind each decision moved to the port's own licensing notes.
+The file is 229 lines, down from 313, which is a length one person can actually read.
+
+Old journal entries and `docs/history/` are left as they were. They're dated records, and a record that
+repeats itself is still a record.
+
 ### A number with no story behind it (2026-10-22)
 
 An audit turned up a comment in the stream demuxer that I couldn't back up. The cap on how many units a frame may
