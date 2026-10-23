@@ -44,8 +44,12 @@
  * before assembly began - silently, which is why 103,371 video packets became 32 frames and nobody
  * could see where they went.
  *
- * 512 is HalyardStreamDemuxer's own cap, which sizes its slots dynamically; this is the fixed-buffer
- * equivalent of the same number, and it costs a 2 MB slot buffer.
+ * 256 is derived, not chosen: the console's Cauchy matrix builder forms every coefficient as the
+ * GF(2^8) inverse of (m + j) XOR i, and that lookup is an inverse only while both operands are below
+ * 256, so a frame the console can FEC-code has k + m <= 256 (ps5-remoteplay-v1-spec.md, section 6.2).
+ * The header's 11-bit total-units field could say up to 2048, but the largest frame in any of our
+ * captures is 130 units. The same number sizes HalyardStreamDemuxer's dynamic slots; here it is a fixed
+ * buffer, 1 MB at this stride.
  *
  * NOT OVERRIDABLE, AND THAT IS THE POINT. b168 made it a per-port -D and the console hung before it
  * reached the network: this port's core-test objects are compiled from their own flag list rather than
@@ -54,7 +58,7 @@
  * larger. A type whose size depends on a command-line define is a trap that is set once and sprung
  * somewhere else, so there is one number here and no way to vary it.
  */
-#define STREAM_DEMUX_MAX_UNITS_PER_FRAME 512
+#define STREAM_DEMUX_MAX_UNITS_PER_FRAME 256
 #define STREAM_DEMUX_VIDEO_HEADER_CAPACITY 512
 #define STREAM_DEMUX_ASSEMBLY_CAPACITY \
     (STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_UNIT_STRIDE \

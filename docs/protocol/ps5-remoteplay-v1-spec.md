@@ -723,6 +723,16 @@ The frame parameters come straight from the A/V header (§6.1,
 DLL-confirmed): **`m` = `parity_units`** (off5..8 bits[9:0]) and **`k` = `total_units − m`**
 (source units).
 
+**Units per frame are bounded by the Galois field, not by the header [C][W].** The header's `total_units − 1` field is
+11 bits wide (§6.1), so the wire could carry up to 2048 units per frame, but the matrix builder above forms every
+coefficient as the GF(2⁸) inverse of `(m + j) XOR i`, looked up in the inverse row of a 256-entry table, and that
+lookup is an inverse only while both operands are below 256: a frame the console can code has `k + m ≤ 256`. The
+console sends parity with every frame (`m ≥ 1` on every complete frame in our captures), so 256 is the cap our
+demuxers apply to unit slots per frame. On the wire it is never approached: across sixteen of our own captures
+(about 29,000 complete frames; v1 and v2; clean LAN and lossy), the largest frame is 130 units (`k` = 85, `m` = 45),
+and `m` is never seen above 45 [W]. Superseding here: the demuxers had carried a cap of 512 with no derivation
+behind it.
+
 **Coded unit length = the frame's longest source unit rounded up to a multiple of 4 [C][W]**, constant within
 a frame, and it is what FEC codes over. Two independent confirmations: `FUN_101035e0` rejects any fragment
 length with `(len & 3) != 0`, and the console lays its units out contiguously at `base + len * unit_index` —
