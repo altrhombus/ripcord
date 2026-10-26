@@ -31,14 +31,18 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 ///   (Phase 2, implemented here for the s2c A/V receive path + key agreement).</description></item>
 /// </list>
 ///
-/// <para><b>How <c>X</c> is produced — SOLVED.</b> <c>X</c> is simply the v1 <c>handshakeKey</c>: 16
-/// <b>client-random</b> bytes the client generates, carries base64 in the launchSpec, and feeds here. It is not
-/// derived from <c>customData1</c> or anything else — static RE of the vendor's launchSpec builder
-/// (<c>FUN_9ee50</c>: a no-input RNG callback, osslRAND fallback) and three live v2 sessions confirm it. The
-/// console "holds" X only because it received it in the launchSpec (then signs its stream pubkey with it). This
-/// class consumes whatever the caller supplies as <c>handshakeKey</c>, exactly as v1 does; the earlier belief
-/// that X was an unresolved per-session derivation (the <c>customData1</c> seal line) was wrong — that path
-/// carries the registration seed, a separate value.</para>
+/// <para><b>How <c>X</c> is produced — UNSOLVED (<c>[X]</c>), and the earlier "SOLVED = launchSpec handshakeKey"
+/// answer was WRONG.</b> Hardware disproved it (2026-10-22): on a live PS5 that reached SESSION_REPLY, the
+/// console's stream-pubkey signature is <b>not</b> <c>HMAC(launchSpecHandshakeKey, pubkey)</c> — nor HMAC of the
+/// RP-VerifyKey, K16, companion, sk8/sk9, or any derivation of the control ECDH secret Z we tried (~1400
+/// candidates). So the stream key is <b>console-side / derived, never the client-random launchSpec value</b>.
+/// Our own 8.5 captures + our own binary analysis (cross-referenced against our own 9.5 RE) point to the real
+/// mechanism: the stream uses a <b>single HMAC key bound to the control-plane secret Z</b> for BOTH the
+/// console-pubkey authentication (what we call the ecdhSignature) AND the per-direction stream KDF (with the
+/// stream ECDH secret <c>Z_stream</c> as the KDF message). That means the <c>handshakeKey</c>/<c>X</c> role here
+/// is mismodelled and the key/secret arguments to the stream KDF are likely swapped. The exact derivation of that
+/// HMAC key from Z is the open <c>[X]</c> — to pin by RE of our own 8.5 binary ("ECDH hmac key generation") and
+/// confirm on our own 8.5 wire. Until then the v2 stream plane does not establish against a real console.</para>
 ///
 /// <para>The c2s send-authentication methods (<c>SealControlMessage</c>/<c>SealCongestionPacket</c>/
 /// <c>SealFeedbackPacket</c>) are implemented (Phase 2): each is a v1 layout under the v1 client->console key,
@@ -131,7 +135,10 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         return publicKey;
     }
 
-    /// <summary><c>ecdhSignature = HMAC-SHA256(X, publicKey)</c> — X in the handshakeKey role (confirmed 003/004).</summary>
+    /// <summary><c>ecdhSignature = HMAC-SHA256(key, publicKey)</c>. The structure (HMAC over the pubkey) matched
+    /// our captured 003/004 vectors, but the <b>key</b> is <c>[X]</c>: on hardware the console does NOT sign with
+    /// the launchSpec <c>handshakeKey</c> this takes — see the class remarks. Verifying with that key fails against
+    /// a real console, so this call is correct in shape only until the real key (bound to Z) is derived.</summary>
     public byte[] ComputeEcdhSignature(ReadOnlySpan<byte> handshakeKey, ReadOnlySpan<byte> publicKey)
         => HalyardStreamKeySchedule.ComputeEcdhSignature(handshakeKey, publicKey);
 

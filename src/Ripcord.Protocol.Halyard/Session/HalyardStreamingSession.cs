@@ -526,10 +526,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private async Task<SessionHandshakeResult> RunV2StreamAsync(
         HalyardV2SessionCrypto crypto, IHalyardRpcsTransport transport, CancellationToken cancellationToken)
     {
+        LogV2("control handshake accepted (init/init2/ctrl 200); bringing up the RPCS channel");
+
         // Persistent RPCS channel — reuses the control-plane GCM keys, counter continuing from ctrl's 0 — running
         // for the session on its own token, the v2 analogue of v1's control keep-alive.
         var rpcsChannel = new HalyardRpcsChannel(crypto);
         var loop = new HalyardRpcsLoop(transport, rpcsChannel);
+        loop.MessageReceived += message => LogV2($"RPCS recv cmd=0x{message.Cmd:X4} len={message.Payload.Length}");
         _rpcsLoop = Task.Run(() => loop.RunAsync(_sessionCts.Token));
 
         // Route the stream plane through the v2 crypto: its stream key schedule (X in the handshakeKey role), the
@@ -546,20 +549,46 @@ public sealed class HalyardStreamingSession : IStreamingSession
             await RunSenkushaAsync(
                 probeSocket, new IPEndPoint(_parameters.ControlEndpoint.Address, SenkushaPort), cancellationToken)
                 .ConfigureAwait(false);
+            LogV2("senkusha done");
         }
 
         _connectStep = "v2 stream key agreement";
+        LogV2("starting the Takion stream key agreement");
         TakionSessionResult streaming = await StartStreamingAsync(cancellationToken).ConfigureAwait(false);
+        LogV2($"stream key agreement result: success={streaming.Success} reason={streaming.FailureReason ?? "(none)"}");
         if (!streaming.Success)
             return Fail($"v2 stream key agreement did not complete (Takion/SESSION): {streaming.FailureReason}");
 
         if (State == SessionState.Closed)
+        {
+            LogV2($"console ended the session during bring-up: {EndReason}");
             return new SessionHandshakeResult(
                 false, EndReason ?? "The console ended the v2 session while it was starting.",
                 SessionFailureKind.EndedByConsole);
+        }
 
+        LogV2("v2 session reached Streaming");
         State = SessionState.Streaming;
         return new SessionHandshakeResult(true, null);
+    }
+
+    /// <summary>
+    /// Diagnostic-only log for the opt-in v2 path, written to <c>%LOCALAPPDATA%\Ripcord\v2-session.log</c> so the
+    /// GUI's swallowed connect reason is readable after a hardware run. Generic step/command text only — no keys,
+    /// addresses or identifiers — and best-effort, so a logging failure never affects the session.
+    /// </summary>
+    private static void LogV2(string message)
+    {
+        try
+        {
+            string dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ripcord");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(dir, "v2-session.log"),
+                $"{DateTime.UtcNow:HH:mm:ss.fff} v2: {message}{Environment.NewLine}");
+        }
+        catch { /* diagnostic only — never affects the session */ }
     }
 
     /// <summary>
