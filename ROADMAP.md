@@ -226,19 +226,6 @@ purchased signing certificate.
 
 ### Streaming quality and the protocol
 
-- [ ] **v2 (the PS5 GCM control plane): the stream key derivation.** On hardware (opt-in `RIPCORD_V2_HANDSHAKE`),
-      the full v2 path now runs against a real PS5 — `/sess/rgst`→`init`→`init2`→`ctrl` all accepted, the RPCS
-      channel comes up both ways, senkusha runs, and the Takion stream reaches SESSION_REPLY. It then **fails
-      authenticating the console's stream pubkey**, which blocks the stream. Root cause: the earlier "the stream
-      `X` is the client-random launchSpec handshakeKey" conclusion was **wrong** (hardware-disproven — the console
-      signs with a key that is none of X / RP-VerifyKey / K16 / companion / the control keys / any derivation of
-      the control ECDH secret we tried). The real mechanism, from our own captures + binary analysis: the stream
-      uses one HMAC key **bound to the control-plane secret Z** for both the pubkey auth and the per-direction KDF
-      (with the stream ECDH secret as the KDF message) — so our `handshakeKey` role is mismodelled. **The open `[X]`
-      is the exact derivation of that key from Z; derive it by RE of our own 8.5 binary ("ECDH hmac key
-      generation") and confirm on our own 8.5 wire** (a clean Z/pubkey/sig is on hand to validate instantly). After
-      that: the persistent RPCS channel (keep-alive + probe report) already exists but is untested end-to-end. The
-      default v1 path is untouched and still streams PS5.
 - [ ] **Do the senkusha probes succeed, or fall back silently?** `MtuConfirmed` answers the MTU half in two
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
