@@ -90,7 +90,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private readonly Subject<EncodedVideoFrame> _video = new();
     private readonly Subject<EncodedAudioFrame> _audio = new();
     private readonly Subject<SessionStatistics> _stats = new();
-    private readonly HalyardStreamDemuxer _demuxer;
+
+    // The stream plane's crypto and demuxer. A v1 session uses the injected crypto throughout; a v2 session
+    // swaps both to the v2 crypto before streaming (v2's stream key schedule, packet offsets and window rule
+    // differ), so neither is readonly. The control plane keeps using _crypto (v1) / the GCM+RPCS path (v2).
+    private IHalyardSessionCrypto _streamCrypto = null!; // set in the ctor
+    private HalyardStreamDemuxer _demuxer;
+    private Task? _rpcsLoop; // the v2 persistent RPCS channel, running for the session lifetime
     private readonly CancellationTokenSource _sessionCts = new();
 
     private UdpChannel? _streamSocket;
@@ -152,9 +158,18 @@ public sealed class HalyardStreamingSession : IStreamingSession
         _v2Crypto = v2Crypto;
         _credentials = credentials;
         _loginPinProvider = loginPinProvider;
-        _demuxer = new HalyardStreamDemuxer(crypto);
-        _demuxer.VideoFrameReady += frame => _video.OnNext(frame);
-        _demuxer.AudioFrameReady += frame => _audio.OnNext(frame);
+        _streamCrypto = crypto;
+        _demuxer = CreateDemuxer(crypto);
+    }
+
+    /// <summary>Build a demuxer over a given crypto and wire its A/V frames to the session's subjects. The v2
+    /// stream handoff rebuilds it over the v2 crypto, since the demuxer holds the crypto that decrypts A/V.</summary>
+    private HalyardStreamDemuxer CreateDemuxer(IHalyardSessionCrypto crypto)
+    {
+        var demuxer = new HalyardStreamDemuxer(crypto);
+        demuxer.VideoFrameReady += frame => _video.OnNext(frame);
+        demuxer.AudioFrameReady += frame => _audio.OnNext(frame);
+        return demuxer;
     }
 
     public SessionState State { get; private set; } = SessionState.Connecting;
@@ -294,7 +309,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
                        HalyardSessionToken.HasRolledToken(_pairing.RolledToken),
                        _pairing.SupportsGcm, v2PreviouslyFailed: false) == HalyardInitFlavor.V2)
             {
-                return await RunV2ControlHandshakeAsync(platform, token).ConfigureAwait(false);
+                return await RunV2ControlHandshakeAsync(platform, token, cancellationToken).ConfigureAwait(false);
             }
 
             // Arm the console's control TCP listener before connecting: the console opens :9295 only after
@@ -438,7 +453,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// there: the persistent v2 control channel (the GCM/RPCS keep-alive + probe report that gate streaming) is
     /// not yet implemented, so this never reaches the stream plane. The v1 session path is unaffected.
     /// </summary>
-    private async Task<SessionHandshakeResult> RunV2ControlHandshakeAsync(HalyardConsolePlatform platform, CancellationToken token)
+    private async Task<SessionHandshakeResult> RunV2ControlHandshakeAsync(
+        HalyardConsolePlatform platform, CancellationToken token, CancellationToken streamToken)
     {
         HalyardV2SessionCrypto crypto = _v2Crypto!;
         HalyardPairingRecord pairing = _pairing!;
@@ -487,14 +503,92 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 result.TokenDesync ? SessionFailureKind.Permanent : SessionFailureKind.Unknown);
         }
 
-        // Handshake accepted. Streaming needs the persistent v2 control channel, which is not built yet — so this
-        // is as far as the diagnostic goes. The minted verifyKey is intentionally NOT persisted: the token only
-        // rolls once the console accepts a full session (HalyardSessionToken remarks), which this never reaches.
+        // Handshake accepted. Keep the (still-open) ctrl connection, bring up RPCS, and hand off to the stream.
+        if (_control is IHalyardRpcsTransport rpcsTransport)
+            return await RunV2StreamAsync(crypto, rpcsTransport, streamToken).ConfigureAwait(false);
+
         return Fail(
-            "v2 control handshake completed: the console accepted /sess/init, /sess/init2 and /sess/ctrl. The "
-            + "persistent v2 control channel (GCM/RPCS keep-alive + probe report) that gates streaming is not yet "
-            + "implemented, so the session stops here. See ROADMAP.md (v2 persistent control channel).",
+            "v2 control handshake completed: the console accepted /sess/init, /sess/init2 and /sess/ctrl. This "
+            + "control transport carries no RPCS channel, so the session stops here.",
             SessionFailureKind.Permanent);
+    }
+
+    /// <summary>
+    /// The v2 stream handoff: after the control handshake, bring up the RPCS channel as a background loop
+    /// (keepalive + probe + dispatch, for the session lifetime), route the stream plane through the v2 crypto,
+    /// then run the shared stream path — senkusha, then the Takion stream key agreement + A/V.
+    ///
+    /// <para><c>[X]</c> on hardware: the RPCS send schedule, whether any incoming RPCS message gates the stream,
+    /// and v2 sign-in (not wired — this assumes an unlocked console). The minted RP-VerifyKey is not persisted
+    /// here; the token roll belongs with a confirmed full-session accept, which this first end-to-end attempt is
+    /// the probe for.</para>
+    /// </summary>
+    private async Task<SessionHandshakeResult> RunV2StreamAsync(
+        HalyardV2SessionCrypto crypto, IHalyardRpcsTransport transport, CancellationToken cancellationToken)
+    {
+        LogV2("control handshake accepted (init/init2/ctrl 200); bringing up the RPCS channel");
+
+        // Persistent RPCS channel — reuses the control-plane GCM keys, counter continuing from ctrl's 0 — running
+        // for the session on its own token, the v2 analogue of v1's control keep-alive.
+        var rpcsChannel = new HalyardRpcsChannel(crypto);
+        var loop = new HalyardRpcsLoop(transport, rpcsChannel);
+        loop.MessageReceived += message => LogV2($"RPCS recv cmd=0x{message.Cmd:X4} len={message.Payload.Length}");
+        _rpcsLoop = Task.Run(() => loop.RunAsync(_sessionCts.Token));
+
+        // Route the stream plane through the v2 crypto: its stream key schedule (X in the handshakeKey role), the
+        // v2 packet offsets and the one-window-earlier GMAC rotation. The launchSpec OFB + control material were
+        // established on it during the handshake, so BuildSessionRequest can out1-encrypt the launchSpec under it.
+        _streamCrypto = crypto;
+        _demuxer = CreateDemuxer(crypto);
+
+        // Senkusha on the LAN, exactly as the v1 path runs it before the stream (skipped on the rendezvous route).
+        if (_parameters.ConnectionPath == HalyardConnectionPath.Local)
+        {
+            _connectStep = "senkusha bring-up (v2)";
+            using var probeSocket = new UdpChannel();
+            await RunSenkushaAsync(
+                probeSocket, new IPEndPoint(_parameters.ControlEndpoint.Address, SenkushaPort), cancellationToken)
+                .ConfigureAwait(false);
+            LogV2("senkusha done");
+        }
+
+        _connectStep = "v2 stream key agreement";
+        LogV2("starting the Takion stream key agreement");
+        TakionSessionResult streaming = await StartStreamingAsync(cancellationToken).ConfigureAwait(false);
+        LogV2($"stream key agreement result: success={streaming.Success} reason={streaming.FailureReason ?? "(none)"}");
+        if (!streaming.Success)
+            return Fail($"v2 stream key agreement did not complete (Takion/SESSION): {streaming.FailureReason}");
+
+        if (State == SessionState.Closed)
+        {
+            LogV2($"console ended the session during bring-up: {EndReason}");
+            return new SessionHandshakeResult(
+                false, EndReason ?? "The console ended the v2 session while it was starting.",
+                SessionFailureKind.EndedByConsole);
+        }
+
+        LogV2("v2 session reached Streaming");
+        State = SessionState.Streaming;
+        return new SessionHandshakeResult(true, null);
+    }
+
+    /// <summary>
+    /// Diagnostic-only log for the opt-in v2 path, written to <c>%LOCALAPPDATA%\Ripcord\v2-session.log</c> so the
+    /// GUI's swallowed connect reason is readable after a hardware run. Generic step/command text only — no keys,
+    /// addresses or identifiers — and best-effort, so a logging failure never affects the session.
+    /// </summary>
+    private static void LogV2(string message)
+    {
+        try
+        {
+            string dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ripcord");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(dir, "v2-session.log"),
+                $"{DateTime.UtcNow:HH:mm:ss.fff} v2: {message}{Environment.NewLine}");
+        }
+        catch { /* diagnostic only — never affects the session */ }
     }
 
     /// <summary>
@@ -1272,7 +1366,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             streamEndpoint = _parameters.StreamEndpoint;
         }
 
-        _takionStream = new HalyardTakionStream(_streamSocket, streamEndpoint, _crypto, _demuxer);
+        _takionStream = new HalyardTakionStream(_streamSocket, streamEndpoint, _streamCrypto, _demuxer);
         _takionStream.PacketStatsSampled += OnPacketStatsSampled;
         _takionStream.ConsoleDisconnected += reason => EndedByConsole(
             string.IsNullOrWhiteSpace(reason)
@@ -1281,7 +1375,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
         // Controller input goes up the same socket, sealed by the crypto seam. Enqueue rather than send
         // directly: the drain loop below preserves the order the writer stamped sequence numbers in.
-        var writer = new HalyardInputPacketWriter(_crypto);
+        var writer = new HalyardInputPacketWriter(_streamCrypto);
         _inputQueue = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(InputQueueCapacity)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
@@ -1317,9 +1411,12 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <summary>
     /// Assemble the SESSION_REQUEST inputs. From a wire-parsed real SESSION_REQUEST: <c>sessionKey</c> is the
     /// literal "InvalidSessionId", <c>encryptedKey</c> is unused (left empty by the negotiator), and
-    /// <c>clientVersion</c> is 17 (0x11). The launchSpec is built from the spec §4.3 fields (the template
-    /// corroborated against our own client's memory + wire keystream) carrying a fresh handshakeKey,
-    /// out1-encrypted under the control key.
+    /// <c>clientVersion</c> is 17 (0x11) on the v1 wire; the v2 path bumps it to 20 (0x14), observed in the
+    /// vendor's own v2 traces (V2-SPEC §5; proto field 7 adds <c>sessionId = "InvalidSessionId"</c> at the
+    /// same time). The launchSpec is built from the spec §4.3 fields (the template corroborated against our
+    /// own client's memory + wire keystream) carrying a fresh handshakeKey, out1-encrypted under the control
+    /// key. The handshakeKey is 16 random bytes; the console signs its stream pubkey with
+    /// <c>HMAC(handshakeKey, consolePubkey)</c> using exactly these bytes.
     /// </summary>
     private TakionSessionRequest BuildSessionRequest()
     {
@@ -1339,15 +1436,20 @@ public sealed class HalyardStreamingSession : IStreamingSession
         //
         // Never in the clear: the handshakeKey is in this document. The connect fails before here when there is
         // no control key (ControlKeyMaterial), so this is the second guard, not the first.
-        if (!_crypto.IsControlEstablished)
+        if (!_streamCrypto.IsControlEstablished)
         {
             throw new InvalidOperationException("The launchSpec would go out unencrypted: the control key was never established.");
         }
 
-        byte[] launchWire = _crypto.CryptStreaminfo(0, launchBytes);
+        byte[] launchWire = _streamCrypto.CryptStreaminfo(0, launchBytes);
+
+        // v1 ships clientVersion 17; v2 is observed as 20 on the wire (V2-SPEC §5). _streamCrypto is set to the
+        // v2 instance during RunV2ControlHandshakeAsync and left as v1 otherwise, so the type check is a
+        // reliable discriminator at this point in the flow — see the field remarks on _streamCrypto.
+        uint clientVersion = _streamCrypto is HalyardV2SessionCrypto ? 20u : 17u;
 
         return new TakionSessionRequest(
-            ClientVersion: 17,
+            ClientVersion: clientVersion,
             SessionKey: "InvalidSessionId",
             LaunchSpecJson: Convert.ToBase64String(launchWire),
             HandshakeKey: handshakeKey);
@@ -1627,6 +1729,11 @@ public sealed class HalyardStreamingSession : IStreamingSession
         if (_ctrlKeepAlive is not null)
         {
             try { await _ctrlKeepAlive.ConfigureAwait(false); } catch { /* ignore shutdown races */ }
+        }
+
+        if (_rpcsLoop is not null)
+        {
+            try { await _rpcsLoop.ConfigureAwait(false); } catch { /* ignore shutdown races */ }
         }
 
         _inputQueue?.Writer.TryComplete();

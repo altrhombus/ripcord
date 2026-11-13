@@ -62,6 +62,7 @@ public class PublishedTreeSweepTests
     // <sweep:fixtures>
     private static readonly Dictionary<string, string> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["00000000000005ae"] = "the v2 probe-report payload carrying MTU 1454 - a protocol constant, identical for every console",
         ["271fa4e2"] = "SHA-256 prefix of the vendor DLL we analysed - provenance evidence",
         ["fddb4"] = "the suffix half of that same vendor DLL hash",
         ["464687b3"] = "the bundled contextKey, published in full in halyard-v1-constants.json anyway",
@@ -81,6 +82,7 @@ public class PublishedTreeSweepTests
         ["020004022400551234"] = "a counted-list frame example from the spec's own field tables",
         ["0000000000fe0000"] = "a heartbeat frame - protocol structure, shown to explain a desync",
         ["0000000002010000"] = "a control frame header - protocol structure",
+        ["00000000000005ae"] = "the RPCS probe-report payload's 8-byte MTU field (be16 path MTU at offset 6, rest zero) - a protocol byte pattern / network link MTU, identifies no person, console or account",
         ["75ac33636696"] = "six independent single bytes, one per wrong-passcode attempt - the passage's point is that each differs",
         ["080852020a00"] = "a Takion DISCONNECT{reason=\"\"} protobuf - identical across sessions, generic structure",
         ["10111314151617"] = "a Takion chunk-type enumeration, given as a byte list in the specs",

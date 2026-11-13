@@ -118,6 +118,16 @@ purchased signing certificate.
       clean Windows every launch, good for "does it start with nothing installed", though it won't pass
       pads or the GPU through.
 
+### Discovery and the console list
+
+- [ ] **LAN discovery / console status regressed** (seen 2026-10-22, during the v2 handshake hardware run). The
+      consoles screen showed a previously-paired console as **"away"** and the freshly re-paired one as
+      **"offline"**, yet the console was plainly reachable: the session pcap has the mDNS responses, the ARP, the
+      SRC3 probe and a **successful** LAN TCP connect + v2 handshake to it. So the LAN discovery/status *display*
+      is wrong while connectivity is fine — and a re-pair left **two** entries (old + new) instead of updating
+      one. Suspected a pre-existing regression from a change landed before the v2 work; a `git bisect` candidate
+      against the discovery/scan + console-list status path. Separate from v2.
+
 ### Stated as a limit, not fixed for 1.0
 
 - **Internet play to a console in rest mode** probably fails in the dotnet client: `EnsureSignedInAsync`
@@ -216,14 +226,6 @@ purchased signing certificate.
 
 ### Streaming quality and the protocol
 
-- [ ] **v2 (the PS5 GCM control plane): the persistent control channel.** The v2 crypto is done and tested — the
-      GCM control envelope, the launchSpec, the stream key agreement, both A/V directions, and the c2s send-auth —
-      and the opt-in handshake path (`RIPCORD_V2_HANDSHAKE`) runs `/sess/init`→`init2`→`ctrl` live against a
-      v2-capable pairing, then stops. What's left is the channel that rides the same association after `ctrl`: the
-      GCM/RPCS keep-alive, the probe report, and the control-message framing the console gates streaming on, all of
-      which are v1 field-crypto only today. Derivable from the v2 spec and the 003/004 captures; confirmable only
-      on hardware. First hardware step is cheap — point the opt-in at a real PS5 and see whether it accepts our
-      handshake. The default v1 path is untouched and still streams PS5.
 - [ ] **Do the senkusha probes succeed, or fall back silently?** `MtuConfirmed` answers the MTU half in two
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
