@@ -33,6 +33,31 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### v2 streams on hardware, and the "wrong signature" was the SESSION_REQUEST's version byte (2026-11-13)
+
+The commit that wrote off the random-handshakeKey model said hardware disproved it: on a session that
+reached SESSION_REPLY, the console's stream pubkey signature did not match `HMAC(launchSpecHandshakeKey,
+pubkey)` under any key we could derive from the control plane. Following that read sent me down a long
+trail — nine captures on a patched vendor client, a headless Ghidra pass on the 8.5 DLL, a search for a
+Z-bound HMAC key that turned out not to exist. The model was fine the whole time.
+
+The thing that was wrong is three bytes long. `BuildSessionRequest` had been shipping `clientVersion = 17`
+unconditionally, which is the v1 value; v2 is 20. The console was reading the request as something
+v1-shaped, taking the launchSpec plaintext at a counter or structure offset that doesn't match what v2
+emitted, and signing its stream pubkey with whatever default handshakeKey it fell back to. Exactly the
+"HMAC uses a key we never sent" symptom, and exactly why no derivation search on our side could ever
+find a match.
+
+The fix is a one-line branch on `_streamCrypto`'s type in `BuildSessionRequest`: v2 instance → 20, else 17.
+With it, the v2 bring-up reaches SESSION_REPLY, the stream pubkey verifies, both direction keys install,
+and A/V streams. One retry on connect, same as a lossy v1 bring-up. v1 is untouched.
+
+Also added `V2LaunchSpecVendorDiffTests` to pin the links of the handshakeKey → wire → console chain that
+could silently reproduce the same symptom: field set, standard base64 encoding, OFB round-trip through
+`CryptStreaminfo`, determinism across calls. The main-case field in the launchSpec is `handshakeKey`
+itself, and that one was never the bug — but the tests are cheap and they are the shape of guard the
+next time this fails.
+
 ### The v2 handshakeKey, chased the long way round, turns out to be v1's (2026-10-22)
 
 Five v2 hardware captures and a headless-Ghidra dig to answer one question — where the v2 stream `handshakeKey`
