@@ -100,11 +100,12 @@ public class PacketCryptoHotPathTests
             return k;
         }
 
-        // Within a window the key is stable; crossing a boundary it must change.
-        Assert.Equal(KeyAt(0), KeyAt(window - 1));
-        Assert.NotEqual(KeyAt(window - 1), KeyAt(window));
-        Assert.Equal(KeyAt(window), KeyAt(window + 1));
-        Assert.NotEqual(KeyAt(window), KeyAt(window * 2));
+        // Within a window the key is stable; crossing a boundary it must change. An exact multiple of the
+        // window still belongs to the window below it (HalyardPacketCrypto.WindowOf).
+        Assert.Equal(KeyAt(0), KeyAt(window));
+        Assert.NotEqual(KeyAt(window), KeyAt(window + 1));
+        Assert.Equal(KeyAt(window + 1), KeyAt(window * 2));
+        Assert.NotEqual(KeyAt(window * 2), KeyAt(window * 2 + 1));
     }
 
     [Fact]
@@ -122,19 +123,19 @@ public class PacketCryptoHotPathTests
             return k;
         }
 
-        byte[] beforeFirst = KeyAt(window - 1);
-        byte[] afterFirst = KeyAt(window);
+        byte[] beforeFirst = KeyAt(window);
+        byte[] afterFirst = KeyAt(window + 1);
 
         // Alternate back and forth across the boundary several times.
-        foreach (ulong keyPos in (ulong[])[window, window - 1, window + 5, window - 3, window * 2, window - 1])
+        foreach (ulong keyPos in (ulong[])[window + 1, window, window + 5, window - 3, window * 2, window])
         {
-            byte[] expected = keyPos < window ? beforeFirst : KeyAt(keyPos);
+            byte[] expected = keyPos <= window ? beforeFirst : KeyAt(keyPos);
             Assert.Equal(expected, KeyAt(keyPos));
         }
 
         // And the two originals still reproduce exactly.
-        Assert.Equal(beforeFirst, KeyAt(window - 1));
-        Assert.Equal(afterFirst, KeyAt(window));
+        Assert.Equal(beforeFirst, KeyAt(window));
+        Assert.Equal(afterFirst, KeyAt(window + 1));
     }
 
     [Fact]

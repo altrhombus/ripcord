@@ -10,11 +10,10 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// Byte-exact checks of the v2 (PS5) stream plane against the console's own outputs (sessions 003/004):
 /// the per-direction key schedule (<c>HMAC(Z_stream, 01|dir|00|X|0100)</c>, dir 2 c2s / 3 s2c), the
 /// <c>ecdhSignature = HMAC(X, pubkey)</c>, and the s2c A/V per-packet GMAC + AES-CTR with the v2 header layout
-/// (tag@18, key_pos@22, payload@26) and the v2 GMAC window rule <c>(key_pos-1)/45000</c>.
+/// (tag@18, key_pos@22, payload@26) and the GMAC window rule <c>(key_pos-1)/45000</c>.
 ///
 /// <para>These exercise exactly what <see cref="HalyardV2SessionCrypto"/> uses internally
-/// (<see cref="HalyardStreamKeySchedule"/> + <see cref="HalyardPacketCrypto"/> with
-/// <see cref="HalyardGmacWindowRule.FromKeyPosMinusOne"/>). The secret <c>X</c> comes from the fixture (a
+/// (<see cref="HalyardStreamKeySchedule"/> + <see cref="HalyardPacketCrypto"/>). The secret <c>X</c> comes from the fixture (a
 /// captured value); the client cannot yet derive X live (its origin is an unresolved <c>[X]</c>,
 /// <c>X-ORIGIN-CORRECTION-2026-10-20.md</c>), so the stream plane is proven here, not on hardware.</para>
 ///
@@ -67,7 +66,7 @@ public class V2StreamPacketVectorTests
     }
 
     /// <summary>
-    /// Every captured s2c A/V packet's 4-byte GMAC reproduces under the v2 rule (tag@18, window=(key_pos-1)/45000),
+    /// Every captured s2c A/V packet's 4-byte GMAC reproduces under the v2 layout (tag@18, window=(key_pos-1)/45000),
     /// and AES-CTR decrypts the payload to the captured plaintext head. Packets span several rotation windows, so
     /// this exercises the v2 window rotation, not just window 0.
     /// </summary>
@@ -80,8 +79,7 @@ public class V2StreamPacketVectorTests
         int checkedAboveWindow0 = 0;
         foreach (var v in fx.StreamPackets!)
         {
-            using var crypto = new HalyardPacketCrypto(
-                Hex.Bytes(v.AesKey!), Hex.Bytes(v.BaseIv!), HalyardGmacWindowRule.FromKeyPosMinusOne);
+            using var crypto = new HalyardPacketCrypto(Hex.Bytes(v.AesKey!), Hex.Bytes(v.BaseIv!));
 
             byte[] packet = Hex.Bytes(v.Packet!);
             Assert.Equal(v.Tag, Hex.String(crypto.ComputeTag(v.KeyPos, packet, AvTagOffset)));
@@ -94,31 +92,21 @@ public class V2StreamPacketVectorTests
         }
 
         Assert.True(checkedAboveWindow0 > 0,
-            "Fixture exercised only window 0 — the v2 (key_pos-1)/45000 rotation was not tested.");
+            "Fixture exercised only window 0 — the (key_pos-1)/45000 rotation was not tested.");
     }
 
     /// <summary>
-    /// The two GMAC window rules (v1 <c>keyPos/45000</c>, v2 <c>(keyPos-1)/45000</c>) diverge <b>exactly</b> at
-    /// multiples of 45000 and agree everywhere else — so the v2 <c>-1</c> is not discriminable from wire tags on
-    /// non-boundary packets (it was pinned from the client's own per-window GMAC-key ground truth,
-    /// <c>validate_v2_av_packets.py</c>). This pins the divergence the code must implement.
+    /// <c>(keyPos-1)/45000</c> and the plain quotient differ <b>exactly</b> at multiples of 45000, so only a
+    /// packet sitting on a boundary can tell them apart on the wire. Every such packet in our captures, v1 and
+    /// v2, both directions, verifies under the first; this pins where the window changes.
     /// </summary>
     [Fact]
-    public void WindowRules_DivergeExactlyAtMultiplesOf45000()
+    public void WindowOf_PutsAnExactMultipleInTheWindowBelow()
     {
-        byte[] key = Convert.FromHexString("000102030405060708090a0b0c0d0e0f");
-        byte[] iv = Convert.FromHexString("0f0e0d0c0b0a09080706050403020100");
-        using var v1 = new HalyardPacketCrypto(key, iv, HalyardGmacWindowRule.FromKeyPos);
-        using var v2 = new HalyardPacketCrypto(key, iv, HalyardGmacWindowRule.FromKeyPosMinusOne);
-
-        Span<byte> a = stackalloc byte[16];
-        Span<byte> b = stackalloc byte[16];
-        foreach (ulong keyPos in new ulong[] { 0, 1, 44999, 45000, 45001, 89999, 90000, 90001, 3240000 })
+        foreach ((ulong keyPos, long window) in new (ulong, long)[]
+                 { (0, 0), (1, 0), (44999, 0), (45000, 0), (45001, 1), (90000, 1), (90001, 2), (3240000, 71) })
         {
-            v1.GmacKey(keyPos, a);
-            v2.GmacKey(keyPos, b);
-            bool shouldDiffer = keyPos != 0 && keyPos % 45000 == 0; // v1 window = n, v2 window = n-1
-            Assert.Equal(shouldDiffer, !a.SequenceEqual(b));
+            Assert.Equal(window, HalyardPacketCrypto.WindowOf(keyPos));
         }
     }
 
@@ -139,7 +127,7 @@ public class V2StreamPacketVectorTests
         {
             byte[] z = HalyardStreamKeySchedule.DeriveSharedSecret(aEcdh, bPub);
             var dir = HalyardStreamKeySchedule.DeriveDirection(z, x, HalyardStreamKeySchedule.DirectionClientToServer);
-            using var pc = new HalyardPacketCrypto(dir, HalyardGmacWindowRule.FromKeyPosMinusOne);
+            using var pc = new HalyardPacketCrypto(dir);
 
             const ulong keyPos = 90000; // window 1 under (keyPos-1)/45000
             byte[] packet = new byte[AvPayloadOffset + 48];

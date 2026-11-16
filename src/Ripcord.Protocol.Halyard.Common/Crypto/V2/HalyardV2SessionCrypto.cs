@@ -25,9 +25,9 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 ///   (Phase 2, implemented here). <c>X</c> arrives as the <c>handshakeKey</c> argument exactly as v1's launchSpec
 ///   X did.</description></item>
 ///   <item><description><b>Per-packet</b> — v2 shifts the A/V header offsets (tag@18, key_pos@22, the caller's
-///   <see cref="HalyardPacketLayout"/>) and rotates the GMAC key one window earlier
-///   (<see cref="HalyardGmacWindowRule.FromKeyPosMinusOne"/>); AES-CTR is the v1 little-endian block counter
-///   unchanged. So the per-packet methods reuse <see cref="HalyardPacketCrypto"/> with the v2 window rule
+///   <see cref="HalyardPacketLayout"/>); the GMAC key rotation
+///   (<see cref="HalyardPacketCrypto.WindowOf"/>) and AES-CTR's little-endian block counter are v1's
+///   unchanged. So the per-packet methods reuse <see cref="HalyardPacketCrypto"/>
 ///   (Phase 2, implemented here for the s2c A/V receive path + key agreement).</description></item>
 /// </list>
 ///
@@ -75,8 +75,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private HalyardStreamKeySchedule.DirectionKeys? _skConsoleToClient; // sk_8
 
     // Stream plane (Phase 2): its own ephemeral ECDH, separate from the control plane's, and the per-direction
-    // packet crypto. v2 rotates the GMAC key one window earlier than v1 (confirmed on s2c A/V).
-    private const HalyardGmacWindowRule StreamWindowRule = HalyardGmacWindowRule.FromKeyPosMinusOne;
+    // packet crypto.
     private ECDiffieHellman? _streamEcdh;
     private HalyardPacketCrypto? _send;    // client -> console (feedback/input)
     private HalyardPacketCrypto? _receive; // console -> client (A/V)
@@ -168,8 +167,8 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
 
         var sendKeys = HalyardStreamKeySchedule.DeriveDirection(sharedSecret, handshakeKey, HalyardStreamKeySchedule.DirectionClientToServer);
         var recvKeys = HalyardStreamKeySchedule.DeriveDirection(sharedSecret, handshakeKey, HalyardStreamKeySchedule.DirectionServerToClient);
-        _send = new HalyardPacketCrypto(sendKeys, StreamWindowRule);
-        _receive = new HalyardPacketCrypto(recvKeys, StreamWindowRule);
+        _send = new HalyardPacketCrypto(sendKeys);
+        _receive = new HalyardPacketCrypto(recvKeys);
         return true;
     }
 

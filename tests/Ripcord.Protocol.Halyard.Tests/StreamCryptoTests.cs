@@ -200,15 +200,19 @@ public class StreamCryptoTests
             Hex.Bytes("101112131415161718191a1b1c1d1e1f"),
             Hex.Bytes("202122232425262728292a2b2c2d2e2f"));
 
-        Span<byte> k44999 = stackalloc byte[16];
         Span<byte> k45000 = stackalloc byte[16];
-        Span<byte> k89999 = stackalloc byte[16];
-        crypto.GmacKey(44999, k44999);
+        Span<byte> k45001 = stackalloc byte[16];
+        Span<byte> k90000 = stackalloc byte[16];
+        Span<byte> k1 = stackalloc byte[16];
         crypto.GmacKey(45000, k45000);
-        crypto.GmacKey(89999, k89999);
+        crypto.GmacKey(45001, k45001);
+        crypto.GmacKey(90000, k90000);
+        crypto.GmacKey(1, k1);
 
-        Assert.NotEqual(Hex.String(k44999), Hex.String(k45000)); // rotates across the boundary
-        Assert.Equal(Hex.String(k45000), Hex.String(k89999));    // stable within a window
+        // An exact multiple of 45000 still belongs to the window below it; the key changes one unit later.
+        Assert.Equal(Hex.String(k1), Hex.String(k45000));
+        Assert.NotEqual(Hex.String(k45000), Hex.String(k45001)); // rotates across the boundary
+        Assert.Equal(Hex.String(k45001), Hex.String(k90000));    // stable within a window, through its end
     }
 
     // [type][seq u16][sub-hdr 7][tag@10 placeholder][keypos@14 u32 BE][payload]

@@ -593,13 +593,20 @@ Each data packet is **both encrypted and authenticated**, using two keys derived
   once from `aes_key` and `base_iv`; window 0 uses it directly, and each later window re-folds **that base
   key** (not `aes_key`) with an incrementing IV: **[V]**
 ```
-window   = key_pos // 45000
+window   = (key_pos - 1) // 45000   (0 when key_pos == 0)
 key0     = sha256_fold( aes_key ‖ base_iv )                       # the window-0 GMAC key
 gmac_key = key0                              if window == 0
          = sha256_fold( key0 ‖ iv_add(base_iv, window * 0xAF6E) ) if window >= 1
   where sha256_fold(x) = SHA-256(x)[0:16] XOR SHA-256(x)[16:32]
         iv_add(iv,n)   = little-endian (int(iv) + n) mod 2**128, back to 16 bytes
 ```
+**Where the window changes [V] (2026-11-16):** a `key_pos` that is an exact multiple of 45000 still belongs to
+the window below it, so the key changes one unit later than `key_pos // 45000` would put it. The two forms
+agree on every other position, so only a packet sitting exactly on a boundary tells them apart. Every such
+packet in our keyed captures verifies this way and fails the plain quotient: 78 console-to-client packets
+(video, audio, control) in one v1 session, 4 client-to-console in `cap48`, and in the v2 control plane's
+sessions 20 console-to-client and 6 client-to-console. Both control planes use the same rule.
+
 A red-black-tree cache (the cipher object +0x88) memoizes `gmac_key` per window. `key_pos` is the packet's
 64-bit media position (the 32-bit wire value at offset 14 extended via the rollover counter, §3).
 
