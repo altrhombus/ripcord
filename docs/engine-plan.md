@@ -246,7 +246,7 @@ against the C core has run clean. The scripted console (`libripcord/tests/fake_d
 ported to Rust early, since every layer above Takion is tested against it, and is exported by
 `ripcord-ffi` behind a test feature so the Mac and .NET test suites can drive it too.
 
-Parity is measured, not asserted. The matrix is every capability the Windows client uses today, which
+Parity is measured, not asserted. The matrix is every capability the dotnet client uses today, which
 engines provide it, and how each has been verified (vectors, captures or hardware). The gaps already
 known, from `ROADMAP.md` and `halyard_client.h`, are closed in Rust only:
 

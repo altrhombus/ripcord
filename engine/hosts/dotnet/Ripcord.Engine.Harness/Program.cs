@@ -1,5 +1,5 @@
 // The Rust engine from .NET, through its generated bindings: a layout check, a differential run against
-// the managed reference (HalyardPacketCrypto, what the Windows client ships today), the demuxer's
+// the managed reference (HalyardPacketCrypto, what the dotnet client ships today), the demuxer's
 // callbacks as Phase 4 will host them, and the per-packet benchmark on both engines.
 //
 //   dotnet run -c Release --project engine/hosts/dotnet/Ripcord.Engine.Harness [check|bench]

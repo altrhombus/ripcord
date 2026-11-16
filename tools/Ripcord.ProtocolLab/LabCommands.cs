@@ -560,7 +560,7 @@ internal static class LabCommands
         var gateway = BuildGateway();
         if (!gateway.CanSignIn)
         {
-            Console.Error.WriteLine("set RIPCORD_CLIENT_ID and RIPCORD_CLIENT_SECRET first.");
+            Console.Error.WriteLine("no OAuth client credential: this build bundles none, so set RIPCORD_CLIENT_ID and RIPCORD_CLIENT_SECRET.");
             return 1;
         }
 

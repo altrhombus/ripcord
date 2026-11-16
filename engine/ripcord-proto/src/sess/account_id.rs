@@ -1,5 +1,5 @@
 //! Making sense of a PSN account id somebody typed in. Ported from `libripcord/session/halyard_account_id.c`,
-//! which has no .NET counterpart (the Windows client never takes one typed).
+//! which has no .NET counterpart (the dotnet client never takes one typed).
 //!
 //! The id is a 64-bit number written in more than one base by the tools people find it in, and getting
 //! it wrong is silent: [`super::regist::encode_account_id`] sends an all-decimal id as a little-endian

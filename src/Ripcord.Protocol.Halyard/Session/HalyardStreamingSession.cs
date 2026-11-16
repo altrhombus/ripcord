@@ -1488,7 +1488,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <inheritdoc cref="BuildLaunchSpecJson(byte[])"/>
     /// <remarks><paramref name="handshakeKey"/> is a fresh 16-byte client-random value in BOTH v1 and v2: the
     /// vendor's v2 launchSpec builder generates it the same way v1 does (confirmed by static RE of
-    /// <c>FUN_9ee50</c> — a no-input RNG callback, osslRAND fallback — and against three live v2 sessions whose
+    /// <c>FUN_9ee50</c> — a no-input RNG callback falling back to OpenSSL's random generator — and against three live v2 sessions whose
     /// captured handshakeKey was high-entropy and not derivable from any session value). An earlier reading had
     /// v2 dropping the field ("X rides the control plane"); that was wrong — X is just the v1 client-random
     /// handshakeKey, carried in the launchSpec and fed to the stream crypto.</remarks>

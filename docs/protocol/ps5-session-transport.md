@@ -202,11 +202,10 @@ peer's next expected value.
 
 #### The library this framing belongs to `[C]`, 2026-09-03
 
-It is not account-route-specific. A leftover assert path in the vendor control library names
-`clientcomponents/rudp/.../rudp/lib/rudpnetworker.cpp`, and the surrounding files are
-`lib/rudpheader.cpp` (this header codec), **`lib/rudpaggregator.cpp`** (which is chunk concatenation — the
-behaviour we had inferred from a single 756-byte datagram splitting into a 12-byte ack and a 744-byte data
-chunk) and `socket/gaikaisocketwin.cpp`. So this is the vendor's **reliable-UDP library**, multiplexing
+It is not account-route-specific. A leftover assert path in the vendor control library places this code in
+a reliable-UDP component with its own networker, this header codec, **a chunk aggregator** (chunk
+concatenation — the behaviour we had inferred from a single 756-byte datagram splitting into a 12-byte ack and a
+744-byte data chunk) and a socket layer. So this is the vendor's **reliable-UDP library**, multiplexing
 logical streams by the port pair: Takion's A/V on one, the 9295 control stream on another. That is the
 structural reason `rgst`/`init`/`ctrl` are byte-identical over 9303 and TCP 9295 — same stream, different
 wrapper — and the reason the `0x24` acknowledgement and the `0xD0` cookie are **librudp control messages**

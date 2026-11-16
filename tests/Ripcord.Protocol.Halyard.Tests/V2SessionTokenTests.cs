@@ -1,5 +1,6 @@
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V2;
+using Ripcord.Protocol.Halyard.Session;
 using Xunit;
 
 namespace Ripcord.Protocol.Halyard.Tests;
@@ -11,7 +12,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// </summary>
 public class V2SessionTokenTests
 {
-    private static readonly byte[] K16Reg = Convert.FromHexString("2736d42c9327ccbb1322e21133dab093");
+    // The bundled v2 registration-auth key (NOTICE): read from the bundle, its one home, not repeated here.
+    private static readonly byte[] K16Reg = HalyardInteropConstants.RegistrationAuthKey()
+        ?? throw new InvalidOperationException("This build bundles no interop constants.");
 
     [Fact]
     public void Mint_IsSixteenRandomBytes()

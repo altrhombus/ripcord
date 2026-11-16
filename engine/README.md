@@ -114,7 +114,7 @@ dotnet run -c Release --project hosts/dotnet/Ripcord.Engine.Harness
 ```
 
 The harness prints the Rust engine and the managed engine side by side. The managed engine is what the
-Windows client ships today, so on Windows that pair is the comparison that matters.
+dotnet client ships today, so on Windows that pair is the comparison that matters.
 
 ## Phase 1, measured (2026-09-25, M4 Max, macOS 27)
 
