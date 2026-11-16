@@ -865,9 +865,18 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 continue; // wrong passcode; re-prompt at once (attempt > 1 tells the UI to say so)
             }
 
-            // Accepted. The session does not follow immediately on the rendezvous route: the console
-            // renegotiates the connection first and takes about five seconds over it. Wait that out, and if it
-            // still does not come, say what actually happened rather than blaming the passcode.
+            // Accepted, and on the rendezvous route that is enough to go on. A console woken from rest sends its
+            // session-ready only during the A/V leg, which waits for it anyway (SessionReadyWindow): traced from
+            // a phone hotspot (2026-10-10), its media OFFER came a second after the passcode, and the session
+            // ended here 7.6 s later for want of a session-ready it was never going to send first. The Mac's
+            // client goes on the same way and streamed (journal, 2026-09-25).
+            if (_parameters.ConnectionPath != HalyardConnectionPath.Local)
+            {
+                return null;
+            }
+
+            // On the LAN the session follows the passcode. Wait for it, and if it still does not come, say what
+            // actually happened rather than blaming the passcode.
             if (await CompletesWithin(_sessionReady.Task, SignInAttemptTimeout, cancellationToken).ConfigureAwait(false))
             {
                 return null;

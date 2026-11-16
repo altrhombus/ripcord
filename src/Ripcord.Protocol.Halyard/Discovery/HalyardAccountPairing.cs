@@ -118,6 +118,19 @@ public sealed class HalyardAccountPairingOptions
     /// </summary>
     public HalyardControlAddressing HelloAddressing { get; init; } = HalyardControlAddressing.PortPair;
 
+    /// <summary>
+    /// How often to read the session back while waiting for the session service to list the console as a member,
+    /// before messaging it. Two seconds is the vendor client's own rhythm in our captures (ps-rendezvous: its
+    /// session reads at 0.1, 2.0 and 4.0 s).
+    /// </summary>
+    public TimeSpan MembershipPollInterval { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// How long to wait for that before messaging the console anyway, as the route did before it waited at all. The
+    /// vendor's first message follows the console's OFFER by 3 to 9 s in every captured session.
+    /// </summary>
+    public TimeSpan MembershipTimeout { get; init; } = TimeSpan.FromSeconds(12);
+
     /// <summary>Optional progress sink for a harness (push connected, session, command, seed, register).</summary>
     public Action<string>? Log { get; init; }
 }
@@ -412,6 +425,12 @@ public sealed class HalyardAccountPairing(
         var acked = new HashSet<(string Action, int ReqId)>();
         var ackLock = new object();
 
+        // On the route that messages the console, our acks wait with everything else until the session service
+        // lists it (WaitForConsoleMembershipAsync): sent the moment the console's OFFER arrived, the ack 404'd
+        // "Member not joined session." (2026-10-10). The vendor's own ack for that OFFER comes seconds later.
+        bool holdAcks = !request.LocalHashedId.IsEmpty;
+        var heldAcks = new List<HalyardSignalingMessage>();
+
         // Ask the session service who is in the session, independently of the push channel.
         //
         // **This is the question a join timeout cannot answer on its own.** "The console never joined" is what
@@ -493,6 +512,16 @@ public sealed class HalyardAccountPairing(
 
             lock (ackLock)
             {
+                if (holdAcks)
+                {
+                    if (!heldAcks.Exists(m => m.Action == message.Action && m.ReqId == message.ReqId))
+                    {
+                        heldAcks.Add(message);
+                    }
+
+                    return;
+                }
+
                 if (!acked.Add((message.Action, message.ReqId)))
                 {
                     return;
@@ -511,10 +540,81 @@ public sealed class HalyardAccountPairing(
                     }
                     catch (Exception ex)
                     {
-                        Log($"could not ack the console's {message.Action} (reqId {message.ReqId}): {ex.Message}");
+                        Log($"could not ack the console's {message.Action} (reqId {message.ReqId}): {ex.Message}"
+                            + ResponseBodyOf(ex));
                     }
                 },
                 CancellationToken.None);
+        }
+
+        void ReleaseAcks()
+        {
+            List<HalyardSignalingMessage> held;
+            lock (ackLock)
+            {
+                holdAcks = false;
+                held = [.. heldAcks];
+                heldAcks.Clear();
+            }
+
+            foreach (HalyardSignalingMessage message in held)
+            {
+                Ack(message);
+            }
+        }
+
+        // Whether the session service lists the console as a member: by the device id we commanded, or by any
+        // member that is not a Remote Play client, which is how the console's join arrives on the push channel.
+        async Task<bool> ConsoleIsListedAsync()
+        {
+            if (liveSessionId is not { } id)
+            {
+                return false;
+            }
+
+            IReadOnlyList<HalyardCloudSession> sessions =
+                await _signaling.GetSessionAsync(id, cancellationToken).ConfigureAwait(false);
+            HalyardSessionMember[] members = sessions.FirstOrDefault(x => x.SessionId == id)?.Members ?? [];
+            return members.Any(m =>
+                string.Equals(m.DeviceUniqueId, request.ConsoleDuid, StringComparison.Ordinal)
+                || (!string.IsNullOrEmpty(m.Platform) && m.Platform != "REMOTE_PLAY"));
+        }
+
+        // **Message the console only once the session service lists it.** The push channel's join, and the
+        // console's own OFFER after it, come before the service will take a message for the console: sent then,
+        // our OFFER 404'd "Member not joined session." in every run from a hotspot with the console woken from
+        // rest (2026-10-10), and the route ended. In our captures the vendor client reads its session back on a
+        // two-second rhythm and sends its first message 3 to 9 s after the console's OFFER, never a 404 in about
+        // 150 (captures folder, away-2026-10-10/NOTES.md). That it waits for exactly this read is inferred from
+        // the timing and the read's size, [X]. Bounded: past MembershipTimeout it goes on as it did before.
+        async Task WaitForConsoleMembershipAsync()
+        {
+            var waited = System.Diagnostics.Stopwatch.StartNew();
+            for (int read = 1; ; read++)
+            {
+                try
+                {
+                    if (await ConsoleIsListedAsync().ConfigureAwait(false))
+                    {
+                        Log($"the session service lists the console (read {read}, {waited.Elapsed.TotalSeconds:0.0}s "
+                            + "after its OFFER)");
+                        return;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Log($"session read {read} failed: {ex.GetType().Name}");
+                }
+
+                if (waited.Elapsed + _options.MembershipPollInterval > _options.MembershipTimeout)
+                {
+                    Log($"the session service has not listed the console after {waited.Elapsed.TotalSeconds:0.0}s "
+                        + "(" + read + " reads); messaging it anyway");
+                    return;
+                }
+
+                await Task.Delay(_options.MembershipPollInterval, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         // The console offers the media connection separately, on its own sid, once the control plane is up --
@@ -548,6 +648,45 @@ public sealed class HalyardAccountPairing(
             }
         }
 
+        // Which session each push frame is about. Every frame names one (body.data.sessionId, in our captures of
+        // the vendor client), and nothing here checked it: a join or an OFFER from another of the account's
+        // sessions counted as ours. From a hotspot the console "joined" and offered, yet the service never listed
+        // it in our session and refused every message to it as not a member (2026-10-10). Diagnostic only: says
+        // whether the frame is ours, never the id itself.
+        void OnFrame(string frame)
+        {
+            if (_options.Log is null)
+            {
+                return;
+            }
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(frame);
+                System.Text.Json.JsonElement root = doc.RootElement;
+                string type = root.TryGetProperty("dataType", out System.Text.Json.JsonElement dt)
+                    && dt.GetString() is { } dataType
+                        ? string.Join(':', dataType.Split(':').TakeLast(2))
+                        : "?";
+                string? frameSession =
+                    root.TryGetProperty("body", out System.Text.Json.JsonElement fb)
+                    && fb.TryGetProperty("data", out System.Text.Json.JsonElement fd)
+                    && fd.TryGetProperty("sessionId", out System.Text.Json.JsonElement fs)
+                        ? fs.GetString()
+                        : null;
+
+                string whose = frameSession is null ? "no session id"
+                    : liveSessionId is null ? "before ours exists"
+                    : string.Equals(frameSession, liveSessionId, StringComparison.Ordinal) ? "OUR session"
+                    : "ANOTHER session";
+                Log($"push frame {type}: {whose}");
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Not JSON: a keep-alive. Nothing to say.
+            }
+        }
+
         // The console joining is the earliest moment we may message it, and the moment before it starts its
         // own control association. Everything the client wants to get in early hangs off this.
         var joined = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -556,6 +695,7 @@ public sealed class HalyardAccountPairing(
         pushChannel.CustomData1Received += OnCustomData1;
         pushChannel.SignalingReceived += OnSignaling;
         pushChannel.ConsoleJoined += OnJoined;
+        pushChannel.FrameReceived += OnFrame;
 
         // Start receiving before triggering the console, so a customData1 published the instant it joins is not
         // missed. The loop runs until lifetime is cancelled or the peer closes.
@@ -578,6 +718,9 @@ public sealed class HalyardAccountPairing(
                 .ConfigureAwait(false);
             liveSessionId = sessionId;
             joinedSessionId = sessionId;
+
+            // From here, only this session's frames reach the handlers above.
+            pushChannel.SessionId = sessionId;
             Log($"session created: {sessionId}");
 
             await _signaling.SendConnectCommandAsync(
@@ -687,14 +830,21 @@ public sealed class HalyardAccountPairing(
 
             Log($"console OFFER received ({consoleOffer.Candidates.Count} candidates)");
 
+            if (!request.LocalHashedId.IsEmpty)
+            {
+                await WaitForConsoleMembershipAsync().ConfigureAwait(false);
+                ReleaseAcks();
+            }
+
             var context = new HalyardAccountTransportContext(
                 consoleOffer, request.ConsoleHost, request.LocalHashedId, consoleOffer.LocalHashedId!);
 
 
             // Announce ourselves — now, and not a moment earlier. A sessionMessage may only be sent to a
-            // member, so this 404s until the console has joined, and the console's OFFER is exactly what tells
-            // us it has. (Observed as a live 404 when this was sent right after the command.) It must still
-            // precede the prelude: the console has to have seen the id and port we are about to speak from.
+            // member, so this 404s until the console has joined. (Observed as a live 404 when this was sent
+            // right after the command.) The console's OFFER is not proof enough of that: from rest it 404'd
+            // after the OFFER too, which is what the membership wait above is for. It must still precede the
+            // prelude: the console has to have seen the id and port we are about to speak from.
             if (!request.LocalHashedId.IsEmpty)
             {
                 // The negotiation is a real offer/accept, not two independent advertisements — the capture
@@ -780,12 +930,19 @@ public sealed class HalyardAccountPairing(
             handedOff = keepSessionOpen;
             return finished;
         }
+        catch (Exception ex) when (LogFailure(ex))
+        {
+            // Never reached: LogFailure records why the route ended and declines to catch.
+            throw;
+        }
         finally
         {
             // Only when we still own them. A handed-off connect must keep ACKING: the console goes on sending
             // signaling for the life of the session, and one it does not get a RESULT for is one it gives up
             // on -- observed live as an ACCEPT, then a TERMINATE, then a control connection that never opened.
             // The lifetime object unsubscribes instead.
+            pushChannel.FrameReceived -= OnFrame;
+
             if (!handedOff)
             {
                 pushChannel.CustomData1Received -= OnCustomData1;
@@ -919,6 +1076,22 @@ public sealed class HalyardAccountPairing(
     }
 
     private void Log(string message) => _options.Log?.Invoke(message);
+
+    /// <summary>
+    /// Records why the route ended, then lets the exception go on unchanged (an exception filter that returns false).
+    /// A first try from a hotspot ended half a second after the console's OFFER with nothing in the trace to say why
+    /// (2026-10-10); this is so the next one says.
+    /// </summary>
+    private bool LogFailure(Exception ex)
+    {
+        Log($"the route ended: {ex.GetType().Name}: {ex.Message}" + ResponseBodyOf(ex));
+        return false;
+    }
+
+    private static string ResponseBodyOf(Exception ex)
+        => ex is HalyardCloudException { ResponseBody: { Length: > 0 } body }
+            ? $" (body: {(body.Length > 300 ? body[..300] : body)})"
+            : string.Empty;
 
     /// <summary>
     /// Leave the session without letting the attempt's outcome depend on it. Uses a fresh token rather than the
