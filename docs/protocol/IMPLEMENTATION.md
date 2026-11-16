@@ -148,8 +148,7 @@ lives:
    console and every account, and a client cannot speak the protocol without them — which is the argument
    [`NOTICE`](../../NOTICE) makes in full and the reason the exception is bounded to values of that kind. The
    spec still withholds them, so if you are implementing from the spec rather than from this code, they are
-   the values you have to recover from your own captures. `captures/name-mapping.md` is where our own
-   working copy sits, in the captures folder.
+   the values you have to recover from your own captures. Our own working copy sits in the captures folder.
 
 2. **The reference implementations** — `captures/*_reimpl.py` (see spec §0). These are your **golden test
    vectors** and they are *not* committed. Port each one into the client as a known-answer test.

@@ -70,7 +70,7 @@ public class SessionCryptoSeamTests
             Assert.True(client.TryEstablishStream(serverPub, handshakeKey));
             Assert.True(client.IsStreamEstablished);
 
-            // Server-side down-direction (server->client) packet crypto, independently derived.
+            // Server-side down-direction (server->client) packet crypto, derived separately on the server side.
             var serverShared = HalyardStreamKeySchedule.DeriveSharedSecret(serverKp, clientPub);
             var s2c = HalyardStreamKeySchedule.DeriveDirection(serverShared, handshakeKey, HalyardStreamKeySchedule.DirectionServerToClient);
             var serverDown = new HalyardPacketCrypto(s2c);

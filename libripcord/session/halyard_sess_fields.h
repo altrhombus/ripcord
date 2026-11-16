@@ -16,8 +16,8 @@
  * CONFIDENCE LEVELS carry over unchanged: the registkey zero-padding, the RP-Did fixed-structure shape
  * and the "WinX.Y" string are wire-confirmed [V]. RP-StartBitrate/RP-StreamingType's little-endian 4-byte
  * encoding is tentative [X] - it does not appear in any verified vector on either side of this port,
- * only in shipped (but unverified) behaviour. That uncertainty is the protocol's, not an
- * artifact of independent derivation - porting the .NET code directly doesn't resolve it, only a live capture would.
+ * only in shipped (but unverified) behaviour. That uncertainty is the protocol's, not this port's:
+ * porting the .NET code directly doesn't resolve it, only a live capture would.
  */
 #ifndef HALYARD_SESS_FIELDS_H
 #define HALYARD_SESS_FIELDS_H

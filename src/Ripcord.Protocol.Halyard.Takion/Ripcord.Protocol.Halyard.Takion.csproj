@@ -17,7 +17,7 @@
     <PackageReference Include="Grpc.Tools" Version="2.67.0" PrivateAssets="All" />
   </ItemGroup>
 
-  <!-- Control-plane schema. The .proto files are the committed, independently derived wire contract; codegen reads them
+  <!-- Control-plane schema. The .proto files are the committed wire contract; codegen reads them
        in place from docs/protocol (ProtoRoot resolves the bandwidth_probe import). Message-only, no gRPC. -->
   <ItemGroup>
     <Protobuf Include="..\..\docs\protocol\stream_control.proto" ProtoRoot="..\..\docs\protocol" GrpcServices="None" />

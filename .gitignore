@@ -65,9 +65,8 @@ account.json
 pairing.txt
 
 ## Ripcord: per-machine Claude Code state. Local tool-permission grants, of use to nobody
-## else, and they record the paths this machine happened to read - including comparison reads
-## of other implementations, which are a permitted audit but have no business in a public
-## tree whose central claim is independent derivation. Findings belong in the captures folder.
+## else, and they record the paths this machine happened to read, which have no place in a public
+## tree. Anything worth keeping belongs in the captures folder.
 .claude/
 
 ## Ripcord: root-level project prose was withheld pending the same publication review, and now
