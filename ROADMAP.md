@@ -261,8 +261,8 @@ purchased signing certificate.
       `0x05` come from the public layout, not our capture `[X]`. Capture one. Same for the DualSense Edge id.
 - [ ] **A pad and the keyboard together**, which the merge handles in tests but no two real devices have tried,
       and keyboard play on the Ally.
-- [ ] **Unconfirmed input values:** D-pad up/down assigned by elimination, the touchpad click's code, motion
-      full scale, orientation packing, and the history parser's last 35%. None affect streaming today.
+- [ ] **Unconfirmed input values:** motion full scale, orientation packing, and the history parser's last 35%.
+      None affect streaming today.
 - [ ] **DualSense output:** haptics, adaptive triggers, lightbar, gyro calibration, touchpad drag.
 
 ### The Rust engine

@@ -916,8 +916,8 @@ off 0xc..  ...   AES-CTR-encrypted payload
 
   | Code | Button | Form | Evidence (first press) |
   |---|---|---|---|
-  | `0x80` | D-pad Up | 3-byte | by elimination — see caveat |
-  | `0x81` | D-pad Down | 3-byte | by elimination — see caveat |
+  | `0x80` | D-pad Up | 3-byte | `rp_input_v2`, timed — see note (1) |
+  | `0x81` | D-pad Down | 3-byte | `rp_input_v2`, timed — see note (1) |
   | `0x82` | D-pad Left | 3-byte | t=87.8 s |
   | `0x83` | D-pad Right | 3-byte | t=89.1 s |
   | `0x84` | L1 | 3-byte | t=91.4 s |
@@ -933,19 +933,23 @@ off 0xc..  ...   AES-CTR-encrypted payload
   | `0x8e` | PS | 2-byte | t=0.0 s (used to open the session) |
   | `0x8f` | L3 | 2-byte | t=114.5 s |
   | `0x90` | R3 | 2-byte | t=115.8 s |
+  | `0x91` | Touchpad click | 2-byte | `rp_input_labels`, timed — see note (2) |
 
   The 3-byte/2-byte split falls exactly at `0x8b`/`0x8c`, which is what makes the form predictable from the
   code alone. **L2/R2 being analog is independently proven**: their state bytes take 57 and 52 distinct
   values across the session, whereas every other 3-byte code only ever carries `0x00` or `0xff` — so the
   third byte is a 0–255 level for those two and a boolean for the rest.
 
-  > **Caveats.** (1) D-pad **Up/Down** (`0x80`/`0x81`) are assigned *by elimination*: both were pressed
-  > during the earlier period when input was misbehaving, so their first-press timestamps predate the
-  > scripted D-pad step and cannot order them. Left/Right are directly timed. Confirming Up vs Down needs
-  > one clean press of each — cheap to add to a future capture. (2) **Touchpad click has no code here.** The
-  > scripted touchpad step produced no eighteenth code, so it is either carried by the `00 00 00 21` family
-  > or was not registered; do not invent a code for it. (3) The parser reaches 65% of history packets; the
-  > rest contain at least one further subtype still to be decoded.
+  > **Notes.** (1) In `cap48`, D-pad **Up/Down** were both pressed during an earlier stretch of misbehaving
+  > input, so their first presses there can't order them. Two later captures of the vendor client, with a
+  > known press order, settle it [V]: in `rp_input_v2` (2026-10-19) the first `0x80` press comes 1.9 s
+  > before the first `0x81` press, the scripted Up-then-Down step. (2) **Touchpad click** produced no code
+  > in `cap48`. `rp_input_labels` (2026-10-19) pressed L3, R3, PS and touchpad-click in that order, twice;
+  > the first presses come in as `0x8f`, `0x90`, `0x8e` and `0x91` at the script's ~6.6 s spacing, and the
+  > repeat matches [V]. A separate base code `0x7f` (pressed `0x9f`) appears when the touchpad surface is
+  > touched, not clicked. Those captures are of v2 sessions; the codes `0x80`–`0x90` they share with `cap48`
+  > (v1) are identical. (3) The parser reaches 65% of history packets; the rest contain at least one further
+  > subtype still to be decoded.
 
 Stick **Y is inverted** relative to the GameInput convention: the console wire expects stick-up = negative.
 This is now **[V]** from `cap48` independently of the earlier live-play observation — the scripted "full up"
