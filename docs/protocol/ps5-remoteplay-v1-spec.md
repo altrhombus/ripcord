@@ -420,9 +420,13 @@ class-specific offsets (from `FUN_100ce1a0`, **[C]**):
 >
 > **Congestion packet layout is version-specific.** `cap47` carries a **15-byte** type-5 packet:
 > `[0]=0x05`, `[1..2]=0` (zero in all 474), `[3..4]` u16 BE received (2..351 per interval), `[5..6]` u16 BE
-> lost (**0 in every packet** — that session had no loss, so the field's *position* is confirmed but its
-> meaning is inferred), `[7..10]` GMAC, `[11..14]` key position. Send cadence measured at min 201 ms /
+> lost (**0 in every packet**, since that session had no loss), `[7..10]` GMAC, `[11..14]` key position. Send cadence measured at min 201 ms /
 > median 216 ms / p90 219 ms → a **~200 ms** interval **[V]**.
+> **`lost` counts loss [W] (2026-11-16).** In the lossy `cap54` and `cap55` the same 15-byte packet carries
+> a non-zero `[5..6]` in 29 of 311 and 18 of 142 reports, and nowhere else; it rises and falls with the gaps
+> in the console's A/V packet indices over the same interval (for example 406 against 183 gaps, 1 against 1),
+> while `[1..2]` stays zero. What it counts exactly (packets or units, before or after FEC recovery) is
+> **[X]**: its totals (946, 938) don't equal the index gaps the capture saw (1,521, 1,668).
 > Our earlier `session8` capture shows a **23-byte** variant of the same base type: `[1..2]` a sequence
 > number (+3 per packet), `[3..4]` a 16-bit **90 kHz timestamp** (≈19 440 ticks per 216 ms interval,
 > matching the media clock), `[5..8]` a monotonic cumulative counter, `[9..12]` a per-interval count,
@@ -1180,7 +1184,7 @@ The **wire format and handshake are now validated** (§8, `[V]`). What's left is
 Takion DATA/SACK loop, not wire format: RTO computation, retransmit timers, and send/receive window
 sizing (the advertised window is `a_rwnd = 0x19000`). For a **clean-LAN first picture** a minimal
 in-order + timeout-retransmit of DATA/SACK is sufficient; fuller fidelity only matters on lossy links.
-Congestion is reported via base-type-5 packets — **about every 200 ms** (§3, `[V]`), `{received u16, lost u16}` counts (`lost` is inferred, §3).
+Congestion is reported via base-type-5 packets — **about every 200 ms** (§3, `[V]`), `{received u16, lost u16}` counts (`lost` is wire-observed tracking loss, its exact unit `[X]`, §3).
 Media-side remainder (FEC is fully settled as of 2026-08-02 — §6.2): the pre-stream **bandwidth/MTU
 probe** (§6) — a Takion sub-flow using the [`bandwidth_probe.proto`](bandwidth_probe.proto) message set.
 Its **sequence ordering is [W]** as of 2026-08-02, wire-observed identically in two of our own independent

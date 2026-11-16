@@ -483,9 +483,9 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                 var packet = new byte[CongestionPacketSize];
                 packet[0] = CongestionPacketType;
                 // packet[1..2] is 0 in all 474 congestion packets of cap47 [V]. Layout derived 2026-07-29
-                // from that capture: received @3 (u16 BE, 2..351 per interval), lost @5 (u16 BE, 0 in every
-                // packet of that zero-loss session — so its position is confirmed but its semantic is
-                // inferred), GMAC @7, key position @11. See spec §3.
+                // from that capture: received @3 (u16 BE, 2..351 per interval), lost @5 (u16 BE, 0 in that
+                // zero-loss session, non-zero and tracking loss in the lossy cap54/cap55 [W]; its exact unit
+                // is [X]), GMAC @7, key position @11. See spec §3.
                 //
                 // Version caveat: this 15-byte form is what cap47 shows. Our older session8 capture shows a
                 // 23-byte variant of the same base type (sequence @1, 90 kHz timestamp @3, GMAC @15, key
