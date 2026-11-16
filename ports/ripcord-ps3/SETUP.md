@@ -349,7 +349,7 @@ by its tag, so spending one of your numbers on it would hand out an id nothing r
 locally: `make pkg RELEASE_TAG=ps3-v1.0`. A tag that is not `ps3-v<major>.<minor>` is a hard error rather
 than a silent `00.00`.
 
-**The port versions independently of the Windows client** — `ps3-v1.0` says this port runs, streams and
+**The port versions independently of the dotnet client** — `ps3-v1.0` says this port runs, streams and
 pairs, and says nothing about `ROADMAP.md`'s 1.0, whose criteria are about the app.
 
 **Installing replaces `USRDIR`, so back up `pairing.txt` first** if the console is paired, or it has to be

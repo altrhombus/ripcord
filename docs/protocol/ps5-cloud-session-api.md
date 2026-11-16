@@ -344,13 +344,13 @@ The **`v2`** `remotePlay` command carries three ephemerals and, unlike the v1 pa
 and `protocolVer`. The console returns the registration **seed** in `customData1` — the same v1
 account-seed-delivery value — which the client recovers with the v1 field cipher. **This is not the stream
 `handshakeKey` `X`** (that is client-random; see the correction below). Captured end to end over three `v2`
-sessions (`rp_cdd.log` / `rp_aeskey*.log`, 2026-10-21/22; live values in `X-RESOLUTION-BATCH-2026-10-20.md`,
-not reproduced here), cross-checked across the `remotePlay` POST, the `remotePlaySessions` readback, the native
-`setHandshakeKey` value, and Ghidra decompilation:
+sessions (`rp_cdd.log` / `rp_aeskey*.log`, 2026-10-21/22; live values not reproduced here), cross-checked across the `remotePlay` POST, the
+`remotePlaySessions` readback, the value passed to the native handshake-key setter (`FUN_11a160`), and Ghidra
+decompilation:
 
 1. The client mints **three** ephemeral 16-byte values and sends them in the `remotePlay` `commands` call as
    `data1`, `data2`, `data3` — plus `supportCmd` (`"120000"`) and `protocolVer` (`"1.0"`). `data1`/`data2` are
-   the field-cipher key/material (`osslRAND`-generated); `data3` is the control companion `= K16`. Field order:
+   the field-cipher key/material (from OpenSSL's random generator, `FUN_1d1da0`); `data3` is the control companion `= K16`. Field order:
    `accountId, roomId, sessionId, clientType, data1, data2, supportCmd, protocolVer, data3` `[C]`.
 2. The console joins as the **`PROSPERO`** member and sets **`customData1`** (double-base64 over a 17-byte
    ciphertext), readable from `GET remotePlaySessions` as well as the push channel.
@@ -360,10 +360,9 @@ not reproduced here), cross-checked across the `remotePlay` POST, the `remotePla
    own decrypt (`FUN_1f5a70`, OpenSSL CFB128) produces the same bytes. The seed feeds registration/auth
    (`RP-Auth`), as in v1.
 
-> **Correction (2026-10-22): the stream `handshakeKey` `X` is NOT in `customData1`.** Earlier notes here and in
-> `X-ORIGIN-*` guessed that `customData1` sealed `X` and chased a seed→X KDF (~7,700 candidates, all missing).
+> **Correction (2026-10-22): the stream `handshakeKey` `X` is NOT in `customData1`.** Earlier notes guessed that `customData1` sealed `X` and chased a seed→X KDF (~7,700 candidates, all missing).
 > Static RE of the vendor's launchSpec builder (`FUN_9ee50`) settled it: `X` is **16 client-random bytes**
-> (a no-input RNG callback, `osslRAND` fallback) base64-encoded into the launchSpec `handshakeKey` field and sent
+> (a no-input RNG callback, falling back to OpenSSL's random generator) base64-encoded into the launchSpec `handshakeKey` field and sent
 > to the console — the unchanged v1 handshakeKey mechanism. It is not derived from `customData1`, the seed, or
 > `data1/2/3`; it is random, which is why no derivation reproduced it. The console "holds" `X` only because it
 > received it in the launchSpec (and then signs its stream pubkey with it). `customData1 → seed` and

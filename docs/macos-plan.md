@@ -24,9 +24,9 @@ Windows layer as a reference for them, not as code.
 | Question | Decision |
 |---|---|
 | Minimum OS | **macOS 26.** Liquid Glass is native there, so no second, glass-less version of each surface has to be designed |
-| Architecture | **Apple Silicon only.** Same reasoning as the Windows client shipping x64 only: it is the architecture that can be tested |
+| Architecture | **Apple Silicon only.** Same reasoning as the dotnet client shipping x64 only: it is the architecture that can be tested |
 | Distribution | **Developer ID, notarized, direct download** is the primary release. See "The App Store" below |
-| First-release scope | **At least feature parity with the Windows client as of 2026-09-24**, including internet play and account sign-in |
+| First-release scope | **At least feature parity with the dotnet client as of 2026-09-24**, including internet play and account sign-in |
 | Protocol core | **The Rust engine** in [`engine-plan.md`](engine-plan.md), since Phase 3's relink on 2026-09-26. It was first `libripcord`, the portable C core, brought up to parity and proved on hardware; see "Why the C core" below for why a C-ABI core was chosen at all |
 | Location | **`src/Ripcord.Mac/`**, beside `Ripcord.App` |
 | Build | **An Xcode project, not a Swift package.** First because a package could not compile the C core from where it lived; the app and its extensions need a project anyway. See [`../src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
@@ -84,7 +84,7 @@ Divide by the kind of work, not by the language each piece happens to be in toda
 | Video, audio, input | **Swift** over Apple frameworks | VideoToolbox into `AVSampleBufferDisplayLayer`, Opus through Core Audio, the GameController framework |
 | Credentials | **Keychain** | The Mac's DPAPI, and where a Mac user expects secrets to live |
 
-## Parity: the Windows client as of 2026-09-24
+## Parity: the dotnet client as of 2026-09-24
 
 The first release is not done until each of these works on the Mac:
 

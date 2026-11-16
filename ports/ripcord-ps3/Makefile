@@ -138,7 +138,7 @@ TITLE     = Ripcord
 # deleted by hand - established on hardware, see the ceiling note on BUILD_NO. A release sits at 01.00
 # and gets nowhere near it.
 #
-# THE PS3 PORT VERSIONS INDEPENDENTLY of the Windows client, which is why the tag has its own namespace.
+# THE PS3 PORT VERSIONS INDEPENDENTLY of the dotnet client, which is why the tag has its own namespace.
 # ps3-v1.0 is a claim about this port and says nothing about ROADMAP.md's 1.0, whose criteria are written
 # about the app and are not met.
 #

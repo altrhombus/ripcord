@@ -3880,7 +3880,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
      *
      * Each stage now names itself, in the console's own words rather than the protocol's: somebody
      * waiting is owed what is being attempted, not which datagram is in flight. The names come from the
-     * Windows client's vocabulary, which has had the same argument already.
+     * dotnet client's vocabulary, which has had the same argument already.
      */
     say(RC_PHASE_DISCOVERING, "Connecting",
         rec.name[0] != '\0' ? rec.name : "Looking for the console", NULL);

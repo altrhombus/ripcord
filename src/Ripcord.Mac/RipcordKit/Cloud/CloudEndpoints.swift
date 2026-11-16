@@ -46,7 +46,7 @@ public enum CloudEndpoints {
 /// front-end 400s an upgrade without the subprotocol and expects the `X-PSN-*` set.
 ///
 /// **They say Windows, and stay saying Windows.** `OsVersion` is the captured value. Whether the service
-/// would accept a Mac-shaped one is [X]: nothing has tested it, and the Windows client has shown this one
+/// would accept a Mac-shaped one is [X]: nothing has tested it, and the dotnet client has shown this one
 /// works. The same goes for the `Windows` client type the connect command carries.
 public enum PushHeaders {
     /// The subprotocol the push front-end requires; omitting it is a 400.

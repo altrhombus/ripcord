@@ -16,14 +16,19 @@ This page covers the dotnet client on Windows.
   session, Ripcord asks two of them what your public address looks like from outside your router, comparing
   the answers to learn how your router maps ports, so the console knows where to reach you. Each request
   carries nothing but a random number; the servers see your public IP address, as any server you contact does.
+- **The sign-in page's own traffic**, while it is open. It is Sony's web page, shown in Microsoft's WebView2
+  browser component, and it loads whatever Sony's page loads. WebView2 is part of Windows and makes its own
+  connections (for example, to keep itself up to date) under Microsoft's privacy statement.
 
-That is the whole list. Ripcord makes no other network connections of its own.
+Apart from those, Ripcord makes no network connections of its own.
 
-**An identifier for this PC.** Signing in sends Sony an ID made from this PC's Windows machine ID (the
-`MachineGuid` in the registry, which any app on the PC can read), so Sony can tell your devices apart.
+**An identifier for this PC.** Signing in sends Sony an ID that contains this PC's Windows machine ID (the
+`MachineGuid` in the registry, which any app on the PC can read) behind a fixed prefix, so Sony can tell your
+devices apart.
 Pairing through your account and playing over the internet send a value hashed from that ID, to Sony's servers
-and to your console. Pairing by code uses random bytes instead. Nothing else about
-your PC is sent.
+and to your console. Pairing by code uses random bytes instead. Sign-in also
+tells Sony your Windows display language, and an internet session tells Sony and your console this PC's
+address on your own network, so the console can try the shortest path. Nothing else about your PC is sent.
 
 **One thing to know about signing in.** Ripcord asks PlayStation Network for the same set of permissions the
 official client asks for, and one of them, `sbahn:pc.telemetry.publish`, would allow sending usage data to
@@ -37,8 +42,8 @@ folder, in that folder instead), apart from two things listed after the table:
 
 | File | What it holds |
 |---|---|
-| `consoles.json` | The consoles you paired: names, addresses, and each console's pairing credential, encrypted with Windows DPAPI for your user account |
-| `account.json` | If you signed in, your PlayStation Network refresh token, encrypted the same way |
+| `consoles.json` | The consoles you paired: names, addresses, each console's system version and identifiers, in plain text, and each console's pairing credential, encrypted with Windows DPAPI for your user account |
+| `account.json` | If you signed in, your PlayStation Network refresh token, encrypted the same way, and your account ID and display name in plain text |
 | `settings.json` | Your settings and controller bindings |
 | `WebView2\` | The sign-in page's browser profile, including Sony's sign-in cookies |
 | `state\crash.log` | What went wrong, if the app crashed |

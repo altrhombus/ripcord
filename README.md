@@ -36,7 +36,7 @@ This is the flagship, and the one heading for 1.0. It's been run against real co
   unpacking the stream to the frame on screen. Video is decoded on the GPU (H.264 and HEVC, 10-bit and HDR
   included) and presented through D3D12.
 - **Play from anywhere.** Across the internet, both ends behind NAT, no port forwarding: it finds a direct
-  peer-to-peer path, and a stream from a phone hotspot looks just like one on the LAN.
+  peer-to-peer path. It has streamed from a phone hotspot, though not every attempt from one connects yet.
 - **Pairing every way.** Type the console's code, or sign in to PlayStation Network and pick your console. It
   wakes a console from rest, locally or over the internet, and handles a locked profile's passcode.
 - **The controller you already have.** An Xbox pad, a DualSense over USB or Bluetooth (PS button and touchpad
@@ -238,7 +238,7 @@ documentation). Where a value is an assumption rather than something our own evi
 Vendor code is cited by address only; no vendor source, symbol names or log strings are reproduced.
 
 Two generic values recovered from the vendor client are committed on purpose: about 4 KB of protocol
-constants the console computes against, and the application OAuth credential the vendor's own client signs
+constants the console computes against (a registration-authentication key among them), and the application OAuth credential the vendor's own client signs
 in with. Each is identical for every user and console, each can be left out of a build
 (`-p:BundleInteropConstants=false`, `-p:BundleOAuthClient=false`), and nothing tied to any user, console or
 account is included. [`NOTICE`](NOTICE) describes the methods and both values in full, and

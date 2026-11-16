@@ -9,8 +9,8 @@ namespace Ripcord.Cloud.Halyard;
 /// <summary>
 /// OAuth2 client for account sign-in: the initial authorization-code exchange (after the user signs
 /// in via the account web flow / passkey) and the refresh-token grant used on subsequent runs.
-/// Structure from docs/protocol/ps5-cloud-session-api.md. The client credential is supplied via
-/// <see cref="HalyardClientConfig"/> - never Sony's embedded one.
+/// Structure from docs/protocol/ps5-cloud-session-api.md. The client credential comes from
+/// <see cref="HalyardClientConfig"/>: an override if one is set, otherwise the bundled one (NOTICE).
 /// </summary>
 public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig config)
 {

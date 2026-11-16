@@ -151,7 +151,7 @@ Five v2 hardware captures and a headless-Ghidra dig to answer one question — w
 turn was most of the work.
 
 The lead was `customData1`. On a v2 connect the client mints three ephemerals (`data1`/`data2`/`data3`,
-`osslRAND`-generated), sends them in the `remotePlay` command (with `supportCmd`/`protocolVer`, which v1 pairing
+from OpenSSL's random generator), sends them in the `remotePlay` command (with `supportCmd`/`protocolVer`, which v1 pairing
 omits), the console joins as `PROSPERO` and returns `customData1`, and the client decrypts it. That decrypt
 **is** the v1 account-seed-delivery, byte-exact over three sessions: `seed = AES-128-CFB(key=data1,
 IV=HMAC-SHA256(selectorOne, data2‖be64(0)))` — literally `HalyardAccountSeedDelivery.RecoverSeed`. Confirmed by
@@ -159,11 +159,11 @@ hooking the vendor's own cipher (`FUN_1f5a70`): its output equals ours. So `cust
 already in our code.
 
 The mistake was assuming that seed **was** `X` (or derived into it). It is not — the recovered seed never
-matched the handshakeKey the client fed `setHandshakeKey`, and no construction over {seed, data1/2/3, the
+matched the handshakeKey the client fed its handshake-key setter (`FUN_11a160`), and no construction over {seed, data1/2/3, the
 bundled tables, the control keys} reproduced `X` (thousands of candidates, three clean KATs, raw-SHA and
 AES-NI paths included). Capture after capture, `X` appeared in no cipher output, no HMAC, no GCM/EVP message,
-and on no wire — only at `setHandshakeKey`. Decompiling the vendor's launchSpec builder (`FUN_9ee50`) finally
-showed why: `X` is **16 client-random bytes** — a no-input RNG callback (`osslRAND` fallback) → base64 → the
+and on no wire — only at that setter. Decompiling the vendor's launchSpec builder (`FUN_9ee50`) finally
+showed why: `X` is **16 client-random bytes** — a no-input RNG callback (falling back to OpenSSL's random generator) → base64 → the
 launchSpec `handshakeKey` field → sent to the console. The unchanged v1 mechanism. It isn't derived from
 anything, which is exactly why nothing derived it; the console "holds" it only because the client sent it.
 
@@ -177,7 +177,7 @@ handshakeKey for v2 — it now carries the random key exactly like v1; and corre
 model (it is the seed readback). Suite 1049 passed / 6 skipped.
 
 The full forensic trail — five captures, the Ghidra RVA map, every ruled-out derivation — is in the
-captures-folder notes (`X-RESOLUTION-BATCH-2026-10-20.md`, `GHIDRA-WORKLIST-X-SEAL.md`).
+captures-folder notes.
 
 ### The showcase: Ripcord's own screens, finished (2026-10-09)
 

@@ -4,8 +4,8 @@ using Ripcord.ProtocolLab;
 // real hardware and captures, without the full UI. Stages 0-4 of docs/history/phase1-lan-build-plan.md.
 //
 // Cloud commands read the OAuth client credential from the environment (RIPCORD_CLIENT_ID,
-// RIPCORD_CLIENT_SECRET, RIPCORD_REDIRECT_URI) or from client.json in the config directory, so no
-// secret is embedded. `signin` stores a refresh token in the same account.json the app reads, so
+// RIPCORD_CLIENT_SECRET, RIPCORD_REDIRECT_URI), from client.json in the config directory, or from the
+// credential this build bundles (NOTICE), in that order. `signin` stores a refresh token in the same account.json the app reads, so
 // signing in here signs the app in too; RIPCORD_REFRESH_TOKEN still works for a token obtained
 // out of band.
 
