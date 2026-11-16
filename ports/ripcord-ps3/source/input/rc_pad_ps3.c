@@ -67,8 +67,8 @@ static int16_t deadzone(int16_t v)
  * seconds and 118 connect/disconnect events, which is the pad apparently vanishing and returning
  * between every pair of frames.
  *
- * It cost more than the counters. A poll that reported "no pad" sent NOTHING - so the 200 ms state
- * keepalive never ran, and the console heard from the controller about once a second.
+ * It cost more than the counters. A poll that reported "no pad" sent NOTHING - so no periodic state
+ * packet went out, and the console heard from the controller about once a second.
  *
  * Presence is now decided by info.status alone, which is the field that actually answers it, and the
  * last good reading is held and re-sent while the pad has nothing new to say. That is also the truth:

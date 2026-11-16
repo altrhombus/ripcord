@@ -165,14 +165,12 @@ static rc_audio g_audio;
 static halyard_input_writer g_input;
 static long g_input_state_packets, g_input_history_packets;
 static u64 g_last_input_ms;
+static u64 g_last_input_history_ms;
 static u64 g_last_input_poll_ms;
 
-/*
- * State cadence. The .NET writer re-sends a state packet every 200 ms when nothing analog moved; that is
- * OUR policy rather than a wire requirement, and the note there is honest that lengthening it risks a
- * console-side timeout nobody has tested for. Matched rather than re-guessed.
- */
-#define INPUT_STATE_INTERVAL_MS 200u
+/* cap48's cadence: state every 15 ms, history on a transition and again every 200 ms. */
+#define INPUT_STATE_INTERVAL_MS 15u
+#define INPUT_HISTORY_REPEAT_MS 200u
 
 /*
  * INPUT IS POLLED ON A CLOCK, NOT ON THE LOOP.
@@ -1495,7 +1493,7 @@ static int run_media(int sock)
          *
          * Two packets, both sealed exactly like congestion: the shared up-direction key position, written
          * into the header before sealing, and a GMAC that zeroes ONLY the tag. A history packet goes
-         * whenever a button transitioned; a state packet on analog movement or every 200 ms otherwise.
+         * whenever a button transitioned and again every 200 ms; a state packet every 15 ms (cap48).
          *
          * Sent from the outer loop rather than the drain: input is a wall-clock activity like the
          * heartbeat, and the drain's period depends on load. Two phases of this port have already been
@@ -1523,9 +1521,13 @@ static int run_media(int sock)
 
             payload_len = halyard_input_build_history_payload(&g_input, &in, input_packet + HALYARD_INPUT_HEADER_LENGTH,
                                                               sizeof(input_packet) - HALYARD_INPUT_HEADER_LENGTH);
+            if (payload_len == 0 && now_ms - g_last_input_history_ms >= (u64)INPUT_HISTORY_REPEAT_MS)
+                payload_len = halyard_input_repeat_history_payload(&g_input, input_packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                                   sizeof(input_packet) - HALYARD_INPUT_HEADER_LENGTH);
             if (payload_len > 0) {
                 size_t total = HALYARD_INPUT_HEADER_LENGTH + payload_len;
 
+                g_last_input_history_ms = now_ms;
                 (void)halyard_input_write_header(0x01, g_input.history_seq++, input_packet, sizeof(input_packet));
                 input_key_pos = reserve_key_pos(total);
                 input_packet[4] = (uint8_t)(input_key_pos >> 24);
@@ -1554,8 +1556,7 @@ static int run_media(int sock)
                 g_input_history_packets++;
             }
 
-            if (memcmp(&in, &g_input.previous, sizeof(in)) != 0
-                || now_ms - g_last_input_ms >= (u64)INPUT_STATE_INTERVAL_MS) {
+            if (!g_input.have_previous || now_ms - g_last_input_ms >= (u64)INPUT_STATE_INTERVAL_MS) {
                 size_t total;
 
                 payload_len = halyard_input_build_state_payload(&in, input_packet + HALYARD_INPUT_HEADER_LENGTH,

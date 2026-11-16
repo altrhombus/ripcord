@@ -38,8 +38,11 @@
 #define HALYARD_INPUT_HEADER_LENGTH 0x0cu
 #define HALYARD_INPUT_STATE_PAYLOAD 0x1cu
 
-/* Big enough for the header plus a state payload, or a history packet of several events. */
-#define HALYARD_INPUT_MAX_PACKET 64u
+/* The longest history payload; cap48 shows none longer. */
+#define HALYARD_INPUT_HISTORY_LIMIT 100u
+
+/* Big enough for the header plus a state payload or a full history payload. */
+#define HALYARD_INPUT_MAX_PACKET (HALYARD_INPUT_HEADER_LENGTH + HALYARD_INPUT_HISTORY_LIMIT)
 
 /* Neutral, wire-facing controller snapshot. Sticks are s16, left/up NEGATIVE - established in cap48 from
  * the scripted excursions, where "full up" drove the left-Y field to -32767. */
@@ -89,19 +92,13 @@ typedef struct {
 #define HALYARD_PAD_R3         (1u << 16)
 
 /*
- * How many recent events every history packet repeats.
- *
- * NOT OPTIONAL, and leaving it out is what made input unusable on hardware. History packets are
- * CUMULATIVE with newest events first, and the console tracks button state from them - so a single
- * dropped packet loses a transition permanently. A press whose release never arrives leaves the console
- * believing the button is still held, which presents as input that is delayed, repeated, fighting itself,
- * or attributed to the wrong button entirely.
- *
- * Re-sending is free of risk because events carry ABSOLUTE state, not toggles: seeing the same press
- * twice is identical to seeing it once. Four is what the .NET writer uses.
+ * History packets are CUMULATIVE, newest event first, and the console tracks button state from them, so
+ * the writer keeps the newest events that fit in HALYARD_INPUT_HISTORY_LIMIT bytes. Re-sending is safe:
+ * events carry absolute state, not toggles.
  */
-#define HALYARD_INPUT_HISTORY_RESEND 4
+#define HALYARD_INPUT_EVENT_MIN 2
 #define HALYARD_INPUT_EVENT_MAX 3
+#define HALYARD_INPUT_HISTORY_EVENTS ((int)(HALYARD_INPUT_HISTORY_LIMIT / HALYARD_INPUT_EVENT_MIN))
 
 typedef struct {
     uint16_t state_seq;
@@ -111,9 +108,10 @@ typedef struct {
 
     /* Recent events, NEWEST FIRST - the ordering cap48 established, and what let the atomic event
      * boundaries be recovered in the first place (an older packet is a strict suffix of the next). */
-    uint8_t history[HALYARD_INPUT_HISTORY_RESEND][HALYARD_INPUT_EVENT_MAX];
-    uint8_t history_len[HALYARD_INPUT_HISTORY_RESEND];
+    uint8_t history[HALYARD_INPUT_HISTORY_EVENTS][HALYARD_INPUT_EVENT_MAX];
+    uint8_t history_len[HALYARD_INPUT_HISTORY_EVENTS];
     int history_count;
+    size_t history_bytes;
 } halyard_input_writer;
 
 void halyard_input_writer_init(halyard_input_writer *w);
@@ -135,6 +133,12 @@ size_t halyard_input_build_state_payload(const halyard_input_state *state, uint8
 size_t halyard_input_build_history_payload(halyard_input_writer *w,
                                            const halyard_input_state *state,
                                            uint8_t *buf, size_t buf_size);
+
+/*
+ * Writes the current history again, unchanged, newest first, without recording anything. Returns 0 when
+ * the history is empty or `buf` is too small. For the repeat while nothing transitions (cap48: 200 ms).
+ */
+size_t halyard_input_repeat_history_payload(const halyard_input_writer *w, uint8_t *buf, size_t buf_size);
 
 /* Writes the 12-byte header. Key position and tag are left zero for the sealer to fill. */
 size_t halyard_input_write_header(uint8_t type, uint16_t sequence, uint8_t *buf, size_t buf_size);

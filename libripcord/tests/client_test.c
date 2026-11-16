@@ -7,7 +7,7 @@
  * into halyard_client_policy.c so it could be held in place here, each with a hardware finding behind it:
  *
  *   the IDR latch      armed at the start (b141), re-requested every 200 ms until a keyframe (b124)
- *   the input cadence  history on a transition only, state on change or every 200 ms
+ *   the input cadence  cap48: state every 15 ms, history on a transition and every 200 ms unchanged
  *   the defaults       every zero in the config, and the one flag where zero could not mean "default"
  *
  * The API around them is checked where it does not need a console: argument validation, the struct size
@@ -329,39 +329,33 @@ static void test_input_cadence(void)
     CHECK(writer.have_previous == 1, "the caller-side previous is kept, as rc_connect.c 1406-1407 does");
     CHECK(writer.state_seq == 1u, "one state sequence consumed");
 
-    halyard_client_input_step(&cadence, &writer, &s, t + 4u, &out);
-    CHECK(out.state_length == 0u && out.history_length == 0u, "an unchanged pad 4 ms later: nothing");
+    s.left_x = 1200;
+    halyard_client_input_step(&cadence, &writer, &s, t + 8u, &out);
+    CHECK(out.state_length == 0u && out.history_length == 0u,
+          "a stick moving 8 ms later: nothing, state is on a fixed 15 ms period (cap48)");
 
-    halyard_client_input_step(&cadence, &writer, &s, t + 199u, &out);
-    CHECK(out.state_length == 0u, "still nothing at 199 ms");
-
-    halyard_client_input_step(&cadence, &writer, &s, t + 200u, &out);
-    CHECK(out.state_length > 0u && out.history_length == 0u,
-          "at 200 ms a still controller is reported anyway, with no history");
+    halyard_client_input_step(&cadence, &writer, &s, t + 15u, &out);
+    CHECK(out.state_length > 0u && out.history_length == 0u, "at 15 ms: state, no history");
 
     s.buttons = HALYARD_PAD_CROSS;
-    halyard_client_input_step(&cadence, &writer, &s, t + 204u, &out);
-    CHECK(out.history_length > HALYARD_INPUT_HEADER_LENGTH, "a press is a transition: history");
-    CHECK(out.state_length > 0u, "and a change: state, without waiting for the 200 ms");
+    halyard_client_input_step(&cadence, &writer, &s, t + 19u, &out);
+    CHECK(out.history_length > HALYARD_INPUT_HEADER_LENGTH && out.state_length == 0u,
+          "a press is a transition: history at once, state waits for its period");
     CHECK(writer.history_seq == 1u, "one history sequence consumed");
 
-    halyard_client_input_step(&cadence, &writer, &s, t + 208u, &out);
-    CHECK(out.history_length == 0u && out.state_length == 0u, "holding it: nothing new");
+    halyard_client_input_step(&cadence, &writer, &s, t + 150u, &out);
+    CHECK(out.history_length == 0u && out.state_length > 0u, "holding it: state only, before 200 ms");
 
-    s.left_x = 1200;
-    halyard_client_input_step(&cadence, &writer, &s, t + 212u, &out);
-    CHECK(out.history_length == 0u, "a stick is not a transition");
-    CHECK(out.state_length > 0u, "but it is a change");
+    halyard_client_input_step(&cadence, &writer, &s, t + 219u, &out);
+    CHECK(out.history_length > HALYARD_INPUT_HEADER_LENGTH,
+          "200 ms after the last history: the unchanged history again (cap48)");
+    CHECK(writer.history_seq == 2u, "a repeat consumes a history sequence");
 
     s.buttons = 0u;
-    halyard_client_input_step(&cadence, &writer, &s, t + 216u, &out);
+    halyard_client_input_step(&cadence, &writer, &s, t + 223u, &out);
     CHECK(out.history_length > 0u, "a release is a transition too");
-    CHECK(writer.history_seq == 2u && writer.state_seq == 5u, "sequences advance only for packets built (%u, %u)",
+    CHECK(writer.history_seq == 3u && writer.state_seq == 4u, "sequences advance only for packets built (%u, %u)",
           (unsigned)writer.history_seq, (unsigned)writer.state_seq);
-
-    s.right_trigger = 128u;
-    halyard_client_input_step(&cadence, &writer, &s, t + 220u, &out);
-    CHECK(out.history_length > 0u && out.state_length > 0u, "an analog shoulder moving is both");
 }
 
 /* ---- Bookkeeping on instances that never reach a console -------------------------------------------- */

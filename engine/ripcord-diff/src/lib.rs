@@ -1092,8 +1092,8 @@ impl CInput {
     /// One poll's HISTORY payload (empty when nothing changed), the writer's previous then advanced.
     pub fn history(&mut self, buttons: u32, sticks: [i16; 4], lt: u8, rt: u8) -> Vec<u8> {
         let _core = c_core();
-        let mut out = [0u8; 64];
-        // SAFETY: a live writer, four sticks, and a 64-byte buffer (the C side's packet bound).
+        let mut out = [0u8; 100];
+        // SAFETY: a live writer, four sticks, and a 100-byte buffer (the C side's history bound).
         let n = unsafe {
             diff_input_history(self.raw, buttons, sticks.as_ptr(), lt, rt, out.as_mut_ptr(), out.len())
         };

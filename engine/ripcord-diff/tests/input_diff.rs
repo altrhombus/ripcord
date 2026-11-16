@@ -1,11 +1,10 @@
 //! The controller-input writer against the C core's, on generated pad sequences.
 //!
-//! The STATE payload and both headers must match byte for byte. HISTORY differs by design in two respects,
-//! both recorded in engine/README.md: the engine follows the dotnet client's writer, which repeats four earlier
-//! events besides this poll's where C repeats four events in all, and orders a poll's simultaneous events
-//! L3 and R3 before Options, Create and PS where C puts them after. So the test compares polls, not bytes:
-//! newest first, each poll's events as a set, C's four-event window cut from the same sequence, and the two
-//! agreeing on when a HISTORY packet is owed at all.
+//! The STATE payload and both headers must match byte for byte. HISTORY differs by design in one respect,
+//! recorded in engine/README.md: the engine orders a poll's simultaneous events L3 and R3 before Options,
+//! Create and PS where C puts them after. So the test compares polls, not bytes: newest first, each poll's
+//! events as a set, both windows within 100 bytes, and the two agreeing on when a transition owes a HISTORY
+//! packet. The engine's 200 ms repeat is its own, and checked to be the previous payload unchanged.
 
 use ripcord_diff::*;
 use ripcord_proto::input::{self, State, Writer};
@@ -115,16 +114,16 @@ fn state_payloads_and_headers_match() {
 }
 
 #[test]
-fn history_is_c_s_four_events_and_the_same_decisions() {
+fn history_windows_hold_the_same_polls_within_one_hundred_bytes() {
     let mut rng = Rng::new(0x5eed_0502);
-    let mut longer = 0;
     for _ in 0..200 {
         let mut rust = Writer::new();
         let mut c = CInput::new();
         let mut previous = State::default();
         let mut history_seq = 0u16;
         let mut polls: Vec<Vec<Vec<u8>>> = Vec::new(); // each poll's events, newest poll first
-        let mut kept = 0usize;
+        let mut kept: Vec<Vec<u8>> = Vec::new(); // the engine's previous window
+        let mut last_payload: Vec<u8> = Vec::new();
         for poll in 0..200u64 {
             let s = if poll == 0 { State::default() } else { random_state(&mut rng, &previous) };
             let sticks = [s.left_x, s.left_y, s.right_x, s.right_y];
@@ -138,22 +137,27 @@ fn history_is_c_s_four_events_and_the_same_decisions() {
                         c_input_header(input::TYPE_HISTORY, history_seq)[..]
                     );
                     history_seq = history_seq.wrapping_add(1);
-                    let engine = events(&packet[input::HEADER_LENGTH..]);
-                    let c_events = events(&c_payload);
-                    // This poll's events, then the ones the engine kept from before (four at most).
-                    let fresh = engine.len() - kept;
-                    polls.insert(0, engine[..fresh].iter().map(|e| e.to_vec()).collect());
-                    kept = engine.len().min(input::HISTORY_RESEND);
-                    let total: usize = polls.iter().map(Vec::len).sum();
-                    assert_eq!(c_events.len(), total.min(input::HISTORY_RESEND), "C's window is four events");
-                    same_polls(&c_events, &polls);
-                    if engine.len() > c_events.len() {
-                        longer += 1;
+                    let payload = &packet[input::HEADER_LENGTH..];
+                    assert!(payload.len() <= input::HISTORY_LIMIT && c_payload.len() <= input::HISTORY_LIMIT);
+                    if c_payload.is_empty() {
+                        assert_eq!(payload, &last_payload[..], "a packet C did not owe is the unchanged repeat");
+                    } else {
+                        let engine = events(payload);
+                        // This poll's events lead; what follows is the front of the previous window.
+                        let fresh = (0..=engine.len())
+                            .find(|&k| {
+                                engine.len() - k <= kept.len()
+                                    && engine[k..].iter().zip(&kept).all(|(a, b)| *a == b.as_slice())
+                            })
+                            .expect("the window continues the previous one");
+                        polls.insert(0, engine[..fresh].iter().map(|e| e.to_vec()).collect());
+                        same_polls(&events(&c_payload), &polls);
+                        kept = engine.iter().map(|e| e.to_vec()).collect();
+                        last_payload = payload.to_vec();
                     }
                 }
             }
             previous = s;
         }
     }
-    assert!(longer > 0, "the generator never reached the case where the windows differ");
 }

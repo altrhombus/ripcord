@@ -124,26 +124,47 @@ size_t halyard_input_build_state_payload(const halyard_input_state *state, uint8
     return HALYARD_INPUT_STATE_PAYLOAD;
 }
 
-/* Prepend one event, pushing the oldest out. Newest-first is the wire's ordering, not a convenience. */
+/* Prepend one event, then drop the oldest until the list fits HALYARD_INPUT_HISTORY_LIMIT bytes. */
 static void push_event(halyard_input_writer *w, const uint8_t *event, size_t length)
 {
     int i;
+    int count = w->history_count < HALYARD_INPUT_HISTORY_EVENTS ? w->history_count
+                                                                : HALYARD_INPUT_HISTORY_EVENTS - 1;
 
-    for (i = HALYARD_INPUT_HISTORY_RESEND - 1; i > 0; i--) {
+    if (w->history_count > count)
+        w->history_bytes -= w->history_len[count];
+    for (i = count; i > 0; i--) {
         memcpy(w->history[i], w->history[i - 1], HALYARD_INPUT_EVENT_MAX);
         w->history_len[i] = w->history_len[i - 1];
     }
     memcpy(w->history[0], event, length);
     w->history_len[0] = (uint8_t)length;
-    if (w->history_count < HALYARD_INPUT_HISTORY_RESEND)
-        w->history_count++;
+    w->history_count = count + 1;
+    w->history_bytes += length;
+    while (w->history_bytes > HALYARD_INPUT_HISTORY_LIMIT) {
+        w->history_count--;
+        w->history_bytes -= w->history_len[w->history_count];
+    }
+}
+
+size_t halyard_input_repeat_history_payload(const halyard_input_writer *w, uint8_t *buf, size_t buf_size)
+{
+    size_t n = 0;
+    int i;
+
+    if (w == NULL || buf == NULL || w->history_count == 0 || buf_size < w->history_bytes)
+        return 0;
+    for (i = 0; i < w->history_count; i++) {
+        memcpy(buf + n, w->history[i], w->history_len[i]);
+        n += w->history_len[i];
+    }
+    return n;
 }
 
 size_t halyard_input_build_history_payload(halyard_input_writer *w,
                                            const halyard_input_state *state,
                                            uint8_t *buf, size_t buf_size)
 {
-    size_t n = 0;
     size_t i;
     uint32_t changed;
     int fresh = 0;
@@ -225,14 +246,8 @@ size_t halyard_input_build_history_payload(halyard_input_writer *w,
     if (!fresh)
         return 0;
 
-    /* Serialise the whole list, newest first - including events already sent, which is the point. */
-    for (i = 0; i < (size_t)w->history_count; i++) {
-        if (n + w->history_len[i] > buf_size)
-            break;
-        memcpy(buf + n, w->history[i], w->history_len[i]);
-        n += w->history_len[i];
-    }
-    return n;
+    /* The whole list, newest first - including events already sent, which is the point. */
+    return halyard_input_repeat_history_payload(w, buf, buf_size);
 }
 
 size_t halyard_input_write_header(uint8_t type, uint16_t sequence, uint8_t *buf, size_t buf_size)
