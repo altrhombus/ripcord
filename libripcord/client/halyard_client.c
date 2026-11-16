@@ -103,9 +103,8 @@
  */
 #define CLIENT_SESSION_AFTER_LOGIN_MS 30000u
 
-/* The stream channel's own cadences (rc_connect.c 804-811; HalyardTakionStream HeartbeatInterval and
- * CongestionInterval). The congestion window is also the stats window. */
-#define CLIENT_HEARTBEAT_MS  1000u
+/* The stream channel's congestion cadence (rc_connect.c 804-811; HalyardTakionStream CongestionInterval).
+ * The congestion window is also the stats window. */
 #define CLIENT_CONGESTION_MS  200u
 
 /* A/V datagrams taken per drain before yielding (rc_connect.h RC_AV_DRAIN_BURST, b91), and how many
@@ -196,7 +195,7 @@ struct halyard_client {
     halyard_input_writer writer;
     halyard_client_input_cadence cadence;
     halyard_client_idr_latch idr;
-    uint64_t next_input_ms, next_congestion_ms, next_heartbeat_ms;
+    uint64_t next_input_ms, next_congestion_ms;
     uint64_t window_start_ms, window_bytes;
     uint64_t last_activity_ms, last_video_ms;
     uint64_t packets_received, packets_lost;
@@ -294,6 +293,14 @@ static int send_bare(halyard_client *c, uint32_t type, unsigned channel)
     size_t length = takion_control_build_bare(type, message, sizeof(message));
 
     return length > 0u && takion_channel_send(&c->stream, channel, message, length);
+}
+
+/* The console starts every stream HEARTBEAT exchange and the client answers each one (cap48). A failed
+ * reply is not fatal: the next heartbeat gets its answer. */
+static void answer_heartbeat(halyard_client *c)
+{
+    if (send_bare(c, TAKION_CONTROL_HEARTBEAT, TAKION_CHANNEL_SESSION))
+        c->result.heartbeats_answered++;
 }
 
 /* ---- The control session, and the host's commands ---------------------------------------------------- */
@@ -451,6 +458,10 @@ static int await_control(halyard_client *c, takion_reliable_channel *ch, int is_
                 *out_length = length;
                 return 1;
             }
+            if (is_stream && type == TAKION_CONTROL_HEARTBEAT) {
+                answer_heartbeat(c);
+                continue;
+            }
             if (is_stream && type == TAKION_CONTROL_DISCONNECT) {
                 const char *reason = NULL;
                 size_t reason_length = 0u;
@@ -466,7 +477,7 @@ static int await_control(halyard_client *c, takion_reliable_channel *ch, int is_
                 end_request(c, HALYARD_CLIENT_END_CONSOLE_CLOSED);
                 return 0;
             }
-            continue;   /* heartbeats and the like: taken, not wanted */
+            continue;   /* taken, not wanted */
         }
         if (result == -1) {
             if (is_stream)
@@ -1123,7 +1134,6 @@ static void begin_streaming(halyard_client *c)
     halyard_client_idr_arm(&c->idr);
 
     c->next_input_ms = now;
-    c->next_heartbeat_ms = now;
     c->next_congestion_ms = now + CLIENT_CONGESTION_MS;
     c->window_start_ms = now;
     c->window_bytes = 0u;
@@ -1206,7 +1216,7 @@ static void send_periodic(halyard_client *c)
 {
     uint64_t now = rc_time_ms();
 
-    /* Input is a wall-clock activity like the heartbeat, not tied to how much video is arriving
+    /* Input is a wall-clock activity, not tied to how much video is arriving
      * (1229-1232). */
     if (c->cb.poll_input != NULL && halyard_client_timer_due(&c->next_input_ms, now, HALYARD_CLIENT_INPUT_POLL_MS))
         send_input(c, now);
@@ -1235,12 +1245,6 @@ static void send_periodic(halyard_client *c)
 
     /* Still blind? Ask again (1512-1518): the request is a demand for the repair, not an acknowledgement. */
     send_idr(c, now);
-
-    /* Ours to SEND, unprompted; the console's own need no reply (1520-1532). */
-    if (halyard_client_timer_due(&c->next_heartbeat_ms, now, CLIENT_HEARTBEAT_MS)) {
-        if (send_bare(c, TAKION_CONTROL_HEARTBEAT, TAKION_CHANNEL_SESSION))
-            c->result.heartbeats_sent++;
-    }
 }
 
 /*
@@ -1325,6 +1329,8 @@ static int poll_stream_control(halyard_client *c)
     if (type == TAKION_CONTROL_STREAM_INFO) {
         (void)send_bare(c, TAKION_CONTROL_STREAM_INFO_ACK, TAKION_CHANNEL_STREAM_INFO);
         c->result.stream_info_repeats++;
+    } else if (type == TAKION_CONTROL_HEARTBEAT) {
+        answer_heartbeat(c);
     } else if (type == TAKION_CONTROL_DISCONNECT) {
         const char *reason = NULL;
         size_t reason_length = 0u;
@@ -1911,9 +1917,6 @@ int halyard_client_pump(halyard_client *client, uint32_t *next_deadline_ms)
         uint32_t wait = CLIENT_MAX_WAIT_MS;
         uint32_t w;
 
-        w = halyard_client_timer_wait_ms(c->next_heartbeat_ms, now);
-        if (w < wait)
-            wait = w;
         w = halyard_client_timer_wait_ms(c->next_congestion_ms, now);
         if (w < wait)
             wait = w;

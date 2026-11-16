@@ -525,6 +525,11 @@ impl ScriptedLanConsole {
         self.frame = self.frame.wrapping_add(n);
     }
 
+    /// The console's heartbeat on the stream: it starts every exchange, and the client answers (cap48).
+    pub fn heartbeat(&mut self) -> Vec<u8> {
+        self.stream.data(CHANNEL_SESSION, &tc::build_bare(tc::HEARTBEAT))
+    }
+
     /// The console hanging up on the stream, with a reason.
     pub fn disconnect(&mut self, reason: &str) -> Vec<u8> {
         self.stream.data(CHANNEL_SESSION, &tc::build_disconnect(reason.as_bytes()))

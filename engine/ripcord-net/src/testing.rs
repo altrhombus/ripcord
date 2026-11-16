@@ -42,6 +42,8 @@ impl LoopbackConsole {
             let mut tcp: Option<TcpStream> = None;
             let mut client_stream = None;
             let mut last_frame = Instant::now();
+            let mut last_beat = Instant::now();
+            let mut keyed = false;
             let mut buf = vec![0u8; 65_536];
             while !stop2.load(Ordering::Relaxed) {
                 let mut c = state2.lock().unwrap();
@@ -83,7 +85,16 @@ impl LoopbackConsole {
                     && let Some(frame) = c.video_keyframe()
                 {
                     last_frame = Instant::now();
+                    keyed = true;
                     let _ = stream.send_to(&frame, to);
+                }
+                // The console starts every heartbeat exchange, about every 200 ms on a PS5 (cap48).
+                if let Some(to) = client_stream
+                    && keyed
+                    && last_beat.elapsed() > Duration::from_millis(200)
+                {
+                    last_beat = Instant::now();
+                    let _ = stream.send_to(&c.heartbeat(), to);
                 }
                 drop(c);
                 std::thread::sleep(Duration::from_micros(500));

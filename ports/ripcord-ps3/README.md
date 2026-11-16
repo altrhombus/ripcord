@@ -425,7 +425,7 @@ self-inflicted rather than anything the console did:
   sleeps only when nothing arrived.
 
 **The instrument is still flagging one thing**: the worst drain burst reaches the bound, 64 of 64.
-Benign at this bitrate — yielding every 64 packets is every ~300 ms against a 1000 ms heartbeat — and
+Benign at this bitrate — the drain checks its timers on every packet, so the bound only sets how often it yields — and
 recorded rather than tidied away, because it will matter if the bitrate rises.
 
 ## Colour conversion on the SPEs

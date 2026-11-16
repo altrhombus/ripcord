@@ -101,7 +101,6 @@
  * denominator was fiction.
  */
 #define CANDIDATE_DWELL_MS        8000u
-#define TAKION_HEARTBEAT_MS      1000u
 #define CONGESTION_INTERVAL_MS   200u
 /* 60 Hz. Integer milliseconds: 16 rather than 16.67, which paces slightly fast and so never starves the
  * display of a frame that is ready. */
@@ -445,6 +444,20 @@ static void seal_control_packet(void *ctx, uint8_t *packet, size_t length)
  * Bounded so a flood cannot starve the A/V drain - the same reasoning that caps the packet drain at 64.
  */
 #define CONTROL_DRAIN_LIMIT 8
+
+/* The console starts every stream HEARTBEAT exchange and the client answers it (cap48). */
+static void answer_stream_heartbeat(const uint8_t *message, size_t message_length)
+{
+    uint32_t type = 0xffffffffu;
+    uint8_t beat[8];
+    size_t beat_len;
+
+    if (!takion_control_peek_type(message, message_length, &type) || type != TAKION_CONTROL_HEARTBEAT)
+        return;
+    beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT, beat, sizeof(beat));
+    if (beat_len > 0)
+        (void)takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len);
+}
 
 static void service_control(void *ctx)
 {
@@ -1132,6 +1145,7 @@ static int run_stream(const halyard_pairing_record *rec)
                 uint32_t type = 0xffffffffu;
 
                 messages_seen++;
+                answer_stream_heartbeat(message, message_length);
                 if (takion_control_peek_type(message, message_length, &type)
                     && type == TAKION_CONTROL_SESSION_REPLY) {
                     rc_log("stream: SESSION_REPLY (%u bytes)\n", (unsigned)message_length);
@@ -1270,7 +1284,6 @@ static int run_media(int sock)
     size_t ack_len;
     u64 start_ms, elapsed_ms;
     double elapsed_secs;
-    u64 last_heartbeat_ms = 0;
     u64 last_congestion_ms = 0;
     int stream_info_seen = 0;
     int video_packets = 0;
@@ -1319,6 +1332,7 @@ static int run_media(int sock)
         if (takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length) == 1) {
             uint32_t type = 0xffffffffu;
 
+            answer_stream_heartbeat(message, message_length);
             if (takion_control_peek_type(message, message_length, &type)) {
                 if (type == TAKION_CONTROL_STREAM_INFO) {
                     takion_stream_info info;
@@ -1404,8 +1418,8 @@ static int run_media(int sock)
     rc_log("streaming - press HOME and close the app to end the session\n\n");
 
     /*
-     * 3. The media window. Keepalives run off the same tick as everything else: a 1 s Takion HEARTBEAT
-     * on channel 1 and a 200 ms congestion report, both required for the console to keep sending.
+     * 3. The media window. The console's Takion HEARTBEATs are answered as they arrive, and a 200 ms
+     * congestion report runs off the same tick as everything else.
      *
      * This build does NOT decode. It counts what arrives and whether it authenticates, which is the one
      * question worth answering first - the whole stream_demux/FEC layer has 2,808 host cases behind it
@@ -1435,13 +1449,6 @@ static int run_media(int sock)
         if (!g_control_alive)
             break;
 
-        if (now_ms - last_heartbeat_ms >= (u64)TAKION_HEARTBEAT_MS) {
-            uint8_t beat[8];
-            size_t beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT, beat, sizeof(beat));
-            if (beat_len > 0)
-                (void)takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len);
-            last_heartbeat_ms = now_ms;
-        }
         if (now_ms - last_congestion_ms >= (u64)CONGESTION_INTERVAL_MS) {
             /* 15 bytes: [0]=0x05, u16BE received at 3, u16BE lost at 5, tag at 7, key position at 0x0b.
              * Sealed with the same shared counter and the same tag+keypos-zeroed AAD as control. */
@@ -1606,7 +1613,8 @@ static int run_media(int sock)
                 unsigned channel_id;
                 const uint8_t *message;
                 size_t message_length;
-                (void)takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
+                if (takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length) == 1)
+                    answer_stream_heartbeat(message, message_length);
             } else {
                 n = recvfrom(sock, packet, sizeof(packet), 0, NULL, NULL);
                 if (n > 0 && (size_t)n >= STREAM_HEADER_LENGTH) {
@@ -1910,7 +1918,7 @@ static int run_media(int sock)
     }
     if (video_packets == 0 && audio_packets == 0) {
         rc_log("\x1b[31mFAIL\x1b[0m the console acked our STREAM_INFO_ACK and sent no media.\n");
-        rc_log("        Suspect the keepalives (1 s heartbeat, 200 ms congestion) or their sealing.\n");
+        rc_log("        Suspect the heartbeat replies, the 200 ms congestion report, or their sealing.\n");
     }
     return (video_packets > 0) ? 1 : 0;
 }

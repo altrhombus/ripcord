@@ -801,9 +801,6 @@ static unsigned long g_overlay_units_lost;
  * logic defines the rest of its own. */
 static unsigned g_idr_requests;
 
-/* The client's own heartbeat cadence on the stream channel, from the reference's one second. */
-#define RC_STREAM_HEARTBEAT_MS 1000u
-
 /*
  * How often the console is told what arrived. The reference's interval, and it is the rate controller's
  * sampling period rather than an arbitrary tick - reporting less often gives it less to adapt to.
@@ -1408,7 +1405,7 @@ static void send_input(rc_connect_result *out)
 }
 
 static void send_periodic(halyard_control_session *session, rc_connect_result *out,
-                          uint64_t *next_heartbeat, uint64_t *next_congestion)
+                          uint64_t *next_congestion)
 {
     uint64_t now = rc_time_ms();
 
@@ -1516,20 +1513,6 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
      */
     if (g_awaiting_keyframe)
         request_idr(now);
-
-    /*
-     * The stream channel's heartbeat, which is ours to SEND rather than to answer - the console's own
-     * need no reply. Easy to get backwards: on the control session the console asks and we reply.
-     */
-    if (now >= *next_heartbeat) {
-        uint8_t beat[8];
-        size_t beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT, beat, sizeof(beat));
-
-        if (beat_len > 0u
-            && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len))
-            out->heartbeats_sent++;
-        *next_heartbeat = now + RC_STREAM_HEARTBEAT_MS;
-    }
 }
 
 /*
@@ -1608,7 +1591,7 @@ static int timed_open_packet(void *ctx, uint8_t *packet, size_t packet_length,
 }
 
 static int drain_av(halyard_control_session *session, rc_connect_result *out,
-                    uint64_t *next_heartbeat, uint64_t *next_congestion)
+                    uint64_t *next_congestion)
 {
     int drained;
 
@@ -1636,7 +1619,7 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
          * by one. Checking them per drained packet costs two comparisons and removes the
          * tension, so the bound can be sized for the burst alone.
          */
-        send_periodic(session, out, next_heartbeat, next_congestion);
+        send_periodic(session, out, next_congestion);
 
         uint8_t peek[STREAM_HEADER_LENGTH];
         ssize_t peeked = recvfrom(g_stream_channel.sock, peek, sizeof(peek), MSG_PEEK,
@@ -3172,7 +3155,6 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
      */
     {
         uint64_t deadline;
-        uint64_t next_heartbeat;
         uint64_t next_congestion;
         uint64_t hold_ms;
         uint64_t hold_started;
@@ -3228,24 +3210,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
          * than asking on every iteration.
          */
         next_sysutil = rc_time_ms();
-        next_heartbeat = rc_time_ms();
         next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
         g_last_picture_ms = rc_time_ms();
 
         say(RC_PHASE_CONNECTING, "Connecting", "Waiting for the console to send video", NULL);
 
         while (deadline == 0ULL || rc_time_ms() < deadline) {
-            /*
-             * THE STREAM CHANNEL'S OWN HEARTBEAT, which is ours to send rather than to answer.
-             *
-             * Two separate mechanisms are easy to confuse here. On the control session the CONSOLE asks
-             * and we reply; on this channel the client sends unprompted once a second and the console's
-             * own heartbeats need no answer at all - HalyardTakionStream.cs is explicit that incoming
-             * ones require nothing. b70 saw six console messages in six seconds, the last of them type
-             * 0x0003, and this port was answering none of them and sending none of its own.
-             *
-             * Nothing has failed for want of it yet because six seconds is short. A stream is not.
-             */
+            /* The console starts every stream HEARTBEAT exchange and the client answers it (cap48). */
             unsigned channel_id = 0u;
             const uint8_t *message = NULL;
             size_t message_length = 0u;
@@ -3290,7 +3261,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                 break;
             }
 
-            send_periodic(session, out, &next_heartbeat, &next_congestion);
+            send_periodic(session, out, &next_congestion);
 
             /*
              * A STREAM THAT STOPS DOES NOT CLOSE THE SOCKET, which is why nothing noticed it before.
@@ -3341,7 +3312,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              * channel's heartbeats and the console's own messages are serviced by the loop outside
              * this one, and a sustained flood that never yields would starve them.
              */
-            drained = drain_av(session, out, &next_heartbeat, &next_congestion);
+            drained = drain_av(session, out, &next_congestion);
             /*
              * A negative peek is treated as "nothing waiting", not as an error, and deliberately so.
              * On this platform sockets are lv2 descriptors and errors surface through net_errno rather
@@ -3384,6 +3355,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                             (void)takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION,
                                                       ack, ack_len);
                         out->held_stream_info_repeats++;
+                    } else if (type == TAKION_CONTROL_HEARTBEAT) {
+                        uint8_t beat[8];
+                        size_t beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT,
+                                                                    beat, sizeof(beat));
+                        if (beat_len > 0u
+                            && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len))
+                            out->heartbeats_answered++;
                     }
                 }
             } else if (result == -1) {

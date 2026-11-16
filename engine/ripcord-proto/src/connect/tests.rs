@@ -142,11 +142,16 @@ fn a_lan_session_runs_from_the_arm_probe_to_video() {
     }));
     assert_eq!(r.s.outcome().stream_version, crate::takion::negotiator::CLIENT_VERSION);
 
-    // Blind at the start: the IDR latch asks straight away, then heartbeats and congestion run.
+    // Blind at the start: the IDR latch asks straight away, then congestion runs. No heartbeat goes out
+    // unprompted; the console's own is answered.
     r.s.set_controller(Some(crate::input::State { left_x: 100, ..Default::default() }));
-    r.run_until(|_| false, 1_000_000);
+    r.run_until(|_| false, 1_500_000);
     assert!(r.c.idr_requests >= 2, "re-asked every 200 ms until a keyframe: {}", r.c.idr_requests);
-    assert!(r.c.heartbeats >= 1);
+    assert_eq!(r.c.heartbeats, 0, "the console starts every heartbeat exchange");
+    let beat = r.c.heartbeat();
+    r.feed_stream(beat);
+    assert_eq!(r.c.heartbeats, 1);
+    assert_eq!(r.s.outcome().heartbeats_answered, 1);
     assert!(r.c.congestion_packets >= 4);
     assert!(r.c.input_packets >= 1);
     assert!(r.events.iter().any(|e| matches!(e, Event::Stats(_))));

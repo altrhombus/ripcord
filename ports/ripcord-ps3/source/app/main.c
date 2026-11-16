@@ -1008,8 +1008,8 @@ static int check_connect(void)
                     c.verify_failed);
         if (c.verify_dropped > 0UL)
             ps3_log("       %lu packet(s) DROPPED for failing authentication\n", c.verify_dropped);
-        ps3_log("       sent %u heartbeat(s) and %u congestion report(s) on the stream channel\n",
-                c.heartbeats_sent, c.congestion_sent);
+        ps3_log("       answered %u heartbeat(s) and sent %u congestion report(s) on the stream channel\n",
+                c.heartbeats_answered, c.congestion_sent);
         ps3_log("       A/V on the same socket: %u packet(s), %lu bytes - %u video, %u audio, %u other\n",
                 c.av_packets, c.av_bytes, c.av_video, c.av_audio, c.av_other);
         if (c.av_packets > 0u)
@@ -1035,7 +1035,7 @@ static int check_connect(void)
             ps3_log("       worst drain burst %u of %u%s\n", c.av_worst_burst, RC_AV_DRAIN_BURST,
                     (c.av_worst_burst >= RC_AV_DRAIN_BURST)
                         ? " - AT THE BOUND. Benign at this rate: yielding every 64 packets is every"
-                          " ~300 ms, and the heartbeat it protects is every 1000 ms. Worth watching if"
+                          " ~300 ms, and the drain checks its timers on every packet. Worth watching if"
                           " the bitrate rises."
                         : "");
             ps3_log("       units %ld received, %ld lost; %u loss event(s), %u IDR requested\n",

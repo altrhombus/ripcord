@@ -239,7 +239,7 @@ typedef struct {
     int stream_info_parsed;
     uint32_t stream_width, stream_height; /* what STREAM_INFO said, 0 until then */
     int stream_is_hevc;
-    uint64_t heartbeats_sent, congestion_sent, input_history_sent, input_state_sent;
+    uint64_t heartbeats_answered, congestion_sent, input_history_sent, input_state_sent;
     uint64_t stream_info_repeats;         /* STREAM_INFO re-sent by the console and re-acked */
     char console_disconnect_reason[64];   /* DISCONNECT's reason string, when the console hung up */
 

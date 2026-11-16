@@ -66,7 +66,6 @@ const ARM_SETTLE_US: u64 = 200_000;
 const SESSION_READY_WINDOW_US: u64 = 8_000_000;
 const STREAM_READY_WINDOW_US: u64 = 10_000_000;
 /// The stream channel's cadences; the congestion window is also the stats window.
-const HEARTBEAT_US: u64 = 1_000_000;
 const CONGESTION_US: u64 = 200_000;
 const INPUT_POLL_US: u64 = 4_000;
 /// One IDR repairs the whole chain; asking while the answer is in flight wastes upstream.
@@ -154,7 +153,6 @@ struct Streaming {
     writer: input::Writer,
     next_input: u64,
     next_congestion: u64,
-    next_heartbeat: u64,
     window_start: u64,
     window_bytes: u64,
     last_activity: u64,
@@ -389,7 +387,6 @@ impl Session {
         }
         at(self.stun.as_ref().and_then(|(_, g)| g.next_timeout()));
         if let Some(l) = &self.live {
-            at(Some(l.next_heartbeat));
             at(Some(l.next_congestion));
             if self.controller.is_some() {
                 at(Some(l.next_input));
@@ -718,7 +715,16 @@ impl Session {
         }
         if connection::is_control(data) {
             if let Some(s) = self.stream.as_mut() {
-                self.stream_messages.extend(s.on_datagram(now_us, data));
+                for m in s.on_datagram(now_us, data) {
+                    // The console starts every HEARTBEAT exchange and the client answers each one (cap48).
+                    if tc::peek_type(&m.payload) == Some(tc::HEARTBEAT) {
+                        if s.send(now_us, CHANNEL_SESSION, &tc::build_bare(tc::HEARTBEAT)).is_ok() {
+                            self.outcome.heartbeats_answered += 1;
+                        }
+                    } else {
+                        self.stream_messages.push_back(m);
+                    }
+                }
             }
             return;
         }
@@ -1662,8 +1668,7 @@ impl Session {
     }
 }
 
-/// Takes the first queued message of `want`, discarding the others before it (heartbeats and the like:
-/// taken, not wanted).
+/// Takes the first queued message of `want`, discarding the others before it (taken, not wanted).
 fn take_control(queue: &mut VecDeque<Message>, want: u32) -> Option<Vec<u8>> {
     while let Some(m) = queue.pop_front() {
         if tc::peek_type(&m.payload) == Some(want) {
@@ -2182,7 +2187,6 @@ impl Session {
             writer: input::Writer::new(),
             next_input: now,
             next_congestion: now + CONGESTION_US,
-            next_heartbeat: now,
             window_start: now,
             window_bytes: 0,
             last_activity: now,
@@ -2308,13 +2312,6 @@ impl Session {
             live.idr_last = Some(now);
             live.idr_requests += 1;
             let _ = stream.send(now, CHANNEL_SESSION, &tc::build_bare(tc::IDR_REQUEST));
-        }
-
-        if now >= live.next_heartbeat {
-            live.next_heartbeat = now + HEARTBEAT_US;
-            if stream.send(now, CHANNEL_SESSION, &tc::build_bare(tc::HEARTBEAT)).is_ok() {
-                self.outcome.heartbeats_sent += 1;
-            }
         }
     }
 
