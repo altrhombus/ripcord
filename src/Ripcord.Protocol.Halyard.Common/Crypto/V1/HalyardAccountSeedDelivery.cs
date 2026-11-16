@@ -28,7 +28,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 /// <b>Provenance.</b> Recovered from this project's own captures and binary analysis and verified byte-exact
 /// against the vendor client's own registration seed on multiple fresh account pairings (2026-08-31); the
 /// derivation and the wire mapping are recorded in <c>docs/protocol/ps5-cloud-session-api.md</c> and
-/// <c>ps5-session-establishment.md</c>.
+/// <c>ps5-remoteplay-v1-spec.md</c> §2.0.2.
 /// </para>
 /// </summary>
 public static class HalyardAccountSeedDelivery

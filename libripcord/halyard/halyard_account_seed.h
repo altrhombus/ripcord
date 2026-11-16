@@ -3,7 +3,7 @@
  *
  * Ported from src/Ripcord.Protocol.Halyard.Common/Crypto/V1/HalyardAccountSeedDelivery.cs, which carries
  * the provenance; the mechanism is written up in docs/protocol/ps5-cloud-session-api.md ("The no-PIN
- * registration seed") and ps5-session-establishment.md.
+ * registration seed") and ps5-remoteplay-v1-spec.md section 2.0.2.
  *
  * WHAT THE SEED IS. The PIN route folds a passcode the user reads off the console into a table entry.
  * The account route has no passcode; instead the CONSOLE generates a 16-byte seed and delivers it,

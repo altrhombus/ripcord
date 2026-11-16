@@ -2,7 +2,7 @@
 
 Status: draft, based on one capture session (see provenance log). Covers the **reconnect to an
 already-registered console** flow only — first-time registration/pairing was not captured yet
-(see `ps5-session-establishment.md` for why, and what's still needed).
+(see `ps5-v2-control-plane.md` for why, and what's still needed).
 
 Source: own packet capture of network traffic on the author's own LAN between a real PS5 console
 and a connected client, at IP/port level only. Capture and this document written 2026-07-10. See
@@ -17,7 +17,7 @@ documentation space, and client-side addresses are described rather than printed
 ## Scope of this document
 
 The low-level reliable-UDP-style framing layer carrying both the HTTP-style session-establishment
-exchange (`ps5-session-establishment.md`) and the binary `RPCS` control frames described below.
+exchange (`ps5-v2-control-plane.md`) and the binary `RPCS` control frames described below.
 Video/audio streaming (a separate UDP flow, different port) and controller-input framing are not
 covered here — see the "Not yet captured" section.
 
@@ -56,7 +56,7 @@ for anti-spoofing before committing more state to a new UDP peer.
 | 1 | 1 byte | Payload length | Exactly equals the length of the rest of the UDP payload (wire length minus the 42-byte Ethernet/IPv4/UDP prefix), in every packet checked. |
 | 2 | 4 bytes | Fixed magic constant | `24 4F 24 4F` in every capture checked so far - **not a per-session connection ID**. An earlier draft of this document called this "almost certainly a randomly generated per-session connection ID, comparable in purpose to a QUIC connection ID" - that was wrong. The identical value was found at this offset across four independently-established sessions (different client devices, different networks, different times), which a genuinely random per-session ID would not produce. It reads as a fixed protocol/session-type magic instead. |
 | 6 | 4 bytes | Unknown, varies per packet | Sequence/ack-like field - still not fully decoded. Now the leading candidate for whatever *does* identify a session/ordering at this layer, since the field once assumed to be a connection ID isn't one. |
-| 10+ | rest | Payload | Either an HTTP/1.1 request/response line (see `ps5-session-establishment.md`), the 4-byte ASCII magic `RPCS` marking a binary control frame (below), or a short frame with no visible payload beyond the header (22 or 30 bytes observed) - very likely a pure ACK for the RUDP layer, interleaved between the larger frames in both directions throughout the exchange. |
+| 10+ | rest | Payload | Either an HTTP/1.1 request/response line (see `ps5-v2-control-plane.md`), the 4-byte ASCII magic `RPCS` marking a binary control frame (below), or a short frame with no visible payload beyond the header (22 or 30 bytes observed) - very likely a pure ACK for the RUDP layer, interleaved between the larger frames in both directions throughout the exchange. |
 
 Every application-level frame (HTTP request/response or `RPCS` frame) was observed to be followed
 shortly after by one of these short ACK-like frames from the receiving side, consistent with a
@@ -502,7 +502,7 @@ as tentative until corroborated by a second capture.
 - What actually identifies a session/peer at this layer, now that the field once assumed to be a
   connection ID is known to be a fixed constant (see the revised header table above) - the
   remaining undecoded 4-byte field at offset 6 is the leading candidate.
-- A PIN-based/local "Link Device" pairing capture - see `ps5-session-establishment.md` for why
+- A PIN-based/local "Link Device" pairing capture - see `ps5-v2-control-plane.md` for why
   this, not general "first-time registration," is the remaining pairing gap.
 - A capture of the PS4 equivalent flow, once available, to identify what differs from PS5.
 - Whether the plain-TCP control-channel transport (`ps5-local-discovery.md`) is used under any

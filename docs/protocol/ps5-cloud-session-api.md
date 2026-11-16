@@ -7,7 +7,7 @@
 > (2) The `data1/2/3` seeds were guessed to bootstrap the *direct* (`v1` LAN) session's crypto; they do
 > **not** — a LAN session establishes fine against a console with no internet. But `data1`/`data2` were not
 > idle either: **they are the account/no-PIN registration seed-delivery key/material, now solved `[C]`** —
-> see "the no-PIN registration seed" below and `ps5-session-establishment.md`. Cloud *play* — streaming from
+> see "the no-PIN registration seed" below and `ps5-remoteplay-v1-spec.md` §2.0. Cloud *play* — streaming from
 > a datacentre rather than your own console — would be a genuinely different protocol, but we have **no data
 > on it** and nothing here describes it.
 
@@ -137,7 +137,7 @@ that the host containing `.km.` was a "key-management" service issuing the conso
 key**, because its name pattern and timing looked the part. Decrypted, it is plainly an
 account-info endpoint (`users/me/info`) returning identity/region/age data - **no registration key
 is present in its response, and none is fetched from the cloud at all on a reconnect** (the
-registration key is held client-side after first pairing; see `ps5-session-establishment.md`). The
+registration key is held client-side after first pairing; see `ps5-remoteplay-v1-spec.md` §2.0). The
 `.km.` = key-management guess is withdrawn. Where the registration key *originates* (first-time
 pairing) is still not directly observed - it is not in any reconnect capture, cloud or direct.
 
@@ -290,7 +290,7 @@ carries the fields that seed the *direct* session:
   secret" below; this is a v1/v2 control-plane delta, not a contradiction.
 - Every cloud REST call carries **`User-Agent: RpNetHttpUtilImpl`** `[C]`.
 - `supportCmd` (`"130000"`) and `protocolVer` (`"1.0"`) — **the same values that appear as
-  `RP-SupportCmd` and `RP-Version` in the direct console handshake** (`ps5-session-establishment.md`).
+  `RP-SupportCmd` and `RP-Version` in the direct console handshake** (`ps5-remoteplay-v1-spec.md` §2.0).
 - `data1`, `data2`, `data3` — three base64 values, 16 bytes each. High-entropy; these read as
   nonces/seed material handed to the console. ~~**These are the strongest lead yet toward the
   direct-session key agreement** - the material that seeds the `RP-Pubkey`/`RP-Nonce`/ECDH exchange is
@@ -331,7 +331,7 @@ client's own `session+0x10` (2026-08-31; live values in the captures-folder note
 
 4. That seed is the no-PIN analog of the PIN route's client nonce: `key' = seed XOR
    registrationTable[ requestContext[0x18d] & 0x1f ]` is the transport key that decrypts the `/sess/rgst`
-   response (registkey + companion) — see `ps5-session-establishment.md`.
+   response (registkey + companion) — see `ps5-remoteplay-v1-spec.md` §2.0.
 
 Every primitive is one we already own (`HalyardControlFieldCrypto` + the bundled `contextKey`); the seed is
 **received, not derived**, which is why it appears in no plaintext channel and matched no local KDF. This
@@ -586,7 +586,7 @@ a console.
   it is the registration seed, field-encrypted by the console with the client's `data1`/`data2`:
   `seed = HalyardControlFieldCrypto.Decrypt(key = data1, material = data2, counter = 0, ct = base64⁻²(customData1))`,
   then `key' = seed XOR registrationTable[selector]` decrypts `/sess/rgst`. See "The no-PIN registration
-  seed" above and `ps5-session-establishment.md`. (The 2026-08-20 note guessing it was session-scoped
+  seed" above and `ps5-remoteplay-v1-spec.md` §2.0. (The 2026-08-20 note guessing it was session-scoped
   reconnect noise was right about *reconnects* and wrong about the *first-pair* meaning — the shape it flagged
   as "exactly what the no-PIN hunt is missing" was in fact the answer.)
 - A **first-time pairing** capture *through the proxy* - would finally show whether a registration
@@ -594,7 +594,7 @@ a console.
   `commands` `data1/2/3` seeds are now a candidate mechanism for how per-session (and possibly
   per-registration) key material is distributed - worth focused attention.
 - ~~Work out how the `commands` seed material and `sessionMessage` `skey` relate to the direct
-  handshake's `RP-Pubkey`/`RP-Nonce`/ECDH (`ps5-session-establishment.md`) - the path to actually
+  handshake's `RP-Pubkey`/`RP-Nonce`/ECDH (`ps5-v2-control-plane.md`) - the path to actually
   decrypting a session.~~ **Superseded** — decrypting a session did not require this; see the note at
   `data1/2/3` above. Establishing what these values *are* remains genuinely open **[X]**, but it is no
   longer on the critical path for anything.

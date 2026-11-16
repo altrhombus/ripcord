@@ -23,9 +23,6 @@ copy of any vendor product.
 - [`ps5-v2-control-plane.md`](ps5-v2-control-plane.md) — **current**: the v2 control plane (the GCM
   envelope, the rolling session key, RPCS) and how its stream plane differs from v1. Implemented behind an
   opt-in switch; not yet streaming from Ripcord's own client.
-- [`ps5-session-establishment.md`](ps5-session-establishment.md),
-  [`ps5-session-crypto.md`](ps5-session-crypto.md) — **historical.** Early observations of the v2 control
-  plane, before it was worked out; `ps5-v2-control-plane.md` supersedes them.
 - [`ps5-cloud-session-api.md`](ps5-cloud-session-api.md), [`ps5-network-architecture.md`](ps5-network-architecture.md),
   [`ps5-wan-relay.md`](ps5-wan-relay.md) — the PSN cloud/account tier and WAN path. Partly current
   (the cloud API shape is accurate), partly superseded speculation, flagged in place.

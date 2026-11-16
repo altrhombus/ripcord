@@ -170,6 +170,6 @@ receiver.
   adaptive bitrate; capture with induced loss to force NACK/report variety.
 - Characterize the `0x12` low-rate down channel (stats/report vs. something else).
 - Nail down the offset-2 counter and offset-3 tag semantics (shared with the input packet header).
-- The encryption itself: which session key (from `ps5-session-establishment.md`) protects 9297
+- The encryption itself: which session key (from `ps5-v2-control-plane.md`) protects 9297
   payloads, and how the sequence/counter fields feed the AEAD nonce — a decode can't happen
   without this, and this capture can't recover it (keys never traverse the wire in the clear).

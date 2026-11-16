@@ -13,8 +13,7 @@ directory. Read this first, then work the spec's §7 checklist top to bottom.
 - **Protobuf:** [`stream_control.proto`](stream_control.proto) + [`bandwidth_probe.proto`](bandwidth_probe.proto)
   — `protoc`-compile for the control-plane bindings.
 - **Provenance:** [`README.md`](README.md).
-- **Where it plugs in:** [`../history/phase1-lan-build-plan.md`](../history/phase1-lan-build-plan.md) — the
-  `IHalyardSessionCrypto` seam and the Phase-1 stage table. Everything else in Phase 1 (discovery, session
+- **Where it plugs in:** the `IHalyardSessionCrypto` seam (`docs/architecture.md`). Everything else in Phase 1 (discovery, session
   orchestration, transport demux, the D3D12+WASAPI media pipeline, controller input) is already built behind
   that seam against a passthrough stub; this work fills in the stub.
 

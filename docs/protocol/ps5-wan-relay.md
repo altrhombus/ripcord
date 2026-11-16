@@ -36,7 +36,7 @@ that speaks the direct-LAN protocol correctly could, in principle, speak the WAN
 by only changing the destination address.
 
 One addressing detail: in the `/sess/init` and `/sess/ctrl` HTTP-over-RUDP requests (see
-`ps5-session-establishment.md`), the `Host:` header this session carried the **relay's** address,
+`ps5-v2-control-plane.md`), the `Host:` header this session carried the **relay's** address,
 not the console's - consistent with the client never needing or having the console's real address
 at all for a relay-mediated session.
 
@@ -157,7 +157,7 @@ narrows down what would actually work:
 - This is a genuine, useful negative result for scoping future work: don't spend more capture
   sessions chasing timing/size correlation on this channel; the effort belongs on the key-recovery/
   decryption side instead (which itself depends on fully nailing down the ECDH exchange in
-  `ps5-session-establishment.md`).
+  `ps5-v2-control-plane.md`).
 
 ## Session end: no separate "sleep" command found on the wire
 

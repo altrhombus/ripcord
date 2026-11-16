@@ -5,7 +5,7 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 
 /// <summary>
 /// The HTTP/1.x-style session-establishment exchange carried over the control channel
-/// (docs/protocol/ps5-session-establishment.md): POST /sess/rgst, GET /sess/init, GET /sess/ctrl,
+/// (docs/protocol/ps5-remoteplay-v1-spec.md §2): POST /sess/rgst, GET /sess/init, GET /sess/ctrl,
 /// each a request-line + RP-* headers + optional body. These are HTTP-shaped but hand-built (they
 /// ride a custom transport), so we construct/parse them directly rather than via HttpClient.
 ///
