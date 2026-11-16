@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Ripcord.Protocol.Halyard.Common.Streaming.Fec;
 using Xunit;
 
@@ -102,148 +101,137 @@ public class FecTests
     [InlineData(6, 3, new[] { 0, 2, 5 })]           // three lost (== m)
     [InlineData(8, 4, new[] { 0, 1, 2, 3 })]        // first four lost
     [InlineData(3, 1, new[] { 2 })]
-    public void ReedSolomon_ReconstructsErasedSourceUnits(int k, int m, int[] erasures)
+    public void ReedSolomon_RecoversMissingSourceUnits(int k, int m, int[] missing)
     {
-        const int unitSize = 200;
-        const int stride = 208; // 16-aligned, > unitSize (mirrors the demuxer's padded stride)
-        int total = k + m;
+        const int codedLength = 200;
+        byte[] frame = EncodedFrame(k, m, codedLength, seed: k * 31 + m);
+        byte[] pristine = (byte[])frame.Clone();
 
-        // Build k random source units + computed parity; keep a pristine copy to compare against.
-        var frame = new byte[total * stride];
-        for (int u = 0; u < k; u++)
-        {
-            RandomNumberGenerator.Fill(frame.AsSpan(u * stride, unitSize));
-        }
-        CauchyReedSolomon.Encode(frame, unitSize, stride, k, m);
-        var pristine = (byte[])frame.Clone();
+        bool[] arrived = Lose(frame, k + m, codedLength, missing);
 
-        // Erase the chosen units (zero their slots) and mark them absent.
-        var present = new bool[total];
-        Array.Fill(present, true);
-        foreach (int e in erasures)
-        {
-            Array.Clear(frame, e * stride, stride);
-            present[e] = false;
-        }
-
-        Assert.True(CauchyReedSolomon.Decode(frame, unitSize, stride, k, m, present));
-
-        // Every source unit's payload must match the original.
-        for (int u = 0; u < k; u++)
-        {
-            Assert.Equal(
-                Convert.ToHexString(pristine.AsSpan(u * stride, unitSize)),
-                Convert.ToHexString(frame.AsSpan(u * stride, unitSize)));
-        }
+        Assert.True(CauchyReedSolomon.RecoverSource(frame, codedLength, k, m, arrived));
+        AssertSourceMatches(pristine, frame, k, codedLength);
     }
 
     [Fact]
     public void ReedSolomon_LosingAParityUnitStillRecoversSource()
     {
-        const int k = 4, m = 2, unitSize = 64, stride = 64, total = k + m;
-        var frame = new byte[total * stride];
-        for (int u = 0; u < k; u++)
-        {
-            RandomNumberGenerator.Fill(frame.AsSpan(u * stride, unitSize));
-        }
-        CauchyReedSolomon.Encode(frame, unitSize, stride, k, m);
-        var pristine = (byte[])frame.Clone();
+        const int k = 4, m = 2, codedLength = 64;
+        byte[] frame = EncodedFrame(k, m, codedLength, seed: 7);
+        byte[] pristine = (byte[])frame.Clone();
 
-        // Lose one source unit and one parity unit — still k survivors, so recoverable.
-        var present = new bool[total];
-        Array.Fill(present, true);
-        Array.Clear(frame, 1 * stride, stride); present[1] = false;         // source unit 1
-        Array.Clear(frame, (k + 0) * stride, stride); present[k + 0] = false; // parity unit 0
+        // Lose one source unit and parity unit 0: parity unit 1 is enough for one missing source unit.
+        bool[] arrived = Lose(frame, k + m, codedLength, [1, k + 0]);
 
-        Assert.True(CauchyReedSolomon.Decode(frame, unitSize, stride, k, m, present));
-        Assert.Equal(
-            Convert.ToHexString(pristine.AsSpan(1 * stride, unitSize)),
-            Convert.ToHexString(frame.AsSpan(1 * stride, unitSize)));
+        Assert.True(CauchyReedSolomon.RecoverSource(frame, codedLength, k, m, arrived));
+        AssertSourceMatches(pristine, frame, k, codedLength);
     }
 
     /// <summary>
-    /// The slot stride is layout, not protocol: recovery must produce byte-identical results at any stride
-    /// that is at least the coded unit length. This is the claim that closed the long-running "is the 0x10
-    /// stride a mis-derived wire constant?" question — the console's own stride equals its coded length (a
-    /// multiple of 4), and ours is free precisely because coding never touches the tail between the two. If a
-    /// future change makes the stride observable in the output, this fails and that reasoning needs revisiting.
+    /// Every loss pattern that leaves enough parity is recovered, whichever parity units survive. Any square
+    /// submatrix of a Cauchy matrix is invertible, so no pattern should fail; this walks all of them for a
+    /// small frame.
+    /// </summary>
+    [Fact]
+    public void ReedSolomon_RecoversEveryLossPatternThatLeavesEnoughParity()
+    {
+        const int k = 5, m = 3, codedLength = 12;
+        byte[] original = EncodedFrame(k, m, codedLength, seed: 99);
+        int recovered = 0;
+
+        for (int mask = 0; mask < 1 << (k + m); mask++)
+        {
+            int lostSource = 0, lostParity = 0;
+            for (int u = 0; u < k + m; u++)
+            {
+                if ((mask & (1 << u)) == 0) continue;
+                if (u < k) lostSource++; else lostParity++;
+            }
+
+            byte[] frame = (byte[])original.Clone();
+            bool[] arrived = Lose(frame, k + m, codedLength,
+                Enumerable.Range(0, k + m).Where(u => (mask & (1 << u)) != 0).ToArray());
+
+            bool enough = lostSource <= m - lostParity;
+            Assert.Equal(enough, CauchyReedSolomon.RecoverSource(frame, codedLength, k, m, arrived));
+            if (enough)
+            {
+                AssertSourceMatches(original, frame, k, codedLength);
+                recovered++;
+            }
+        }
+
+        Assert.True(recovered > 0);
+    }
+
+    /// <summary>
+    /// The coded length is whatever the console coded over (a multiple of 4, spec §6.2), and units sit
+    /// back to back at that spacing. A real cap47 length that is 4-aligned but not 16-aligned recovers.
     /// </summary>
     [Theory]
-    [InlineData(6, 3, 1004)]  // a real cap47 coded length: 4-aligned, not 16-aligned
+    [InlineData(6, 3, 1004)]
     [InlineData(6, 3, 1012)]
-    [InlineData(4, 2, 999)]   // deliberately not even 4-aligned, to prove the decoder does not care
-    public void ReedSolomon_RecoveryIsIndependentOfSlotStride(int k, int m, int unitSize)
+    public void ReedSolomon_RecoversAtARealCodedLength(int k, int m, int codedLength)
     {
-        int total = k + m;
-        var source = new byte[total][];
-        var rng = new Random(unitSize);
-        for (int u = 0; u < k; u++)
-        {
-            source[u] = new byte[unitSize];
-            rng.NextBytes(source[u]);
-        }
+        byte[] frame = EncodedFrame(k, m, codedLength, seed: codedLength);
+        byte[] pristine = (byte[])frame.Clone();
 
-        // Same logical frame, laid out at two different strides.
-        byte[] Build(int stride)
-        {
-            var frame = new byte[total * stride];
-            for (int u = 0; u < k; u++)
-            {
-                source[u].CopyTo(frame.AsSpan(u * stride));
-            }
-            CauchyReedSolomon.Encode(frame, unitSize, stride, k, m);
-            return frame;
-        }
+        bool[] arrived = Lose(frame, k + m, codedLength, [0, k - 1]);
 
-        int tight = unitSize;                          // no slack at all
-        int aligned16 = (unitSize + 0xf) & ~0xf;       // what the demuxer uses
-        byte[] a = Build(tight), b = Build(aligned16);
-
-        var present = new bool[total];
-        Array.Fill(present, true);
-        foreach (int e in new[] { 0, k - 1 })
-        {
-            present[e] = false;
-        }
-        Array.Clear(a, 0, tight);
-        Array.Clear(a, (k - 1) * tight, tight);
-        Array.Clear(b, 0, aligned16);
-        Array.Clear(b, (k - 1) * aligned16, aligned16);
-
-        Assert.True(CauchyReedSolomon.Decode(a, unitSize, tight, k, m, present));
-        Assert.True(CauchyReedSolomon.Decode(b, unitSize, aligned16, k, m, present));
-
-        // Both strides must reconstruct the original bytes — and so agree with each other.
-        for (int u = 0; u < k; u++)
-        {
-            Assert.Equal(
-                Convert.ToHexString(source[u]),
-                Convert.ToHexString(a.AsSpan(u * tight, unitSize)));
-            Assert.Equal(
-                Convert.ToHexString(source[u]),
-                Convert.ToHexString(b.AsSpan(u * aligned16, unitSize)));
-        }
+        Assert.True(CauchyReedSolomon.RecoverSource(frame, codedLength, k, m, arrived));
+        AssertSourceMatches(pristine, frame, k, codedLength);
     }
 
     [Fact]
-    public void ReedSolomon_TooManyErasures_Fails()
+    public void ReedSolomon_TooManyLosses_Fails()
     {
-        const int k = 4, m = 2, unitSize = 32, stride = 32, total = k + m;
-        var frame = new byte[total * stride];
+        const int k = 4, m = 2, codedLength = 32;
+        byte[] frame = EncodedFrame(k, m, codedLength, seed: 3);
+
+        // Three source units lost with only two parity units: unrecoverable.
+        bool[] arrived = Lose(frame, k + m, codedLength, [0, 1, 2]);
+
+        Assert.False(CauchyReedSolomon.RecoverSource(frame, codedLength, k, m, arrived));
+    }
+
+    [Fact]
+    public void ReedSolomon_NoParity_RecoversNothingButAcceptsACompleteFrame()
+    {
+        const int k = 3, codedLength = 16;
+        byte[] frame = EncodedFrame(k, 0, codedLength, seed: 5);
+
+        Assert.True(CauchyReedSolomon.RecoverSource(frame, codedLength, k, 0, [true, true, true]));
+        Assert.False(CauchyReedSolomon.RecoverSource(frame, codedLength, k, 0, [true, false, true]));
+    }
+
+    private static byte[] EncodedFrame(int k, int m, int codedLength, int seed)
+    {
+        var frame = new byte[(k + m) * codedLength];
+        new Random(seed).NextBytes(frame.AsSpan(0, k * codedLength));
+        CauchyReedSolomon.Encode(frame, codedLength, k, m);
+        return frame;
+    }
+
+    private static bool[] Lose(byte[] frame, int units, int codedLength, int[] lost)
+    {
+        var arrived = new bool[units];
+        Array.Fill(arrived, true);
+        foreach (int u in lost)
+        {
+            Array.Clear(frame, u * codedLength, codedLength);
+            arrived[u] = false;
+        }
+
+        return arrived;
+    }
+
+    private static void AssertSourceMatches(byte[] expected, byte[] actual, int k, int codedLength)
+    {
         for (int u = 0; u < k; u++)
         {
-            RandomNumberGenerator.Fill(frame.AsSpan(u * stride, unitSize));
+            Assert.Equal(
+                Convert.ToHexString(expected.AsSpan(u * codedLength, codedLength)),
+                Convert.ToHexString(actual.AsSpan(u * codedLength, codedLength)));
         }
-        CauchyReedSolomon.Encode(frame, unitSize, stride, k, m);
-
-        // Lose 3 units with only m=2 parity — unrecoverable.
-        var present = new bool[total];
-        Array.Fill(present, true);
-        foreach (int e in new[] { 0, 1, 2 })
-        {
-            present[e] = false;
-        }
-
-        Assert.False(CauchyReedSolomon.Decode(frame, unitSize, stride, k, m, present));
     }
 }

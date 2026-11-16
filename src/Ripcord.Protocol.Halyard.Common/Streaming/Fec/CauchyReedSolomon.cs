@@ -1,32 +1,24 @@
 namespace Ripcord.Protocol.Halyard.Common.Streaming.Fec;
 
 /// <summary>
-/// Systematic Cauchy Reed-Solomon erasure coding over <see cref="GaloisField256"/>, matching the console's
-/// video FEC:
-/// <c>k</c> source units followed by <c>m</c> parity units, recoverable as long as any <c>k</c> of the
-/// <c>k+m</c> units survive. The coding matrix entry is <c>1 / (i XOR (m+j))</c> in GF(2^8).
+/// Systematic Cauchy Reed-Solomon erasure coding over <see cref="GaloisField256"/>, as the console codes its
+/// video (spec §6.2): <c>k</c> source units followed by <c>m</c> parity units, parity unit <c>i</c> being
+/// <c>Σ_j C[i][j] · source_j</c> with <c>C[i][j] = 1 / (i XOR (m + j))</c>.
 ///
-/// <para>Units live in one contiguous <c>frameBuf</c>, unit <c>u</c> at <c>u*stride</c>, each logically
-/// <c>unitSize</c> bytes (any tail up to <c>stride</c> is ignored). All coding is per-byte and independent
-/// across byte positions.
+/// <para>Units are laid out the way the console lays them out: one contiguous span, unit <c>u</c> at
+/// <c>u * codedLength</c>, every unit exactly <c>codedLength</c> bytes. Coding is per byte position.</para>
 ///
-/// <para>The linear algebra (Gauss-Jordan inverse, encode/decode) is ours. The Cauchy matrix <em>form</em>
-/// was an adopted assumption until 2026-08-01, and is now <b>[C] confirmed from our own decompilation</b>:
-/// the console builds each element as <c>table[((m + j) XOR i) | 0x100]</c>, and that table is the field
-/// inverse, so <c>matrix[i][j] = inverse(i XOR (m + j))</c> — what <see cref="BuildCodingMatrix"/> computes.
-/// Vandermonde is ruled out: a power sequence would need index products through the multiply table, and the
-/// construction never touches it. See spec §6.2 for the derivation and the RVAs.</para>
+/// <para>Recovery works on the erased source units only. With <c>e</c> source units missing, take any <c>e</c>
+/// parity units that arrived, remove the arrived source units' share from each (what is left depends only on
+/// the missing ones), and solve the <c>e × e</c> system given by those parity rows and the missing columns of
+/// <c>C</c>. Every square submatrix of a Cauchy matrix is invertible, so the system always has a solution
+/// when <c>e</c> parity units arrived.</para>
 ///
-/// <para>The field underneath is settled too, as of 2026-08-02: the GF primitive polynomial is
-/// <b>[V] confirmed 0x11d</b> from a runtime dump of the vendor client's own inverse table (see
-/// <see cref="GaloisField256"/>). Matrix form and field were only ever safe together — a right matrix over
-/// the wrong field still reconstructs garbage — so this is the point at which FEC recovery can be trusted to
-/// agree with the console. With the coded unit length settled the day before, nothing in this path is
-/// assumed any more: matrix form [C], coded length [C][W], field [V].</para>
-///
-/// <para>Note the coding matrix never asks for <c>Inverse(0)</c>: <c>i &lt; m &lt;= m + j</c> for all valid
-/// <c>i, j</c>, so <c>i XOR (m + j)</c> is never zero. That is exactly why a Cauchy matrix is well-defined
-/// here, and it is why the divide-by-zero 0xff sentinel in the console's table is unreachable.</para>
+/// <para>Provenance: the matrix form is <b>[C]</b> from our own decompilation (the console builds each element
+/// as <c>table[((m + j) XOR i) | 0x100]</c>, the field-inverse row), the field polynomial <b>[V]</b> 0x11d from a
+/// runtime dump of the vendor client's own table, and the coded length <b>[C][W]</b>. The linear algebra is
+/// ours. <c>i &lt; m &lt;= m + j</c> for every valid <c>i, j</c>, so <c>i XOR (m + j)</c> is never zero and
+/// the inverse is always defined.</para>
 /// </summary>
 internal static class CauchyReedSolomon
 {
@@ -38,209 +30,160 @@ internal static class CauchyReedSolomon
         {
             for (int j = 0; j < k; j++)
             {
-                matrix[i * k + j] = GaloisField256.Inverse((byte)(i ^ (m + j)));
+                matrix[i * k + j] = Coefficient(i, j, m);
             }
         }
 
         return matrix;
     }
 
-    /// <summary>
-    /// Encode: compute the <c>m</c> parity units (indices k..k+m-1) from the <c>k</c> source units in place.
-    /// Used to build fixtures/tests; the client only ever decodes.
-    /// </summary>
-    public static void Encode(byte[] frameBuf, int unitSize, int stride, int k, int m)
-    {
-        byte[] matrix = BuildCodingMatrix(k, m);
-        for (int i = 0; i < m; i++)
-        {
-            int parityOffset = (k + i) * stride;
-            Array.Clear(frameBuf, parityOffset, unitSize);
-            for (int j = 0; j < k; j++)
-            {
-                byte coeff = matrix[i * k + j];
-                if (coeff == 0)
-                {
-                    continue;
-                }
+    private static byte Coefficient(int parityRow, int sourceColumn, int parityCount)
+        => GaloisField256.Inverse((byte)(parityRow ^ (parityCount + sourceColumn)));
 
-                int srcOffset = j * stride;
-                for (int t = 0; t < unitSize; t++)
-                {
-                    frameBuf[parityOffset + t] ^= GaloisField256.Multiply(coeff, frameBuf[srcOffset + t]);
-                }
+    /// <summary>
+    /// Compute the <paramref name="parityCount"/> parity units from the source units, in place. For fixtures and
+    /// tests; the client only ever recovers.
+    /// </summary>
+    public static void Encode(Span<byte> units, int codedLength, int sourceCount, int parityCount)
+    {
+        for (int i = 0; i < parityCount; i++)
+        {
+            Span<byte> parity = units.Slice((sourceCount + i) * codedLength, codedLength);
+            parity.Clear();
+            for (int j = 0; j < sourceCount; j++)
+            {
+                MultiplyAdd(parity, Coefficient(i, j, parityCount), units.Slice(j * codedLength, codedLength));
             }
         }
     }
 
     /// <summary>
-    /// Reconstruct the erased SOURCE units (index &lt; k with <c>present[index] == false</c>) in place, using
-    /// the surviving source + parity units. Returns false if fewer than <c>k</c> units survive (unrecoverable)
-    /// or the selected system is singular. Present source units are left untouched.
+    /// Rebuild the source units that did not arrive (<c>arrived[u] == false</c>, <c>u &lt; sourceCount</c>) in
+    /// place. Returns false when fewer parity units arrived than source units are missing; arrived units are
+    /// never written.
     /// </summary>
-    public static bool Decode(byte[] frameBuf, int unitSize, int stride, int k, int m, bool[] present)
+    public static bool RecoverSource(
+        Span<byte> units, int codedLength, int sourceCount, int parityCount, ReadOnlySpan<bool> arrived)
     {
-        int total = k + m;
-        // Choose any k surviving units; each contributes one equation of the linear system.
-        var chosen = new List<int>(k);
-        for (int u = 0; u < total && chosen.Count < k; u++)
+        var missing = new List<int>();
+        for (int j = 0; j < sourceCount; j++)
         {
-            if (present[u])
-            {
-                chosen.Add(u);
-            }
+            if (!arrived[j])
+                missing.Add(j);
         }
 
-        if (chosen.Count < k)
-        {
-            return false; // too many erasures
-        }
-
-        // Any erased source units to reconstruct? (If every source survived there is nothing to do.)
-        bool anyErasedSource = false;
-        for (int e = 0; e < k; e++)
-        {
-            if (!present[e])
-            {
-                anyErasedSource = true;
-                break;
-            }
-        }
-
-        if (!anyErasedSource)
-        {
+        if (missing.Count == 0)
             return true;
+
+        var rows = new List<int>(missing.Count);
+        for (int i = 0; i < parityCount && rows.Count < missing.Count; i++)
+        {
+            if (arrived[sourceCount + i])
+                rows.Add(i);
         }
 
-        byte[] matrix = BuildCodingMatrix(k, m);
-
-        // Build A (k×k): row r = the generator row of chosen unit r (identity row for a source unit, the
-        // coding-matrix row for a parity unit). A · data = chosenValues, so data = A⁻¹ · chosenValues.
-        var a = new byte[k * k];
-        for (int r = 0; r < k; r++)
-        {
-            int u = chosen[r];
-            if (u < k)
-            {
-                a[r * k + u] = 1;
-            }
-            else
-            {
-                int codingRow = u - k;
-                for (int j = 0; j < k; j++)
-                {
-                    a[r * k + j] = matrix[codingRow * k + j];
-                }
-            }
-        }
-
-        byte[]? inv = Invert(a, k);
-        if (inv is null)
-        {
+        if (rows.Count < missing.Count)
             return false;
+
+        int e = missing.Count;
+
+        // What each chosen parity unit owes to the missing source units alone: the parity unit minus the share
+        // of every source unit that did arrive.
+        byte[] remainder = new byte[e * codedLength];
+        for (int r = 0; r < e; r++)
+        {
+            Span<byte> owed = remainder.AsSpan(r * codedLength, codedLength);
+            units.Slice((sourceCount + rows[r]) * codedLength, codedLength).CopyTo(owed);
+            for (int j = 0; j < sourceCount; j++)
+            {
+                if (arrived[j])
+                    MultiplyAdd(owed, Coefficient(rows[r], j, parityCount), units.Slice(j * codedLength, codedLength));
+            }
         }
 
-        // For each erased source unit e: data[e] = Σ_r inv[e][r] · chosenUnit[r] (per byte).
-        for (int e = 0; e < k; e++)
+        // remainder = S · missingUnits, where S[r][c] = C[rows[r]][missing[c]]. Invert S and apply it.
+        var system = new byte[e * e];
+        for (int r = 0; r < e; r++)
         {
-            if (present[e])
-            {
-                continue;
-            }
+            for (int c = 0; c < e; c++)
+                system[r * e + c] = Coefficient(rows[r], missing[c], parityCount);
+        }
 
-            int destOffset = e * stride;
-            Array.Clear(frameBuf, destOffset, unitSize);
-            for (int r = 0; r < k; r++)
-            {
-                byte coeff = inv[e * k + r];
-                if (coeff == 0)
-                {
-                    continue;
-                }
+        byte[]? inverse = Invert(system, e);
+        if (inverse is null)
+            return false; // unreachable for a Cauchy submatrix; kept so a bad table fails closed
 
-                int srcOffset = chosen[r] * stride;
-                for (int t = 0; t < unitSize; t++)
-                {
-                    frameBuf[destOffset + t] ^= GaloisField256.Multiply(coeff, frameBuf[srcOffset + t]);
-                }
-            }
+        for (int c = 0; c < e; c++)
+        {
+            Span<byte> rebuilt = units.Slice(missing[c] * codedLength, codedLength);
+            rebuilt.Clear();
+            for (int r = 0; r < e; r++)
+                MultiplyAdd(rebuilt, inverse[c * e + r], remainder.AsSpan(r * codedLength, codedLength));
         }
 
         return true;
+    }
+
+    /// <summary><c>destination ^= coefficient · source</c>, byte by byte.</summary>
+    private static void MultiplyAdd(Span<byte> destination, byte coefficient, ReadOnlySpan<byte> source)
+    {
+        if (coefficient == 0)
+            return;
+
+        for (int t = 0; t < destination.Length; t++)
+            destination[t] ^= GaloisField256.Multiply(coefficient, source[t]);
     }
 
     /// <summary>Gauss-Jordan inverse of an n×n GF(2^8) matrix (row-major); null if singular.</summary>
     private static byte[]? Invert(byte[] source, int n)
     {
         var work = (byte[])source.Clone();
-        var inv = new byte[n * n];
+        var inverse = new byte[n * n];
         for (int i = 0; i < n; i++)
+            inverse[i * n + i] = 1;
+
+        for (int column = 0; column < n; column++)
         {
-            inv[i * n + i] = 1;
-        }
+            int pivot = column;
+            while (pivot < n && work[pivot * n + column] == 0)
+                pivot++;
 
-        for (int col = 0; col < n; col++)
-        {
-            // Find a pivot row at/below `col` with a non-zero entry in this column.
-            int pivot = -1;
-            for (int r = col; r < n; r++)
+            if (pivot == n)
+                return null;
+
+            if (pivot != column)
             {
-                if (work[r * n + col] != 0)
-                {
-                    pivot = r;
-                    break;
-                }
+                SwapRows(work, n, pivot, column);
+                SwapRows(inverse, n, pivot, column);
             }
 
-            if (pivot < 0)
-            {
-                return null; // singular
-            }
-
-            if (pivot != col)
-            {
-                SwapRows(work, n, pivot, col);
-                SwapRows(inv, n, pivot, col);
-            }
-
-            // Normalize the pivot row so work[col][col] == 1.
-            byte invPivot = GaloisField256.Inverse(work[col * n + col]);
+            byte scale = GaloisField256.Inverse(work[column * n + column]);
             for (int j = 0; j < n; j++)
             {
-                work[col * n + j] = GaloisField256.Multiply(work[col * n + j], invPivot);
-                inv[col * n + j] = GaloisField256.Multiply(inv[col * n + j], invPivot);
+                work[column * n + j] = GaloisField256.Multiply(work[column * n + j], scale);
+                inverse[column * n + j] = GaloisField256.Multiply(inverse[column * n + j], scale);
             }
 
-            // Eliminate this column from every other row.
             for (int r = 0; r < n; r++)
             {
-                if (r == col)
-                {
+                byte factor = work[r * n + column];
+                if (r == column || factor == 0)
                     continue;
-                }
-
-                byte factor = work[r * n + col];
-                if (factor == 0)
-                {
-                    continue;
-                }
 
                 for (int j = 0; j < n; j++)
                 {
-                    work[r * n + j] ^= GaloisField256.Multiply(factor, work[col * n + j]);
-                    inv[r * n + j] ^= GaloisField256.Multiply(factor, inv[col * n + j]);
+                    work[r * n + j] ^= GaloisField256.Multiply(factor, work[column * n + j]);
+                    inverse[r * n + j] ^= GaloisField256.Multiply(factor, inverse[column * n + j]);
                 }
             }
         }
 
-        return inv;
+        return inverse;
     }
 
-    private static void SwapRows(byte[] matrix, int n, int r0, int r1)
+    private static void SwapRows(byte[] matrix, int n, int a, int b)
     {
         for (int j = 0; j < n; j++)
-        {
-            (matrix[r0 * n + j], matrix[r1 * n + j]) = (matrix[r1 * n + j], matrix[r0 * n + j]);
-        }
+            (matrix[a * n + j], matrix[b * n + j]) = (matrix[b * n + j], matrix[a * n + j]);
     }
 }
