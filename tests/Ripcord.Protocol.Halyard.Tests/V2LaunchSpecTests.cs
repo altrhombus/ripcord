@@ -12,7 +12,7 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// v2 launchSpec + SESSION_REQUEST (spec §5/§6). The launchSpec is byte-for-byte the v1 template, AES-128-OFB
+/// v2 launchSpec + SESSION_REQUEST (v2 spec §5/§6). The launchSpec is byte-for-byte the v1 template, AES-128-OFB
 /// under the v1 control KDF (only the counter differs: v2 uses 0), carrying the same client-random
 /// <c>handshakeKey</c> — v2 does NOT drop it (static RE of the vendor's launchSpec builder <c>FUN_9ee50</c> plus
 /// three live v2 sessions confirm the handshakeKey is a no-input client-random value, identical to v1).

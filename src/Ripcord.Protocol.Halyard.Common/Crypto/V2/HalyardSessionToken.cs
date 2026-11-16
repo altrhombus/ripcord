@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 /// <summary>
-/// The v2 session-token roll (spec §2). Each v2 session mints a fresh 16-byte <c>RP-VerifyKey</c>, sends it
+/// The v2 session-token roll (v2 spec §2). Each v2 session mints a fresh 16-byte <c>RP-VerifyKey</c>, sends it
 /// encrypted in init2, and — <b>once the console accepts the session</b> — stores it as the type-11 token, which
 /// becomes the <b>next</b> session's K16. The first session after pairing holds no token and bootstraps from the
 /// bundled <c>K16_reg</c> instead.
@@ -21,7 +21,7 @@ public static class HalyardSessionToken
     public const int Length = 16;
 
     /// <summary>Mint a fresh <c>RP-VerifyKey</c>: 16 CSPRNG bytes, drawn independently of every other session
-    /// value (notably <b>not</b> the stream handshake key X — a separate draw; spec §7).</summary>
+    /// value (notably <b>not</b> the stream handshake key X — a separate draw; v2 spec §7).</summary>
     public static byte[] Mint() => RandomNumberGenerator.GetBytes(Length);
 
     /// <summary>Whether a usable rolled token is held — i.e. this is not the first, bootstrap session.</summary>

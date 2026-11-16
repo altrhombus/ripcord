@@ -1,26 +1,13 @@
 # PS5 Remote Play — session cryptography (key agreement + AEAD)
 
-> **HISTORICAL — this is `v2` crypto, and it was never derived.** This document describes the *newer*
-> client's HTTP control plane (ECDH via `RP-Pubkey`/`RP-Hmac`), which Ripcord does not implement. It was
-> written while that was still the intended target. On 2026-07-18 the project pivoted to the older client,
-> and **the connect path was subsequently solved by a completely different route** — `RP-Registkey` +
-> `RP-Nonce` → a table-driven KDF → AES-128-CFB, with no ECDH in the HTTP handshake and no cloud seeds
-> involved. That work is specified in [`ps5-remoteplay-v1-spec.md`](ps5-remoteplay-v1-spec.md) and shipped.
->
-> So: nothing below blocks anything any more, and the "how the internals will be derived" plan at the end
-> was **never executed**. What remains valid is the *observational* content — point sizes, header set,
-> primitive identification from our own memory dump. What is invalid is the framing that this is the
-> Phase-1 blocker, and the speculation that cloud seeds feed the direct-session key agreement (see below).
+> **Superseded by [`ps5-v2-control-plane.md`](ps5-v2-control-plane.md).** This is an early record of the v2
+> control plane's key agreement, from before it was worked out. The observations in it (the header set, the point
+> sizes, the primitives) stand; its open questions are answered there: the key schedule (§4), the `RP-Hmac`
+> construction (§1, §4) and where the session key comes from (§2). Statements below that a key schedule is
+> unknown, or that cloud seeds feed the session keys, are superseded.
 
-Status: **historical / superseded.** Retained for the observations it records about the newer client's
-handshake — the ECDH curve, the `RP-Hmac` size, and the crypto library's shape — all of which came from our
-own captures (`ps5-session-establishment.md`, `ps5-av-stream.md`) and first-party static RE of our **own
-installed** client. The key schedule below was never derived.
-
-Sources: our own packet captures, and first-party static RE of our own installed client binary. **No
-third-party Remote Play project's source was or will be consulted** — see `docs/protocol-research-log.md`
-and the plan's independent-implementation methodology. Static anchoring used only public standard constants
-(FIPS-180 SHA-256, SEC2 P-256) and our own captures.
+Sources: our own packet captures, and static analysis of our own installed copy of the client. Static anchoring
+used only public standard constants (FIPS-180 SHA-256, SEC2 P-256) and our own captures.
 
 **Redaction note**: no keys, nonces, HMACs, shared secrets, or any captured cryptographic values are
 reproduced here — only field names, primitives, sizes, and structure, which is what a from-scratch
@@ -73,7 +60,7 @@ blob + tag), and the larger `RP-Data`/`RP-Tag` session-parameter payload. ~~Plus
 per-channel AEAD keys — consistent with standard session-key-establishment schemes in the public
 crypto literature. Nothing above is specific to the vendor beyond which header carries which piece.
 
-## What was never derived (open, but no longer blocking anything)
+## What this document left open (answered in `ps5-v2-control-plane.md`)
 
 - The **key schedule**: exactly how the ECDH shared secret + `RP-Nonce` + `RP-Registkey` (+ any cloud
   seeds) combine — which KDF (HKDF-SHA256 vs. a bespoke hash construction), what salt/info/labels,

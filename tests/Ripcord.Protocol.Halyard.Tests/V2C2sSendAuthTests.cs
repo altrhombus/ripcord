@@ -10,7 +10,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// <see cref="HalyardV2SessionCrypto.SealLossReport"/> and
 /// <see cref="HalyardV2SessionCrypto.SealInputPacket"/>. Each is a v1 layout under the v1 client->console
 /// (dir-2) key with the v2 per-format header offsets and the v2 GMAC window rule; the offsets were confirmed
-/// byte-exact against our own captures 003/004 (V2-SPEC §; Fork H 004 482/482, 003 287/287), whose fixtures live
+/// byte-exact against our own captures 003/004 (v2 spec §8; 482 and 287 packets), whose fixtures live
 /// in the captures tree.
 ///
 /// <para>These tests do not KAT the console (no captured material); they prove the seal is <b>internally

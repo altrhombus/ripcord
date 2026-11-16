@@ -139,7 +139,7 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     /// <c>initialParams</c> fields that the v2 session flow carries and v1 pairing does not: <c>data3</c> (the
     /// third client ephemeral — the stream companion / K16), <c>supportCmd</c> and <c>protocolVer</c>. Field order
     /// and comma spacing match our own single-session v2 capture exactly (accountId, roomId, sessionId,
-    /// clientType, data1, data2, supportCmd, protocolVer, data3 — captures/X-RESOLUTION-BATCH-2026-10-20.md); the
+    /// clientType, data1, data2, supportCmd, protocolVer, data3); the
     /// v1 path is left untouched because its two-field form is the one three pairing captures settle. accountId is
     /// a bare JSON number for the same wire-faithfulness reason documented on the v1 method.
     /// </summary>

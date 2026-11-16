@@ -10,7 +10,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 /// The v2 (PS5) session crypto. A <b>seam-and-stub</b> at present (CLAUDE.md, "Prefer this
 /// seam-and-stub shape for new unsolved work"): the shape is fixed and the design is captured, and the real
 /// transforms land phase by phase, each gated by the known-answer vectors in docs/protocol/captures
-/// (V2-STREAM-VALIDATION.md). It is wired to nothing live until the control-plane and state machine are done,
+/// (v2 spec §8). It is wired to nothing live until the control-plane and state machine are done,
 /// so v1 behaviour is unchanged.
 ///
 /// <para><b>What goes where.</b> v2 is a set of deltas on v1:</para>
@@ -47,7 +47,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 /// <para>The c2s send-authentication methods (<c>SealControlMessage</c>/<c>SealLossReport</c>/
 /// <c>SealInputPacket</c>) are implemented (Phase 2): each is a v1 layout under the v1 client->console key,
 /// with the v2 per-format header offsets and the v2 GMAC window rule. They were confirmed byte-exact c2s against
-/// our own captures 003/004 (V2-SPEC §; the KAT fixtures live in the captures tree). The remaining v2 work is
+/// our own captures 003/004 (v2 spec §8; the known-answer fixtures stay with the private captures). The remaining v2 work is
 /// the live wiring (running the GCM control handshake and selecting this crypto in the session path), not the
 /// transforms.</para>
 /// </summary>
@@ -65,7 +65,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private HalyardControlFieldCrypto? _field;
 
     // Path A (control plane). The purposes are the info-string's second byte: 0x09 client->console, 0x08 the
-    // other way (spec §4). The GCM tag is the full 16 bytes.
+    // other way (v2 spec §4). The GCM tag is the full 16 bytes.
     private const byte PurposeClientToConsole = 0x09;
     private const byte PurposeConsoleToClient = 0x08;
     private const int GcmTagLength = 16;
@@ -205,7 +205,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     //
     // Each outgoing authenticated format is a v1 layout under the v1 client->console (dir-2) key held in _send,
     // with two v2 deltas: _send already rotates the GMAC key on the v2 window rule, and the per-format header
-    // offsets shift. Confirmed byte-exact c2s over our captures 003/004 (V2-SPEC §; Fork H: 004 482/482,
+    // offsets shift. Confirmed byte-exact c2s over our captures 003/004 (v2 spec §8; 004 482/482,
     // 003 287/287). The three formats:
     //   * control DATA (base type 0x00): GMAC tag@5, keystream_offset@9; AAD zeroes tag+keystream_offset; payload NOT encrypted.
     //     Same offsets as v1 control — only the GMAC window rule differs.

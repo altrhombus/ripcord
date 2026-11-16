@@ -23,34 +23,32 @@ copy of any vendor product.
 - [`ps5-controller-input-packet.md`](ps5-controller-input-packet.md),
   [`dualsense-hid-report.md`](dualsense-hid-report.md), [`ps5-av-stream.md`](ps5-av-stream.md) —
   **current**: input and A/V payload formats, as implemented.
+- [`ps5-v2-control-plane.md`](ps5-v2-control-plane.md) — **current**: the v2 control plane (the GCM
+  envelope, the rolling session key, RPCS) and how its stream plane differs from v1. Implemented behind an
+  opt-in switch; not yet streaming from Ripcord's own client.
 - [`ps5-session-establishment.md`](ps5-session-establishment.md),
-  [`ps5-session-crypto.md`](ps5-session-crypto.md) — **historical.** These describe the *newer* client's
-  HTTP control plane (see below), which Ripcord does not implement. Retained as a record of what was
-  observed; several statements in them were superseded and are flagged in place.
+  [`ps5-session-crypto.md`](ps5-session-crypto.md) — **historical.** Early observations of the v2 control
+  plane, before it was worked out; `ps5-v2-control-plane.md` supersedes them.
 - [`ps5-cloud-session-api.md`](ps5-cloud-session-api.md), [`ps5-network-architecture.md`](ps5-network-architecture.md),
   [`ps5-wan-relay.md`](ps5-wan-relay.md) — the PSN cloud/account tier and WAN path. Partly current
   (the cloud API shape is accurate), partly superseded speculation, flagged in place.
 
-## Protocol generations, and what "v1" means
+## The control-plane schemes, and what "v1" means
 
-`v1` and `v2` are **our** labels for two vendor client generations we observed. They are not vendor
-version numbers, and they are **not** the `RP-Version` header:
+`v1` and `v2` are **our** labels for the two control-plane schemes a console speaks. They name the scheme, not
+a vendor application version, and they are **not** the `RP-Version` header:
 
-- **`RP-Version` is a console-family value, not a generation.** It is `1.0` on PS5 and `10.0` on PS4,
-  and `1.0` appears in *both* generations' captures (it also rides the cloud `commands` payload as
-  `protocolVer`). `RP-Version: 1.0` and our label `v1` are unrelated; the collision is unfortunate and
-  is the reason this section exists.
-- **`v1` — what Ripcord implements.** The control plane of the older, unobfuscated client
-  (the vendor control DLL, ~5.5.0.8250): `RP-Registkey` + the console's `RP-Nonce` → a table-driven KDF →
-  AES-128-CFB over a handful of small headers. **No public-key exchange in the HTTP handshake at all.**
-  ECDH exists in this generation only later, inside the Takion *stream* handshake
-  (`ecdhPublicKey`/`ecdhSignature`). Validated end-to-end against our own PS5 and PS4.
-- **`v2` — observed; reverse-engineering it was attempted and abandoned.** The newer client (its engine module, packed/anti-debug)
-  uses a *different* HTTP control plane: an ECDH exchange carried in `RP-Pubkey`/`RP-Hmac` headers plus
-  the `RP-DevACha`/`RP-DevAChaTag` pair. Seen in five capture sessions on 2026-07-10 and documented in
-  `ps5-session-establishment.md`; the packer made static RE uneconomic, so we pivoted to the older
-  client instead. **Nothing about it is derived** — we know the header set and the shapes, not the
-  construction.
+- **`RP-Version` is a console-family value, not a scheme.** It is `1.0` on PS5 and `10.0` on PS4, and `1.0`
+  appears under both schemes (it also rides the cloud `commands` payload as `protocolVer`). `RP-Version: 1.0`
+  and our label `v1` are unrelated; the collision is unfortunate and is the reason this section exists.
+- **`v1`** — `RP-Registkey` + the console's `RP-Nonce` → a table-driven KDF → AES-128-CFB over a handful of
+  small headers. **No public-key exchange in the HTTP handshake at all.** ECDH exists only later, inside the
+  Takion *stream* handshake (`ecdhPublicKey`/`ecdhSignature`). Every PS4 and every PS5 speaks it; Ripcord's
+  default, validated end-to-end against our own PS5 and PS4.
+- **`v2`** — PS5 only: an ECDH exchange in the `RP-Pubkey`/`RP-Hmac` headers, an AES-GCM envelope over the rest
+  of the exchange, and a session key that rolls each session. Specified in
+  [`ps5-v2-control-plane.md`](ps5-v2-control-plane.md) and implemented behind an opt-in switch; it reaches the
+  console's session reply from Ripcord's own client but has not yet streamed.
 
 Two corrections to earlier framing, recorded because they were wrong for a while:
 

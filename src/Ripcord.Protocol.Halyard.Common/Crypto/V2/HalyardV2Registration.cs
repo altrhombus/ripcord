@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 /// <summary>
-/// v2 PIN registration (spec §1, K16-SOLVED). The rgst body is the v1 587-byte layout unchanged; v2 adds an
+/// v2 PIN registration (v2 spec §1). The rgst body is the v1 587-byte layout unchanged; v2 adds an
 /// <c>RP-Hmac</c> header that authenticates the request with the bundled <c>K16_reg</c> and the registration
 /// PIN: <c>RP-Hmac = HMAC-SHA256(K16_reg, PIN as uint32 little-endian)</c>. <c>K16_reg</c> is the family-selected
 /// bundled constant (the PS5 value from the interop bundle). Registration clears the stored type-11 token, so

@@ -4,7 +4,7 @@ using Ripcord.Protocol.Halyard.Common.Crypto;
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 /// <summary>
-/// The v2 <b>RPCS</b> during-stream control channel framing (spec §9, confirmed byte-exact against our own
+/// The v2 <b>RPCS</b> during-stream control channel framing (v2 spec §9, confirmed byte-exact against our own
 /// captures 003/004). After <c>/sess/ctrl</c> the control TCP connection (LAN :9295; the :9303 RUDP association
 /// on the rendezvous route) stays open and carries length-prefixed, GCM-sealed messages:
 ///
@@ -19,7 +19,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 ///
 /// <para>This is the transport only: the framing + the GCM envelope + the counter discipline, which are the
 /// confirmed part. The inner message <em>semantics</em> (which RPCS types to send when — keepalive, the probe
-/// report, …) are partly <c>[X]</c> (RPCS-SEMANTICS.md) and are modelled by the caller, not here.</para>
+/// report, …) are partly <c>[X]</c> and are modelled by the caller, not here.</para>
 /// </summary>
 public sealed class HalyardRpcsChannel
 {

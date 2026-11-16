@@ -3,8 +3,8 @@ using System.Buffers.Binary;
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 /// <summary>
-/// The RPCS command inventory (spec §9), named from session 004's own decrypt (RPCS-SEMANTICS.md) and the
-/// decompiled incoming dispatch <c>FUN_1801e5000</c> (RPCS-DISPATCH-NAMES.md). The wire framing and these command
+/// The RPCS command inventory (v2 spec §9), named from session 004's own decrypt and the
+/// decompiled incoming dispatch <c>FUN_1801e5000</c> (v2 spec §9). The wire framing and these command
 /// numbers + payloads are confirmed from our own capture; the human-readable <em>names</em> are behavioural
 /// inferences (<c>[X]</c>) except where noted. A client reaching a stream must, at minimum, <b>send the keepalive
 /// (<see cref="Keepalive"/>)</b> and <b>accept</b> the incoming setters/stream-channel messages; <see cref="SessionId"/>

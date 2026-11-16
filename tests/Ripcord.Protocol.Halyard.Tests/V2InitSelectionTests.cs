@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Ripcord.Protocol.Halyard.Tests;
 
-/// <summary>The v1/v2 init-flavour selection rule (spec §3).</summary>
+/// <summary>The v1/v2 init-flavour selection rule (v2 spec §3).</summary>
 public class V2InitSelectionTests
 {
     [Theory]

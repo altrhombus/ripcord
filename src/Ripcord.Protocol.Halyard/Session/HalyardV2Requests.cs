@@ -6,7 +6,7 @@ using Ripcord.Protocol.Halyard.Common.Crypto;
 namespace Ripcord.Protocol.Halyard.Session;
 
 /// <summary>
-/// The v2 (GCM) control-plane HTTP requests (spec §4, K16-SOLVED init state machine). Pure builders so the header
+/// The v2 (GCM) control-plane HTTP requests (v2 spec §3–§4). Pure builders so the header
 /// sets are testable without a live console. This covers the v2 <c>/sess/init</c> (the vendor's "type 1"), which
 /// adds <c>RP-Pubkey</c> + <c>RP-Hmac</c> to the v1 header set; init2 and the GCM-enveloped <c>/sess/ctrl</c>
 /// land with the <c>ConnectAsync</c> flow (their exact HTTP shape has open <c>[X]</c>s pinned by the hardware
@@ -42,7 +42,7 @@ internal static class HalyardV2Requests
     }
 
     /// <summary>
-    /// The v2 <c>/sess/init2</c> request (spec §4): a GET on HTTP/1.2 carrying the freshly minted
+    /// The v2 <c>/sess/init2</c> request (v2 spec §4): a GET on HTTP/1.2 carrying the freshly minted
     /// <c>RP-VerifyKey</c>, GCM-sealed (purpose 0x09, counter 0) into <c>RP-Data</c>/<c>RP-Tag</c>. The AAD is
     /// this request's own header lines minus RP-Data/RP-Tag (CRLF-joined, trailing CRLF) — the console strips the
     /// same two from what we send and computes the identical AAD, so it is self-consistent and need not match any
@@ -71,7 +71,7 @@ internal static class HalyardV2Requests
     }
 
     /// <summary>
-    /// The v2 <c>/sess/ctrl</c> request (spec §4): the v1 ctrl field set, with the binary values base64'd (not
+    /// The v2 <c>/sess/ctrl</c> request (v2 spec §4): the v1 ctrl field set, with the binary values base64'd (not
     /// field-encrypted), assembled as a CRLF header block and GCM-sealed as one envelope (purpose 0x09, counter
     /// 0, <b>AAD empty</b>) into <c>RP-Data</c>/<c>RP-Tag</c> on <c>GET /sess/ctrl HTTP/1.1</c>. Field order is the
     /// confirmed one from the decrypted capture. <paramref name="crypto"/> must already be established.

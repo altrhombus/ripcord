@@ -6,7 +6,7 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// v2 PIN registration RP-Hmac = HMAC-SHA256(K16_reg, PIN uint32 little-endian) (spec §1). The expected values
+/// v2 PIN registration RP-Hmac = HMAC-SHA256(K16_reg, PIN uint32 little-endian) (v2 spec §1). The expected values
 /// are an independent (Python) computation of the same formula over the bundled PS5 K16_reg — a cross-check that
 /// locks the PIN encoding (decimal → uint32 → little-endian), which is the one thing easy to get wrong. The
 /// console-byte-exact confirmation is in the captures (002/003/004/009).

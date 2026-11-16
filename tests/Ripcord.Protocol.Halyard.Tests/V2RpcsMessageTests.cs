@@ -8,7 +8,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// (<see cref="HalyardRpcsMessage"/>), the confirmed command payloads (<see cref="HalyardRpcsCommands"/>), and the
 /// message-level <see cref="HalyardRpcsChannel.SealMessage"/>/<see cref="HalyardRpcsChannel.OpenMessage"/> that
 /// bind the inner <c>seq</c> to the frame's GCM counter. Format + command numbers + payloads are confirmed from
-/// session 004's own decrypt (RPCS-SEMANTICS.md); the GCM is stubbed here (KAT'd elsewhere).
+/// session 004's own decrypt; the GCM is stubbed here (KAT'd elsewhere).
 /// </summary>
 public class V2RpcsMessageTests
 {

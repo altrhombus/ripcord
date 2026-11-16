@@ -4,7 +4,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 /// <summary>
 /// One RPCS message's inner plaintext — what sits inside the GCM envelope of a <see cref="HalyardRpcsChannel"/>
-/// frame (spec §9, confirmed byte-exact from session 004's own decrypt, RPCS-SEMANTICS.md):
+/// frame (v2 spec §9, confirmed byte-exact from session 004's own decrypt):
 ///
 /// <code>be64 seq | be32 payload_len | be16 cmd | be16 flags | payload[payload_len]</code>
 ///
