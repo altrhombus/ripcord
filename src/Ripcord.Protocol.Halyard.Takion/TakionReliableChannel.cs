@@ -183,7 +183,7 @@ public sealed class TakionReliableChannel : IAsyncDisposable
                 tsn = _nextSendTsn++;
                 packet = TakionDataChunk.Build(_remoteTag, tsn, channel, body.AsSpan(offset, take), endOfMessage: end, firstFragment: first);
                 // Once the stream keys are up, the console requires control DATA to be GMAC-authenticated
-                // (key position + tag written into the header); unauthenticated packets are dropped. Seal
+                // (keystream offset + tag written into the header); unauthenticated packets are dropped. Seal
                 // once here so retransmits resend the identical sealed bytes.
                 _sealer?.Invoke(packet);
                 _unacked[tsn] = packet;

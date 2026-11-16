@@ -20,7 +20,7 @@ public readonly record struct StreamHealthSignals(
     int ReceiveQueueDepth,   // A/V datagrams waiting for the processing thread (normally ~0)
     int DecodeQueueDepth,    // decoded-frame backlog (normally 0)
     double PipelineLatencyMs, // demux→present latency of the newest frame
-    double PacketLossRatio,   // 0..1, A/V unit loss over the last congestion window
+    double PacketLossRatio,   // 0..1, A/V unit loss over the last report window
     int DecodeMode,           // 0 = software, 1 = hardware + CPU readback, 2 = hardware zero-copy
     // Liveness. These are deliberately NOT defaulted: they gate every rule below, and when they were optional
     // a caller that forgot them silently pinned the verdict to "Starting…" forever with a live stream on

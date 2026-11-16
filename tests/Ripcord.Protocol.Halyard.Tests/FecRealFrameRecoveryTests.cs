@@ -59,8 +59,8 @@ public class FecRealFrameRecoveryTests
     private static byte[] Open(HalyardPacketCrypto crypto, byte[] packet)
     {
         Assert.True(HalyardStreamHeader.TryParse(packet, out var header));
-        Assert.True(crypto.VerifyPacket(header.KeyPosition, packet));
-        crypto.CryptPayloadInPlace(header.KeyPosition, packet.AsSpan(header.PayloadOffset));
+        Assert.True(crypto.VerifyPacket(header.KeystreamOffset, packet));
+        crypto.CryptPayloadInPlace(header.KeystreamOffset, packet.AsSpan(header.PayloadOffset));
         return packet;
     }
 

@@ -16,20 +16,20 @@ public readonly record struct HalyardControlKeyMaterial(
     int VersionSelector);
 
 /// <summary>
-/// Where a packet's crypto fields sit, so the per-packet seal/open can locate the key position, the GMAC
-/// tag, and the encrypted payload. A/V packets carry the tag at offset 10 and the key position at 14;
-/// input/feedback packets carry the tag at offset 8 and the key position at offset 4 (spec §3, §6.1).
+/// Where a packet's crypto fields sit, so the per-packet seal/open can locate the keystream offset, the GMAC
+/// tag, and the encrypted payload. A/V packets carry the tag at offset 10 and the keystream offset at 14;
+/// input packets carry the tag at offset 8 and the keystream offset at offset 4 (spec §3, §6.1).
 /// </summary>
-/// <param name="KeyPos">The packet's 64-bit key position (from the header; drives the nonce + rotation).</param>
+/// <param name="KeystreamOffset">The packet's 64-bit keystream offset (from the header; drives the nonce + rotation).</param>
 /// <param name="TagOffset">Byte offset of the 4-byte GMAC tag within the packet.</param>
 /// <param name="PayloadOffset">Byte offset where the (encrypted) media/input payload begins.</param>
-public readonly record struct HalyardPacketLayout(ulong KeyPos, int TagOffset, int PayloadOffset)
+public readonly record struct HalyardPacketLayout(ulong KeystreamOffset, int TagOffset, int PayloadOffset)
 {
     /// <summary>A/V (video/audio) packet: tag at offset 10.</summary>
-    public static HalyardPacketLayout Av(ulong keyPos, int payloadOffset) => new(keyPos, 10, payloadOffset);
+    public static HalyardPacketLayout Av(ulong keystreamOffset, int payloadOffset) => new(keystreamOffset, 10, payloadOffset);
 
-    /// <summary>Input/feedback packet: tag at offset 8, key position at offset 4.</summary>
-    public static HalyardPacketLayout Feedback(ulong keyPos, int payloadOffset) => new(keyPos, 8, payloadOffset);
+    /// <summary>Input packet: tag at offset 8, keystream offset at offset 4.</summary>
+    public static HalyardPacketLayout Input(ulong keystreamOffset, int payloadOffset) => new(keystreamOffset, 8, payloadOffset);
 }
 
 /// <summary>Input to first-time registration (obtaining a registration key for this client+console+account).</summary>

@@ -243,7 +243,7 @@ typedef struct {
     unsigned held_last_type;
     unsigned held_stream_info_repeats;
     unsigned heartbeats_answered; /* the console's, on the stream channel (cap48)             */
-    unsigned congestion_sent;   /* feedback packets - what the rate controller adapts to       */
+    unsigned loss_reports_sent;   /* input packets - what the rate controller adapts to       */
 
     /*
      * A/V, which shares the stream channel's UDP socket with the control association. Counted here

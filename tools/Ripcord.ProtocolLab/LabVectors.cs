@@ -886,7 +886,7 @@ internal static class LabVectors
         int count = 0;
 
         // AAD lengths bracketing the GHASH block boundary, plus 0 (a packet whose only "payload" is the
-        // zeroed tag/key-position fields still needs empty-vs-nonempty AAD to both work).
+        // zeroed tag/keystream-offset fields still needs empty-vs-nonempty AAD to both work).
         int[] lengths = [0, 1, 15, 16, 17, 31, 32, 33, 100];
         foreach (int length in lengths)
         {
@@ -934,18 +934,18 @@ internal static class LabVectors
         return count;
     }
 
-    // packetnonce <aesKey16> <baseIv16> <keyPos> <gmacNonce16> <ctrNonce16> <gmacKey16>
-    // keyPos values bracket the 16-byte block boundary (nonce derivation divides by 16), a rotation
+    // packetnonce <aesKey16> <baseIv16> <keystreamOffset> <gmacNonce16> <ctrNonce16> <gmacKey16>
+    // keystreamOffset values bracket the 16-byte block boundary (nonce derivation divides by 16), a rotation
     // window edge (720000 is an exact multiple of 45000 and still in the window below; the key changes
     // after it, HalyardPacketCrypto.WindowOf), and the 32-/64-bit edges the same way the
-    // control-plane IV vectors already do - a port that adds the key-position delta as a 32-bit value
+    // control-plane IV vectors already do - a port that adds the keystream-offset delta as a 32-bit value
     // passes every short session and fails only past 2^32.
     private static int EmitPacketNonce(StringBuilder sb, DerivedBytes stream)
     {
-        sb.AppendLine("# packetnonce <aesKey16> <baseIv16> <keyPos> <gmacNonce16> <ctrNonce16> <gmacKey16>");
+        sb.AppendLine("# packetnonce <aesKey16> <baseIv16> <keystreamOffset> <gmacNonce16> <ctrNonce16> <gmacKey16>");
         int count = 0;
 
-        ulong[] keyPositions = [
+        ulong[] keystreamOffsets = [
             0, 1, 15, 16, 17,
             45000 * 16 - 16, 45000 * 16, 45000 * 16 + 16, // either side of the first rotation boundary
             90000 * 16, // a second rotation window
@@ -958,17 +958,17 @@ internal static class LabVectors
         Span<byte> ctrNonce = stackalloc byte[16];
         Span<byte> gmacKey = stackalloc byte[16];
 
-        foreach (ulong keyPos in keyPositions)
+        foreach (ulong keystreamOffset in keystreamOffsets)
         {
             byte[] aesKey = stream.Next(16);
             byte[] baseIv = stream.Next(16);
             using var crypto = new HalyardPacketCrypto(aesKey, baseIv);
 
-            crypto.GmacNonce(keyPos, gmacNonce);
-            crypto.CtrNonce(keyPos, ctrNonce);
-            crypto.GmacKey(keyPos, gmacKey);
+            crypto.GmacNonce(keystreamOffset, gmacNonce);
+            crypto.CtrNonce(keystreamOffset, ctrNonce);
+            crypto.GmacKey(keystreamOffset, gmacKey);
 
-            sb.AppendLine($"packetnonce {Hex(aesKey)} {Hex(baseIv)} {keyPos} " +
+            sb.AppendLine($"packetnonce {Hex(aesKey)} {Hex(baseIv)} {keystreamOffset} " +
                 $"{Hex(gmacNonce.ToArray())} {Hex(ctrNonce.ToArray())} {Hex(gmacKey.ToArray())}");
             count++;
         }
@@ -977,34 +977,34 @@ internal static class LabVectors
         return count;
     }
 
-    // packettag <aesKey16> <baseIv16> <keyPos> <zeroKeyPos 0|1> <tagOffset> <packet_hex> <tag4>
+    // packettag <aesKey16> <baseIv16> <keystreamOffset> <zeroKeystreamOffset 0|1> <tagOffset> <packet_hex> <tag4>
     // The full per-packet path (nonce+key derivation, AAD zeroing, GMAC, 4-byte truncation) exactly as
     // HalyardPacketCrypto.ComputeTag runs it - both AAD-zeroing conventions (A/V: tag-only; control/
-    // congestion: tag+key-position), since that convention is the one place this layer is genuinely
+    // loss report: tag+keystream-offset), since that convention is the one place this layer is genuinely
     // protocol-specific rather than "just GCM".
     private static int EmitPacketTag(StringBuilder sb, DerivedBytes stream)
     {
-        sb.AppendLine("# packettag <aesKey16> <baseIv16> <keyPos> <zeroKeyPos> <tagOffset> <packet_hex> <tag4>");
+        sb.AppendLine("# packettag <aesKey16> <baseIv16> <keystreamOffset> <zeroKeystreamOffset> <tagOffset> <packet_hex> <tag4>");
         int count = 0;
 
-        (int tagOffset, bool zeroKeyPos)[] classes = [
+        (int tagOffset, bool zeroKeystreamOffset)[] classes = [
             (HalyardPacketCrypto.AvTagOffset, false),      // video/audio
-            (HalyardPacketCrypto.FeedbackTagOffset, false), // feedback/input
-            (5, true),                                      // control (tag@5, zeroes tag+keypos@9)
-            (7, true),                                       // congestion (tag@7, zeroes tag+keypos@0xb)
+            (HalyardPacketCrypto.InputTagOffset, false), // input
+            (5, true),                                      // control (tag@5, zeroes tag+keystream_offset@9)
+            (7, true),                                       // loss report (tag@7, zeroes tag+keystream_offset@0xb)
         ];
 
-        foreach ((int tagOffset, bool zeroKeyPos) in classes)
+        foreach ((int tagOffset, bool zeroKeystreamOffset) in classes)
         {
-            foreach (ulong keyPos in new ulong[] { 0, 16, 45000 * 16 + 32 })
+            foreach (ulong keystreamOffset in new ulong[] { 0, 16, 45000 * 16 + 32 })
             {
                 byte[] aesKey = stream.Next(16);
                 byte[] baseIv = stream.Next(16);
                 byte[] packet = stream.Next(tagOffset + 4 + 20); // header-ish bytes + a bit of "payload"
                 using var crypto = new HalyardPacketCrypto(aesKey, baseIv);
 
-                byte[] tag = crypto.ComputeTag(keyPos, packet, tagOffset, zeroKeyPos);
-                sb.AppendLine($"packettag {Hex(aesKey)} {Hex(baseIv)} {keyPos} {(zeroKeyPos ? 1 : 0)} " +
+                byte[] tag = crypto.ComputeTag(keystreamOffset, packet, tagOffset, zeroKeystreamOffset);
+                sb.AppendLine($"packettag {Hex(aesKey)} {Hex(baseIv)} {keystreamOffset} {(zeroKeystreamOffset ? 1 : 0)} " +
                     $"{tagOffset} {Hex(packet)} {Hex(tag)}");
                 count++;
             }

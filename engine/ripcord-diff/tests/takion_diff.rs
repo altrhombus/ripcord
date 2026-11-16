@@ -176,7 +176,7 @@ fn sealer_sequences_and_verification() {
         for (kind, p, offset) in rust.iter_mut() {
             match kind {
                 0 => s.seal_control(p),
-                1 => s.seal_congestion(p),
+                1 => s.seal_loss_report(p),
                 _ => s.seal_input(p, *offset),
             }
         }

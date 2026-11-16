@@ -14,7 +14,7 @@ namespace Ripcord.Input;
 ///
 /// <para>Phase A is input only; haptics / adaptive triggers / lightbar (output) come later and need a
 /// console→client haptics path that doesn't exist yet — hence <see cref="GetExtendedFeatures"/> returns null.
-/// Frames are stamped with <see cref="DateTime.UtcNow"/> ticks so the feedback sender's keepalive timing is in
+/// Frames are stamped with <see cref="DateTime.UtcNow"/> ticks so the input sender's keepalive timing is in
 /// the units it expects.</para>
 /// </summary>
 [SupportedOSPlatform("windows")]

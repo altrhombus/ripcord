@@ -45,13 +45,13 @@ fn be32(b: &[u8]) -> u32 {
 }
 
 /// The 13-byte header: base type, the PEER's verification tag (zero before one is negotiated), then the
-/// GMAC tag and key position (zero until stream keys exist).
+/// GMAC tag and keystream offset (zero until stream keys exist).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Header {
     pub base_type: u8,
     pub verification_tag: u32,
     pub gmac_tag: u32,
-    pub key_position: u32,
+    pub keystream_offset: u32,
 }
 
 impl Header {
@@ -65,7 +65,7 @@ impl Header {
         out.push(self.base_type);
         out.extend_from_slice(&self.verification_tag.to_be_bytes());
         out.extend_from_slice(&self.gmac_tag.to_be_bytes());
-        out.extend_from_slice(&self.key_position.to_be_bytes());
+        out.extend_from_slice(&self.keystream_offset.to_be_bytes());
         out.extend_from_slice(chunk);
         out
     }
@@ -78,7 +78,7 @@ impl Header {
                 base_type: h[0],
                 verification_tag: be32(&h[1..]),
                 gmac_tag: be32(&h[5..]),
-                key_position: be32(&h[9..]),
+                keystream_offset: be32(&h[9..]),
             },
             &data[HEADER_SIZE..],
         ))

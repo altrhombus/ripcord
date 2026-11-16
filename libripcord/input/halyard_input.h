@@ -6,17 +6,17 @@
  * packets and 1,258 history packets against a deliberately scripted input sequence. Every field position
  * below is cited there; nothing here is guessed.
  *
- * TWO PACKET TYPES, one 12-byte header, both sealed with the shared up-direction key position:
+ * TWO PACKET TYPES, one 12-byte header, both sealed with the shared up-direction keystream offset:
  *
  *   off 0      u8    6 = state, 1 = history
  *   off 1..2   u16   sequence number, per type, +1 per packet, BIG-endian
  *   off 3      u8    0
- *   off 4..7   u32   key position (drives the crypto nonce)          [written at seal]
+ *   off 4..7   u32   keystream offset (drives the crypto nonce)          [written at seal]
  *   off 8..11  u32   GMAC tag                                        [written at seal]
  *   off 0xc..        AES-CTR encrypted payload
  *
  * TWO DECRYPTION FACTS THAT EACH COST A DEBUGGING PASS on the .NET side, recorded in the spec so this
- * port did not have to repeat them: the key position is a u32 at offset 4 (not where control puts it),
+ * port did not have to repeat them: the keystream offset is a u32 at offset 4 (not where control puts it),
  * and the CTR counter increments LITTLE-endian - a stock big-endian CTR decodes only the first 16-byte
  * block correctly and produces noise after it.
  *
@@ -140,7 +140,7 @@ size_t halyard_input_build_history_payload(halyard_input_writer *w,
  */
 size_t halyard_input_repeat_history_payload(const halyard_input_writer *w, uint8_t *buf, size_t buf_size);
 
-/* Writes the 12-byte header. Key position and tag are left zero for the sealer to fill. */
+/* Writes the 12-byte header. Keystream offset and tag are left zero for the sealer to fill. */
 size_t halyard_input_write_header(uint8_t type, uint16_t sequence, uint8_t *buf, size_t buf_size);
 
 #endif /* HALYARD_INPUT_H */

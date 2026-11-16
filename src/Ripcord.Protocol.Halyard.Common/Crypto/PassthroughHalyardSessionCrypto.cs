@@ -48,9 +48,9 @@ public sealed class PassthroughHalyardSessionCrypto : IHalyardSessionCrypto
 
     public void SealControlMessage(Span<byte> packet) { }
 
-    public void SealCongestionPacket(Span<byte> packet) { }
+    public void SealLossReport(Span<byte> packet) { }
 
-    public void SealFeedbackPacket(Span<byte> packet, int payloadOffset) { }
+    public void SealInputPacket(Span<byte> packet, int payloadOffset) { }
 }
 
 /// <summary>Stub registration: fails clearly until the real flow is derived.</summary>

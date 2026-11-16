@@ -42,7 +42,7 @@ public class TakionSessionNegotiatorTests
         using var crypto = new HalyardV1SessionCrypto(TestSecrets.SyntheticControlSecrets());
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
-        var sealedByServer = new TaskCompletionSource<(byte[] packet, byte[] plaintext, ulong keyPos, int payloadOffset)>();
+        var sealedByServer = new TaskCompletionSource<(byte[] packet, byte[] plaintext, ulong keystreamOffset, int payloadOffset)>();
         var serverTask = RunMockConsoleAsync(serverSocket, sealedByServer, cts.Token);
 
         await using var channel = new TakionReliableChannel(
@@ -65,8 +65,8 @@ public class TakionSessionNegotiatorTests
         Assert.Equal(MockConsoleVersion, await clientVersions.Task.WaitAsync(cts.Token));
 
         // Decisive: the client opens the A/V packet the server sealed with the negotiated s->c keys.
-        var (avPacket, plaintext, keyPos, payloadOffset) = await sealedByServer.Task.WaitAsync(cts.Token);
-        Assert.True(crypto.TryOpenPacket(avPacket, HalyardPacketLayout.Av(keyPos, payloadOffset)));
+        var (avPacket, plaintext, keystreamOffset, payloadOffset) = await sealedByServer.Task.WaitAsync(cts.Token);
+        Assert.True(crypto.TryOpenPacket(avPacket, HalyardPacketLayout.Av(keystreamOffset, payloadOffset)));
         Assert.Equal(Convert.ToHexString(plaintext), Convert.ToHexString(avPacket.AsSpan(payloadOffset).ToArray()));
 
         await cts.CancelAsync();
@@ -248,17 +248,17 @@ public class TakionSessionNegotiatorTests
                 var packetCrypto = new HalyardPacketCrypto(s2c);
 
                 // Seal an A/V packet with those keys for the client to open.
-                const ulong keyPos = 0x00013060;
+                const ulong keystreamOffset = 0x00013060;
                 const int payloadOffset = 21;
                 byte[] plaintext = RandomNumberGenerator.GetBytes(160);
                 var avPacket = new byte[payloadOffset + plaintext.Length];
                 avPacket[0] = 0x02;
                 plaintext.CopyTo(avPacket, payloadOffset);
-                var ct2 = packetCrypto.CryptPayload(keyPos, avPacket.AsSpan(payloadOffset));
+                var ct2 = packetCrypto.CryptPayload(keystreamOffset, avPacket.AsSpan(payloadOffset));
                 ct2.CopyTo(avPacket.AsSpan(payloadOffset));
-                WriteKeyPos(avPacket, keyPos);
-                byte[] sealedPacket = packetCrypto.SealPacket(keyPos, avPacket, HalyardPacketCrypto.AvTagOffset);
-                sealedByServer.TrySetResult((sealedPacket, plaintext, keyPos, payloadOffset));
+                WriteKeystreamOffset(avPacket, keystreamOffset);
+                byte[] sealedPacket = packetCrypto.SealPacket(keystreamOffset, avPacket, HalyardPacketCrypto.AvTagOffset);
+                sealedByServer.TrySetResult((sealedPacket, plaintext, keystreamOffset, payloadOffset));
 
                 // Reply with the server pubkey + signature so the client can verify + establish.
                 byte[] serverSig = HalyardStreamKeySchedule.ComputeEcdhSignature(HandshakeKey, serverPub);
@@ -282,11 +282,11 @@ public class TakionSessionNegotiatorTests
         }
     }
 
-    private static void WriteKeyPos(byte[] packet, ulong keyPos)
+    private static void WriteKeystreamOffset(byte[] packet, ulong keystreamOffset)
     {
-        packet[14] = (byte)(keyPos >> 24);
-        packet[15] = (byte)(keyPos >> 16);
-        packet[16] = (byte)(keyPos >> 8);
-        packet[17] = (byte)keyPos;
+        packet[14] = (byte)(keystreamOffset >> 24);
+        packet[15] = (byte)(keystreamOffset >> 16);
+        packet[16] = (byte)(keystreamOffset >> 8);
+        packet[17] = (byte)keystreamOffset;
     }
 }

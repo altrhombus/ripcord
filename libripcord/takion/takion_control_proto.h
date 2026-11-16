@@ -252,7 +252,7 @@ size_t takion_control_build_mtu_command(uint32_t id, uint32_t mtu_req, uint32_t 
 /*
  * CONNECTION_QUALITY (type 16) - the client to server half of rate control.
  *
- * The console's encoder decides its own rate, and congestion reports only tell it what was lost. This is
+ * The console's encoder decides its own rate, and loss reports only tell it what was lost. This is
  * how it learns what the client actually WANTS, which is a different thing: a client may be losing
  * nothing and still be unable to use what it is being sent. HalyardTakionStream.SendConnectionQualityAsync
  * builds the same three fields - targetBitrate (1, varint), rtt (5, double) and lossPercent (7, double) -

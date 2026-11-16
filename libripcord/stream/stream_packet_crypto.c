@@ -22,7 +22,7 @@ static void write_le64(uint8_t *p, uint64_t v)
 }
 
 /* Add a 64-bit addend to a 16-byte little-endian IV, modulo 2^128. Every caller here derives the addend
- * from a key position (>>4), so 64 bits is always enough - matches HalyardPacketCrypto.IvAddFast. */
+ * from a keystream offset (>>4), so 64 bits is always enough - matches HalyardPacketCrypto.IvAddFast. */
 static void iv_add_fast(const uint8_t iv[16], uint64_t addend, uint8_t out[16])
 {
     uint64_t low = read_le64(iv);
@@ -94,20 +94,20 @@ void stream_packet_crypto_init(stream_packet_crypto *ctx, const uint8_t aes_key[
     fold(ctx->aes_key, ctx->base_iv, ctx->gmac_base_key);
 }
 
-void stream_packet_crypto_gmac_nonce(const stream_packet_crypto *ctx, uint64_t key_pos, uint8_t out[16])
+void stream_packet_crypto_gmac_nonce(const stream_packet_crypto *ctx, uint64_t keystream_offset, uint8_t out[16])
 {
-    iv_add_fast(ctx->base_iv, key_pos >> 4, out);
+    iv_add_fast(ctx->base_iv, keystream_offset >> 4, out);
 }
 
-void stream_packet_crypto_ctr_nonce(const stream_packet_crypto *ctx, uint64_t key_pos, uint8_t out[16])
+void stream_packet_crypto_ctr_nonce(const stream_packet_crypto *ctx, uint64_t keystream_offset, uint8_t out[16])
 {
-    iv_add_fast(ctx->base_iv, (key_pos + 16) >> 4, out);
+    iv_add_fast(ctx->base_iv, (keystream_offset + 16) >> 4, out);
 }
 
-void stream_packet_crypto_gmac_key(const stream_packet_crypto *ctx, uint64_t key_pos, uint8_t out[16])
+void stream_packet_crypto_gmac_key(const stream_packet_crypto *ctx, uint64_t keystream_offset, uint8_t out[16])
 {
     /* An exact multiple of 45000 still belongs to the window below it (HalyardPacketCrypto.WindowOf). */
-    uint64_t window = key_pos == 0 ? 0 : (key_pos - 1) / 45000u;
+    uint64_t window = keystream_offset == 0 ? 0 : (keystream_offset - 1) / 45000u;
 
     if (window == 0) {
         memcpy(out, ctx->gmac_base_key, 16);
@@ -121,20 +121,20 @@ void stream_packet_crypto_gmac_key(const stream_packet_crypto *ctx, uint64_t key
     }
 }
 
-void stream_packet_crypto_crypt_payload(const stream_packet_crypto *ctx, uint64_t key_pos,
+void stream_packet_crypto_crypt_payload(const stream_packet_crypto *ctx, uint64_t keystream_offset,
                                        uint8_t *payload, size_t payload_length)
 {
     uint8_t nonce[16];
 
-    stream_packet_crypto_ctr_nonce(ctx, key_pos, nonce);
+    stream_packet_crypto_ctr_nonce(ctx, keystream_offset, nonce);
     /* Little-endian counter increment - the PS5 packet cipher's own convention, matching its GMAC nonce
      * derivation above (both add into the IV little-endian). */
     rc_aes128_ctr(ctx->aes_key, nonce, payload, payload, payload_length, 1);
 }
 
-int stream_packet_crypto_compute_tag(const stream_packet_crypto *ctx, uint64_t key_pos,
+int stream_packet_crypto_compute_tag(const stream_packet_crypto *ctx, uint64_t keystream_offset,
                                      const uint8_t *packet, size_t packet_length,
-                                     int tag_offset, int zero_key_pos, uint8_t out_tag[4])
+                                     int tag_offset, int zero_keystream_offset, uint8_t out_tag[4])
 {
     uint8_t aad[STREAM_PACKET_CRYPTO_MAX_PACKET];
     size_t clear_len;
@@ -147,13 +147,13 @@ int stream_packet_crypto_compute_tag(const stream_packet_crypto *ctx, uint64_t k
 
     memcpy(aad, packet, packet_length);
 
-    clear_len = (size_t)STREAM_PACKET_CRYPTO_TAG_LENGTH + (zero_key_pos ? 4u : 0u);
+    clear_len = (size_t)STREAM_PACKET_CRYPTO_TAG_LENGTH + (zero_keystream_offset ? 4u : 0u);
     if (clear_len > packet_length - (size_t)tag_offset)
         clear_len = packet_length - (size_t)tag_offset;
     memset(aad + tag_offset, 0, clear_len);
 
-    stream_packet_crypto_gmac_key(ctx, key_pos, gmac_key);
-    stream_packet_crypto_gmac_nonce(ctx, key_pos, nonce);
+    stream_packet_crypto_gmac_key(ctx, keystream_offset, gmac_key);
+    stream_packet_crypto_gmac_nonce(ctx, keystream_offset, nonce);
 
     /*
      * Build the GHASH tables only when the rotation window has actually changed. The const-cast is
@@ -173,23 +173,23 @@ int stream_packet_crypto_compute_tag(const stream_packet_crypto *ctx, uint64_t k
     return 1;
 }
 
-int stream_packet_crypto_seal(const stream_packet_crypto *ctx, uint64_t key_pos,
-                             uint8_t *packet, size_t packet_length, int tag_offset, int zero_key_pos)
+int stream_packet_crypto_seal(const stream_packet_crypto *ctx, uint64_t keystream_offset,
+                             uint8_t *packet, size_t packet_length, int tag_offset, int zero_keystream_offset)
 {
     uint8_t tag[4];
 
-    if (!stream_packet_crypto_compute_tag(ctx, key_pos, packet, packet_length, tag_offset, zero_key_pos, tag))
+    if (!stream_packet_crypto_compute_tag(ctx, keystream_offset, packet, packet_length, tag_offset, zero_keystream_offset, tag))
         return 0;
     memcpy(packet + tag_offset, tag, sizeof(tag));
     return 1;
 }
 
-int stream_packet_crypto_verify(const stream_packet_crypto *ctx, uint64_t key_pos,
-                                const uint8_t *packet, size_t packet_length, int tag_offset, int zero_key_pos)
+int stream_packet_crypto_verify(const stream_packet_crypto *ctx, uint64_t keystream_offset,
+                                const uint8_t *packet, size_t packet_length, int tag_offset, int zero_keystream_offset)
 {
     uint8_t expected[4];
 
-    if (!stream_packet_crypto_compute_tag(ctx, key_pos, packet, packet_length, tag_offset, zero_key_pos, expected))
+    if (!stream_packet_crypto_compute_tag(ctx, keystream_offset, packet, packet_length, tag_offset, zero_keystream_offset, expected))
         return 0;
     return memcmp(expected, packet + tag_offset, sizeof(expected)) == 0;
 }

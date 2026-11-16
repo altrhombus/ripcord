@@ -805,7 +805,7 @@ static unsigned g_idr_requests;
  * How often the console is told what arrived. The reference's interval, and it is the rate controller's
  * sampling period rather than an arbitrary tick - reporting less often gives it less to adapt to.
  */
-#define RC_CONGESTION_INTERVAL_MS 200u
+#define RC_LOSS_REPORT_INTERVAL_MS 200u
 
 /*
  * How often a CONNECTION_QUALITY report may go out, and how far it steps the ask down.
@@ -1228,7 +1228,7 @@ static void request_idr(uint64_t now);
  * which is exactly when it is being used.
  *
  * The sealer does the encryption and the tag together - see takion_control_sealer_seal_input for why
- * those cannot be separated, and for why input must share the sealer's key position rather than count
+ * those cannot be separated, and for why input must share the sealer's keystream offset rather than count
  * its own.
  */
 static void send_input(rc_connect_result *out)
@@ -1406,7 +1406,7 @@ static void send_input(rc_connect_result *out)
 }
 
 static void send_periodic(halyard_control_session *session, rc_connect_result *out,
-                          uint64_t *next_congestion)
+                          uint64_t *next_loss_report)
 {
     uint64_t now = rc_time_ms();
 
@@ -1418,13 +1418,13 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     }
 
     /*
-     * CONGESTION FEEDBACK: what arrived and what did not. The console's rate controller adapts to it,
+     * LOSS REPORTS: what arrived and what did not. The console's rate controller adapts to it,
      * and the counts come from the demuxer, which has been computing them all along.
      * stream_demux_take_packet_stats RESETS on read, so each report covers its own window.
      */
-    if (out->demux_ready && now >= *next_congestion) {
+    if (out->demux_ready && now >= *next_loss_report) {
         long got = 0, missed = 0;
-        uint8_t feedback[TAKION_CONGESTION_PACKET_SIZE];
+        uint8_t report[TAKION_LOSS_REPORT_SIZE];
         size_t fn;
 
         stream_demux_take_packet_stats(&g_demux, &got, &missed);
@@ -1432,17 +1432,17 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
         out->units_lost += missed;
         g_overlay_units_lost = (unsigned long)out->units_lost;
 
-        fn = takion_congestion_build((unsigned long)(got < 0 ? 0 : got),
+        fn = takion_loss_report_build((unsigned long)(got < 0 ? 0 : got),
                                      (unsigned long)(missed < 0 ? 0 : missed),
-                                     feedback, sizeof(feedback));
+                                     report, sizeof(report));
         if (fn > 0u) {
-            takion_control_sealer_seal_congestion(&g_sealer, feedback, fn);
-            if (sendto(g_stream_channel.sock, feedback, fn, 0,
+            takion_control_sealer_seal_loss_report(&g_sealer, report, fn);
+            if (sendto(g_stream_channel.sock, report, fn, 0,
                        (struct sockaddr *)&g_stream_channel.peer,
                        sizeof(g_stream_channel.peer)) >= 0)
-                out->congestion_sent++;
+                out->loss_reports_sent++;
         }
-        *next_congestion = now + RC_CONGESTION_INTERVAL_MS;
+        *next_loss_report = now + RC_LOSS_REPORT_INTERVAL_MS;
     }
 
     /*
@@ -1454,7 +1454,7 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
      * the bitrate it is sending. Another port would throttle for entirely different reasons, or not at
      * all, which is exactly why this does not belong in the shared layer.
      *
-     * Congestion feedback cannot express this. It reports what was lost, and nothing is being lost: the
+     * Loss reports cannot express this. It reports what was lost, and nothing is being lost: the
      * link is fine and the decoder simply cannot use what arrives. That gap is what CONNECTION_QUALITY
      * is for.
      */
@@ -1571,17 +1571,17 @@ static uint64_t g_crypto_ticks;
 static unsigned g_crypto_calls;
 
 static int timed_open_packet(void *ctx, uint8_t *packet, size_t packet_length,
-                             uint32_t key_position, int payload_offset)
+                             uint32_t keystream_offset, int payload_offset)
 {
     stream_packet_crypto *crypto = (stream_packet_crypto *)ctx;
     uint64_t t0 = rc_tick();
     int ok;
 
-    if (!stream_packet_crypto_verify(crypto, key_position, packet, packet_length,
+    if (!stream_packet_crypto_verify(crypto, keystream_offset, packet, packet_length,
                                      STREAM_HEADER_TAG_OFFSET, 0)) {
         ok = 0;
     } else {
-        stream_packet_crypto_crypt_payload(crypto, key_position, packet + payload_offset,
+        stream_packet_crypto_crypt_payload(crypto, keystream_offset, packet + payload_offset,
                                            packet_length - (size_t)payload_offset);
         ok = 1;
     }
@@ -1592,7 +1592,7 @@ static int timed_open_packet(void *ctx, uint8_t *packet, size_t packet_length,
 }
 
 static int drain_av(halyard_control_session *session, rc_connect_result *out,
-                    uint64_t *next_congestion)
+                    uint64_t *next_loss_report)
 {
     int drained;
 
@@ -1616,11 +1616,11 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
          * THE TIMERS ARE CHECKED IN HERE TOO, which is what lets the bound be generous.
          *
          * They used to live only in the outer loop, so the bound was a compromise: large enough
-         * to drain a burst, small enough that heartbeats and congestion reports were not starved
+         * to drain a burst, small enough that heartbeats and loss reports were not starved
          * by one. Checking them per drained packet costs two comparisons and removes the
          * tension, so the bound can be sized for the burst alone.
          */
-        send_periodic(session, out, next_congestion);
+        send_periodic(session, out, next_loss_report);
 
         uint8_t peek[STREAM_HEADER_LENGTH];
         ssize_t peeked = recvfrom(g_stream_channel.sock, peek, sizeof(peek), MSG_PEEK,
@@ -1664,7 +1664,7 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
                  * question and became the fault.
                  *
                  * The A/V rule itself is unchanged and still enforced, inside the demuxer: tag at offset
-                 * 10, key position read from the packet at 14, and only the tag zeroed in the AAD - not
+                 * 10, keystream offset read from the packet at 14, and only the tag zeroed in the AAD - not
                  * the control rule. av_verified now counts what the DEMUXER accepted, which is the
                  * demuxer's own accounting - units received against units lost - is the number that
                  * matters from here, and it already reports exactly this.
@@ -2888,7 +2888,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     takion_control_sealer_init(&g_sealer, g_negotiator.send_aes_key, g_negotiator.send_base_iv);
     /*
      * Input becomes sendable at exactly the moment the sealer is armed, and not before: an input
-     * packet sent unsealed would be dropped by the console, and one sent with a key position from
+     * packet sent unsealed would be dropped by the console, and one sent with a keystream offset from
      * before agreement would be sealed under the wrong key.
      */
     halyard_input_writer_init(&g_input);
@@ -3157,7 +3157,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
      */
     {
         uint64_t deadline;
-        uint64_t next_congestion;
+        uint64_t next_loss_report;
         uint64_t hold_ms;
         uint64_t hold_started;
         uint64_t next_sysutil;
@@ -3212,7 +3212,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
          * than asking on every iteration.
          */
         next_sysutil = rc_time_ms();
-        next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
+        next_loss_report = rc_time_ms() + RC_LOSS_REPORT_INTERVAL_MS;
         g_last_picture_ms = rc_time_ms();
 
         say(RC_PHASE_CONNECTING, "Connecting", "Waiting for the console to send video", NULL);
@@ -3263,7 +3263,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                 break;
             }
 
-            send_periodic(session, out, &next_congestion);
+            send_periodic(session, out, &next_loss_report);
 
             /*
              * A STREAM THAT STOPS DOES NOT CLOSE THE SOCKET, which is why nothing noticed it before.
@@ -3314,7 +3314,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              * channel's heartbeats and the console's own messages are serviced by the loop outside
              * this one, and a sustained flood that never yields would starve them.
              */
-            drained = drain_av(session, out, &next_congestion);
+            drained = drain_av(session, out, &next_loss_report);
             /*
              * A negative peek is treated as "nothing waiting", not as an error, and deliberately so.
              * On this platform sockets are lv2 descriptors and errors surface through net_errno rather
@@ -3406,7 +3406,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->largest_frame = g_tally.largest_frame;
     {
         /*
-         * Whatever is left in the last, partial window. ADDED rather than assigned: the congestion loop
+         * Whatever is left in the last, partial window. ADDED rather than assigned: the loss-report loop
          * has been draining these every 200 ms, and take_packet_stats resets on read - assigning here
          * would report only the final fragment and throw away thirty seconds of counting.
          */

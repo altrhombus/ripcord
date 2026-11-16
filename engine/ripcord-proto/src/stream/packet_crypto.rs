@@ -1,27 +1,27 @@
 //! The v1 per-packet stream crypto, one channel direction. Ported from
 //! `libripcord/stream/stream_packet_crypto.c`.
 //!
-//! AES-128-CTR payload encryption plus a 4-byte GMAC, both keyed off the packet's 64-bit key position.
+//! AES-128-CTR payload encryption plus a 4-byte GMAC, both keyed off the packet's 64-bit keystream offset.
 //! Encrypt-then-MAC: a receiver verifies the tag over the packet as it stands on the wire, then decrypts.
 //!
 //! Nonces are 16 bytes, formed by little-endian addition into the base IV modulo 2^128:
 //!
 //! ```text
-//! GMAC nonce = baseIv + keyPos/16
-//! CTR nonce  = baseIv + (keyPos + 16)/16         one block above the GMAC's
+//! GMAC nonce = baseIv + keystreamOffset/16
+//! CTR nonce  = baseIv + (keystreamOffset + 16)/16         one block above the GMAC's
 //! ```
 //!
-//! The GMAC key rotates every 45,000 key-position units; the payload key does not:
+//! The GMAC key rotates every 45,000 keystream-offset units; the payload key does not:
 //!
 //! ```text
 //! window 0:    gmacKey = fold(aesKey, baseIv)
-//! window n>=1: gmacKey = fold(gmacKey_0, baseIv + n * 0xAF6E)          n = (keyPos - 1) / 45000, 0 at keyPos 0
+//! window n>=1: gmacKey = fold(gmacKey_0, baseIv + n * 0xAF6E)          n = (keystreamOffset - 1) / 45000, 0 at keystreamOffset 0
 //! fold(a, b) = SHA-256(a || b)[0:16] XOR SHA-256(a || b)[16:32]
 //! ```
 //!
-//! Which bytes the AAD treats as zero depends on the packet class. A/V (tag at 10) and feedback (tag
-//! at 8) zero the 4-byte tag only; control (tag at 5) and congestion (tag at 7) also zero the key
-//! position that follows it. Callers say which with `zero_key_pos` rather than this module guessing
+//! Which bytes the AAD treats as zero depends on the packet class. A/V (tag at 10) and input (tag
+//! at 8) zero the 4-byte tag only; control (tag at 5) and loss reports (tag at 7) also zero the key
+//! position that follows it. Callers say which with `zero_keystream_offset` rather than this module guessing
 //! from the offset.
 
 use aes::Aes128;
@@ -33,7 +33,7 @@ use sha2::{Digest, Sha256};
 
 pub const TAG_LENGTH: usize = 4;
 pub const AV_TAG_OFFSET: usize = 10;
-pub const FEEDBACK_TAG_OFFSET: usize = 8;
+pub const INPUT_TAG_OFFSET: usize = 8;
 
 /// The largest packet a tag is computed over. Tag computation fails closed past it, as the C core's
 /// does, so the two engines accept exactly the same packets.
@@ -57,11 +57,11 @@ pub struct PacketCrypto {
     prepared: Option<(u64, Gmac)>,
 }
 
-/// The rotation window of a key position. An exact multiple of 45,000 still belongs to the window below
+/// The rotation window of a keystream offset. An exact multiple of 45,000 still belongs to the window below
 /// it, in both control planes and both directions: every captured packet on a boundary verifies this way
 /// (`HalyardPacketCrypto.WindowOf` has the evidence).
-pub fn window_of(key_pos: u64) -> u64 {
-    key_pos.saturating_sub(1) / ROTATION_INTERVAL
+pub fn window_of(keystream_offset: u64) -> u64 {
+    keystream_offset.saturating_sub(1) / ROTATION_INTERVAL
 }
 
 fn fold(a: &[u8; 16], b: &[u8; 16]) -> [u8; 16] {
@@ -80,17 +80,17 @@ impl PacketCrypto {
         }
     }
 
-    pub fn gmac_nonce(&self, key_pos: u64) -> [u8; 16] {
-        self.base_iv.wrapping_add(u128::from(key_pos >> 4)).to_le_bytes()
+    pub fn gmac_nonce(&self, keystream_offset: u64) -> [u8; 16] {
+        self.base_iv.wrapping_add(u128::from(keystream_offset >> 4)).to_le_bytes()
     }
 
-    pub fn ctr_nonce(&self, key_pos: u64) -> [u8; 16] {
+    pub fn ctr_nonce(&self, keystream_offset: u64) -> [u8; 16] {
         // The +16 wraps in 64 bits, as it does in the C core and in the .NET reference.
-        self.base_iv.wrapping_add(u128::from(key_pos.wrapping_add(16) >> 4)).to_le_bytes()
+        self.base_iv.wrapping_add(u128::from(keystream_offset.wrapping_add(16) >> 4)).to_le_bytes()
     }
 
-    pub fn gmac_key(&self, key_pos: u64) -> [u8; 16] {
-        self.gmac_key_for_window(window_of(key_pos))
+    pub fn gmac_key(&self, keystream_offset: u64) -> [u8; 16] {
+        self.gmac_key_for_window(window_of(keystream_offset))
     }
 
     fn gmac_key_for_window(&self, window: u64) -> [u8; 16] {
@@ -104,8 +104,8 @@ impl PacketCrypto {
 
     /// AES-128-CTR over `payload` in place, with a 128-bit little-endian counter. Symmetric: the same
     /// call encrypts and decrypts.
-    pub fn crypt_payload(&self, key_pos: u64, payload: &mut [u8]) {
-        let core = CtrCore::inner_iv_init(&self.aes, &self.ctr_nonce(key_pos).into());
+    pub fn crypt_payload(&self, keystream_offset: u64, payload: &mut [u8]) {
+        let core = CtrCore::inner_iv_init(&self.aes, &self.ctr_nonce(keystream_offset).into());
         Ctr128Le::from_core(core).apply_keystream(payload);
     }
 
@@ -113,10 +113,10 @@ impl PacketCrypto {
     /// applied to a copy. `None` if the packet exceeds [`MAX_PACKET`] or the tag offset lies past its end.
     pub fn compute_tag(
         &mut self,
-        key_pos: u64,
+        keystream_offset: u64,
         packet: &[u8],
         tag_offset: usize,
-        zero_key_pos: bool,
+        zero_keystream_offset: bool,
     ) -> Option<[u8; TAG_LENGTH]> {
         if packet.len() > MAX_PACKET || tag_offset > packet.len() {
             return None;
@@ -124,16 +124,16 @@ impl PacketCrypto {
         let mut scratch = [0u8; MAX_PACKET];
         let aad = &mut scratch[..packet.len()];
         aad.copy_from_slice(packet);
-        let clear = (TAG_LENGTH + if zero_key_pos { 4 } else { 0 }).min(packet.len() - tag_offset);
+        let clear = (TAG_LENGTH + if zero_keystream_offset { 4 } else { 0 }).min(packet.len() - tag_offset);
         aad[tag_offset..tag_offset + clear].fill(0);
 
-        let window = window_of(key_pos);
+        let window = window_of(keystream_offset);
         if !matches!(self.prepared, Some((w, _)) if w == window) {
             let key = self.gmac_key_for_window(window);
             self.prepared = Some((window, Gmac::new(&key.into())));
         }
         let (_, gmac) = self.prepared.as_ref()?;
-        let nonce = self.gmac_nonce(key_pos).into();
+        let nonce = self.gmac_nonce(keystream_offset).into();
         // An empty message cannot exceed GCM's length limits, and the AAD is capped at MAX_PACKET.
         let tag = gmac.encrypt_inout_detached(&nonce, aad, (&mut [][..]).into()).ok()?;
         let mut out = [0u8; TAG_LENGTH];
@@ -143,11 +143,11 @@ impl PacketCrypto {
 
     /// Writes the tag into `packet[tag_offset..tag_offset + 4]` (sender side). `false` on the same
     /// conditions as [`compute_tag`](Self::compute_tag), or if the tag does not fit.
-    pub fn seal(&mut self, key_pos: u64, packet: &mut [u8], tag_offset: usize, zero_key_pos: bool) -> bool {
+    pub fn seal(&mut self, keystream_offset: u64, packet: &mut [u8], tag_offset: usize, zero_keystream_offset: bool) -> bool {
         if tag_offset.checked_add(TAG_LENGTH).is_none_or(|end| end > packet.len()) {
             return false;
         }
-        match self.compute_tag(key_pos, packet, tag_offset, zero_key_pos) {
+        match self.compute_tag(keystream_offset, packet, tag_offset, zero_keystream_offset) {
             Some(tag) => {
                 packet[tag_offset..tag_offset + TAG_LENGTH].copy_from_slice(&tag);
                 true
@@ -158,11 +158,11 @@ impl PacketCrypto {
 
     /// Whether the packet's on-wire tag is correct (receiver side). A packet too short to carry a tag
     /// fails; "cannot be authenticated" is never "fine".
-    pub fn verify(&mut self, key_pos: u64, packet: &[u8], tag_offset: usize, zero_key_pos: bool) -> bool {
+    pub fn verify(&mut self, keystream_offset: u64, packet: &[u8], tag_offset: usize, zero_keystream_offset: bool) -> bool {
         let Some(on_wire) = packet.get(tag_offset..tag_offset.saturating_add(TAG_LENGTH)) else {
             return false;
         };
-        let Some(expected) = self.compute_tag(key_pos, packet, tag_offset, zero_key_pos) else {
+        let Some(expected) = self.compute_tag(keystream_offset, packet, tag_offset, zero_keystream_offset) else {
             return false;
         };
         expected.iter().zip(on_wire).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
@@ -192,7 +192,7 @@ mod tests {
         let mut packet: Vec<u8> = (0..64u8).collect();
         assert!(c.seal(90_001, &mut packet, AV_TAG_OFFSET, false));
         assert!(c.verify(90_001, &packet, AV_TAG_OFFSET, false));
-        assert!(!c.verify(90_017, &packet, AV_TAG_OFFSET, false), "a different key position must not verify");
+        assert!(!c.verify(90_017, &packet, AV_TAG_OFFSET, false), "a different keystream offset must not verify");
         packet[40] ^= 1;
         assert!(!c.verify(90_001, &packet, AV_TAG_OFFSET, false));
     }

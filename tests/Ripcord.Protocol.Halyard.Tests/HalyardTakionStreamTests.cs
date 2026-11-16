@@ -277,8 +277,8 @@ public class HalyardTakionStreamTests
                 // Give the client a moment to establish the stream keys, then send two video frames so the
                 // demuxer flushes frame 0 (it emits a frame when the next frame index arrives).
                 await Task.Delay(200, ct).ConfigureAwait(false);
-                await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 1, frameIndex: 0, keyPos: 0x00013060, FramePlaintext), client, ct).ConfigureAwait(false);
-                await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 2, frameIndex: 1, keyPos: 0x00013460, RandomNumberGenerator.GetBytes(64)), client, ct).ConfigureAwait(false);
+                await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 1, frameIndex: 0, keystreamOffset: 0x00013060, FramePlaintext), client, ct).ConfigureAwait(false);
+                await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 2, frameIndex: 1, keystreamOffset: 0x00013460, RandomNumberGenerator.GetBytes(64)), client, ct).ConfigureAwait(false);
 
                 if (qualityTargetBps is { } target)
                 {
@@ -318,7 +318,7 @@ public class HalyardTakionStreamTests
         }
     }
 
-    private static byte[] BuildSealedVideo(HalyardPacketCrypto crypto, ushort packetIndex, ushort frameIndex, uint keyPos, byte[] plaintext)
+    private static byte[] BuildSealedVideo(HalyardPacketCrypto crypto, ushort packetIndex, ushort frameIndex, uint keystreamOffset, byte[] plaintext)
     {
         const int payloadOffset = 21; // v1 video: base 18 + 3-byte video prefix
         var packet = new byte[payloadOffset + plaintext.Length];
@@ -326,12 +326,12 @@ public class HalyardTakionStreamTests
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(1), packetIndex);
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(3), frameIndex);
         // off5..8 unit fields = 0 (unit 0, 1 unit total, 0 fec); off9 codec = 0
-        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(14), keyPos);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(14), keystreamOffset);
         plaintext.CopyTo(packet, payloadOffset);
 
-        byte[] ct = crypto.CryptPayload(keyPos, packet.AsSpan(payloadOffset));
+        byte[] ct = crypto.CryptPayload(keystreamOffset, packet.AsSpan(payloadOffset));
         ct.CopyTo(packet.AsSpan(payloadOffset));
-        return crypto.SealPacket(keyPos, packet, HalyardPacketCrypto.AvTagOffset);
+        return crypto.SealPacket(keystreamOffset, packet, HalyardPacketCrypto.AvTagOffset);
     }
 
     private static byte[] BuildInitAck(uint clientTag)

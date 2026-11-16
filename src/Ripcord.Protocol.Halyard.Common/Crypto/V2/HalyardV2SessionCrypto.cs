@@ -24,7 +24,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 ///   <c>handshakeKey</c> role (<see cref="HalyardStreamKeySchedule"/>), so the agreement methods carry over
 ///   (Phase 2, implemented here). <c>X</c> arrives as the <c>handshakeKey</c> argument exactly as v1's launchSpec
 ///   X did.</description></item>
-///   <item><description><b>Per-packet</b> — v2 shifts the A/V header offsets (tag@18, key_pos@22, the caller's
+///   <item><description><b>Per-packet</b> — v2 shifts the A/V header offsets (tag@18, keystream_offset@22, the caller's
 ///   <see cref="HalyardPacketLayout"/>); the GMAC key rotation
 ///   (<see cref="HalyardPacketCrypto.WindowOf"/>) and AES-CTR's little-endian block counter are v1's
 ///   unchanged. So the per-packet methods reuse <see cref="HalyardPacketCrypto"/>
@@ -44,8 +44,8 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 /// HMAC key from Z is the open <c>[X]</c> — to pin by RE of our own 8.5 binary ("ECDH hmac key generation") and
 /// confirm on our own 8.5 wire. Until then the v2 stream plane does not establish against a real console.</para>
 ///
-/// <para>The c2s send-authentication methods (<c>SealControlMessage</c>/<c>SealCongestionPacket</c>/
-/// <c>SealFeedbackPacket</c>) are implemented (Phase 2): each is a v1 layout under the v1 client->console key,
+/// <para>The c2s send-authentication methods (<c>SealControlMessage</c>/<c>SealLossReport</c>/
+/// <c>SealInputPacket</c>) are implemented (Phase 2): each is a v1 layout under the v1 client->console key,
 /// with the v2 per-format header offsets and the v2 GMAC window rule. They were confirmed byte-exact c2s against
 /// our own captures 003/004 (V2-SPEC §; the KAT fixtures live in the captures tree). The remaining v2 work is
 /// the live wiring (running the GCM control handshake and selecting this crypto in the session path), not the
@@ -77,7 +77,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     // Stream plane (Phase 2): its own ephemeral ECDH, separate from the control plane's, and the per-direction
     // packet crypto.
     private ECDiffieHellman? _streamEcdh;
-    private HalyardPacketCrypto? _send;    // client -> console (feedback/input)
+    private HalyardPacketCrypto? _send;    // client -> console (input)
     private HalyardPacketCrypto? _receive; // console -> client (A/V)
 
     public HalyardV2SessionCrypto(HalyardControlSecrets secrets)
@@ -177,16 +177,16 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     // ---- IHalyardSessionCrypto: per-packet stream crypto (Phase 2) ----
 
     /// <summary>Verify the 4-byte GMAC then AES-CTR-decrypt an incoming (s2c A/V) packet in place. The caller's
-    /// <paramref name="layout"/> carries the v2 offsets (A/V tag@18, key_pos@22, payload@26).</summary>
+    /// <paramref name="layout"/> carries the v2 offsets (A/V tag@18, keystream_offset@22, payload@26).</summary>
     public bool TryOpenPacket(Span<byte> packet, in HalyardPacketLayout layout)
     {
         var receive = _receive;
         if (receive is null)
             return false; // stream not yet established — drop rather than throw
-        if (!receive.VerifyPacket(layout.KeyPos, packet, layout.TagOffset))
+        if (!receive.VerifyPacket(layout.KeystreamOffset, packet, layout.TagOffset))
             return false;
 
-        receive.CryptPayloadInPlace(layout.KeyPos, packet[layout.PayloadOffset..]);
+        receive.CryptPayloadInPlace(layout.KeystreamOffset, packet[layout.PayloadOffset..]);
         return true;
     }
 
@@ -194,10 +194,10 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     public void SealPacket(Span<byte> packet, in HalyardPacketLayout layout)
     {
         var send = _send ?? throw new InvalidOperationException("Stream crypto not established.");
-        var encrypted = send.CryptPayload(layout.KeyPos, packet[layout.PayloadOffset..]);
+        var encrypted = send.CryptPayload(layout.KeystreamOffset, packet[layout.PayloadOffset..]);
         encrypted.CopyTo(packet[layout.PayloadOffset..]);
 
-        var tag = send.ComputeTag(layout.KeyPos, packet, layout.TagOffset);
+        var tag = send.ComputeTag(layout.KeystreamOffset, packet, layout.TagOffset);
         tag.CopyTo(packet.Slice(layout.TagOffset, HalyardPacketCrypto.TagLength));
     }
 
@@ -207,28 +207,28 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     // with two v2 deltas: _send already rotates the GMAC key on the v2 window rule, and the per-format header
     // offsets shift. Confirmed byte-exact c2s over our captures 003/004 (V2-SPEC §; Fork H: 004 482/482,
     // 003 287/287). The three formats:
-    //   * control DATA (base type 0x00): GMAC tag@5, key_pos@9; AAD zeroes tag+key_pos; payload NOT encrypted.
+    //   * control DATA (base type 0x00): GMAC tag@5, keystream_offset@9; AAD zeroes tag+keystream_offset; payload NOT encrypted.
     //     Same offsets as v1 control — only the GMAC window rule differs.
-    //   * congestion/RTT (base type 0x05): the v2/PS5 23-byte form (seq@1, 90 kHz ts@3), GMAC tag@15,
-    //     key_pos@19; AAD zeroes tag+key_pos. v1/PS4 uses the 15-byte form at tag@7/key_pos@11 (V1-STREAM-AUDIT).
-    //   * feedback/input (base type 0x06 state / 0x01 history): key_pos@12, GMAC tag@16, payload@20 (the caller's
-    //     payloadOffset); AAD zeroes the tag only and the payload IS AES-CTR encrypted, the v1 feedback carrier
-    //     shifted (v1 uses key_pos@4/tag@8/payload@12; c2s CTR nonce = v1).
-    // All three share one advancing key position so no (key, nonce) ever repeats across formats or threads.
+    //   * loss report/RTT (base type 0x05): the v2/PS5 23-byte form (seq@1, 90 kHz ts@3), GMAC tag@15,
+    //     keystream_offset@19; AAD zeroes tag+keystream_offset. v1/PS4 uses the 15-byte form at tag@7/keystream_offset@11 (V1-STREAM-AUDIT).
+    //   * input (base type 0x06 state / 0x01 history): keystream_offset@12, GMAC tag@16, payload@20 (the caller's
+    //     payloadOffset); AAD zeroes the tag only and the payload IS AES-CTR encrypted, the v1 input carrier
+    //     shifted (v1 uses keystream_offset@4/tag@8/payload@12; c2s CTR nonce = v1).
+    // All three share one advancing keystream offset so no (key, nonce) ever repeats across formats or threads.
 
     private const int ControlTagOffset = 5;
-    private const int ControlKeyPosOffset = 9;
-    private const int ControlHeaderLength = 13; // tag[5..9) + key_pos[9..13)
+    private const int ControlKeystreamOffsetAt = 9;
+    private const int ControlHeaderLength = 13; // tag[5..9) + keystream_offset[9..13)
 
-    private const int CongestionTagOffset = 15;
-    private const int CongestionKeyPosOffset = 19;
-    private const int CongestionPacketLength = 23; // v2/PS5 23-byte congestion form
+    private const int LossReportTagOffset = 15;
+    private const int LossReportKeystreamOffsetAt = 19;
+    private const int LossReportLength = 23; // v2/PS5 23-byte loss-report form
 
-    private const int FeedbackKeyPosOffset = 12;
-    private const int FeedbackTagOffset = 16;
+    private const int InputKeystreamOffsetAt = 12;
+    private const int InputTagOffset = 16;
 
-    private ulong _sendKeyPos;                       // advancing local key position for all outgoing auth formats
-    private readonly Lock _sendKeyPosGate = new();
+    private ulong _sendKeystreamOffset;                       // advancing local keystream offset for all outgoing auth formats
+    private readonly Lock _sendKeystreamOffsetGate = new();
 
     public void SealControlMessage(Span<byte> packet)
     {
@@ -236,48 +236,48 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         if (send is null || packet.Length < ControlHeaderLength)
             return; // pre-key-agreement (or malformed) — leave unauthenticated, correct before keys exist
 
-        ulong keyPos = ReserveKeyPos(packet.Length);
-        BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(ControlKeyPosOffset, 4), (uint)keyPos);
-        byte[] tag = send.ComputeTag(keyPos, packet, ControlTagOffset, zeroKeyPos: true);
+        ulong keystreamOffset = ReserveKeystreamOffset(packet.Length);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(ControlKeystreamOffsetAt, 4), (uint)keystreamOffset);
+        byte[] tag = send.ComputeTag(keystreamOffset, packet, ControlTagOffset, zeroKeystreamOffset: true);
         tag.CopyTo(packet.Slice(ControlTagOffset, HalyardPacketCrypto.TagLength));
     }
 
-    public void SealCongestionPacket(Span<byte> packet)
+    public void SealLossReport(Span<byte> packet)
     {
         var send = _send;
-        if (send is null || packet.Length < CongestionPacketLength)
+        if (send is null || packet.Length < LossReportLength)
             return; // pre-key-agreement — leave unauthenticated (never sent before keys exist anyway)
 
-        ulong keyPos = ReserveKeyPos(packet.Length);
-        BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(CongestionKeyPosOffset, 4), (uint)keyPos);
-        byte[] tag = send.ComputeTag(keyPos, packet, CongestionTagOffset, zeroKeyPos: true);
-        tag.CopyTo(packet.Slice(CongestionTagOffset, HalyardPacketCrypto.TagLength));
+        ulong keystreamOffset = ReserveKeystreamOffset(packet.Length);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(LossReportKeystreamOffsetAt, 4), (uint)keystreamOffset);
+        byte[] tag = send.ComputeTag(keystreamOffset, packet, LossReportTagOffset, zeroKeystreamOffset: true);
+        tag.CopyTo(packet.Slice(LossReportTagOffset, HalyardPacketCrypto.TagLength));
     }
 
-    public void SealFeedbackPacket(Span<byte> packet, int payloadOffset)
+    public void SealInputPacket(Span<byte> packet, int payloadOffset)
     {
         var send = _send;
-        if (send is null || payloadOffset < FeedbackTagOffset + HalyardPacketCrypto.TagLength || packet.Length < payloadOffset)
+        if (send is null || payloadOffset < InputTagOffset + HalyardPacketCrypto.TagLength || packet.Length < payloadOffset)
             return; // pre-key-agreement or too short — never sealed before keys exist
 
-        ulong keyPos = ReserveKeyPos(packet.Length);
-        BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(FeedbackKeyPosOffset, 4), (uint)keyPos);
+        ulong keystreamOffset = ReserveKeystreamOffset(packet.Length);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(InputKeystreamOffsetAt, 4), (uint)keystreamOffset);
         // Encrypt the payload in place, then MAC the whole (encrypted) packet with only the tag zeroed (like A/V).
-        send.CryptPayloadInPlace(keyPos, packet[payloadOffset..]);
-        byte[] tag = send.ComputeTag(keyPos, packet, FeedbackTagOffset, zeroKeyPos: false);
-        tag.CopyTo(packet.Slice(FeedbackTagOffset, HalyardPacketCrypto.TagLength));
+        send.CryptPayloadInPlace(keystreamOffset, packet[payloadOffset..]);
+        byte[] tag = send.ComputeTag(keystreamOffset, packet, InputTagOffset, zeroKeystreamOffset: false);
+        tag.CopyTo(packet.Slice(InputTagOffset, HalyardPacketCrypto.TagLength));
     }
 
-    // Reserve a key position, advancing the shared counter by the packet's 16-byte-aligned length so distinct
+    // Reserve a keystream offset, advancing the shared counter by the packet's 16-byte-aligned length so distinct
     // formats sealed from different threads never collide on a (key, nonce) — the v1 rule.
-    private ulong ReserveKeyPos(int packetLength)
+    private ulong ReserveKeystreamOffset(int packetLength)
     {
         int aligned = packetLength + (HalyardPacketCrypto.BlockSize - packetLength % HalyardPacketCrypto.BlockSize) % HalyardPacketCrypto.BlockSize;
-        lock (_sendKeyPosGate)
+        lock (_sendKeystreamOffsetGate)
         {
-            ulong keyPos = _sendKeyPos;
-            _sendKeyPos += (ulong)aligned;
-            return keyPos;
+            ulong keystreamOffset = _sendKeystreamOffset;
+            _sendKeystreamOffset += (ulong)aligned;
+            return keystreamOffset;
         }
     }
 

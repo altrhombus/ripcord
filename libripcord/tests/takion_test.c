@@ -79,7 +79,7 @@ static void test_message_header(void)
     header.base_type = TAKION_BASE_TYPE_CONTROL;
     header.verification_tag = 0x00b18ccf;
     header.gmac_tag = 0;
-    header.key_position = 0;
+    header.keystream_offset = 0;
 
     n = takion_message_build(&header, chunk, sizeof(chunk), buf, sizeof(buf));
     CHECK(n == TAKION_HEADER_SIZE + sizeof(chunk), "header+chunk should be 17 bytes, got %u", (unsigned)n);
@@ -117,7 +117,7 @@ static void test_handshake_init_vector(void)
     header.base_type = TAKION_BASE_TYPE_CONTROL;
     header.verification_tag = 0; /* the client does not know the server's tag yet */
     header.gmac_tag = 0;
-    header.key_position = 0;
+    header.keystream_offset = 0;
     packet_len = takion_message_build(&header, chunk, chunk_len, packet, sizeof(packet));
 
     CHECK(packet_len == expect_len && memcmp(packet, expect, expect_len) == 0,
@@ -236,7 +236,7 @@ static void test_data_chunk_build_matches_vector(void)
     header.base_type = TAKION_BASE_TYPE_CONTROL;
     header.verification_tag = 0x00b18ccfu;
     header.gmac_tag = 0;
-    header.key_position = 0;
+    header.keystream_offset = 0;
     packet_len = takion_message_build(&header, chunk, chunk_len, packet, sizeof(packet));
 
     CHECK(packet_len == expect_len && memcmp(packet, expect, expect_len) == 0,
@@ -297,7 +297,7 @@ static void test_sack_vectors(void)
         header.base_type = TAKION_BASE_TYPE_CONTROL;
         header.verification_tag = 0x00004823u;
         header.gmac_tag = 0;
-        header.key_position = 0;
+        header.keystream_offset = 0;
         packet_len = takion_message_build(&header, chunk_buf, chunk_len, packet, sizeof(packet));
 
         CHECK(packet_len == expect_len && memcmp(packet, expect, expect_len) == 0,

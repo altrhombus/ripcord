@@ -44,7 +44,7 @@ static void check_round_trip(const char *label, const stream_header *in)
     CHECK(out.total_units == in->total_units, "%s: total_units mismatch (%d != %d)", label, out.total_units, in->total_units);
     CHECK(out.parity_units == in->parity_units, "%s: parity_units mismatch (%d != %d)", label, out.parity_units, in->parity_units);
     CHECK(out.codec == in->codec, "%s: codec mismatch", label);
-    CHECK(out.key_position == in->key_position, "%s: key_position mismatch", label);
+    CHECK(out.keystream_offset == in->keystream_offset, "%s: keystream_offset mismatch", label);
 
     /* Tag region must always come back zeroed from build() - it is not part of the struct. */
     CHECK(packet[STREAM_HEADER_TAG_OFFSET] == 0 && packet[STREAM_HEADER_TAG_OFFSET + 1] == 0 &&
@@ -65,7 +65,7 @@ static void test_video_round_trips(void)
     h.total_units = 12;
     h.parity_units = 4;
     h.codec = 1;
-    h.key_position = 0x1000;
+    h.keystream_offset = 0x1000;
     check_round_trip("video basic", &h);
 
     /* Max values for each bitfield: unit_index 11 bits, total_units-1 11 bits, parity_units 10 bits. */
@@ -76,7 +76,7 @@ static void test_video_round_trips(void)
     h.total_units = 0x800;
     h.parity_units = 0x3ff;
     h.codec = 0xff;
-    h.key_position = 0xffffffffu;
+    h.keystream_offset = 0xffffffffu;
     check_round_trip("video max fields", &h);
 
     /* A parity unit: unit_index at/above source_units. */
@@ -103,7 +103,7 @@ static void test_audio_round_trips(void)
     h.total_units = 2;
     h.parity_units = 0x1234; /* raw diagnostic field, not decomposed - see stream_header_parse */
     h.codec = 5;
-    h.key_position = 0xdeadbeefu;
+    h.keystream_offset = 0xdeadbeefu;
     check_round_trip("audio basic", &h);
 
     /* Max values: unit_index/total_units-1 are byte-wide, parity_units (raw) is 16 bits. */

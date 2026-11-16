@@ -32,7 +32,7 @@ the primitive and round-trip level, never driven end-to-end against a live strea
 was to budget a debug pass and not expect a first-try picture. Both are now **[V]** against a real console,
 and the client streams video over the LAN and over the internet. If you are reimplementing from these
 documents rather than using this code, the advice still applies to *your* first connection: the nonce and
-key-position wiring is where an off-by-one surfaces, and the discipline below is how you retire it cheaply.
+keystream-offset wiring is where an off-by-one surfaces, and the discipline below is how you retire it cheaply.
 
 ---
 
@@ -66,7 +66,7 @@ path.
 - **Seam reshaped + wired** (`Crypto/IHalyardSessionCrypto.cs`): the seam now models v1's two crypto
   systems — control (`EstablishControl` → `EncryptControlField`/`DecryptControlField`/`CryptStreaminfo`) and
   stream (`GenerateEphemeralPublicKey` → `TryEstablishStream` → per-packet `TryOpenPacket`/`SealPacket`,
-  keyed by key position over the whole packet). `HalyardV1SessionCrypto` is the real implementation;
+  keyed by keystream offset over the whole packet). `HalyardV1SessionCrypto` is the real implementation;
   `PassthroughHalyardSessionCrypto` keeps the plumbing testable. The A/V packet parse (`HalyardStreamHeader`),
   the demuxer, and the input writer were realigned to the confirmed §6.1 layout and drive the seam.
 - **Handshake assembly (partial)**: `HalyardPairingRecord` (registkey + companion + RP-KeyType) serializes
@@ -209,5 +209,5 @@ The spec flags these; all are clean-LAN-optional. Don't rat-hole on them for fir
 5. `SESSION_REQUEST`/`SESSION_REPLY` exchanged, both `ecdhSignature`s verify, per-direction keys derived.
 6. Type-`0x02` video packets GMAC-verify and AES-CTR-decrypt into valid H.264 NALUs → decoder → frame.
 
-If 1–5 pass but 6 fails, the fault is almost certainly in the step-7/8 nonce or key-position wiring (the
-known [C] risk) — compare live bytes against `stream_crypto_reimpl.py` at the exact `key_pos` on the wire.
+If 1–5 pass but 6 fails, the fault is almost certainly in the step-7/8 nonce or keystream-offset wiring (the
+known [C] risk) — compare live bytes against `stream_crypto_reimpl.py` at the exact `keystream_offset` on the wire.

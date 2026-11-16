@@ -64,7 +64,7 @@ public interface IHalyardSessionCrypto
     // ---- per-packet stream crypto (spec §5.5) ----
 
     /// <summary>
-    /// Verify the 4-byte GMAC over an incoming (down-direction) packet at its key position, then AES-CTR
+    /// Verify the 4-byte GMAC over an incoming (down-direction) packet at its keystream offset, then AES-CTR
     /// decrypt the payload in place. Returns false if authentication fails (the packet is left untouched
     /// on failure). Operates on the whole packet; <paramref name="layout"/> locates the fields.
     /// </summary>
@@ -78,7 +78,7 @@ public interface IHalyardSessionCrypto
 
     /// <summary>
     /// Authenticate an outgoing <em>control</em> DATA packet in place, once the stream keys are established:
-    /// write an advancing key position into the header and the 4-byte GMAC tag over the whole packet. Unlike
+    /// write an advancing keystream offset into the header and the 4-byte GMAC tag over the whole packet. Unlike
     /// <see cref="SealPacket"/> the payload is NOT encrypted (control protobufs stay cleartext) — it is
     /// MAC-only. A no-op before the stream is established (pre-key-agreement DATA goes out unauthenticated,
     /// which is correct). The console drops unauthenticated control once keys are up (wire-confirmed).
@@ -86,23 +86,23 @@ public interface IHalyardSessionCrypto
     void SealControlMessage(Span<byte> packet);
 
     /// <summary>
-    /// Authenticate an outgoing congestion-feedback packet (base type 5) in place: write the advancing key
+    /// Authenticate an outgoing loss report (base type 5) in place: write the advancing key
     /// position (offset 0xb) and the 4-byte GMAC tag (offset 7) over the whole packet. Like control, the GMAC
-    /// zeroes both the tag and the key-position field; the packet has no encrypted payload. Shares the same
-    /// outgoing key-position counter as <see cref="SealControlMessage"/> so nonces never repeat. No-op before
+    /// zeroes both the tag and the keystream-offset field; the packet has no encrypted payload. Shares the same
+    /// outgoing keystream-offset counter as <see cref="SealControlMessage"/> so nonces never repeat. No-op before
     /// the stream keys are established.
     /// </summary>
-    void SealCongestionPacket(Span<byte> packet);
+    void SealLossReport(Span<byte> packet);
 
     /// <summary>
-    /// Seal an outgoing controller-feedback packet (base type 6 = state, 1 = history) in place: reserve an
-    /// advancing key position from the shared outgoing counter, write it (offset 4), AES-CTR encrypt the
+    /// Seal an outgoing controller-input packet (base type 6 = state, 1 = history) in place: reserve an
+    /// advancing keystream offset from the shared outgoing counter, write it (offset 4), AES-CTR encrypt the
     /// payload (from <paramref name="payloadOffset"/>, normally 0xc), then compute + write the 4-byte GMAC
-    /// tag (offset 8) over the whole packet. Like A/V — and unlike control/congestion — the GMAC zeroes only
-    /// the tag, not the key-position field. Shares the same key-position counter as control/congestion so
+    /// tag (offset 8) over the whole packet. Like A/V — and unlike control and loss reports — the GMAC zeroes only
+    /// the tag, not the keystream-offset field. Shares the same keystream-offset counter as control and loss reports so
     /// nonces never repeat across the up direction. No-op before the stream keys are established.
     /// </summary>
-    void SealFeedbackPacket(Span<byte> packet, int payloadOffset);
+    void SealInputPacket(Span<byte> packet, int payloadOffset);
 }
 
 /// <summary>First-time registration seam (obtaining a registration key). Stubbed until registration is derived.</summary>

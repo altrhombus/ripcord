@@ -10,9 +10,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 ///
 /// <para>
 /// The risk being guarded is silent and delayed. The payload AES key is fixed for a session, but the GMAC key
-/// <em>rotates</em> every <see cref="HalyardPacketCrypto.RotationWindow"/> key positions — so a caching mistake
+/// <em>rotates</em> every <see cref="HalyardPacketCrypto.RotationWindow"/> keystream offsets — so a caching mistake
 /// would not fail on the bench, it would fail minutes into a session at the first rotation boundary, as a total
-/// authentication failure (every packet dropped, black screen). And because UDP reorders, key positions arrive
+/// authentication failure (every packet dropped, black screen). And because UDP reorders, keystream offsets arrive
 /// non-monotonically, so packets legitimately alternate across a boundary.
 /// </para>
 /// </summary>
@@ -31,7 +31,7 @@ public class PacketCryptoHotPathTests
     [InlineData(45_000UL * 16)]          // at a rotation boundary
     [InlineData(45_000UL * 16 + 1_000)]  // just past one
     [InlineData(ulong.MaxValue / 2)]
-    public void CryptPayload_MatchesTheUncachedReference(ulong keyPos)
+    public void CryptPayload_MatchesTheUncachedReference(ulong keystreamOffset)
     {
         byte[] plaintext = RandomNumberGenerator.GetBytes(1_400);
 
@@ -39,14 +39,14 @@ public class PacketCryptoHotPathTests
         Span<byte> nonce = stackalloc byte[HalyardPacketCrypto.BlockSize];
         using (var reference = NewCrypto())
         {
-            reference.CtrNonce(keyPos, nonce);
+            reference.CtrNonce(keystreamOffset, nonce);
         }
 
         byte[] expected = AesKeystreamModes.Ctr(AesKey, nonce, plaintext, littleEndianCounter: true);
 
         using var crypto = NewCrypto();
         byte[] actual = plaintext.ToArray();
-        crypto.CryptPayloadInPlace(keyPos, actual);
+        crypto.CryptPayloadInPlace(keystreamOffset, actual);
 
         Assert.Equal(expected, actual);
     }
@@ -60,14 +60,14 @@ public class PacketCryptoHotPathTests
 
         for (int i = 0; i < 2_000; i++)
         {
-            ulong keyPos = (ulong)i * 1_360;
+            ulong keystreamOffset = (ulong)i * 1_360;
             byte[] original = RandomNumberGenerator.GetBytes(64 + (i % 900));
             byte[] buffer = original.ToArray();
 
-            crypto.CryptPayloadInPlace(keyPos, buffer);
+            crypto.CryptPayloadInPlace(keystreamOffset, buffer);
             Assert.NotEqual(original, buffer);          // actually encrypted
 
-            crypto.CryptPayloadInPlace(keyPos, buffer);
+            crypto.CryptPayloadInPlace(keystreamOffset, buffer);
             Assert.Equal(original, buffer);             // and symmetric
         }
     }
@@ -93,10 +93,10 @@ public class PacketCryptoHotPathTests
         using var crypto = NewCrypto();
         const ulong window = (ulong)HalyardPacketCrypto.RotationWindow;
 
-        byte[] KeyAt(ulong keyPos)
+        byte[] KeyAt(ulong keystreamOffset)
         {
             var k = new byte[HalyardPacketCrypto.BlockSize];
-            crypto.GmacKey(keyPos, k);
+            crypto.GmacKey(keystreamOffset, k);
             return k;
         }
 
@@ -109,17 +109,17 @@ public class PacketCryptoHotPathTests
     }
 
     [Fact]
-    public void GmacKey_IsStableWhenKeyPositionsArriveOutOfOrderAcrossABoundary()
+    public void GmacKey_IsStableWhenKeystreamOffsetsArriveOutOfOrderAcrossABoundary()
     {
         // UDP reorders, so around a boundary consecutive packets alternate between window n and n+1. Whatever
-        // caching strategy is used, the key for a given key position must never depend on what preceded it.
+        // caching strategy is used, the key for a given keystream offset must never depend on what preceded it.
         using var crypto = NewCrypto();
         const ulong window = (ulong)HalyardPacketCrypto.RotationWindow;
 
-        byte[] KeyAt(ulong keyPos)
+        byte[] KeyAt(ulong keystreamOffset)
         {
             var k = new byte[HalyardPacketCrypto.BlockSize];
-            crypto.GmacKey(keyPos, k);
+            crypto.GmacKey(keystreamOffset, k);
             return k;
         }
 
@@ -127,10 +127,10 @@ public class PacketCryptoHotPathTests
         byte[] afterFirst = KeyAt(window + 1);
 
         // Alternate back and forth across the boundary several times.
-        foreach (ulong keyPos in (ulong[])[window + 1, window, window + 5, window - 3, window * 2, window])
+        foreach (ulong keystreamOffset in (ulong[])[window + 1, window, window + 5, window - 3, window * 2, window])
         {
-            byte[] expected = keyPos <= window ? beforeFirst : KeyAt(keyPos);
-            Assert.Equal(expected, KeyAt(keyPos));
+            byte[] expected = keystreamOffset <= window ? beforeFirst : KeyAt(keystreamOffset);
+            Assert.Equal(expected, KeyAt(keystreamOffset));
         }
 
         // And the two originals still reproduce exactly.
@@ -145,17 +145,17 @@ public class PacketCryptoHotPathTests
         using var crypto = NewCrypto();
         const ulong window = (ulong)HalyardPacketCrypto.RotationWindow;
 
-        foreach (ulong keyPos in (ulong[])[0, window - 16, window, window + 16, window * 3])
+        foreach (ulong keystreamOffset in (ulong[])[0, window - 16, window, window + 16, window * 3])
         {
             byte[] packet = RandomNumberGenerator.GetBytes(200);
-            byte[] sealed_ = crypto.SealPacket(keyPos, packet);
+            byte[] sealed_ = crypto.SealPacket(keystreamOffset, packet);
 
-            Assert.True(crypto.VerifyPacket(keyPos, sealed_), $"tag should verify at keyPos {keyPos}");
+            Assert.True(crypto.VerifyPacket(keystreamOffset, sealed_), $"tag should verify at keystreamOffset {keystreamOffset}");
 
             // A tag from the wrong window must not verify — proves the rotation is actually in play.
             Assert.False(
-                crypto.VerifyPacket(keyPos + window, sealed_),
-                $"a tag from keyPos {keyPos} must not verify one window later");
+                crypto.VerifyPacket(keystreamOffset + window, sealed_),
+                $"a tag from keystreamOffset {keystreamOffset} must not verify one window later");
         }
     }
 
@@ -231,15 +231,15 @@ public class PacketCryptoHotPathTests
         Span<byte> gmac = stackalloc byte[16];
         Span<byte> ctr = stackalloc byte[16];
 
-        foreach (ulong keyPos in (ulong[])[0, 16, 1_360, 45_000, 45_000UL * 16, ulong.MaxValue / 4])
+        foreach (ulong keystreamOffset in (ulong[])[0, 16, 1_360, 45_000, 45_000UL * 16, ulong.MaxValue / 4])
         {
-            crypto.GmacNonce(keyPos, gmac);
-            crypto.CtrNonce(keyPos, ctr);
+            crypto.GmacNonce(keystreamOffset, gmac);
+            crypto.CtrNonce(keystreamOffset, ctr);
 
             var expectedGmac = new byte[16];
             var expectedCtr = new byte[16];
-            HalyardPacketCrypto.IvAdd(BaseIv, keyPos >> 4, expectedGmac);
-            HalyardPacketCrypto.IvAdd(BaseIv, (keyPos + 16) >> 4, expectedCtr);
+            HalyardPacketCrypto.IvAdd(BaseIv, keystreamOffset >> 4, expectedGmac);
+            HalyardPacketCrypto.IvAdd(BaseIv, (keystreamOffset + 16) >> 4, expectedCtr);
 
             Assert.Equal(Convert.ToHexString(expectedGmac), Convert.ToHexString(gmac));
             Assert.Equal(Convert.ToHexString(expectedCtr), Convert.ToHexString(ctr));

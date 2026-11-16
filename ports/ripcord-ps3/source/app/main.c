@@ -1008,8 +1008,8 @@ static int check_connect(void)
                     c.verify_failed);
         if (c.verify_dropped > 0UL)
             ps3_log("       %lu packet(s) DROPPED for failing authentication\n", c.verify_dropped);
-        ps3_log("       answered %u heartbeat(s) and sent %u congestion report(s) on the stream channel\n",
-                c.heartbeats_answered, c.congestion_sent);
+        ps3_log("       answered %u heartbeat(s) and sent %u loss report(s) on the stream channel\n",
+                c.heartbeats_answered, c.loss_reports_sent);
         ps3_log("       A/V on the same socket: %u packet(s), %lu bytes - %u video, %u audio, %u other\n",
                 c.av_packets, c.av_bytes, c.av_video, c.av_audio, c.av_other);
         if (c.av_packets > 0u)

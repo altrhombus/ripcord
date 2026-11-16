@@ -24,7 +24,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// console can honestly check, and enough to catch a revert.</para>
 ///
 /// <para>Also worth knowing, because it changes how alarming a bug here would be: an error in this is not
-/// subtle. Key positions advance fast enough that a real session crosses windows continuously, so a wrong
+/// subtle. Keystream offsets advance fast enough that a real session crosses windows continuously, so a wrong
 /// rotation does not produce a rare glitch — it produces a stream that dies seconds in, every time. The
 /// backlog described the symptom as "intermittent, very hard to diagnose"; the evidence says the opposite,
 /// and a failure mode that loud is one of the reasons this gap was never the risk it looked like.</para>
@@ -52,9 +52,9 @@ public class GmacRotationFormTests
         string expected = Hex.String(Expected(window));
 
         // Sample inside the window rather than only on its first unit: the whole window must share one key.
-        foreach (ulong keyPos in Positions(window))
+        foreach (ulong keystreamOffset in Positions(window))
         {
-            crypto.GmacKey(keyPos, actual);
+            crypto.GmacKey(keystreamOffset, actual);
 
             Assert.Equal(expected, Hex.String(actual.ToArray()));
         }
@@ -97,7 +97,7 @@ public class GmacRotationFormTests
     private static IEnumerable<ulong> Positions(long window)
     {
         // Window n spans (n*45000, (n+1)*45000]: an exact multiple still belongs to the window below it
-        // (HalyardPacketCrypto.WindowOf). Window 0 also holds key position 0.
+        // (HalyardPacketCrypto.WindowOf). Window 0 also holds keystream offset 0.
         long start = window * HalyardPacketCrypto.RotationWindow;
 
         if (window == 0) yield return 0;

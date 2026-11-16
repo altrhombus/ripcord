@@ -753,7 +753,7 @@ internal static class LabCommands
         demuxer.Ingest(SynthVideo(seq++, 2, 0, 1, Bytes(0x66, 400)));
         Console.WriteLine($"decode pipeline received {pipeline.VideoCount} video, {pipeline.AudioCount} audio frame(s)");
 
-        // Input path: neutral controller frames -> feedback packets (state type 6 / history type 1), the
+        // Input path: neutral controller frames -> input packets (state type 6 / history type 1), the
         // outbound half of the wiring (source -> ISessionInputSink -> writer). The first frame establishes
         // the baseline; the second (buttons + sticks changed) yields both a history and a state packet.
         var writer = new HalyardInputPacketWriter(crypto);
@@ -1079,7 +1079,7 @@ internal static class LabCommands
     }
 
     // Synthesize v1 A/V packets (spec §6.1). Video payload starts at offset 21 (base 18 + 3-byte video
-    // prefix), audio at 18. unitsTotal/unitsFec pack into the off5..8 dword; keyPos rides at off14.
+    // prefix), audio at 18. unitsTotal/unitsFec pack into the off5..8 dword; keystreamOffset rides at off14.
     private static byte[] SynthVideo(uint seq, ushort frameIndex, byte unitIndex, int unitsTotal, byte[] payload)
     {
         const int payloadOffset = HalyardStreamHeader.BaseLength + 3;
@@ -1089,7 +1089,7 @@ internal static class LabCommands
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(3), frameIndex);    // frame_index
         uint packed = ((uint)unitIndex << 21) | ((uint)(unitsTotal - 1) << 10); // parity_units = 0
         BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(5), packed);
-        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(HalyardStreamHeader.KeyPositionOffset), seq * 0x400u);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(HalyardStreamHeader.KeystreamOffsetAt), seq * 0x400u);
         payload.CopyTo(packet.AsSpan(payloadOffset));
         return packet;
     }
@@ -1100,7 +1100,7 @@ internal static class LabCommands
         byte[] packet = new byte[payloadOffset + payload.Length];
         packet[0] = HalyardStreamHeader.TypeAudio;
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(1), (ushort)seq);
-        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(HalyardStreamHeader.KeyPositionOffset), seq * 0x100u);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(HalyardStreamHeader.KeystreamOffsetAt), seq * 0x100u);
         payload.CopyTo(packet.AsSpan(payloadOffset));
         return packet;
     }

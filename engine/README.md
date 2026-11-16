@@ -121,7 +121,7 @@ Windows client ships today, so on Windows that pair is the comparison that matte
 | What | Result |
 |---|---|
 | `stream-crypto.kat` | 65 of 65: all 9 `gmac`, 4 `streamkdf`, 12 `packetnonce` and 12 `packettag` lines |
-| Differential against `HalyardPacketCrypto` | 80 key positions × 4 checks (CTR, both seal directions, the control AAD rule, tamper), across rotation windows and the 32-bit edge |
+| Differential against `HalyardPacketCrypto` | 80 keystream offsets × 4 checks (CTR, both seal directions, the control AAD rule, tamper), across rotation windows and the 32-bit edge |
 | Per packet, one Swift harness for both engines (`ripcord-lab bench`) | C core **7.71–8.11 µs**, Rust **0.53–0.57 µs** |
 | Per packet, from .NET | Rust through P/Invoke **0.67–0.71 µs**, managed `HalyardPacketCrypto` 16.1–17.3 µs |
 | Per packet, from .NET on Windows x64 (2026-09-30, an x64 desktop) | Rust through P/Invoke **0.92 µs**, managed `HalyardPacketCrypto` 14.29 µs, one run |
@@ -351,7 +351,7 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 
 | What | Result |
 |---|---|
-| LAN, scripted | The arm probe, /sess/init and /sess/ctrl over TCP, senkusha, Takion, key agreement on the real crypto, STREAM_INFO, the IDR latch, the console's heartbeats answered, congestion, input, sealed video, and the goodbye (`connect::tests`) |
+| LAN, scripted | The arm probe, /sess/init and /sess/ctrl over TCP, senkusha, Takion, key agreement on the real crypto, STREAM_INFO, the IDR latch, the console's heartbeats answered, loss reports, input, sealed video, and the goodbye (`connect::tests`) |
 | LAN, failures | A refused and then accepted passcode, a stored passcode, a cancelled one, no SESSION_ID, a console refusing the stream with a reason, a console hanging up mid-stream, a stray datagram, the declared MTU |
 | Rendezvous, scripted | Prepare, begin, /sess over the 9303 association, the A/V leg's prelude, SESSION_ID, senkusha and the stream on that one socket, PROBE_REPORT and STREAM_READY, a stray dropped, and the polite Close |
 | Real sockets | `ripcord-net`'s loopback test runs the LAN sequence over `std::net` on 127.0.0.1 to five video frames and the goodbye, in about 0.35 s |

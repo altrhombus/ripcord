@@ -9,7 +9,7 @@
 //!                 audio: byte-wide fields (see `parse`)
 //! off 9      u8   codec
 //! off 10..13      4-byte GMAC tag (zeroed for the GMAC computation)
-//! off 14..17 u32  key position (a running byte counter that drives the nonce, not a timestamp)
+//! off 14..17 u32  keystream offset (a running byte counter that drives the nonce, not a timestamp)
 //! off 18..        payload, after a type-specific prefix and the optional extended header
 //! ```
 //!
@@ -21,7 +21,7 @@ pub const LENGTH: usize = 18;
 pub const TYPE_VIDEO: u8 = 0x02;
 pub const TYPE_AUDIO: u8 = 0x03;
 pub const TAG_OFFSET: usize = 10;
-pub const KEY_POSITION_OFFSET: usize = 14;
+pub const KEYSTREAM_OFFSET_AT: usize = 14;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StreamHeader {
@@ -37,7 +37,7 @@ pub struct StreamHeader {
     /// Video: the frame's parity unit count. Audio: the raw low 16 bits, kept for diagnostics only.
     pub parity_units: u16,
     pub codec: u8,
-    pub key_position: u32,
+    pub keystream_offset: u32,
 }
 
 impl StreamHeader {
@@ -88,7 +88,7 @@ impl StreamHeader {
             total_units: total_units as u16,
             parity_units: parity_units as u16,
             codec: h[9],
-            key_position: u32::from_be_bytes([h[14], h[15], h[16], h[17]]),
+            keystream_offset: u32::from_be_bytes([h[14], h[15], h[16], h[17]]),
         })
     }
 
@@ -121,7 +121,7 @@ impl StreamHeader {
         out[3..5].copy_from_slice(&self.frame_index.to_be_bytes());
         out[5..9].copy_from_slice(&packed.to_be_bytes());
         out[9] = self.codec;
-        out[KEY_POSITION_OFFSET..LENGTH].copy_from_slice(&self.key_position.to_be_bytes());
+        out[KEYSTREAM_OFFSET_AT..LENGTH].copy_from_slice(&self.keystream_offset.to_be_bytes());
         Some(out)
     }
 }
@@ -145,7 +145,7 @@ mod tests {
             total_units: 12,
             parity_units: 4,
             codec: 1,
-            key_position: 0x1000,
+            keystream_offset: 0x1000,
             ..Default::default()
         };
         round_trip("video basic", &h);
@@ -158,7 +158,7 @@ mod tests {
             total_units: 0x800,
             parity_units: 0x3ff,
             codec: 0xff,
-            key_position: u32::MAX,
+            keystream_offset: u32::MAX,
             ..h
         };
         round_trip("video max fields", &h);
@@ -179,7 +179,7 @@ mod tests {
             total_units: 2,
             parity_units: 0x1234,
             codec: 5,
-            key_position: 0xdead_beef,
+            keystream_offset: 0xdead_beef,
             ..Default::default()
         };
         round_trip("audio basic", &h);

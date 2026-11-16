@@ -431,7 +431,7 @@ it answers a question about a transport this port does not use.
 
 Takion is "essentially SCTP over UDP" (spec sec8, wire-validated against
 `captures/rudp_control_setup.pcapng`): the 13-byte message header (base type, verification tag, GMAC tag,
-key position), the SCTP 4-way handshake (INIT/INIT_ACK/COOKIE_ECHO/COOKIE_ACK, chunk types straight from
+keystream offset), the SCTP 4-way handshake (INIT/INIT_ACK/COOKIE_ECHO/COOKIE_ACK, chunk types straight from
 RFC 4960), and DATA/SACK reliable delivery are all confirmed byte-for-byte against known-answer packets
 lifted from the .NET side's own test suite (`TakionTests.cs`, `TakionDataChunkTests.cs`,
 `TakionReliabilityTests.cs`) - transcribed as literal hex strings in `tests/takion_test.c` (61 cases), no

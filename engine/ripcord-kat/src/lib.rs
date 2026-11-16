@@ -180,10 +180,10 @@ fn run_line(report: &mut Report, line: &Line<'_>, ecdh: &dyn Ecdh) -> Result<(),
         }
         "packetnonce" => {
             let c = packet_crypto::PacketCrypto::new(&hex16(f(1)?)?, &hex16(f(2)?)?);
-            let key_pos: u64 = number(f(3)?)?;
-            check(report, line, "gmacNonce", &c.gmac_nonce(key_pos), f(4)?);
-            check(report, line, "ctrNonce", &c.ctr_nonce(key_pos), f(5)?);
-            check(report, line, "gmacKey", &c.gmac_key(key_pos), f(6)?);
+            let keystream_offset: u64 = number(f(3)?)?;
+            check(report, line, "gmacNonce", &c.gmac_nonce(keystream_offset), f(4)?);
+            check(report, line, "ctrNonce", &c.ctr_nonce(keystream_offset), f(5)?);
+            check(report, line, "gmacKey", &c.gmac_key(keystream_offset), f(6)?);
         }
         "packettag" => {
             let mut c = packet_crypto::PacketCrypto::new(&hex16(f(1)?)?, &hex16(f(2)?)?);

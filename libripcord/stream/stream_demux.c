@@ -3,12 +3,12 @@
 #include <string.h>
 
 static int passthrough_open_packet(void *ctx, uint8_t *packet, size_t packet_length,
-    uint32_t key_position, int payload_offset)
+    uint32_t keystream_offset, int payload_offset)
 {
     (void)ctx;
     (void)packet;
     (void)packet_length;
-    (void)key_position;
+    (void)keystream_offset;
     (void)payload_offset;
     return 1;
 }
@@ -22,13 +22,13 @@ stream_demux_crypto stream_demux_passthrough_crypto(void)
 }
 
 static int packet_crypto_open_packet(void *ctx, uint8_t *packet, size_t packet_length,
-    uint32_t key_position, int payload_offset)
+    uint32_t keystream_offset, int payload_offset)
 {
     stream_packet_crypto *crypto = (stream_packet_crypto *)ctx;
 
-    if (!stream_packet_crypto_verify(crypto, key_position, packet, packet_length, STREAM_HEADER_TAG_OFFSET, 0))
+    if (!stream_packet_crypto_verify(crypto, keystream_offset, packet, packet_length, STREAM_HEADER_TAG_OFFSET, 0))
         return 0;
-    stream_packet_crypto_crypt_payload(crypto, key_position, packet + payload_offset,
+    stream_packet_crypto_crypt_payload(crypto, keystream_offset, packet + payload_offset,
         packet_length - (size_t)payload_offset);
     return 1;
 }
@@ -129,7 +129,7 @@ static int try_open_media(stream_demux *demux, const stream_header *header, cons
     memcpy(opened, packet, packet_length);
     *opened_length = packet_length;
 
-    if (demux->crypto.open_packet(demux->crypto.ctx, opened, packet_length, header->key_position,
+    if (demux->crypto.open_packet(demux->crypto.ctx, opened, packet_length, header->keystream_offset,
             stream_header_payload_offset(header))) {
         return 1;
     }
@@ -294,7 +294,7 @@ static void flush_video_frame(stream_demux *demux)
         return;
     }
 
-    /* Record wire loss for congestion feedback before FEC - FEC recovery doesn't change what the network
+    /* Record wire loss for the loss report before FEC - FEC recovery doesn't change what the network
      * actually dropped. */
     expected_units = demux->source_count + demux->parity_count;
     received_units = demux->source_arrived + demux->parity_arrived;

@@ -4,7 +4,7 @@
 // Phase 3 the Mac links only the Rust engine, so only it is measured here.
 //
 // Each iteration does what the demuxer does to every packet: verify the
-// 4-byte GMAC tag, then CTR-decrypt the payload. The key position advances by the payload length times
+// 4-byte GMAC tag, then CTR-decrypt the payload. The keystream offset advances by the payload length times
 // 64, so every packet lands in its own GMAC rotation window and pays for a fresh key: the worst case. The
 // keys are synthetic, so nothing here depends on a console.
 
@@ -36,7 +36,7 @@ public enum PacketCryptoBenchmark {
         let release: () -> Void
     }
 
-    private static let headerLength = 18   // STREAM_HEADER_LENGTH: the tag and key position live in it
+    private static let headerLength = 18   // STREAM_HEADER_LENGTH: the tag and keystream offset live in it
     private static let tagOffset = 10      // the A/V tag offset, in both engines
 
     private static func makeRust(key: [UInt8], iv: [UInt8]) -> Crypto {
@@ -57,7 +57,7 @@ public enum PacketCryptoBenchmark {
         var template = [UInt8](repeating: 0, count: packetBytes)
         for i in template.indices { template[i] = UInt8(truncatingIfNeeded: i &* 31) }
 
-        // Seal one packet per distinct key position up front, so the timed loop does only receive work.
+        // Seal one packet per distinct keystream offset up front, so the timed loop does only receive work.
         let distinct = 256
         var sealed: [[UInt8]] = []
         var positions: [UInt64] = []

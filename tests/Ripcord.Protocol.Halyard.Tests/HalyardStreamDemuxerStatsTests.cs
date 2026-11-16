@@ -6,7 +6,7 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// Wire packet-loss accounting that feeds the congestion-feedback packet. Loss is counted against the units
+/// Wire packet-loss accounting that feeds the loss report. Loss is counted against the units
 /// actually on the wire (source + real FEC), reported even when FEC later recovers the frame, and reset on read.
 /// </summary>
 public class HalyardStreamDemuxerStatsTests

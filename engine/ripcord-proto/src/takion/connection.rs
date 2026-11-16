@@ -23,7 +23,7 @@ pub const RETRANSMIT_INTERVAL_US: u64 = 300_000;
 /// memory limit.
 pub const MAX_MESSAGE: usize = 64 * 1024;
 
-/// Whether a datagram is Takion control traffic (base type 0), as opposed to A/V, feedback or congestion.
+/// Whether a datagram is Takion control traffic (base type 0), as opposed to A/V, input or loss reports.
 pub fn is_control(datagram: &[u8]) -> bool {
     datagram.first().is_some_and(|b| b & 0x0f == chunks::BASE_TYPE_CONTROL)
 }
@@ -197,7 +197,7 @@ impl Connection {
             State::Established => {
                 for u in self.unacked.iter_mut() {
                     if now_us.saturating_sub(u.last_sent_us) >= RETRANSMIT_INTERVAL_US {
-                        // The stored bytes, sealed once: the key position reserved for them stays theirs.
+                        // The stored bytes, sealed once: the keystream offset reserved for them stays theirs.
                         self.outbox.push_back(u.packet.clone());
                         u.last_sent_us = now_us;
                         u.retransmitted = true;
@@ -222,7 +222,7 @@ impl Connection {
         self.verify_dropped = 0;
     }
 
-    /// The sealer, for congestion and input packets, which must spend the same key-position counter.
+    /// The sealer, for loss reports and input packets, which must spend the same keystream-offset counter.
     pub fn sealer_mut(&mut self) -> Option<&mut Sealer> {
         self.sealer.as_mut()
     }

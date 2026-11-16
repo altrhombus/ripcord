@@ -1,12 +1,13 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 using Xunit;
 
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// Real captured packets whose key position is an exact multiple of 45000: the only packets that tell
-/// <c>(keyPos - 1) / 45000</c> apart from the plain quotient. Each must verify under the key
+/// Real captured packets whose keystream offset is an exact multiple of 45000: the only packets that tell
+/// <c>(keystreamOffset - 1) / 45000</c> apart from the plain quotient. Each must verify under the key
 /// <see cref="HalyardPacketCrypto"/> picks for it, and must not verify under the key of the window above.
 ///
 /// <para>The client once used the plain quotient for v1, which put these packets one window too high: it
@@ -31,15 +32,15 @@ public class GmacWindowBoundaryVectorTests
         var covered = new HashSet<string>();
         foreach (var p in fx.Packets!)
         {
-            Assert.Equal(0UL, p.KeyPos % (ulong)HalyardPacketCrypto.RotationWindow);
+            Assert.Equal(0UL, p.KeystreamOffset % (ulong)HalyardPacketCrypto.RotationWindow);
             using var crypto = new HalyardPacketCrypto(Hex.Bytes(p.AesKey), Hex.Bytes(p.BaseIv));
             byte[] packet = Hex.Bytes(p.Packet);
 
-            Assert.True(crypto.VerifyPacket(p.KeyPos, packet, p.TagOffset),
-                $"{p.Source} {p.Plane} {p.Direction} at keyPos {p.KeyPos}");
+            Assert.True(crypto.VerifyPacket(p.KeystreamOffset, packet, p.TagOffset),
+                $"{p.Source} {p.Plane} {p.Direction} at keystreamOffset {p.KeystreamOffset}");
 
-            // The plain quotient's window is one higher; its key is the one at keyPos + 1.
-            byte[] expected = crypto.ComputeTag(p.KeyPos + 1, packet, p.TagOffset);
+            // The plain quotient's window is one higher; its key is the one at keystreamOffset + 1.
+            byte[] expected = crypto.ComputeTag(p.KeystreamOffset + 1, packet, p.TagOffset);
             Assert.False(expected.AsSpan().SequenceEqual(packet.AsSpan(p.TagOffset, HalyardPacketCrypto.TagLength)));
 
             covered.Add($"{p.Plane}/{p.Direction}");
@@ -75,7 +76,8 @@ public class GmacWindowBoundaryVectorTests
         public string Direction { get; set; } = "";
         public string AesKey { get; set; } = "";
         public string BaseIv { get; set; } = "";
-        public ulong KeyPos { get; set; }
+        [JsonPropertyName("keyPos")] // the private fixture's key
+        public ulong KeystreamOffset { get; set; }
         public int TagOffset { get; set; }
         public string Packet { get; set; } = "";
     }

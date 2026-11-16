@@ -250,7 +250,7 @@ purchased signing certificate.
       show a recommendation nothing used; the stored setting is kept for this.
 - [ ] **The PS4's 16-byte MTU frame after the passcode.** We never send it and both families stream anyway.
       Drive a locked PS4 to a stream to be sure.
-- [ ] **Which congestion packet size do we get?** We send the 15-byte form; an older capture used 23 bytes.
+- [ ] **Which loss report size do we get?** We send the 15-byte form; an older capture used 23 bytes.
 - [ ] **The presented/decoded ratio under pure network loss**, from any lossy session's trace.
 - [ ] **The stream SESSION_REQUEST's `encryptedKey`:** we send four zero bytes, the vendor sends it empty
       (`22 00`). A one-line change in each implementation, wanting one hardware run.

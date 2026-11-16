@@ -3,7 +3,7 @@ namespace Ripcord.Core.Sessions;
 /// <param name="RoundTripTimeMs">Measured RTT in milliseconds, fractional — a wired link is well under 1 ms
 /// and rounding that to an integer erases the difference between it and a Wi-Fi link.</param>
 /// <summary>
-/// One congestion-window observation of the link.
+/// One report-window observation of the link.
 ///
 /// <para>
 /// <paramref name="ObservedUnits"/> is deliberately NOT defaulted. A loss <em>ratio</em> without the count it was
