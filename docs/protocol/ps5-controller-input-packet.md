@@ -41,7 +41,7 @@ re-derived from the WAN sample byte-by-byte beyond this - offsets 3 onward are u
 the new data and should still be treated as tentative.
 
 **Redaction note**: the encrypted-payload region is real capture data reproduced only as byte
-*counts*/entropy observations, never verbatim - see the note in `ps5-session-establishment.md` for
+*counts*/entropy observations, never verbatim - see the redaction policy in `../README.md` for
 why (this region is very likely the actual controller state once decrypted, which is a smaller
 concern than session keys, but there's no reason to reproduce raw captured bytes verbatim either).
 
@@ -59,7 +59,7 @@ frame prefix before the UDP payload begins), across 5 consecutive packets in the
 | 9 | 4 bytes | Different every packet, no visible pattern | Likely a MAC/IV fragment covering the payload |
 | 13 | 4 bytes | `000000D0, 00000120, 00000170, 000001C0, 00000240` (big-endian) | Increments by a roughly-constant ~80 (0x50) per sequence step for consecutive sequence numbers, but the one observed 2-sequence-number gap only produced a ~128 (0x80) jump rather than ~160 - reads more like an independent, real-time-following counter (e.g. a timestamp at a fixed tick rate) than a value strictly derived from the sequence number. Tentative. |
 | 17 | 4 bytes | `01 00 00 01` in all 5 | Constant flags/sub-type field for this packet class |
-| 21 | 45 bytes | High entropy, changes completely every packet | Consistent with an encrypted+authenticated controller-state payload (buttons/sticks/triggers, encrypted using the session key established during `ps5-session-establishment.md`, likely with the sequence number and/or timestamp field above contributing to the AEAD nonce) |
+| 21 | 45 bytes | High entropy, changes completely every packet | Consistent with an encrypted+authenticated controller-state payload (buttons/sticks/triggers, encrypted using the session key established during the control handshake (`ps5-v2-control-plane.md`), likely with the sequence number and/or timestamp field above contributing to the AEAD nonce) |
 
 ## What's still needed
 

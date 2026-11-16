@@ -110,7 +110,7 @@ confirm how the request/wake port fits in).
 
 ## The alternate control channel: plain TCP
 
-Where every earlier capture's session-establishment exchange (`ps5-session-establishment.md`) rode
+Where every earlier capture's session-establishment exchange (`ps5-v2-control-plane.md`) rode
 on RUDP-wrapped UDP port 9303, this capture's equivalent exchange happened over a **plain TCP**
 connection to port 9295 (the low end of the same 9295-9297 port pool documented in
 `ps5-session-transport.md` - see that document's note on port selection being pool-based, not
@@ -136,7 +136,7 @@ Observed behavior:
   `RP-DevAChaTag`, `RP-Data`, `RP-Tag`) are otherwise identical in name and apparent structure to
   the UDP/9303 exchange - only the transport differs, not the application-layer protocol.
 - `User-Agent` on this capture's requests was `remoteplay OSX` (see the platform-varies note
-  already in `ps5-session-establishment.md`).
+  already in `ps5-v2-control-plane.md`).
 
 **Read as**: the console (or the client, or both, adaptively) chooses between two equivalent
 control-channel transports - RUDP-over-UDP/9303 for cloud/relay-mediated connections, and plain

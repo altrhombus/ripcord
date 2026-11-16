@@ -7,7 +7,7 @@ PIN), a locally-discovered connection to a console with its internet access bloc
 WAN/relay-addressed connection from a different network entirely, and two TLS-decrypted captures via
 a local debugging proxy that finally make the PSN cloud (tier 1) readable. This is the "big picture"
 document that frames the more detailed per-flow specs (`ps5-session-transport.md`,
-`ps5-session-establishment.md`, `ps5-av-stream.md`, `ps5-controller-input-packet.md`,
+`ps5-v2-control-plane.md`, `ps5-av-stream.md`, `ps5-controller-input-packet.md`,
 `ps5-local-discovery.md`, `ps5-wan-relay.md`, `ps5-cloud-session-api.md`). It exists because a
 full-session capture turned out to contain considerably more than the console-local handshake the
 earlier drafts described: there are (at least) three distinct network tiers involved, and both the
@@ -157,7 +157,7 @@ Once negotiated, the session ran directly to the console's LAN address over two 
 
 - **Control** (console port 9303 in most captures): the reliable-UDP framing + HTTP-over-RUDP
   handshake (`/sess/rgst`, `/sess/init`, `/sess/ctrl`) + ongoing `RPCS` binary control frames. See
-  `ps5-session-transport.md` and `ps5-session-establishment.md`.
+  `ps5-session-transport.md` and `ps5-v2-control-plane.md`.
 - **Stream** (console port 9297 in most captures): a single multiplexed reliable-UDP flow carrying
   video, audio, controller input, and congestion/reliability feedback, distinguished by a channel
   byte in a common per-packet header. See `ps5-av-stream.md`.
@@ -244,7 +244,7 @@ sign-in work.
 - **Registration for account-SSO ("online") pairing is a pure PSN-cloud flow (tier 1)**, confirmed
   across a reconnect and a brand-new device's first connection — the Phase 1 "pairing" work for
   this path is an account/OAuth + key-management client, not an on-LAN handshake at all; the
-  console-local exchange is identical either way (see `ps5-session-establishment.md`). PS5 also
+  console-local exchange is identical either way (see `ps5-v2-control-plane.md`). PS5 also
   exposes a **separate, first-party PIN-based "Link Device" pairing mode** (Settings → System →
   Remote Play → Link Device) that is a genuinely different feature from account-SSO pairing and may
   not go through the cloud key-management step the same way — this is the real remaining gap, not
@@ -266,7 +266,7 @@ sign-in work.
 - **Traffic-pattern analysis cannot recover the controller-input byte mapping** - confirmed with a
   negative result from a capture with ~30 documented button presses (`ps5-wan-relay.md`). Payload
   decryption (which depends on fully resolving the ECDH exchange in
-  `ps5-session-establishment.md`) is the only path forward there, not more capture sessions of this
+  `ps5-v2-control-plane.md`) is the only path forward there, not more capture sessions of this
   particular kind.
 - A **NAT-type status indicator** (classic STUN, one-shot, independent of the ICE channel) is a
   small, easy piece of UX worth replicating for Ripcord's own diagnostics.

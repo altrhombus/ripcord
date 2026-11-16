@@ -191,7 +191,7 @@ with one command.
 ## Verification, and its limits
 
 The vector file is the contract between the two implementations. The .NET side computes the answers, this
-side recomputes them, and a disagreement means one of the two misread `docs/protocol/ps5-session-crypto.md`.
+side recomputes them, and a disagreement means one of the two misread `docs/protocol/ps5-remoteplay-v1-spec.md`.
 
 171 control-plane vectors currently pass, covering:
 

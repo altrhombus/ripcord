@@ -1,9 +1,6 @@
 # Ripcord roadmap
 
-This is what's left to do. Finished work moves to [`docs/journal.md`](docs/journal.md), and the long version
-of this file, everything it said up to 2026-09-30, lives on in
-[`docs/history/roadmap-to-2026-09-30.md`](docs/history/roadmap-to-2026-09-30.md). When an item below says
-"details in the history", that's where to look.
+This is what's left to do. Finished work moves to [`docs/journal.md`](docs/journal.md).
 
 `[X]` still means what it means everywhere else here: assumed, never confirmed against a console.
 
@@ -17,8 +14,7 @@ is the PS3 port's release, not Ripcord's).
 
 We're close, but not one check away. Here's what's left, in order:
 
-1. **The person-driven pass:** "The 1.0 pass" in
-   [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), one checklist covering connect, the
+1. **The person-driven pass:** one checklist covering connect, the
    HUD, pairing, the first-run setup, input, the HDR display drag, Light theme, high contrast, scale and text
    size, and Narrator. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for
    not skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists.
@@ -75,8 +71,7 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 - [x] The defaults are 1080p60 at 20 Mbps, H.264 and no HDR (the owner's decision, 2026-10-05). HEVC and HDR
       are a choice in Settings, which keeps HDR games' highlights; a stored HEVC on a PC that can't decode it
       falls back to H.264 at connect.
-- [ ] "The 1.0 pass" in [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md) has been driven by
-      a person, and whatever it finds is fixed or listed.
+- [ ] The 1.0 pass has been driven by a person, and whatever it finds is fixed or listed.
 - [ ] No user-visible control is inert.
 - [ ] `SECURITY.md` names a supported version, and private vulnerability reporting is on. (Reporting went on
       2026-09-30; the version table is written.)
@@ -144,7 +139,7 @@ purchased signing certificate.
 - [ ] **Smaller things the hardware pass is likely to find more of.** Regression screenshots of the session
       page (light, dark, high contrast); eyeballing the stream in high contrast, and transparency-off; Narrator
       over the card grid; two open judgements (the connect screen's 112 px reserved gap, and whether the
-      diagnostics strip should rise to a letterboxed picture's edge). Details in the history.
+      diagnostics strip should rise to a letterboxed picture's edge).
 - [ ] **Leftovers from the showcase review** (2026-10-09): the failure screen wasn't looked at; at 225% text
       "Can't reach it" breaks onto two lines on the hero, and in the smallest window Settings opens with its
       title half scrolled away; the discovery row's system version (audit 6).
@@ -261,7 +256,7 @@ purchased signing certificate.
       20,000 kb/s. Measure what a default session actually gets.
 - [ ] **Latency polish, only if measurement says so:** D3D12-native decode, PTS-based A/V sync, an early demuxer
       flush, `CODECAPI_AVLowLatencyMode`, the unused `LatencyMode`, GHASH aggregation, caching the GMAC key per
-      rotation window, and the A/V loop's allocation churn. Details in the history.
+      rotation window, and the A/V loop's allocation churn.
 - [ ] **`AdaptiveBandwidthController` blames the network for loss we caused ourselves** (a full A/V queue).
 - [ ] **WAN relay.** Rendezvous, push, STUN and cloud wake are done; the relay carries media at the same ports
       and framing, so it's re-addressing, not a new transport.

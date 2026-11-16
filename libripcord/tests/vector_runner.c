@@ -7,7 +7,7 @@
  *
  * and checks this port's control-plane crypto against it, line by line. Every answer in that file was
  * computed by the .NET implementation; every answer here is computed by the C one. Where they disagree,
- * one of the two has misread docs/protocol/ps5-session-crypto.md - and that is the finding worth having,
+ * one of the two has misread docs/protocol/ps5-remoteplay-v1-spec.md - and that is the finding worth having,
  * because a spec two independent implementations read differently is a spec defect, not a porting detail.
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS. It is plain C99 with no devkitPro, no libctru and no console

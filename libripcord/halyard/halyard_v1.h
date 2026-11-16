@@ -3,7 +3,7 @@
  *
  * This is the C counterpart of Ripcord.Protocol.Halyard.Common/Crypto/V1: the control-session KDF, the
  * per-field IV derivation, and the field/streaminfo ciphers built on them - ported from that
- * implementation (docs/protocol/ps5-session-crypto.md is the spec both read) and checked against it with
+ * implementation (docs/protocol/ps5-remoteplay-v1-spec.md section 2.1 is the spec both read) and checked against it with
  * known-answer vectors (tests/vector_runner.c), so a transcription slip shows up as a mismatch instead of
  * shipping quietly.
  *

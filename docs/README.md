@@ -29,7 +29,6 @@ not by topic, so several cover the same subject from different angles. Pick by t
 | What is the portable C core the console ports share? | [`libripcord/README.md`](../libripcord/README.md) |
 | How do I build or run a console port? | [The console ports](#the-console-ports), below |
 | How do I contribute, and what must I attest to? | [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
-| How was it built, historically? | [`history/`](history/) |
 
 ### The three that are easily confused
 
@@ -37,8 +36,7 @@ not by topic, so several cover the same subject from different angles. Pick by t
 interchangeable:
 
 - **`ROADMAP.md` is what's left to do:** the 1.0 path on one screen, then the backlog. Finished work leaves it
-  for the journal, which is how it stays short enough to read in one sitting. Its longer past self is in
-  [`history/`](history/).
+  for the journal, which is how it stays short enough to read in one sitting.
 - **`journal.md` is the dated engineering record.** What was tried, what broke, what the fix turned out to
   be. It is a *record*, not a reference: where it states a protocol fact, [`protocol/`](protocol/) is
   authoritative and the journal may be out of date.
@@ -155,7 +153,6 @@ docs/
     dualsense-hid-report.md    controller HID report formats
     *.proto                    schemas, compiled into the build
     captures/                  CAPTURES FOLDER — gitignored, never published
-  history/                     superseded plans, kept for the record
 ```
 
 Port documentation is **not** under `docs/` — it lives beside each port in `ports/*/`, for the reason

@@ -2,9 +2,7 @@
 
 **The question this answers: what does Ripcord look like, and what decides that?**
 
-Settled 2026-09-13. This supersedes the design sections of
-[`history/app-reimagining-plan.md`](history/app-reimagining-plan.md), which is marked historical and
-describes an earlier state. Most of what that plan established — the 4 px token scale, the elevation model,
+Settled 2026-09-13. This supersedes the design sections of an earlier plan. Most of what that plan established — the 4 px token scale, the elevation model,
 the closed motion list, the tone guide — survives untouched and is restated here only where this review
 changed it. Where the two disagree, this file wins.
 

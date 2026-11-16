@@ -276,6 +276,39 @@ block and lay out the context so `context[selectorOffset]` selects the intended 
 ~10 variant `(table, selectorOffset)` tuples for non-1.0 protocols / other keytypes. The DECRYPT path
 (recovering registkey + companion from a response) is complete and tested.
 
+#### 2.0.2 `/sess/rgst` transport crypto on the account (no-PIN) route **[C]**
+
+The 587-byte request body and 195-byte response are **field-cipher** (`HalyardControlFieldCrypto`:
+`IV = HMAC-SHA256(contextKey, material ‖ be64(counter))[:16]`, AES-128-CFB, bundled `contextKey`). The
+request body = a 480-byte plaintext **context** + a 107-byte encrypted field; the response = the encrypted
+field block carrying `PS5-RegistKey`, `RP-Key` (companion), nickname, MAC, `RP-KeyType`, `RP-SupportCmd`.
+
+The transport key is `key' = seed XOR registrationTable[ context[0x18d] & 0x1f ]` — the no-PIN analog of the
+PIN route (where the PIN folds into `registrationTable[sel]`; here a per-registration **seed** XORs the whole
+entry). `registrationTable` and the selector are the ones already in `HalyardRegistrationKdf`. Verified by
+decrypting a live `/sess/rgst` request offline (blocks 1..n of CFB are IV-independent, so `key'` validates
+outright) and, separately, the response.
+
+**Where the seed comes from — SOLVED end-to-end 2026-08-31.** The seed is **not derived locally; the console
+delivers it, encrypted, over the PSN cloud** (this is why every local-derivation hunt failed and the seed
+appears in no plaintext channel). The full chain, all `HalyardControlFieldCrypto`:
+
+1. The client generates two **ephemeral 16-byte** values and sends them in the cloudAssistedNavigation
+   `commands` call as **`data1`** (field-cipher **key**) and **`data2`** (field-cipher **material**) —
+   see `ps5-cloud-session-api.md`.
+2. The console generates the seed, field-encrypts it with `HalyardControlFieldCrypto(key = data1,
+   material = data2, counter = 0)`, and returns the ciphertext as **`customData1`** (double-base64) on the
+   `rps:customData1:updated` push channel.
+3. Client: `seed = HalyardControlFieldCrypto.Decrypt(data1, data2, 0, base64⁻²(customData1))`, then
+   `key' = seed XOR registrationTable[selector]`.
+
+Confirmed byte-exact against the vendor client's `session+0x10` on multiple fresh registrations. The long
+trail of ruled-out hypotheses (client RNG, scenp/TLS ECDH, the RP control-plane ECDH, the npticket cookie,
+every local KDF) is in the captures-folder note; the answer was that the seed rides the wire as `customData1`
+ciphertext. **Ripcord account route:** generate `data1`/`data2` → send in the `commands` call → read
+`customData1` from the push channel → field-decrypt → seed → `key'` → decrypt `/sess/rgst` → store
+`RP-Registkey` + companion. No new primitives.
+
 ### 2.1 Session control — HTTP header field crypto  **[V]**
 
 `/sess/init` (per-connect handshake) uses `RP-Registkey` + `RP-Nonce`; `/sess/ctrl` then carries several
