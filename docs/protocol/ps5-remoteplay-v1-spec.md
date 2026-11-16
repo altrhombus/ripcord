@@ -962,6 +962,12 @@ tentative "channel `0x0e`,
 proved unreliable (the working transport numbers types as in §3, e.g. congestion is type 5, not the
 enum's `0x06`).
 
+**Send policy [W]** (`cap48`, timed from the same decrypted packets). State packets go out on a fixed
+**15 ms** period whether or not anything moved (median 15 ms over 10,165 packets, none closer). A history
+packet goes out at once on a transition and is then **repeated unchanged every 200 ms** (median over 1,258
+packets). History payloads never exceed **100 bytes**; a full one drops its oldest events. Whether the console
+needs this cadence, or merely tolerates it, is `[X]`.
+
 ---
 
 ### 6.4 Senkusha probe sequence — ordering  **[W]** wire-observed 2026-08-02

@@ -75,28 +75,26 @@ public class HalyardInputPacketWriterTests
     {
         var writer = NewWriter();
         byte[] a = writer.BuildPackets(Frame(ticks: 0, lx: 0.1f))[0];
-        byte[] b = writer.BuildPackets(Frame(ticks: 10 * Ms, lx: 0.2f))[0];
+        byte[] b = writer.BuildPackets(Frame(ticks: 15 * Ms, lx: 0.2f))[0];
         Assert.Equal(0x00, a[2]);
         Assert.Equal(0x01, b[2]);
     }
 
     [Fact]
-    public void NoStateWhenIdleWithinKeepalive()
-    {
-        var writer = NewWriter();
-        writer.BuildPackets(Frame(ticks: 0));                 // first: state
-        var packets = writer.BuildPackets(Frame(ticks: 50 * Ms)); // idle, <200ms later
-        Assert.Empty(packets);
-    }
-
-    [Fact]
-    public void StateKeepaliveAfter200ms()
+    public void NoStateWithinFifteenMs_EvenWhenSticksMove()
     {
         var writer = NewWriter();
         writer.BuildPackets(Frame(ticks: 0));
-        var packets = writer.BuildPackets(Frame(ticks: 200 * Ms));
-        Assert.Single(packets);
-        Assert.Equal(0x06, packets[0][0]);
+        Assert.Empty(writer.BuildPackets(Frame(ticks: 8 * Ms, lx: 0.5f)));
+    }
+
+    [Fact]
+    public void StateEveryFifteenMs_EvenWhenIdle()
+    {
+        var writer = NewWriter();
+        writer.BuildPackets(Frame(ticks: 0));
+        var packets = writer.BuildPackets(Frame(ticks: 15 * Ms));
+        Assert.Equal(0x06, Assert.Single(packets)[0]);
     }
 
     [Fact]
@@ -160,5 +158,38 @@ public class HalyardInputPacketWriterTests
         writer.BuildPackets(Frame(ticks: 0, buttons: ControllerButtons.South));
         var packets = writer.BuildPackets(Frame(ticks: 5 * Ms, buttons: ControllerButtons.South));
         Assert.DoesNotContain(packets, pkt => pkt[0] == 0x01);
+    }
+
+    [Fact]
+    public void UnchangedHistoryRepeatsEveryTwoHundredMs()
+    {
+        var writer = NewWriter();
+        writer.BuildPackets(Frame(ticks: 0));
+        byte[] first = writer.BuildPackets(Frame(ticks: 5 * Ms, buttons: ControllerButtons.South))
+            .Single(pkt => pkt[0] == 0x01);
+
+        Assert.DoesNotContain(
+            writer.BuildPackets(Frame(ticks: 150 * Ms, buttons: ControllerButtons.South)), pkt => pkt[0] == 0x01);
+
+        byte[] repeat = writer.BuildPackets(Frame(ticks: 205 * Ms, buttons: ControllerButtons.South))
+            .Single(pkt => pkt[0] == 0x01);
+        Assert.Equal(first.AsSpan(HeaderLength).ToArray(), repeat.AsSpan(HeaderLength).ToArray());
+    }
+
+    [Fact]
+    public void HistoryKeepsTheNewestEventsThatFitInOneHundredBytes()
+    {
+        var writer = NewWriter();
+        writer.BuildPackets(Frame(ticks: 0));
+        byte[] last = [];
+        for (int i = 1; i <= 40; i++)
+        {
+            var buttons = i % 2 == 1 ? ControllerButtons.South : ControllerButtons.None;
+            last = writer.BuildPackets(Frame(ticks: i * 5 * Ms, buttons: buttons)).Single(pkt => pkt[0] == 0x01);
+        }
+
+        // Each Cross event is three bytes, so 33 fit; the newest (a release) leads.
+        Assert.Equal(99, last.Length - HeaderLength);
+        Assert.Equal(new byte[] { 0x80, 0x88, 0x00 }, last.AsSpan(HeaderLength, 3).ToArray());
     }
 }
