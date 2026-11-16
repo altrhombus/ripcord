@@ -206,7 +206,7 @@ static void test_sess_fields(void)
         }
     }
 
-    /* RP-Did: 10-byte prefix + up to 16 device-id bytes + 6 zero bytes, NOT length-prefixed. */
+    /* RP-Did: be16(24) + four header words + up to 16 device-id bytes + 6 zero bytes. */
     {
         uint8_t device_id[16];
         static const uint8_t expect_prefix[10] = { 0x00, 0x18, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x80 };

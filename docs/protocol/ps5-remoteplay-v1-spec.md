@@ -307,7 +307,7 @@ IV = HMAC-SHA256( context_key, out2 ‖ big-endian-uint64(counter) )[0:16]
 | Field | Counter | Plaintext |
 |-------|---------|-----------|
 | `RP-Auth` | 0 | `registkey(8 raw bytes) ‖ 0x00×8` |
-| `RP-Did` | 1 | `be16(len) ‖ hexdecode(Windows MachineGuid, dashes stripped)` |
+| `RP-Did` | 1 | `be16(24) ‖ be16(0) ‖ be16(7) ‖ be16(0x40) ‖ be16(0x80) ‖ hexdecode(Windows MachineGuid, dashes stripped) ‖ 6 zero bytes` (32 B). **[C]** `FUN_101e0d20` (and the x64 8.5 build); **[W]** `cap22` has the same shape with `0x41` as the third word, from a prebuilt id the vendor client can be handed (`FUN_101dc480` → `FUN_101e1390`). The console accepts `0x40` **[V]**; the words' meaning is **[X]** |
 | `RP-OSType` | 2 | `"Win%d.%d"` from kernel32 version (e.g. `"Win10.0\0"`) |
 | `RP-StartBitrate` | 3 | 4-byte int |
 | `RP-StreamingType` | 4 | 4-byte int |
