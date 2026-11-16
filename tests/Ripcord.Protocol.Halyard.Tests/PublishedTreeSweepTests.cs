@@ -491,7 +491,7 @@ public class PublishedTreeSweepTests
         ["src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json"] =
             "776b67b485d47b8dfbdd59e5b62ed5e6d6c68515aaecaa5a185bab0115c2a2f2",
         ["src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json"] =
-            "7a7426e4c114753f934e31c83359a9151d059e0167e359987d19a8d264f6e9f0",
+            "0befbe2d758c6a9349650ef3412720846d53a41eda3c021721d500cf29595cff",
     };
 
     /// <summary>

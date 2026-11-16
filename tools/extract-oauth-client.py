@@ -4,9 +4,7 @@
 Provenance, because it is the whole point of this script existing rather than the value simply
 being typed in: the credential is read out of *our own* capture of *our own* traffic
 (docs/protocol/captures/, the gitignored captures folder), which is the same source every other
-interoperability fact in this project comes from. It is not copied from any other implementation.
-That it also appears in other projects was established afterwards, by looking, and is a fact about
-the world rather than our source -- see NOTICE.
+interoperability fact in this project comes from. See NOTICE.
 
 Run from the repository root:
 

@@ -15,9 +15,9 @@ reports). The parts tagged `[X]` below are not: Bluetooth's full report `0x31`, 
   controller out of compatibility mode. The transport does this on open (best-effort); if it doesn't take, the
   compatibility report still parses (minus touchpad-xy/gyro).
   **`[X]`, all of this bullet.** Our Bluetooth capture held only the compatibility report, so the `0x31`
-  layout, the CRC-32 and the activation by feature report `0x05` come from the public DualSense layout the
-  section below cross-checks against, not from our own evidence. None of it is confirmed until a capture of
-  ours shows a `0x31` report.
+  layout, the CRC-32 and the activation by feature report `0x05` come from a public description of the
+  DualSense's reports whose source was not recorded, not from our own evidence. None of it is confirmed until
+  a capture of ours shows a `0x31` report (`tools/Ripcord.HidCapture --activate` reads the feature reports first).
 
 This is the physical controller's own HID report (not the PS5 Remote Play protocol). We read it directly so we
 get inputs Windows.Gaming.Input hides — most importantly the **PS button**, plus the touchpad and (later) gyro.
@@ -27,8 +27,7 @@ The generic gamepad API stays the baseline for standard pads; this raw-HID path 
 
 Differential analysis of the capture (`tools/Ripcord.HidCapture` → `[u16 len][bytes]` records): for each byte,
 how many distinct values it took and its range, plus enumerating the distinct values of the button bytes while
-every control was exercised. That pins each field to the byte/bit it actually moves; cross-checked against the
-public DualSense layout. The parser (`src/Ripcord.Input.Common/DualSenseReportParser.cs`) encodes this; tests
+every control was exercised. That pins each field to the byte/bit it actually moves. The parser (`src/Ripcord.Input.Common/DualSenseReportParser.cs`) encodes this; tests
 use synthesized reports (no capture bytes committed).
 
 ## Full report field block (USB id `0x01` / Bluetooth-full id `0x31`)
