@@ -65,10 +65,10 @@ Two corrections to earlier framing, recorded because they were wrong for a while
 
 - **Where the substance came from** is stated once, in [`NOTICE`](../../NOTICE): our own copies of the vendor's
   client, analysed statically and dynamically, and our own captures of our own console and account. Each
-  reference consulted is recorded, dated and with what it informed, in
+  capture, analysis and reference is recorded, dated and with what it informed, in
   [`../protocol-research-log.md`](../protocol-research-log.md). Neither is restated here.
-- **Where a value here is an *assumption*** rather than something our own
-  evidence established, it is tagged **[X]** so it cannot be mistaken for a finding.
+- **Where a value here is an *assumption*** rather than something our own evidence established, it is tagged
+  **[X]** so it cannot be mistaken for a finding.
 - **Open assumptions are tagged `[X]` in place**, next to the value each one qualifies, and are
   deliberately not gathered into a list anywhere: a separate list is a second copy, and a second copy goes
   stale — which is the same reason this project does not cite commit hashes. An `[X]` value is provisional:

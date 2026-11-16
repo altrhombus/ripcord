@@ -232,10 +232,9 @@ the reasoning.
 ## Provenance
 
 Ripcord is an interoperability implementation: it connects your own client to your own console, under your
-own account. The protocol was worked out from the authors' own installed copies of the vendor client, the
-authors' own captures of their own console and account, and public references (RFCs, NIST test vectors,
-platform documentation). Where a value is an assumption rather than something
-our own evidence established, it carries an `[X]` tag next to it in [`docs/protocol/`](docs/protocol/).
+own account. The protocol was worked out from the authors' own installed copies of the vendor client, the authors' own
+captures of their own console and account, and public references (RFCs, NIST test vectors, platform
+documentation). Where a value is an assumption rather than something our own evidence established, it carries an `[X]` tag next to it in [`docs/protocol/`](docs/protocol/).
 Vendor code is cited by address only; no vendor source, symbol names or log strings are reproduced.
 
 Two generic values recovered from the vendor client are committed on purpose: about 4 KB of protocol
@@ -243,7 +242,7 @@ constants the console computes against, and the application OAuth credential the
 in with. Each is identical for every user and console, each can be left out of a build
 (`-p:BundleInteropConstants=false`, `-p:BundleOAuthClient=false`), and nothing tied to any user, console or
 account is included. [`NOTICE`](NOTICE) describes the methods and both values in full, and
-[`docs/protocol-research-log.md`](docs/protocol-research-log.md) records each reference consulted.
+[`docs/protocol-research-log.md`](docs/protocol-research-log.md) records the captures, analysis and references behind each section.
 
 *Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.*
 
@@ -273,7 +272,7 @@ implementation, tests, and documentation. This is disclosed deliberately: this i
 consistent record of candour is worth more than the ambiguity of silence.
 
 The assistant works under the same rules as everyone else: everything in the protocol comes from this
-project's own evidence (see [Provenance](#provenance)), and the assistant is never used to obtain
+project's own evidence (see [Provenance](#provenance)), and the assistant is not used to obtain
 implementation detail from another Remote Play implementation, not its source, constants, byte layouts or
 naming. A language model may have another implementation in its training data and can reproduce it fluently
 without being asked, so the method is **derive first, then confirm against our own evidence**: a value that

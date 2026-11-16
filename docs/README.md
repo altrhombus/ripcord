@@ -21,7 +21,7 @@ not by topic, so several cover the same subject from different angles. Pick by t
 | How do I build and test the Rust engine, and where does it stand? | [`engine/README.md`](../engine/README.md) |
 | **What is left to do?** | [`ROADMAP.md`](../ROADMAP.md) |
 | **What happened, and when?** | [`journal.md`](journal.md) |
-| **What outside material was consulted, and what did each item inform?** | [`protocol-research-log.md`](protocol-research-log.md) |
+| **What are the sources behind each part of the spec?** | [`protocol-research-log.md`](protocol-research-log.md) |
 | How does the PS5 Remote Play protocol actually work? | [`protocol/`](protocol/) |
 | In what order would I build a client from the spec? | [`protocol/IMPLEMENTATION.md`](protocol/IMPLEMENTATION.md) |
 | How would a console port pair through a desktop? (design, for review) | [`port-pairing.md`](port-pairing.md) |
@@ -149,7 +149,7 @@ docs/
   README.md                    this file
   architecture.md              how the code is arranged
   journal.md                   the dated engineering record
-  protocol-research-log.md     provenance: what was consulted
+  protocol-research-log.md     provenance: the sources behind each spec
   protocol/                    the wire-protocol specification
     README.md                  spec index and provenance
     IMPLEMENTATION.md          build order and definition of done

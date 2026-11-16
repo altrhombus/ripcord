@@ -1097,6 +1097,9 @@ server → client : INIT_ACK    (chunk_type=0x02)  payload{ server tag, a_rwnd, 
 client → server : COOKIE_ECHO (chunk_type=0x0a)  echoes the 0x20-byte cookie
 server → client : COOKIE_ACK  (chunk_type=0x0b)  → ESTABLISHED
 ```
+The advertised window is `0x19000` from both sides **[W]**: every INIT and INIT_ACK in `rudp_control_setup`,
+`cap3` and `cap48` carries it, client and console alike.
+
 Each side's `tag` is the SCTP **verification tag** (`vtag`) — a random 32-bit connection id the peer must echo
 in every subsequent packet's message-header tag field; it also seeds that direction's `initial_seq`.
 Chunk-type values (byte 13) are SCTP's: `DATA=0x00, INIT=0x01, INIT_ACK=0x02, SACK=0x03, COOKIE_ECHO=0x0a,
