@@ -44,10 +44,6 @@ interchangeable:
   authoritative and the journal may be out of date.
 - **`protocol-research-log.md` is the provenance record.** One row per capture, analysis or reference,
   what it informed, and which spec section it fed. It is evidence, not narrative.
-- **`protocol/evidence-manifest.tsv` is the dated fingerprint of the private evidence.** A keyed hash
-  (HMAC-SHA256) of every file in the captures folder and of its path, so without the key it names and
-  confirms nothing; with the key, a commit of it shows the evidence existed in that form by that date.
-  `tools/evidence-manifest.py` regenerates and checks it.
 
 ### The console ports
 

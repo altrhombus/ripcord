@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-"""Commit to the private evidence folder in a manifest that reveals nothing about it.
+"""Record the private evidence folder in a manifest that reveals nothing about it.
 
 The captures folder (docs/protocol/captures/) holds the captures, dumps, lab notebook and analysis
 scripts the protocol was derived from, and it is never committed. This script writes a manifest of
-keyed hashes, and nothing else, to docs/protocol/evidence-manifest.tsv so the repository can carry a
-dated record of the evidence without carrying the evidence:
+keyed hashes, and nothing else, to docs/protocol/captures/evidence-manifest.tsv, beside the evidence, so
+the folder's state on a given day can be recorded and later checked without describing any of it:
 
     <HMAC-SHA256(key, relative path)>  <HMAC-SHA256(key, content)>
 
 Both are keyed with a random 32-byte key kept beside the evidence (docs/protocol/captures/
 evidence-manifest.key, created on first run, never committed). Without the key the manifest can't be
-used to confirm a guessed file name or a known file's content; with it, anyone can check every row.
-Publishing the key is how the manifest is proven later. Sizes stay in the private path map
+used to confirm a guessed file name or a known file's content; with it, anyone handed a copy can check
+every row. Sizes stay in the private path map
 (docs/protocol/captures/evidence-manifest-paths.tsv), since an exact size identifies a known file too.
 
-What a manifest commit proves: that each listed file existed, in exactly that form, by the commit's
-date. What it cannot prove: anything about dates before its first commit. The ordering record for the
-derivation stays the research log and the lab notebook.
+What a manifest shows: that each listed file existed, in exactly that form, when it was written. It says
+nothing about anything earlier. The ordering record for the derivation stays the research log and the lab
+notebook.
 
 Usage:
     python tools/evidence-manifest.py            # regenerate the manifest and the private path map
-    python tools/evidence-manifest.py --check    # compare the folder against the committed manifest
+    python tools/evidence-manifest.py --check    # compare the folder against the manifest
 
 Exclusions: tooling and working files that are not evidence (listed in DEFAULT_EXCLUDES), plus any
 patterns in docs/protocol/captures/evidence-manifest.exclude, one per line, matched against the
@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EVIDENCE = os.path.join(REPO, "docs", "protocol", "captures")
-MANIFEST = os.path.join(REPO, "docs", "protocol", "evidence-manifest.tsv")
+MANIFEST = os.path.join(EVIDENCE, "evidence-manifest.tsv")
 PATH_MAP = os.path.join(EVIDENCE, "evidence-manifest-paths.tsv")
 KEY_FILE = os.path.join(EVIDENCE, "evidence-manifest.key")
 EXCLUDE_FILE = os.path.join(EVIDENCE, "evidence-manifest.exclude")
@@ -50,6 +50,7 @@ DEFAULT_EXCLUDES = [
     "*.pyc",
     "HANDOFF.md",
     "leak-denylist.tsv",
+    "evidence-manifest.tsv",
     "evidence-manifest-paths.tsv",
     "evidence-manifest.exclude",
     "evidence-manifest.key",
@@ -124,7 +125,7 @@ def write(rows: list[tuple[str, str, int, str]]) -> None:
         for path_hash, _rel, _size, content_hash in rows:
             f.write(f"{path_hash}\t{content_hash}\n")
     with open(PATH_MAP, "w", encoding="utf-8", newline="\n") as f:
-        f.write("# Private: the size and path behind each path_hmac in docs/protocol/evidence-manifest.tsv. Never committed.\n")
+        f.write("# Private: the size and path behind each path_hmac in evidence-manifest.tsv. Never committed.\n")
         for path_hash, rel, size, _content in rows:
             f.write(f"{path_hash}\t{size}\t{rel}\n")
 

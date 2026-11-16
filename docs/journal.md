@@ -33,14 +33,6 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
-### The evidence manifest is keyed (2026-11-16)
-
-The manifest tool hashed each file in the captures folder, and each path, with plain SHA-256. That was meant
-to name nothing, but a plain hash of a path confirms any name someone guesses, and a plain hash of a known
-file identifies it. It now uses HMAC-SHA256 with a key kept beside the evidence, and the sizes moved into the
-private path map. Without the key the manifest says nothing about what's in the folder. Publishing the key
-is how it gets checked.
-
 ### The GMAC window changes one unit later than we thought (2026-11-16)
 
 The rotating GMAC key's window was `keyPos / 45000` for v1 and `(keyPos - 1) / 45000` for v2, and the code
@@ -138,8 +130,8 @@ Three smaller records were straightened out at the same time:
 
 - The three bits at the top of the byte after the video size extension now have their own entry in the spec,
   with what our captures show of them. What the field means is still marked unconfirmed.
-- There is now `tools/evidence-manifest.py`, which hashes every file in the captures folder into a manifest that
-  can be committed: it dates the evidence and carries none of it.
+- There is now `tools/evidence-manifest.py`, which hashes every file in the captures folder into a manifest kept
+  beside the evidence.
 - The `.proto` header claimed every name in the file was mine. The protocol README, which is accurate, says
   about two-thirds of the message names are the vendor's plain-English ones, kept on purpose. The header now
   says what the README says, and `CLAUDE.md` no longer calls Takion and Senkusha the "one" exception.
