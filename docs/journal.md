@@ -761,6 +761,19 @@ regex didn't allow a closed-window check in the guard. The rule still held, and 
 
 What's left of the pass is in ROADMAP: the roomy card, a 200% display, and a look at the touch panel.
 
+### The app's protocol references, and an ARM64 cross-build (2026-09-30)
+
+Two checks that had been waiting for a Windows build.
+
+- **`Ripcord.App.csproj` no longer references the protocol projects directly.** Nothing in the app has named
+  `Ripcord.Protocol.Halyard` or `.Common` since 2026-09-26, and the references were kept until a Windows build
+  could confirm it. Without them the solution builds for x64, the app launches, and both assemblies are still
+  in the app's dependency manifest and output, through `Ripcord.Presentation.Halyard`.
+- **The whole solution cross-builds for ARM64 from an x64 machine**, native interop included, with the C++
+  ARM64 build tools installed. Reading each binary's PE header: the ARM64 app carries ARM64 builds of
+  `Ripcord.Media.Interop.dll` and `Ripcord.Input.Interop.dll`, and the x64 app carries x64 ones, so
+  `$(RipcordNativePlatform)` resolves as it should on a cross-build. Built, not run: this machine is x64.
+
 ### The console card's two-line name, at 100% and 150% text (2026-09-30)
 
 One of 1.0's three known defects, found on 2026-08-05. The card was rebuilt on 2026-09-20 and the defect was
