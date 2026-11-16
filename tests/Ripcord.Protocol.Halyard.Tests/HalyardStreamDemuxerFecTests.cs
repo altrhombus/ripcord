@@ -32,22 +32,22 @@ public class HalyardStreamDemuxerFecTests
     [Fact]
     public void ReconstructsDroppedSourceUnitFromParity()
     {
-        const int source = 3, fec = 2, padded = 48, stride = 48, total = source + fec;
+        const int source = 3, fec = 2, padded = 44, total = source + fec; // 4-aligned, not 16-aligned
         int[] sliceLen = { 40, 30, 20 };
 
-        // Build the padded slot buffer: each source unit = [2-byte ext][slice][zero pad], then compute parity.
-        var buf = new byte[total * stride];
+        // Build the frame at its coded length: each source unit = [2-byte ext][slice][zero pad], then compute parity.
+        var buf = new byte[total * padded];
         var slices = new byte[source][];
         for (int u = 0; u < source; u++)
         {
             int dataSize = 2 + sliceLen[u];
             int ext = padded - dataSize; // padding that brings this unit up to the common size
-            int off = u * stride;
+            int off = u * padded;
             BinaryPrimitives.WriteUInt16BigEndian(buf.AsSpan(off), (ushort)ext);
             slices[u] = RandomNumberGenerator.GetBytes(sliceLen[u]);
             slices[u].CopyTo(buf.AsSpan(off + 2));
         }
-        CauchyReedSolomon.Encode(buf, padded, stride, source, fec);
+        CauchyReedSolomon.Encode(buf, padded, source, fec);
 
         byte[] expected = slices.SelectMany(s => s).ToArray(); // the frame the demuxer should emit
 
@@ -62,10 +62,10 @@ public class HalyardStreamDemuxerFecTests
 
         // Deliver source unit 0 first (fixes the padded size), DROP source unit 1, deliver source unit 2,
         // then both parity units (full padded size each).
-        demuxer.Ingest(VideoPacket(0, 0, total, fec, buf.AsSpan(0 * stride, DataSize(0))));
-        demuxer.Ingest(VideoPacket(0, 2, total, fec, buf.AsSpan(2 * stride, DataSize(2))));
-        demuxer.Ingest(VideoPacket(0, source + 0, total, fec, buf.AsSpan((source + 0) * stride, padded)));
-        demuxer.Ingest(VideoPacket(0, source + 1, total, fec, buf.AsSpan((source + 1) * stride, padded)));
+        demuxer.Ingest(VideoPacket(0, 0, total, fec, buf.AsSpan(0 * padded, DataSize(0))));
+        demuxer.Ingest(VideoPacket(0, 2, total, fec, buf.AsSpan(2 * padded, DataSize(2))));
+        demuxer.Ingest(VideoPacket(0, source + 0, total, fec, buf.AsSpan((source + 0) * padded, padded)));
+        demuxer.Ingest(VideoPacket(0, source + 1, total, fec, buf.AsSpan((source + 1) * padded, padded)));
 
         // Next frame flushes frame 0.
         demuxer.Ingest(VideoPacket(1, 0, 1, 0, new byte[] { 0, 0, 1, 2, 3 }));
@@ -79,24 +79,57 @@ public class HalyardStreamDemuxerFecTests
     public void UnrecoverableLoss_FiresIdrRequest()
     {
         // source=3, only 1 source + 1 parity delivered (2 < 3) → FEC can't run → loss reported.
-        const int source = 3, fec = 2, padded = 32, stride = 32, total = source + fec;
-        var buf = new byte[total * stride];
+        const int source = 3, fec = 2, padded = 32, total = source + fec;
+        var buf = new byte[total * padded];
         for (int u = 0; u < source; u++)
         {
-            int off = u * stride;
+            int off = u * padded;
             BinaryPrimitives.WriteUInt16BigEndian(buf.AsSpan(off), (ushort)(padded - (2 + 10)));
             RandomNumberGenerator.GetBytes(10).CopyTo(buf.AsSpan(off + 2));
         }
-        CauchyReedSolomon.Encode(buf, padded, stride, source, fec);
+        CauchyReedSolomon.Encode(buf, padded, source, fec);
 
         var demuxer = new HalyardStreamDemuxer(new PassthroughHalyardSessionCrypto());
         var losses = new List<(int, int)>();
         demuxer.VideoLossDetected += (a, b) => losses.Add((a, b));
 
         demuxer.Ingest(VideoPacket(0, 0, total, fec, buf.AsSpan(0, 12)));                 // 1 source
-        demuxer.Ingest(VideoPacket(0, source, total, fec, buf.AsSpan(source * stride, padded))); // 1 parity
+        demuxer.Ingest(VideoPacket(0, source, total, fec, buf.AsSpan(source * padded, padded))); // 1 parity
         demuxer.Ingest(VideoPacket(1, 0, 1, 0, new byte[] { 0, 0, 1, 2, 3 }));            // flush frame 0
 
         Assert.Contains((0, 0), losses);
+    }
+    [Fact]
+    public void AFrameWithNoParity_IsEmittedWhole_AndCountsNoLoss()
+    {
+        // m = 0 is a frame with nothing to recover with, not a frame with one parity unit missing.
+        var demuxer = new HalyardStreamDemuxer(new PassthroughHalyardSessionCrypto());
+        var losses = new List<(int, int)>();
+        demuxer.VideoLossDetected += (a, b) => losses.Add((a, b));
+        EncodedVideoFrame? emitted = null;
+        demuxer.VideoFrameReady += f => emitted = f with { Payload = f.Payload.ToArray() };
+
+        demuxer.Ingest(VideoPacket(0, 0, 2, 0, new byte[] { 0, 0, 0xaa, 0xbb }));
+        demuxer.Ingest(VideoPacket(0, 1, 2, 0, new byte[] { 0, 0, 0xcc, 0xdd }));
+        demuxer.Ingest(VideoPacket(1, 0, 1, 0, new byte[] { 0, 0, 1, 2, 3 })); // flush frame 0
+
+        Assert.NotNull(emitted);
+        Assert.Equal("AABBCCDD", Convert.ToHexString(emitted!.Payload.ToArray()));
+        Assert.Empty(losses);
+        Assert.Equal((2L, 0L), demuxer.TakePacketStats());
+    }
+
+    [Fact]
+    public void AFrameWithNoParity_ReportsALostSourceUnit()
+    {
+        var demuxer = new HalyardStreamDemuxer(new PassthroughHalyardSessionCrypto());
+        var losses = new List<(int, int)>();
+        demuxer.VideoLossDetected += (a, b) => losses.Add((a, b));
+
+        demuxer.Ingest(VideoPacket(0, 0, 2, 0, new byte[] { 0, 0, 0xaa, 0xbb }));
+        demuxer.Ingest(VideoPacket(1, 0, 1, 0, new byte[] { 0, 0, 1, 2, 3 })); // unit 1 never came
+
+        Assert.Contains((0, 0), losses);
+        Assert.Equal((1L, 1L), demuxer.TakePacketStats());
     }
 }

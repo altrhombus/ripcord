@@ -45,41 +45,29 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     private byte[] _assembly = new byte[64 * 1024];
     private int _assemblyLength;
 
-    // Current-frame reassembly is slot-buffered by unit index (so out-of-order units land correctly and FEC can
-    // reconstruct lost source units from the parity units). Each unit occupies one stride-sized slot; source
-    // units are indices [0, _sourceExpected), parity units follow.
+    // The frame being reassembled, laid out as the console lays it out (spec §6.2): unit u at u * _codedLength
+    // in _units, source units [0, _sourceCount) then parity units [_sourceCount, _sourceCount + _parityCount).
+    // Units land by index, so arrival order doesn't matter and FEC sees every unit where it expects it.
     private int _frameIndex = -1;
     private long _frameTimestampTicks;
-    private int _sourceExpected;
-    private int _fecExpected;
-    private int _fecActual; // FEC units actually on the wire (ParityUnits); _fecExpected forces a min of 1 slot
-    private int _sourceReceived;
-    private int _fecReceived;
+    private int _sourceCount;
+    private int _parityCount; // as the header says; 0 means the frame has no parity and nothing to recover with
+    private int _sourceArrived;
+    private int _parityArrived;
 
     // Accumulated wire packet stats for congestion feedback (received vs lost units across frames). Read+reset
     // via TakePacketStats from the congestion loop, so guarded with Interlocked.
     private long _statUnitsReceived;
     private long _statUnitsLost;
-    // The frame's coded unit length — the number of bytes FEC actually codes over, shared by every unit. This
-    // is the wire-bearing value of the two: it must equal what the console coded over or recovery reconstructs
-    // garbage. Confirmed [C]/[W]: the console's length is the longest source unit rounded UP TO A MULTIPLE OF
-    // 4, constant within a frame. Verified on the wire across 5,961 frames of cap47 (parity length constant
-    // per frame, never exceeded by any source unit, and parity_len - max(source_len) only ever 0..3) and in
-    // our binary, where FUN_101035e0 rejects any fragment length with (len & 3) != 0.
-    private int _unitPaddedSize;
-
-    // Slot spacing in _slotBuf. NOT a protocol value — the console lays its units out at a stride equal to the
-    // coded length itself, with no 16-alignment anywhere. This is purely our own buffer layout, and any value
-    // >= _unitPaddedSize is equally correct: all coding reads and writes [slot, slot + _unitPaddedSize), the
-    // buffer is zero-cleared per frame, and the tail between the two is never read. Rounding to 16 buys
-    // alignment for the copies; 4 (the console's own granularity) would be just as correct and no faster.
-    // Recorded because this was long carried as a suspected live FEC bug on the theory that 16 was a mis-derived
-    // wire constant — it is not a wire constant at all, and the value that IS one is _unitPaddedSize above.
-    private int _unitStride;
-    private byte[] _slotBuf = [];
-    private bool[] _slotPresent = [];
-    private int[] _slotDataSize = [];
-    private bool _frameAllocated;
+    // The frame's coded unit length: what FEC codes over, shared by every unit, and the spacing of units in
+    // _units. Confirmed [C]/[W]: the longest source unit rounded up to a multiple of 4, constant within a frame
+    // (cap47, 5,961 frames: parity length constant per frame, never exceeded by a source unit, parity_len -
+    // max(source_len) only ever 0..3; FUN_101035e0 rejects any length with (len & 3) != 0).
+    private int _codedLength;
+    private byte[] _units = [];
+    private bool[] _arrived = [];
+    private int[] _arrivedLength = []; // each unit's payload length as it arrived (or as recovered)
+    private bool _frameOpen;
 
     // The SPS/PPS parameter sets from STREAM_INFO (not carried in the video stream); prepended ahead of every
     // emitted IDR so the decoder can (re)initialise.
@@ -260,94 +248,90 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
 
             _frameIndex = header.FrameIndex;
             _frameTimestampTicks = DateTime.UtcNow.Ticks;
-            AllocateFrame(header, dataSize, payload);
+            OpenFrame(header, dataSize, payload);
         }
 
-        if (_frameAllocated)
+        if (_frameOpen)
         {
-            PlaceUnit(header, dataSize, payload);
+            StoreUnit(header, dataSize, payload);
         }
     }
 
-    /// <summary>Size the slot buffer for a new frame from its first-arriving unit (which fixes the common
-    /// padded unit size). Leaves <see cref="_frameAllocated"/> false on invalid geometry so the frame is skipped.</summary>
-    private void AllocateFrame(in HalyardStreamHeader header, int dataSize, ReadOnlySpan<byte> payload)
+    /// <summary>Start a new frame from whichever of its units arrives first, which fixes the coded length.
+    /// Leaves <see cref="_frameOpen"/> false on impossible geometry, so the frame is skipped.</summary>
+    private void OpenFrame(in HalyardStreamHeader header, int dataSize, ReadOnlySpan<byte> payload)
     {
-        _frameAllocated = false;
+        _frameOpen = false;
 
         int source = header.SourceUnits;
-        int fec = Math.Max(1, header.ParityUnits);
-        int slots = source + fec;
-        if (source <= 0 || slots > MaxUnitsPerFrame)
+        int parity = header.ParityUnits;
+        int units = source + parity;
+        if (source <= 0 || units > MaxUnitsPerFrame)
         {
             return;
         }
 
-        // Source units carry a 2-byte size-extension that is ADDED to the transmitted size to get the common
-        // coded unit length all units share for FEC; parity units are already exactly that length. Both arrival
-        // orders therefore land on the same value, which is why this can key off whichever unit comes first.
-        int padded = dataSize;
+        // A source unit's 2-byte size-extension, added to its own length, gives the coded length; a parity unit
+        // is the coded length already (spec §6.2). So either kind of unit, arriving first, gives the same answer.
+        int codedLength = dataSize;
         if (header.UnitIndex < source && payload.Length >= VideoUnitPrefixLength)
         {
-            padded += (payload[0] << 8) | payload[1];
+            codedLength += (payload[0] << 8) | payload[1];
         }
 
-        if (padded <= 0)
+        if (codedLength <= 0)
         {
             return;
         }
 
-        int stride = (padded + 0xf) & ~0xf;
-        int bufNeeded = slots * stride;
-        if (_slotBuf.Length < bufNeeded)
+        int bytes = units * codedLength;
+        if (_units.Length < bytes)
         {
-            _slotBuf = new byte[bufNeeded];
+            _units = new byte[bytes];
         }
         else
         {
-            Array.Clear(_slotBuf, 0, bufNeeded);
+            Array.Clear(_units, 0, bytes);
         }
 
-        if (_slotPresent.Length < slots)
+        if (_arrived.Length < units)
         {
-            _slotPresent = new bool[slots];
-            _slotDataSize = new int[slots];
+            _arrived = new bool[units];
+            _arrivedLength = new int[units];
         }
         else
         {
-            Array.Clear(_slotPresent, 0, slots);
-            Array.Clear(_slotDataSize, 0, slots);
+            Array.Clear(_arrived, 0, units);
+            Array.Clear(_arrivedLength, 0, units);
         }
 
-        _sourceExpected = source;
-        _fecExpected = fec;
-        _fecActual = header.ParityUnits;
-        _unitPaddedSize = padded;
-        _unitStride = stride;
-        _sourceReceived = 0;
-        _fecReceived = 0;
-        _frameAllocated = true;
+        _sourceCount = source;
+        _parityCount = parity;
+        _codedLength = codedLength;
+        _sourceArrived = 0;
+        _parityArrived = 0;
+        _frameOpen = true;
     }
 
-    /// <summary>Copy one decrypted unit into its slot (indexed by unit index, so arrival order is irrelevant).</summary>
-    private void PlaceUnit(in HalyardStreamHeader header, int dataSize, ReadOnlySpan<byte> payload)
+    /// <summary>Copy one decrypted unit to its place in the frame, by unit index.</summary>
+    private void StoreUnit(in HalyardStreamHeader header, int dataSize, ReadOnlySpan<byte> payload)
     {
-        int idx = header.UnitIndex;
-        if (idx >= _sourceExpected + _fecExpected || _slotPresent[idx] || dataSize > _unitPaddedSize)
+        int index = header.UnitIndex;
+        if (index >= _sourceCount + _parityCount || _arrived[index] || dataSize > _codedLength)
         {
             return;
         }
 
-        payload.CopyTo(_slotBuf.AsSpan(idx * _unitStride));
-        _slotPresent[idx] = true;
-        _slotDataSize[idx] = dataSize;
-        if (idx < _sourceExpected)
+        payload.CopyTo(_units.AsSpan(index * _codedLength));
+        _arrived[index] = true;
+        _arrivedLength[index] = dataSize;
+        if (index < _sourceCount)
         {
-            _sourceReceived++;
+            _sourceArrived++;
         }
         else
         {
-            _fecReceived++;
+            _parityArrived++;
         }
     }
 
@@ -368,38 +352,40 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
 
     private void FlushVideoFrame()
     {
-        if (!_frameAllocated || _sourceExpected == 0)
+        if (!_frameOpen || _sourceCount == 0)
         {
-            _frameAllocated = false;
+            _frameOpen = false;
             return;
         }
 
-        // Record wire loss for congestion feedback (before FEC — FEC recovery doesn't change what the network
-        // actually dropped). _fecActual (not the min-1 slot count) so a frame with no parity isn't false loss.
-        long expectedUnits = _sourceExpected + _fecActual;
-        long receivedUnits = _sourceReceived + _fecReceived;
+        // Record wire loss for congestion feedback before FEC: recovery doesn't change what the network dropped.
+        long expectedUnits = _sourceCount + _parityCount;
+        long receivedUnits = _sourceArrived + _parityArrived;
         Interlocked.Add(ref _statUnitsReceived, receivedUnits);
         Interlocked.Add(ref _statUnitsLost, Math.Max(0, expectedUnits - receivedUnits));
 
-        // Recover missing source units from the parity units when enough total units survived.
-        if (_sourceReceived < _sourceExpected &&
-            _sourceReceived + _fecReceived >= _sourceExpected &&
-            CauchyReedSolomon.Decode(_slotBuf, _unitPaddedSize, _unitStride, _sourceExpected, _fecExpected, _slotPresent))
+        // Recover missing source units from the parity units when enough units survived.
+        int unitCount = _sourceCount + _parityCount;
+        if (_sourceArrived < _sourceCount &&
+            _sourceArrived + _parityArrived >= _sourceCount &&
+            CauchyReedSolomon.RecoverSource(
+                _units.AsSpan(0, unitCount * _codedLength), _codedLength, _sourceCount, _parityCount,
+                _arrived.AsSpan(0, unitCount)))
         {
-            // Restore the reconstructed source units' data sizes from their now-recovered padding field.
-            for (int i = 0; i < _sourceExpected; i++)
+            // A recovered source unit's own size-extension, now restored, gives back its length.
+            for (int i = 0; i < _sourceCount; i++)
             {
-                if (_slotPresent[i])
+                if (_arrived[i])
                 {
                     continue;
                 }
 
-                int off = i * _unitStride;
-                int padding = (_slotBuf[off] << 8) | _slotBuf[off + 1];
-                if (padding < _unitPaddedSize)
+                int offset = i * _codedLength;
+                int extension = (_units[offset] << 8) | _units[offset + 1];
+                if (extension < _codedLength)
                 {
-                    _slotDataSize[i] = _unitPaddedSize - padding;
-                    _slotPresent[i] = true;
+                    _arrivedLength[i] = _codedLength - extension;
+                    _arrived[i] = true;
                 }
             }
         }
@@ -418,24 +404,24 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
         }
 
         bool incomplete = false;
-        for (int i = 0; i < _sourceExpected; i++)
+        for (int i = 0; i < _sourceCount; i++)
         {
-            if (!_slotPresent[i])
+            if (!_arrived[i])
             {
                 incomplete = true;
                 continue;
             }
 
-            int size = _slotDataSize[i];
+            int size = _arrivedLength[i];
             if (size <= VideoUnitPrefixLength)
             {
                 continue;
             }
 
-            AppendToAssembly(_slotBuf.AsSpan(i * _unitStride + VideoUnitPrefixLength, size - VideoUnitPrefixLength));
+            AppendToAssembly(_units.AsSpan(i * _codedLength + VideoUnitPrefixLength, size - VideoUnitPrefixLength));
         }
 
-        _frameAllocated = false;
+        _frameOpen = false;
 
         // Slices lost that FEC could not recover — ask the console for a fresh IDR so the picture recovers fast.
         if (incomplete)
@@ -483,15 +469,15 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     /// </summary>
     private bool FirstSourceSliceIsIdr()
     {
-        for (int i = 0; i < _sourceExpected; i++)
+        for (int i = 0; i < _sourceCount; i++)
         {
-            if (!_slotPresent[i] || _slotDataSize[i] <= VideoUnitPrefixLength)
+            if (!_arrived[i] || _arrivedLength[i] <= VideoUnitPrefixLength)
             {
                 continue;
             }
 
-            ReadOnlySpan<byte> slice = _slotBuf.AsSpan(
-                i * _unitStride + VideoUnitPrefixLength, _slotDataSize[i] - VideoUnitPrefixLength);
+            ReadOnlySpan<byte> slice = _units.AsSpan(
+                i * _codedLength + VideoUnitPrefixLength, _arrivedLength[i] - VideoUnitPrefixLength);
 
             int p = 0;
             while (p < slice.Length && slice[p] == 0)

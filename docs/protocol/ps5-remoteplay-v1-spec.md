@@ -759,7 +759,11 @@ frames): parity length is constant within every frame, is never exceeded by any 
 payload length is the coded length directly. Superseding the earlier text here: this was written as "per-unit
 stride = the unit size rounded up to a multiple of **0x10** [X]", which conflated two different things — the
 **0x10 was never a protocol value**, only a client-side slot-spacing choice, and the alignment that *is* real
-is 4 and applies to the coded length. **Video source units are prefixed with a 2-byte big-endian
+is 4 and applies to the coded length. Ripcord's demuxers lay a frame out the same way, unit `u` at
+`u × coded_length`, and recover a frame's missing source units from that many surviving parity units; a
+header with `m = 0` is a frame with nothing to recover with. Checked against the console's own parity: 24
+complete frames from a keyed v1 session, each source unit withheld in turn, all rebuilt byte for byte [V].
+**Video source units are prefixed with a 2-byte big-endian
 size-extension** that widens that unit's buffer to the coded length [X] (§6.1). The
 **GF(2⁸) primitive polynomial = `0x11D`** (x⁸+x⁴+x³+x²+1), the standard GF(256) Reed-Solomon/AES polynomial
 — **[V] confirmed 2026-08-02**, superseding the `[X]` assumption it had been, and confirmed **two
