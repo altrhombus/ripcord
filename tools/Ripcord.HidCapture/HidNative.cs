@@ -92,6 +92,9 @@ internal static class HidNative
     [DllImport("hid.dll", CharSet = CharSet.Unicode)]
     private static extern bool HidD_GetProductString(SafeFileHandle handle, byte[] buffer, uint bufferLength);
 
+    [DllImport("hid.dll", SetLastError = true)]
+    private static extern bool HidD_GetFeature(SafeFileHandle handle, byte[] buffer, uint bufferLength);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool ReadFile(SafeFileHandle handle, byte[] buffer, uint bytesToRead, out uint bytesRead, nint overlapped);
 
@@ -220,4 +223,14 @@ internal static class HidNative
     /// <summary>Blocking read of one input report. Returns the number of bytes read, or -1 on failure/closed handle.</summary>
     public static int ReadReport(SafeFileHandle handle, byte[] buffer)
         => ReadFile(handle, buffer, (uint)buffer.Length, out uint read, 0) ? (int)read : -1;
+
+    /// <summary>Read a feature report (buffer[0] = report ID on entry). Returns the report bytes, or null on
+    /// failure. For a DualSense over Bluetooth, reading feature report 0x05 (calibration) also switches the pad
+    /// out of the DS4-compat 0x01 report into the full 0x31 report (which carries the gyro/accel/touch + CRC).</summary>
+    public static byte[]? GetFeature(SafeFileHandle handle, byte reportId, int length = 64)
+    {
+        var buffer = new byte[length];
+        buffer[0] = reportId;
+        return HidD_GetFeature(handle, buffer, (uint)buffer.Length) ? buffer : null;
+    }
 }
