@@ -116,11 +116,9 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     /// </summary>
     public int ConsoleTargetBitrateKbps => Volatile.Read(ref _consoleTargetKbps);
 
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(1);
-
     // Congestion feedback: a raw sealed Takion packet (base type 5, 15 bytes) carrying received/lost unit
     // counts, sent periodically so the console's rate controller can adapt the encoder bitrate to the link.
-    // The 200 ms cadence is [X] (spec §8): assumed, not confirmed against the console.
+    // The vendor client sends one about every 200 ms (spec §3: cap47; cap48-cap52 median 216 ms).
     private static readonly TimeSpan CongestionInterval = TimeSpan.FromMilliseconds(200);
     private const byte CongestionPacketType = 0x05;
     private const int CongestionPacketSize = 15;
@@ -205,8 +203,8 @@ public sealed class HalyardTakionStream : IAsyncDisposable
         _demuxer.VideoLossDetected += OnVideoLossDetected;
 
         // 6. Post-key-agreement: the console sends STREAM_INFO and will NOT start A/V until we ack it (it
-        //    otherwise disconnects with "streaminfoack fail"). Ack it, then keep the session alive with
-        //    periodic heartbeats while the receive loop feeds A/V to the demuxer.
+        //    otherwise disconnects with "streaminfoack fail"). Ack it, then keep the session alive by
+        //    answering the console's heartbeats while the receive loop feeds A/V to the demuxer.
         await AckStreamInfoAsync(cancellationToken).ConfigureAwait(false);
         _controlLoop = Task.Run(() => StreamControlLoopAsync(_loopCts.Token));
         _congestionLoop = Task.Run(() => CongestionLoopAsync(_loopCts.Token));
@@ -258,7 +256,11 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                 await SendStreamInfoAckAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
-            // ignore heartbeats etc. until STREAM_INFO arrives
+
+            if (message.Type == ControlMessage.Types.MessageType.Heartbeat)
+            {
+                await ReplyToHeartbeatAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
@@ -269,12 +271,11 @@ public sealed class HalyardTakionStream : IAsyncDisposable
             cancellationToken);
 
     /// <summary>
-    /// Keep the stream alive after the handshake: send periodic heartbeats (channel 1) and drain incoming
-    /// control messages — re-acking STREAM_INFO if resent. A/V packets are handled by the receive loop.
+    /// Keep the stream alive after the handshake: answer the console's heartbeats (channel 1) and drain
+    /// incoming control messages — re-acking STREAM_INFO if resent. A/V packets are handled by the receive loop.
     /// </summary>
     private async Task StreamControlLoopAsync(CancellationToken cancellationToken)
     {
-        Task heartbeats = HeartbeatLoopAsync(cancellationToken);
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -285,6 +286,11 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                     case ControlMessage.Types.MessageType.StreamInfo:
                         await SendStreamInfoAckAsync(cancellationToken).ConfigureAwait(false);
                         break;
+                    case ControlMessage.Types.MessageType.Heartbeat:
+                        // The console starts every heartbeat exchange and the vendor client answers each one
+                        // (cap48, cap52, cap56: every pair console-first, reply within a millisecond).
+                        await ReplyToHeartbeatAsync(cancellationToken).ConfigureAwait(false);
+                        break;
                     case ControlMessage.Types.MessageType.Disconnect:
                         ConsoleDisconnected?.Invoke(message.DisconnectPayload?.Reason ?? "");
                         return;
@@ -294,17 +300,13 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                         Volatile.Write(ref _consoleTargetKbps, (int)Math.Min(quality.TargetBitrate / 1000, int.MaxValue));
                         break;
                     default:
-                        break; // heartbeats, bandwidth, cursor, etc. — nothing required yet
+                        break; // bandwidth, cursor, etc. — nothing required yet
                 }
             }
         }
         catch (OperationCanceledException)
         {
             // shutting down
-        }
-        finally
-        {
-            try { await heartbeats.ConfigureAwait(false); } catch { /* ignore */ }
         }
     }
 
@@ -511,31 +513,18 @@ public sealed class HalyardTakionStream : IAsyncDisposable
         }
     }
 
-    private async Task HeartbeatLoopAsync(CancellationToken cancellationToken)
+    private async Task ReplyToHeartbeatAsync(CancellationToken cancellationToken)
     {
+        // A failed reply must not end the control loop: after a Wi-Fi roam the next heartbeat gets its answer.
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                await Task.Delay(HeartbeatInterval, cancellationToken).ConfigureAwait(false);
-
-                // Per beat: one failed send ended the loop, so after a Wi-Fi roam the video came back and the
-                // console heard no more heartbeats, then hung up (review, 2026-10-05). The next beat tries again.
-                try
-                {
-                    await _reliable!.SendMessageAsync(
-                        TakionDataChunk.ChannelSession,
-                        new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat },
-                        cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                }
-            }
+            await _reliable!.SendMessageAsync(
+                TakionDataChunk.ChannelSession,
+                new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat },
+                cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // shutting down
         }
     }
 

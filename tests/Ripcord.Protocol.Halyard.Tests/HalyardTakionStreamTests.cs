@@ -134,8 +134,46 @@ public class HalyardTakionStreamTests
         try { await serverTask; } catch (OperationCanceledException) { }
     }
 
+    /// <summary>
+    /// The console starts each heartbeat exchange and the vendor client answers it (cap48, cap52, cap56), so
+    /// the stream sends none of its own and answers each one the console sends.
+    /// </summary>
+    [Fact]
+    public async Task TheClientAnswersTheConsolesHeartbeat_AndStartsNone()
+    {
+        using var serverSocket = new UdpChannel();
+        using var clientSocket = new UdpChannel();
+        var serverEndpoint = new IPEndPoint(IPAddress.Loopback, serverSocket.LocalEndPoint.Port);
+
+        using var crypto = new HalyardV1SessionCrypto(TestSecrets.SyntheticControlSecrets());
+        var demuxer = new HalyardStreamDemuxer(crypto);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var heartbeats = new HeartbeatProbe();
+        var serverTask = RunMockConsoleAsync(serverSocket, cts.Token, heartbeats: heartbeats);
+
+        await using var stream = new HalyardTakionStream(clientSocket, serverEndpoint, crypto, demuxer);
+        TakionSessionResult result = await stream.StartAsync(
+            new TakionSessionRequest(9, "skey", "launchspec", HandshakeKey),
+            handshakeTimeout: TimeSpan.FromSeconds(1), handshakeAttempts: 5, cts.Token);
+        Assert.True(result.Success, result.FailureReason);
+
+        Assert.Equal(0, await heartbeats.BeforeConsoleSent.Task.WaitAsync(cts.Token));
+        await heartbeats.Answered.Task.WaitAsync(cts.Token);
+
+        await cts.CancelAsync();
+        try { await serverTask; } catch (OperationCanceledException) { }
+    }
+
+    private sealed class HeartbeatProbe
+    {
+        public int Received;
+        public readonly TaskCompletionSource<int> BeforeConsoleSent = new();
+        public readonly TaskCompletionSource Answered = new();
+    }
+
     private static async Task RunMockConsoleAsync(
-        UdpChannel server, CancellationToken ct, string? disconnectWith = null, uint? qualityTargetBps = null)
+        UdpChannel server, CancellationToken ct, string? disconnectWith = null, uint? qualityTargetBps = null,
+        HeartbeatProbe? heartbeats = null)
     {
         // P-521: the curve version 17 selects, i.e. the one a real console brings to this exchange.
         var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
@@ -197,6 +235,16 @@ public class HalyardTakionStreamTests
                     continue;
                 }
 
+                if (message.Type == ControlMessage.Types.MessageType.Heartbeat && heartbeats is not null)
+                {
+                    if (Interlocked.Increment(ref heartbeats.Received) == 1 && heartbeats.BeforeConsoleSent.Task.IsCompleted)
+                    {
+                        heartbeats.Answered.TrySetResult();
+                    }
+
+                    continue;
+                }
+
                 if (message.Type != ControlMessage.Types.MessageType.SessionRequest)
                 {
                     continue;
@@ -240,6 +288,20 @@ public class HalyardTakionStreamTests
                         ConnectionQualityPayload = new ConnectionQualityPayload { TargetBitrate = target, Rtt = 0.7 },
                     };
                     await server.SendAsync(TakionDataChunk.Build(clientTag, outboundSeq++, 0, quality.ToByteArray()), client, ct).ConfigureAwait(false);
+                }
+
+                if (heartbeats is not null)
+                {
+                    // Longer than the one-second timer the client used to run, so an unsolicited beat would show.
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(1200, ct).ConfigureAwait(false);
+                        heartbeats.BeforeConsoleSent.TrySetResult(Volatile.Read(ref heartbeats.Received));
+                        var beat = new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat };
+                        await server.SendAsync(
+                            TakionDataChunk.Build(clientTag, outboundSeq++, 0, beat.ToByteArray()), client, ct)
+                            .ConfigureAwait(false);
+                    }, ct);
                 }
 
                 if (disconnectWith is not null)
