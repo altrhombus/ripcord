@@ -8,8 +8,7 @@
  *
  *   the IDR latch            b124 (asking once per loss starves the decoder) and b141 (armed at start,
  *                            because a loss-free stream otherwise never asks at all)
- *   the input cadence        history on a transition, state on change or every 200 ms (ports/ripcord-3ds,
- *                            ported to the PS3 as send_input, rc_connect.c 1238-1408)
+ *   the input cadence        cap48: state every 15 ms; history on a transition, repeated every 200 ms
  *   the config defaults      each one named, with the side of the PS3/.NET disagreement it follows
  *
  * Internal to libripcord/client: a host includes halyard_client.h, not this.
@@ -118,8 +117,9 @@ uint32_t halyard_client_timer_wait_ms(uint64_t next_ms, uint64_t now_ms);
 
 /* ---- Input cadence ---------------------------------------------------------------------------------- */
 
-#define HALYARD_CLIENT_INPUT_POLL_MS  4u    /* rc_connect.c RC_INPUT_POLL_INTERVAL_MS */
-#define HALYARD_CLIENT_INPUT_STATE_MS 200u  /* rc_connect.c RC_INPUT_STATE_INTERVAL_MS */
+#define HALYARD_CLIENT_INPUT_POLL_MS           4u    /* rc_connect.c RC_INPUT_POLL_INTERVAL_MS */
+#define HALYARD_CLIENT_INPUT_STATE_MS          15u   /* cap48: state every 15 ms */
+#define HALYARD_CLIENT_INPUT_HISTORY_REPEAT_MS 200u  /* cap48: unchanged history every 200 ms */
 
 /* The two packet types, spec 6.3 via HalyardInputPacketWriter.cs. */
 #define HALYARD_CLIENT_INPUT_TYPE_HISTORY 0x01u
@@ -128,6 +128,7 @@ uint32_t halyard_client_timer_wait_ms(uint64_t next_ms, uint64_t now_ms);
 typedef struct {
     uint64_t last_state_ms;
     int state_sent;
+    uint64_t last_history_ms;
 } halyard_client_input_cadence;
 
 /* Up to two packets, header written, payload built, NOT sealed. A length of 0 means "nothing owed". */
@@ -139,12 +140,9 @@ typedef struct {
 } halyard_client_input_packets;
 
 /*
- * One input poll's worth of decisions, ported from the PS3's send_input (rc_connect.c 1374-1407) minus
- * its menu. A HISTORY packet when a button or trigger transitioned (the writer decides that, and the
- * list is cumulative so a dropped packet does not lose a transition); a STATE packet when anything
- * differs from the previous poll, or HALYARD_CLIENT_INPUT_STATE_MS have passed since the last one,
- * because the console wants to keep hearing from a controller that is merely still. The first poll
- * always produces a STATE packet.
+ * One input poll's worth of decisions, the cadence cap48 shows. A HISTORY packet when a button or
+ * trigger transitioned, or the unchanged history again once HALYARD_CLIENT_INPUT_HISTORY_REPEAT_MS have
+ * passed; a STATE packet on the first poll and every HALYARD_CLIENT_INPUT_STATE_MS after, changed or not.
  *
  * `writer->previous` and `have_previous` are updated here, once both packets are built - both decisions
  * are against the SAME previous frame, which is what rc_connect.c 1404-1407 records. Sequence numbers

@@ -121,7 +121,7 @@ static void test_history_resend(void)
 {
     halyard_input_writer w;
     halyard_input_state s;
-    uint8_t buf[64];
+    uint8_t buf[HALYARD_INPUT_HISTORY_LIMIT];
     size_t n;
 
     halyard_input_writer_init(&w);
@@ -141,15 +141,18 @@ static void test_history_resend(void)
     check(buf[1] == 0x88 && buf[2] == 0x00, "newest event (release) is FIRST");
     check(buf[4] == 0x88 && buf[5] == 0xff, "the earlier press follows it");
 
-    /* The list is bounded: after many transitions only the newest few are carried. */
+    /* The list is bounded by bytes (cap48: 100): three-byte events, so the newest 33 are carried. */
     {
         int i;
-        for (i = 0; i < 10; i++) {
+        for (i = 0; i < 40; i++) {
             w.previous.buttons = (i % 2) ? HALYARD_PAD_CIRCLE : 0u;
             s.buttons = (i % 2) ? 0u : HALYARD_PAD_CIRCLE;
             n = halyard_input_build_history_payload(&w, &s, buf, sizeof(buf));
         }
-        check(n == 3 * HALYARD_INPUT_HISTORY_RESEND, "history is capped at the resend count");
+        check(n == 99, "history keeps the newest events that fit in 100 bytes");
+        check(buf[1] == 0x89 && buf[2] == 0x00, "the newest (a release) still leads");
+        check(halyard_input_repeat_history_payload(&w, buf, sizeof(buf)) == 99,
+              "a repeat writes the same history without recording anything");
     }
 }
 

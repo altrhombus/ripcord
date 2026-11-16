@@ -592,9 +592,7 @@ static int g_stream_is_hevc;
  * definition of as fast as this can go. It is cheap to make it faster and it is not cheap to notice
  * that it was not.
  *
- * THE KEEPALIVE is 200 ms and matches HalyardInputPacketWriter.cs. It is not a latency figure: a state
- * packet goes out the moment anything actually moves, and this only covers a controller that is
- * perfectly still, so the console keeps hearing that it is still there.
+ * The send cadence is cap48's: state every 15 ms, history on a transition and again every 200 ms.
  */
 /*
  * How long without a picture counts as the stream having stopped. Generous enough that a slow keyframe
@@ -604,7 +602,8 @@ static int g_stream_is_hevc;
 #define RC_STREAM_STALL_MS          4000u
 
 #define RC_INPUT_POLL_INTERVAL_MS   4u
-#define RC_INPUT_STATE_INTERVAL_MS  200u
+#define RC_INPUT_STATE_INTERVAL_MS  15u
+#define RC_INPUT_HISTORY_REPEAT_MS  200u
 
 static halyard_input_writer g_input;
 /* When the last picture reached the screen. A stream that stops does not close the socket, so this is
@@ -613,6 +612,7 @@ static uint64_t g_last_picture_ms;
 
 static uint64_t g_next_input_poll;
 static uint64_t g_last_input_state_ms;
+static uint64_t g_last_input_history_ms;
 static unsigned g_chord_edges_seen;
 static int g_stream_channel_ready;
 
@@ -1222,9 +1222,8 @@ static void request_idr(uint64_t now);
  * Two packets and two cadences. A HISTORY packet (type 1) goes whenever a button transitioned, and
  * carries the last several transitions rather than only the new one - they are CUMULATIVE and the
  * console tracks button state from them, so a dropped packet would otherwise lose a transition
- * permanently and leave a button held forever. A STATE packet (type 6) is the analog snapshot, sent
- * when anything moved or every 200 ms regardless, because the console wants to keep hearing from a
- * controller that is merely still.
+ * permanently and leave a button held forever; unchanged, it goes again every 200 ms. A STATE packet
+ * (type 6) is the analog snapshot, every 15 ms whether or not anything moved (cap48).
  *
  * SENT FROM THE PERIODIC TICK, NOT THE DRAIN, and ripcord-3ds spent two phases learning why: input is
  * a wall-clock activity like the heartbeat, while the drain's period depends on how much video is
@@ -1374,9 +1373,13 @@ static void send_input(rc_connect_result *out)
     payload_len = halyard_input_build_history_payload(&g_input, &in,
                                                       packet + HALYARD_INPUT_HEADER_LENGTH,
                                                       sizeof(packet) - HALYARD_INPUT_HEADER_LENGTH);
+    if (payload_len == 0u && now - g_last_input_history_ms >= RC_INPUT_HISTORY_REPEAT_MS)
+        payload_len = halyard_input_repeat_history_payload(&g_input, packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                           sizeof(packet) - HALYARD_INPUT_HEADER_LENGTH);
     if (payload_len > 0u) {
         size_t total = HALYARD_INPUT_HEADER_LENGTH + payload_len;
 
+        g_last_input_history_ms = now;
         (void)halyard_input_write_header(0x01u, g_input.history_seq++, packet, sizeof(packet));
         takion_control_sealer_seal_input(&g_sealer, packet, total, HALYARD_INPUT_HEADER_LENGTH);
         if (sendto(g_stream_channel.sock, packet, total, 0,
@@ -1385,8 +1388,7 @@ static void send_input(rc_connect_result *out)
             out->input_history_packets++;
     }
 
-    if (memcmp(&in, &g_input.previous, sizeof(in)) != 0
-        || now - g_last_input_state_ms >= RC_INPUT_STATE_INTERVAL_MS) {
+    if (!g_input.have_previous || now - g_last_input_state_ms >= RC_INPUT_STATE_INTERVAL_MS) {
         size_t total;
 
         payload_len = halyard_input_build_state_payload(&in, packet + HALYARD_INPUT_HEADER_LENGTH,
@@ -1401,8 +1403,7 @@ static void send_input(rc_connect_result *out)
         g_last_input_state_ms = now;
     }
 
-    /* Updated once both payloads are built, not between them: the history diff and the state's
-     * change test are both against the same previous frame. */
+    /* Updated once both payloads are built: the history diff is against the previous frame. */
     g_input.previous = in;
     g_input.have_previous = 1;
 }
@@ -2910,6 +2911,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     halyard_input_writer_init(&g_input);
     g_next_input_poll = 0u;
     g_last_input_state_ms = 0u;
+    g_last_input_history_ms = 0u;
     g_stream_channel_ready = 1;
     takion_channel_enable_sealing(&g_stream_channel, takion_control_sealer_seal, &g_sealer);
     out->sealing_on = 1;

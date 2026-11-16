@@ -340,8 +340,8 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 | Loss | .NET: CORRUPT_FRAME for each lost range, then the keyframe request | C sends none |
 | Adaptive bitrate | .NET's ladder (bitrate cuts, 720p, 540p, half frame rate), stepped down on 2% loss and up after 12 s clean, capped by a low battery or throttling | C has none. The target reaches the console only in CONNECTION_QUALITY, opt-in because its unit is [X] |
 | Control echo probe | .NET's, opt-in: after senkusha on the LAN, after sign-in on rendezvous | A diagnostic of the control crypto; C has none |
-| Input | .NET's writer (state on a stick change or every 200 ms), polled every 4 ms as C polls | |
-| Input HISTORY window | .NET: four earlier events repeated besides this poll's | C repeats four events in all. `ripcord-diff`'s `input_diff` checks C's window is cut from the same polls |
+| Input | cap48's cadence: state every 15 ms, history on a transition and again every 200 ms unchanged, polled every 4 ms as C polls | |
+| Input HISTORY window | The newest events that fit in 100 bytes, as C and .NET keep them (cap48) | `ripcord-diff`'s `input_diff` checks both windows hold the same polls |
 | Order of a poll's simultaneous events | .NET: L3 and R3 before Options, Create and PS | C puts L3 and R3 after PS. Each event stands alone on the wire, so the order should not matter to the console; `[X]` until a capture has two of those in one packet. Found by `input_diff` |
 | Rest | C: only on an explicit disconnect | .NET does the same since 2026-09-26 |
 | Teardown on rendezvous | C: the polite 9303 close before any socket closes | A console never sent the Close keeps the session live |

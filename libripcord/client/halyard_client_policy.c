@@ -140,7 +140,6 @@ void halyard_client_input_step(halyard_client_input_cadence *cadence, halyard_in
                                halyard_client_input_packets *out)
 {
     size_t payload_length;
-    int changed;
 
     if (out == NULL)
         return;
@@ -149,19 +148,22 @@ void halyard_client_input_step(halyard_client_input_cadence *cadence, halyard_in
     if (cadence == NULL || writer == NULL || state == NULL)
         return;
 
-    /* Decided against the previous frame BEFORE the history build touches the writer's event list. */
-    changed = !writer->have_previous || !halyard_client_input_equal(state, &writer->previous);
-
     payload_length = halyard_input_build_history_payload(writer, state,
                                                          out->history + HALYARD_INPUT_HEADER_LENGTH,
                                                          sizeof(out->history) - HALYARD_INPUT_HEADER_LENGTH);
+    if (payload_length == 0u
+        && now_ms - cadence->last_history_ms >= (uint64_t)HALYARD_CLIENT_INPUT_HISTORY_REPEAT_MS)
+        payload_length = halyard_input_repeat_history_payload(writer,
+                                                              out->history + HALYARD_INPUT_HEADER_LENGTH,
+                                                              sizeof(out->history) - HALYARD_INPUT_HEADER_LENGTH);
     if (payload_length > 0u) {
         (void)halyard_input_write_header(HALYARD_CLIENT_INPUT_TYPE_HISTORY, writer->history_seq++,
                                          out->history, sizeof(out->history));
         out->history_length = HALYARD_INPUT_HEADER_LENGTH + payload_length;
+        cadence->last_history_ms = now_ms;
     }
 
-    if (changed || !cadence->state_sent
+    if (!cadence->state_sent
         || now_ms - cadence->last_state_ms >= (uint64_t)HALYARD_CLIENT_INPUT_STATE_MS) {
         payload_length = halyard_input_build_state_payload(state, out->state + HALYARD_INPUT_HEADER_LENGTH,
                                                            sizeof(out->state) - HALYARD_INPUT_HEADER_LENGTH);

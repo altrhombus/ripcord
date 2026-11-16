@@ -6,18 +6,20 @@
 //! Both packets share a 12-byte header: type (6 state, 1 history), a per-type big-endian sequence, a
 //! zero, then the key position and tag the sealer writes ([`crate::takion::sealer::Sealer::seal_input`]).
 //!
-//! HISTORY is cumulative, newest event first, and repeats the last [`HISTORY_RESEND`] events: the console
-//! tracks button state from it, so one lost packet would otherwise lose a transition for good. Events
-//! carry absolute state, so a repeat is harmless.
+//! HISTORY is cumulative, newest event first, and keeps the newest events that fit in
+//! [`HISTORY_LIMIT`] bytes: the console tracks button state from it, so one lost packet would otherwise
+//! lose a transition for good. Events carry absolute state, so a repeat is harmless.
 
 pub const HEADER_LENGTH: usize = 0x0c;
 pub const STATE_PAYLOAD: usize = 0x1c;
 pub const TYPE_HISTORY: u8 = 0x01;
 pub const TYPE_STATE: u8 = 0x06;
-/// How many earlier events every history packet repeats. Four is the .NET writer's.
-pub const HISTORY_RESEND: usize = 4;
-/// A still controller is re-reported this often: the console wants to keep hearing from it.
-pub const STATE_KEEPALIVE_US: u64 = 200_000;
+/// The longest history payload; cap48 shows none longer.
+pub const HISTORY_LIMIT: usize = 100;
+/// State goes out on this fixed period, changed or not (cap48).
+pub const STATE_INTERVAL_US: u64 = 15_000;
+/// An unchanged history packet is sent again on this period (cap48).
+pub const HISTORY_REPEAT_US: u64 = 200_000;
 
 const STATE_LEAD_BYTE: u8 = 0xa0; // [0x00], every captured state packet
 const STATE_TAIL_BYTE: u8 = 0xca; // [0x1b], 98% of them; meaning unknown, and not to be "corrected"
@@ -119,6 +121,7 @@ pub struct Writer {
     history_seq: u16,
     previous: Option<State>,
     last_state_us: u64,
+    last_history_us: u64,
     history: Vec<Vec<u8>>,
 }
 
@@ -134,8 +137,9 @@ impl Writer {
         Self::default()
     }
 
-    /// One poll: a HISTORY packet when a button or trigger level changed, and a STATE packet on the first
-    /// poll, when a stick moved, or after [`STATE_KEEPALIVE_US`]. Call once per polled frame.
+    /// One poll: a HISTORY packet when a button or trigger level changed, or the unchanged history again
+    /// after [`HISTORY_REPEAT_US`]; a STATE packet on the first poll and every [`STATE_INTERVAL_US`]
+    /// after. Call once per polled frame.
     pub fn step(&mut self, state: &State, now_us: u64) -> Packets {
         let mut out = Packets::default();
         if let Some(prev) = self.previous {
@@ -163,23 +167,38 @@ impl Writer {
             if r2 != was_r2 {
                 self.history.insert(0, vec![0x80, R2_CODE, r2]);
             }
-            if self.history.len() != fresh {
-                // Every event of this poll goes out, however many; only then is the list cut back.
-                let payload: Vec<u8> = self.history.concat();
-                let mut packet = header(TYPE_HISTORY, self.history_seq, payload.len());
-                packet[HEADER_LENGTH..].copy_from_slice(&payload);
-                self.history_seq = self.history_seq.wrapping_add(1);
-                self.history.truncate(HISTORY_RESEND);
-                out.history = Some(packet);
+            let transitioned = self.history.len() != fresh;
+            let repeat_due = !self.history.is_empty()
+                && now_us.saturating_sub(self.last_history_us) >= HISTORY_REPEAT_US;
+            if transitioned || repeat_due {
+                out.history = Some(self.history_packet());
+                self.last_history_us = now_us;
             }
         }
-        let moved = self.previous.is_none_or(|p| p.sticks() != state.sticks());
-        if moved || now_us.saturating_sub(self.last_state_us) >= STATE_KEEPALIVE_US {
+        if self.previous.is_none() || now_us.saturating_sub(self.last_state_us) >= STATE_INTERVAL_US {
             out.state = Some(self.state_packet(state));
             self.last_state_us = now_us;
         }
         self.previous = Some(*state);
         out
+    }
+
+    fn history_packet(&mut self) -> Vec<u8> {
+        let mut total = 0;
+        let kept = self
+            .history
+            .iter()
+            .take_while(|e| {
+                total += e.len();
+                total <= HISTORY_LIMIT
+            })
+            .count();
+        self.history.truncate(kept);
+        let payload: Vec<u8> = self.history.concat();
+        let mut packet = header(TYPE_HISTORY, self.history_seq, payload.len());
+        packet[HEADER_LENGTH..].copy_from_slice(&payload);
+        self.history_seq = self.history_seq.wrapping_add(1);
+        packet
     }
 
     fn state_packet(&mut self, s: &State) -> Vec<u8> {
@@ -204,7 +223,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_first_poll_sends_state_only_and_a_still_pad_is_re_reported() {
+    fn the_first_poll_sends_state_only_then_state_every_fifteen_ms() {
         let mut w = Writer::new();
         let s = State { left_y: -32767, ..Default::default() };
         let p = w.step(&s, 0);
@@ -215,8 +234,9 @@ mod tests {
         assert_eq!(&state[12 + 1..12 + 3], &[0xff, 0x7f], "gyro at rest, little-endian");
         assert_eq!(&state[12 + 0x13..12 + 0x15], &(-32767i16).to_be_bytes());
         assert_eq!(state[12 + 0x1b], 0xca);
-        assert_eq!(w.step(&s, 199_999), Packets::default());
-        assert_eq!(w.step(&s, 200_000).state.unwrap()[2], 1, "the keep-alive takes the next sequence");
+        let moved = State { left_y: 0, ..s };
+        assert_eq!(w.step(&moved, 14_999), Packets::default(), "a moved stick waits for the period");
+        assert_eq!(w.step(&moved, 15_000).state.unwrap()[2], 1, "the next state takes the next sequence");
     }
 
     #[test]
@@ -229,7 +249,7 @@ mod tests {
         let p = w.step(&State { buttons: CROSS | OPTIONS, ..Default::default() }, 2);
         assert_eq!(p.history.unwrap()[12..], [0x80, 0xac, 0x80, 0x88, 0xff]);
 
-        // Five buttons and a trigger at once: all six go out, then the list keeps four.
+        // Five buttons and a trigger at once: all six go out, ahead of the two before them.
         let all = CIRCLE | SQUARE | TRIANGLE | DPAD_UP | DPAD_DOWN;
         let p = w.step(&State { buttons: all | CROSS | OPTIONS, right_trigger: 9, ..Default::default() }, 3);
         let h = p.history.unwrap();
@@ -246,5 +266,30 @@ mod tests {
         assert_eq!(h[12..], [0x80, 0x86, 0xff]);
         let h = w.step(&State { buttons: L2, left_trigger: 0x40, ..Default::default() }, 2).history.unwrap();
         assert_eq!(h[12..15], [0x80, 0x86, 0x40], "the level wins over the bit");
+    }
+
+    #[test]
+    fn unchanged_history_repeats_every_two_hundred_ms() {
+        let mut w = Writer::new();
+        w.step(&State::default(), 0);
+        let cross = State { buttons: CROSS, ..Default::default() };
+        let first = w.step(&cross, 5_000).history.unwrap();
+        assert!(w.step(&cross, 150_000).history.is_none());
+        let again = w.step(&cross, 205_000).history.unwrap();
+        assert_eq!(again[12..], first[12..]);
+        assert_eq!(again[2], 1, "a repeat takes the next history sequence");
+    }
+
+    #[test]
+    fn history_keeps_the_newest_events_that_fit_in_one_hundred_bytes() {
+        let mut w = Writer::new();
+        w.step(&State::default(), 0);
+        let mut last = Vec::new();
+        for i in 1..=40u64 {
+            let buttons = if i % 2 == 1 { CROSS } else { 0 };
+            last = w.step(&State { buttons, ..Default::default() }, i * 5_000).history.unwrap();
+        }
+        assert_eq!(last.len() - HEADER_LENGTH, 99, "33 three-byte events");
+        assert_eq!(last[12..15], [0x80, 0x88, 0x00], "the newest, a release, leads");
     }
 }
