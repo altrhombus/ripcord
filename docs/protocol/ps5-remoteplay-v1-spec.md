@@ -513,7 +513,9 @@ mtu, rtt, ports}`, `videoCodec` (`avc`), `dynamicRange` (`SDR`), **`handshakeKey
 bytes), `audioChannels{encoderType:"opus", audioChannelSettings[{sampleRate:48000, channels:2,
 samplesPerFrame:480, maxFrameDataSize:1920, bitrate, fecMode}]}`, and a `disableRPEncryption` toggle. The
 vendor's own template also closes `requestGameSpecification` with `adaptiveStreamMode:"resize"` **[V]** (seen in our
-own memory dumps of the client; omitting it is harmless, verified on hardware 2026-08-12).
+own memory dumps of the client; omitting it is harmless, verified on hardware 2026-08-12). The template's
+fixed values are copied as written, including their text form: `bwLoss` is `0.001` in our own copy of the
+client's template, and Ripcord sends that string.
 
 > **Template corroborated first-party (2026-07-22):** the `appSpecification` section (`minFps`, `minBandwidth`,
 > `timeLimit`, `startTimeout`, `afkTimeout`) was read directly from our own client's launchSpec buffer in
