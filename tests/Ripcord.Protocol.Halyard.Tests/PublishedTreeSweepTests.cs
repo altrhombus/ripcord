@@ -572,6 +572,22 @@ public class PublishedTreeSweepTests
     ];
 
     /// <summary>
+    /// Purged values too short to publish even as a digest: a hash of a few hex characters is recovered by
+    /// trying them all. Kept as <c>length&lt;TAB&gt;sha256</c> lines in <c>docs/protocol/captures/purged-values.tsv</c>,
+    /// which is private, and matched exactly like <see cref="PurgedValues"/> wherever that folder is present.
+    /// </summary>
+    private static readonly Lazy<(int Length, string Sha256)[]> PrivatePurgedValues = new(() =>
+    {
+        string path = Path.Combine(RepoRoot(), "docs", "protocol", "captures", "purged-values.tsv");
+        if (!File.Exists(path)) return [];
+        return File.ReadLines(path)
+            .Where(line => line.Length > 0 && line[0] != '#')
+            .Select(line => line.Split('	'))
+            .Select(parts => (int.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture), parts[1].Trim()))
+            .ToArray();
+    });
+
+    /// <summary>
     /// Hex, possibly written with separators, from which a purged value could be reassembled. Runs of
     /// separators are allowed, and <c>:</c> and <c>.</c> are in the class, because the question here is
     /// what a value could be <em>rewritten</em> as, not what this repository happens to write today.
@@ -612,7 +628,7 @@ public class PublishedTreeSweepTests
         foreach (Match run in HexRun.Matches(line))
         {
             string flat = FlattenHex(run.Value);
-            foreach ((int length, string sha) in PurgedValues)
+            foreach ((int length, string sha) in PurgedValues.Concat(PrivatePurgedValues.Value))
             {
                 for (int i = 0; i + length <= flat.Length; i++)
                 {
