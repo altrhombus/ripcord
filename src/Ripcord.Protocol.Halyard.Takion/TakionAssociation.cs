@@ -12,13 +12,13 @@ namespace Ripcord.Protocol.Halyard.Takion;
 ///
 /// The caller owns the <see cref="UdpChannel"/>; this type only sends to / filters on the console endpoint.
 /// </summary>
-public sealed class TakionConnection
+public sealed class TakionAssociation
 {
     private readonly UdpChannel _channel;
     private readonly IPEndPoint _remote;
     private readonly TakionHandshake _handshake = new();
 
-    public TakionConnection(UdpChannel channel, IPEndPoint remote)
+    public TakionAssociation(UdpChannel channel, IPEndPoint remote)
     {
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
         _remote = remote ?? throw new ArgumentNullException(nameof(remote));

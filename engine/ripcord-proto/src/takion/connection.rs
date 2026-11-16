@@ -1,6 +1,6 @@
 //! The Takion association as a sans-IO state machine: the SCTP 4-way handshake, then reliable DATA with
 //! cumulative SACKs, fragmentation, reassembly and retransmission. Ported from
-//! `libripcord/takion/takion_reliable_channel.c` and checked against `TakionConnection.cs` and
+//! `libripcord/takion/takion_reliable_channel.c` and checked against `TakionAssociation.cs` and
 //! `TakionReliableChannel.cs`; the choices where the two differ are listed in `engine/README.md`.
 //!
 //! The host owns the socket and the clock. It calls [`Connection::connect`], feeds every control

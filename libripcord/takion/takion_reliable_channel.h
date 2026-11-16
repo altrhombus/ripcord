@@ -1,7 +1,7 @@
 /*
  * ripcord-3ds - Phase 5 Takion transport: the reliable channel.
  *
- * Ported from Ripcord.Protocol.Halyard.Takion.TakionConnection + TakionReliableChannel, combined into
+ * Ported from Ripcord.Protocol.Halyard.Takion.TakionAssociation + TakionReliableChannel, combined into
  * one socket-facing object: drives the SCTP 4-way handshake (see takion_handshake.h) to ESTABLISHED,
  * then sends/receives DATA chunks with a minimal in-order-accept + fixed-interval-retransmit +
  * cumulative-SACK policy - "sufficient for a clean-LAN first picture" per
@@ -137,7 +137,7 @@ int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, stru
  * it. On the rendezvous route it is the media socket: its port was advertised through the cloud, STUN
  * servers were asked from it (and may answer late), and it carries a senkusha association, then the
  * stream's own. .NET reads every datagram there with RemoteEndPoint.Equals(console) and skips the rest
- * (TakionConnection, TakionReliableChannel, HalyardTakionStream.ReceiveLoopAsync). The LAN path, which is
+ * (TakionAssociation, TakionReliableChannel, HalyardTakionStream.ReceiveLoopAsync). The LAN path, which is
  * hardware-validated on the PS3 and 3DS, never asked for this, so it stays byte-for-byte what it was:
  * with filtering off, every read below is the same recvfrom it always was.
  */

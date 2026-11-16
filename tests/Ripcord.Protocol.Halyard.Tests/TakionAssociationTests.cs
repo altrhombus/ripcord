@@ -8,10 +8,10 @@ namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
 /// End-to-end handshake test over real loopback UDP: a mock "console" answers INIT with INIT_ACK and
-/// COOKIE_ECHO with COOKIE_ACK, and the real <see cref="TakionConnection"/> must reach ESTABLISHED and
+/// COOKIE_ECHO with COOKIE_ACK, and the real <see cref="TakionAssociation"/> must reach ESTABLISHED and
 /// learn the server tag. Also covers retransmission (the console ignores the first INIT).
 /// </summary>
-public class TakionConnectionTests
+public class TakionAssociationTests
 {
     private const uint ServerTag = 0x00b18ccf;
 
@@ -25,7 +25,7 @@ public class TakionConnectionTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var serverTask = RunMockConsoleAsync(server, dropFirstInit: false, cts.Token);
 
-        var connection = new TakionConnection(client, serverEndpoint);
+        var connection = new TakionAssociation(client, serverEndpoint);
         await connection.ConnectAsync(TimeSpan.FromSeconds(1), maxAttempts: 5, cts.Token);
 
         Assert.True(connection.IsEstablished);
@@ -46,7 +46,7 @@ public class TakionConnectionTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var serverTask = RunMockConsoleAsync(server, dropFirstInit: true, cts.Token);
 
-        var connection = new TakionConnection(client, serverEndpoint);
+        var connection = new TakionAssociation(client, serverEndpoint);
         await connection.ConnectAsync(TimeSpan.FromMilliseconds(300), maxAttempts: 5, cts.Token);
 
         Assert.True(connection.IsEstablished);
