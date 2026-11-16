@@ -803,8 +803,14 @@ off 18..     …     media payload. Header base = 0x12 (18); +3 bytes for video,
                      if extended_header : a further 3 bytes
                      then the (AES-CTR-encrypted, §5.5a) unit payload
 ```
-> **Naming note [X]:** `stream_variant` is our own name for the top three bits of the byte after the
-> size-extension (the parser isolates them; what the console puts there is unconfirmed).
+> **`stream_variant` [W]/[X]:** the top three bits of the byte after the size extension. In our own captures
+> it is the same for every source unit of a frame. It is 0 throughout cap49–cap59 except in `cap54`, where it
+> changes once, from 0 to 1 at frame 1538, and stays at 1. From that frame on the largest frame is 47 units
+> where before it was 124. So it marks which of the console's encoded stream variants a frame belongs to, and
+> the console switched to a smaller one partway through that session. The meaning of each value is `[X]`.
+>
+> **`codec` [W]:** in our own captures video carries 6 (cap49–cap52) or 3 (cap53–cap59), and audio always
+> carries 5, the Opus stream.
 > **Correction [C]/[X]:** our earlier trace labeled `off5..8` bits[9:0] as a *frame index* and `off3..4` as a
 > *channel/frame selector*. Re-reading our own parser `FUN_100fcb10` confirms **`off3..4` → the `frame_index`
 > setter (`vtable+0x3c`)** and **bits[9:0] (`dword & 0x3ff`) → the FEC-count setter (`vtable+0x34`) =
