@@ -44,8 +44,8 @@ are merged, the project can't be relicensed on its own say-so. That's a trade-of
 
 ## 2. The independence rule
 
-Ripcord's protocol was worked out **independently**, from our own captures, our own analysis of the vendor
-client and public references. That's the reason the project can exist. One contribution that imports another
+Ripcord's protocol is worked out from our own captures, our own analysis of the vendor client and public
+references. That's the reason the project can exist. One contribution that imports another
 implementation's code or constants damages that for everyone, and it's hard to undo once merged.
 
 So for any pull request touching `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, `docs/protocol/`,

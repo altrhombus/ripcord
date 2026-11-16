@@ -19,10 +19,11 @@ Ripcord uses these names only where necessary to describe compatibility
 truthfully. No Sony trademark, logo, or other brand asset is
 included in this repository or in any build produced from it.
 
-Ripcord's protocol specification was derived independently, from the authors'
-own installed copies of the publicly distributed vendor client, on hardware the
-authors own, and from the authors' own traffic between that client and their
-own console under their own account. The methods, each recorded per item in
+Ripcord's protocol specification was worked out from the authors' own installed
+copies of the publicly distributed vendor client, on hardware the authors own;
+from the authors' own traffic between that client and their own console under
+their own account; and from public references (RFCs, NIST test vectors, platform
+documentation). The methods, each recorded per item in
 docs/protocol-research-log.md, included: static analysis (disassembly and
 decompilation); running the client under a debugger and instrumentation
 framework to read its memory, including live session keys; capturing traffic,
@@ -120,8 +121,8 @@ No vendor source code is included in any form.
 
 This file is the one place the methods above and the two bundled values are
 described; other documents point here rather than restating them.
-docs/protocol-research-log.md records each reference consulted, dated, with
-what it informed. docs/protocol/README.md sets out what the specification
+docs/protocol-research-log.md records each reference the specification rests
+on, dated, with what it informed. docs/protocol/README.md sets out what the specification
 reproduces and how vendor names are handled.
 
 Nothing here is legal advice, and Ripcord makes no claim about how any law
