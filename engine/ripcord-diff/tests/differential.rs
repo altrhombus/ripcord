@@ -5,7 +5,7 @@ use ripcord_diff::*;
 use ripcord_proto::base64;
 use ripcord_proto::halyard::{account_seed, control, registration};
 use ripcord_proto::stream::demux::{DemuxSink, Passthrough, StreamDemux};
-use ripcord_proto::stream::fec::{self, DecodeScratch};
+use ripcord_proto::stream::fec::{self, RecoverScratch};
 use ripcord_proto::stream::header::{self, StreamHeader};
 use ripcord_proto::stream::packet_crypto::PacketCrypto;
 
@@ -40,36 +40,33 @@ fn packet_crypto() {
 }
 
 #[test]
-fn fec_decode() {
+fn fec_recover_source() {
     let mut rng = Rng::new(0x5eed_0002);
-    let mut scratch = DecodeScratch::default();
+    let mut scratch = RecoverScratch::default();
     for iteration in 0..800 {
         let k = 1 + rng.below(40) as usize;
-        let m = 1 + rng.below(24) as usize;
-        let unit = 1 + rng.below(300) as usize;
-        let stride = unit + rng.below(20) as usize;
-        let mut frame = vec![0u8; (k + m) * stride];
-        for u in 0..k {
-            rng.fill(&mut frame[u * stride..u * stride + unit]);
-        }
-        let encoded_rust = fec::encode(&mut frame.clone(), unit, stride, k, m);
+        let m = rng.below(24) as usize; // 0 included: a frame with no parity
+        let len = 1 + rng.below(300) as usize;
+        let mut frame = vec![0u8; (k + m) * len];
+        rng.fill(&mut frame[..k * len]);
+        let encoded_rust = fec::encode(&mut frame.clone(), len, k, m);
         assert_eq!(
             encoded_rust,
-            c_fec_encode(&mut frame, unit, stride, k, m),
+            c_fec_encode(&mut frame, len, k, m),
             "encode accepted, iteration {iteration}"
         );
-        // Erasures at every density, including more than m (unrecoverable) and none at all.
-        let present: Vec<bool> = (0..k + m).map(|_| rng.below(100) >= rng.below(60)).collect();
-        for (u, &p) in present.iter().enumerate() {
+        // Losses at every density, including more than m (unrecoverable) and none at all.
+        let arrived: Vec<bool> = (0..k + m).map(|_| rng.below(100) >= rng.below(60)).collect();
+        for (u, &p) in arrived.iter().enumerate() {
             if !p {
-                frame[u * stride..(u + 1) * stride].fill(0);
+                frame[u * len..(u + 1) * len].fill(0);
             }
         }
         let (mut a, mut b) = (frame.clone(), frame);
-        let ra = fec::decode(&mut scratch, &mut a, unit, stride, k, m, &present);
-        let rb = c_fec_decode(&mut b, unit, stride, k, m, &present);
-        assert_eq!(ra, rb, "decode result, iteration {iteration} (k {k}, m {m})");
-        assert_eq!(a, b, "decoded frame, iteration {iteration}");
+        let ra = fec::recover_source(&mut scratch, &mut a, len, k, m, &arrived);
+        let rb = c_fec_recover_source(&mut b, len, k, m, &arrived);
+        assert_eq!(ra, rb, "recovery result, iteration {iteration} (k {k}, m {m})");
+        assert_eq!(a, b, "recovered frame, iteration {iteration}");
     }
 }
 
@@ -272,7 +269,7 @@ fn stream(rng: &mut Rng, sealer: Option<&mut PacketCrypto>) -> Vec<Vec<u8>> {
                     }
                 }
                 if parity > 0 {
-                    fec::encode(&mut coded, unit, unit, source, parity);
+                    fec::encode(&mut coded, unit, source, parity);
                 }
                 let mut order: Vec<usize> = (0..total).collect();
                 if rng.below(3) == 0 {

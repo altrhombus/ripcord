@@ -9,8 +9,8 @@ use std::ffi::c_void;
 use std::os::raw::{c_char, c_int, c_long};
 use std::sync::{Mutex, MutexGuard};
 
-/// The C core is single-threaded by contract: `fec_reed_solomon_decode` keeps its matrices in `static`
-/// buffers (a 32 KB console stack is why), so two test threads decoding at once corrupt each other. The
+/// The C core is single-threaded by contract: `fec_reed_solomon_recover_source` keeps its matrices in
+/// `static` buffers (a 32 KB console stack is why), so two test threads recovering at once corrupt each other. The
 /// first run of these tests found exactly that. Every call into the C core holds this lock.
 static C_CORE: Mutex<()> = Mutex::new(());
 
@@ -34,14 +34,13 @@ unsafe extern "C" {
     ) -> c_int;
     fn diff_pc_crypt(c: *mut c_void, key_pos: u64, payload: *mut u8, length: usize);
 
-    fn diff_fec_encode(buf: *mut u8, unit_size: usize, stride: usize, k: c_int, m: c_int) -> c_int;
-    fn diff_fec_decode(
+    fn diff_fec_encode(buf: *mut u8, coded_length: usize, k: c_int, m: c_int) -> c_int;
+    fn diff_fec_recover_source(
         buf: *mut u8,
-        unit_size: usize,
-        stride: usize,
+        coded_length: usize,
         k: c_int,
         m: c_int,
-        present: *const u8,
+        arrived: *const u8,
     ) -> c_int;
 
     fn diff_demux_new(key: *const u8, iv: *const u8, f: EventFn, user: *mut c_void) -> *mut c_void;
@@ -264,39 +263,36 @@ impl Drop for CPacketCrypto {
     }
 }
 
-/// Whether `units` units of `unit_size` at `stride` fit in `len` bytes: checked before the C core, which
-/// trusts its caller, is handed the buffer.
-fn fits(len: usize, unit_size: usize, stride: usize, units: usize) -> bool {
-    unit_size <= stride
-        && units > 0
-        && (units - 1).checked_mul(stride).and_then(|o| o.checked_add(unit_size)).is_some_and(|e| e <= len)
+/// Whether `units` units of `coded_length` fit in `len` bytes: checked before the C core, which trusts
+/// its caller, is handed the buffer.
+fn fits(len: usize, coded_length: usize, units: usize) -> bool {
+    units > 0 && units.checked_mul(coded_length).is_some_and(|end| end <= len)
 }
 
-pub fn c_fec_encode(buf: &mut [u8], unit_size: usize, stride: usize, k: usize, m: usize) -> bool {
+pub fn c_fec_encode(buf: &mut [u8], coded_length: usize, k: usize, m: usize) -> bool {
     let _core = c_core();
-    if !fits(buf.len(), unit_size, stride, k + m) {
+    if !fits(buf.len(), coded_length, k + m) {
         return false;
     }
     // SAFETY: the geometry was checked against the buffer above.
-    unsafe { diff_fec_encode(buf.as_mut_ptr(), unit_size, stride, k as c_int, m as c_int) == 1 }
+    unsafe { diff_fec_encode(buf.as_mut_ptr(), coded_length, k as c_int, m as c_int) == 1 }
 }
 
-pub fn c_fec_decode(
+pub fn c_fec_recover_source(
     buf: &mut [u8],
-    unit_size: usize,
-    stride: usize,
+    coded_length: usize,
     k: usize,
     m: usize,
-    present: &[bool],
+    arrived: &[bool],
 ) -> bool {
     let _core = c_core();
-    if !fits(buf.len(), unit_size, stride, k + m) || present.len() < k + m {
+    if !fits(buf.len(), coded_length, k + m) || arrived.len() < k + m {
         return false;
     }
-    let flags: Vec<u8> = present.iter().map(|&p| u8::from(p)).collect();
+    let flags: Vec<u8> = arrived.iter().map(|&p| u8::from(p)).collect();
     // SAFETY: the geometry was checked, and the flags cover k+m units.
     unsafe {
-        diff_fec_decode(buf.as_mut_ptr(), unit_size, stride, k as c_int, m as c_int, flags.as_ptr()) == 1
+        diff_fec_recover_source(buf.as_mut_ptr(), coded_length, k as c_int, m as c_int, flags.as_ptr()) == 1
     }
 }
 

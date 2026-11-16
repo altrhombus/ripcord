@@ -812,7 +812,7 @@ core 1: available after APT_SetAppCpuTimeLimit(30%)
 Better than libctru's documentation suggests - cores 2 and 3 need the BASE memory region, which the
 Homebrew Launcher's host application evidently has. So decode, packet crypto and the frame scale can all
 be moved off the network thread. **This is now a decision to make rather than a constraint to work
-around**, and it carries the cost already recorded in this tree: `fec_reed_solomon_decode` keeps 12.6 KB
+around**, and it carries the cost already recorded in this tree: `fec_reed_solomon_recover_source` keeps 8 KB
 of scratch `static` *because* this port has no threads, and would need caller-supplied scratch.
 
 **Cost per stage, and it is worse than expected:**
@@ -920,7 +920,7 @@ for a `.3dsx` means whatever the Homebrew Launcher's host application carries, s
 rather than assumed. A ten-line experiment (try to create a thread on cores 1 and 2, report what
 succeeds) settles what the threading design is even allowed to be.
 
-**This has a known cost, already documented elsewhere in the tree:** `fec_reed_solomon_decode` keeps 12.6
+**This has a known cost, already documented elsewhere in the tree:** `fec_reed_solomon_recover_source` keeps 8
 KB of scratch matrices `static` specifically because this port has no threads. Introducing one means that
 function needs caller-supplied scratch. Deciding the threading model *before* the media pipeline grows is
 much cheaper than retrofitting it.

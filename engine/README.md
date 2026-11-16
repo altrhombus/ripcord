@@ -193,8 +193,8 @@ A link map of the stripped lab: RipcordKit's own Swift is the largest part at 64
 | Mutation check | Changing one KDF constant fails 54 control lines, and one account-wrap constant fails 16 account lines |
 
 The first differential run failed, and the cause was the harness. Test threads decoded FEC in the C core
-at the same time, and `fec_reed_solomon_decode` keeps its matrices in `static` buffers, as its source
-warns. `ripcord-diff` now holds one lock around every call into C. The Rust decoder's scratch belongs to
+at the same time, and `fec_reed_solomon_recover_source` keeps its matrices in `static` buffers, as its source
+warns. `ripcord-diff` now holds one lock around every call into C. The Rust recovery's scratch belongs to
 its caller, so it has no such limit.
 
 ## Takion: where the port follows .NET and where it follows C (2026-09-26)

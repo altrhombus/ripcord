@@ -39,14 +39,14 @@ void diff_pc_crypt(void *c, uint64_t key_pos, uint8_t *payload, size_t length)
 
 /* ---- FEC ---- */
 
-int diff_fec_encode(uint8_t *buf, size_t unit_size, size_t stride, int k, int m)
+int diff_fec_encode(uint8_t *buf, size_t coded_length, int k, int m)
 {
-    return fec_reed_solomon_encode(buf, unit_size, stride, k, m);
+    return fec_reed_solomon_encode(buf, coded_length, k, m);
 }
 
-int diff_fec_decode(uint8_t *buf, size_t unit_size, size_t stride, int k, int m, const uint8_t *present)
+int diff_fec_recover_source(uint8_t *buf, size_t coded_length, int k, int m, const uint8_t *arrived)
 {
-    return fec_reed_solomon_decode(buf, unit_size, stride, k, m, present);
+    return fec_reed_solomon_recover_source(buf, coded_length, k, m, arrived);
 }
 
 /* ---- the demuxer, with its events flattened into one callback ---- */

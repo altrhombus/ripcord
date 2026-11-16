@@ -22,7 +22,7 @@
  * application carries, not anything this code can declare. So it has to be tried rather than reasoned
  * about, and the answer decides whether decode can ever move off the network thread.
  *
- * That decision has a known cost already recorded in the tree: fec_reed_solomon_decode keeps 12.6 KB of
+ * That decision has a known cost already recorded in the tree: fec_reed_solomon_recover_source keeps 8 KB of
  * scratch static specifically because this port has no threads. Adding one means that function needs
  * caller-supplied scratch. Better to know the constraint before the media pipeline grows around it.
  */
