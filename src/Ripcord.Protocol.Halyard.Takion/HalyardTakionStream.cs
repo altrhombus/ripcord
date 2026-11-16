@@ -165,7 +165,7 @@ public sealed class HalyardTakionStream : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         // 1. Takion connection handshake (INIT/INIT_ACK/COOKIE_ECHO).
-        var connection = new TakionConnection(_socket, _console);
+        var connection = new TakionAssociation(_socket, _console);
         await connection.ConnectAsync(handshakeTimeout, handshakeAttempts, cancellationToken).ConfigureAwait(false);
 
         // 2. Reliable control channel in fed mode - the loop below routes control packets to it.

@@ -418,7 +418,7 @@ negotiator too, and it is the next real piece of work.
 
 Handshake, reliable delivery,
 reassembly. Ported from `Ripcord.Protocol.Halyard.Takion` (`TakionMessageHeader`, `TakionHandshake`,
-`TakionConnection`, `TakionDataChunk`, `TakionSackChunk`, `TakionMessageReassembler`,
+`TakionAssociation`, `TakionDataChunk`, `TakionSackChunk`, `TakionMessageReassembler`,
 `TakionReliableChannel`) - the same project's own reference implementation (see the note on Phase 4 above
 about why that needs no independence boundary).
 

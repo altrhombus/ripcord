@@ -113,7 +113,7 @@ public sealed class HalyardSenkusha : IAsyncDisposable
         int candidateMtu,
         CancellationToken cancellationToken)
     {
-        var connection = new TakionConnection(_socket, _console);
+        var connection = new TakionAssociation(_socket, _console);
         await connection.ConnectAsync(handshakeTimeout, handshakeAttempts, cancellationToken).ConfigureAwait(false);
 
         _reliable = new TakionReliableChannel(_socket, _console, connection.LocalTag, connection.RemoteTag);

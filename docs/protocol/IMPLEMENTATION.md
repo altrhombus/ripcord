@@ -81,7 +81,7 @@ path.
     position@9), decoded from and validated against `rudp_control_setup.pcapng`.
   - `TakionHandshake` — the client active-open SCTP handshake (INIT / INIT_ACK / COOKIE_ECHO / COOKIE_ACK);
     `BuildInit` reproduces the captured INIT **byte-for-byte**.
-  - `TakionConnection` — the live UDP socket loop that runs the handshake to ESTABLISHED with per-attempt
+  - `TakionAssociation` — the live UDP socket loop that runs the handshake to ESTABLISHED with per-attempt
     timeout + retransmit; tested end-to-end over loopback (incl. INIT retransmission).
   - `TakionDataChunk` / `TakionSackChunk` / `TakionMessageReassembler` / `TakionReliableChannel` — the
     **reliable-delivery layer**, all validated with a tshark pass over the full capture:
