@@ -242,7 +242,7 @@ typedef struct {
     unsigned held_messages;
     unsigned held_last_type;
     unsigned held_stream_info_repeats;
-    unsigned heartbeats_sent;   /* ours, on the stream channel - the console's need no reply */
+    unsigned heartbeats_answered; /* the console's, on the stream channel (cap48)             */
     unsigned congestion_sent;   /* feedback packets - what the rate controller adapts to       */
 
     /*

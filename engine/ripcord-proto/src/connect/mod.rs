@@ -377,7 +377,7 @@ pub struct Outcome {
     pub stream_height: u32,
     pub stream_is_hevc: bool,
     pub rcvbuf_granted: usize,
-    pub heartbeats_sent: u64,
+    pub heartbeats_answered: u64,
     pub congestion_sent: u64,
     pub input_history_sent: u64,
     pub input_state_sent: u64,

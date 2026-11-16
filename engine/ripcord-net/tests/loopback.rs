@@ -71,7 +71,7 @@ fn a_lan_session_over_loopback_sockets() {
     assert!(client.is_ended());
     assert_eq!(client.stage(), Stage::Streaming, "the furthest stage reached");
     assert_eq!(host.ended, Some(EndReason::UserDisconnect));
-    assert!(client.outcome().heartbeats_sent >= 1);
+    assert!(client.outcome().heartbeats_answered >= 1);
     assert!(client.outcome().rcvbuf_granted > 0);
 
     // The goodbye reaches the console.

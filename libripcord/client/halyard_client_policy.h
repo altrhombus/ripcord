@@ -108,7 +108,7 @@ uint32_t halyard_client_idr_wait_ms(const halyard_client_idr_latch *latch, uint6
 /*
  * 1 when `now` has reached `*next`, which then moves to now + interval. From now rather than from the
  * old deadline, as the PS3's send_periodic does: a late pump should not be followed by a burst of
- * catch-up heartbeats.
+ * catch-up reports.
  */
 int halyard_client_timer_due(uint64_t *next_ms, uint64_t now_ms, uint32_t interval_ms);
 
