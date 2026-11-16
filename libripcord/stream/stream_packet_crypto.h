@@ -12,7 +12,7 @@
  *
  * The GMAC key rotates; the payload AES key does not:
  *   window 0:  gmacKey = fold(aesKey, baseIv)
- *   window n>=1: gmacKey = fold(gmacKey_window0, ivAdd(baseIv, n * 0xAF6E))     (n = keyPos / 45000)
+ *   window n>=1: gmacKey = fold(gmacKey_window0, ivAdd(baseIv, n * 0xAF6E))     (n = (keyPos - 1) / 45000, 0 at keyPos 0)
  *   fold(a, b) = SHA-256(a || b)[0:16] XOR SHA-256(a || b)[16:32]
  *
  * AAD zeroing convention (which bytes of the packet are treated as zero when computing the tag) differs

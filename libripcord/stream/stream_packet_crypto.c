@@ -106,7 +106,8 @@ void stream_packet_crypto_ctr_nonce(const stream_packet_crypto *ctx, uint64_t ke
 
 void stream_packet_crypto_gmac_key(const stream_packet_crypto *ctx, uint64_t key_pos, uint8_t out[16])
 {
-    uint64_t window = key_pos / 45000u;
+    /* An exact multiple of 45000 still belongs to the window below it (HalyardPacketCrypto.WindowOf). */
+    uint64_t window = key_pos == 0 ? 0 : (key_pos - 1) / 45000u;
 
     if (window == 0) {
         memcpy(out, ctx->gmac_base_key, 16);

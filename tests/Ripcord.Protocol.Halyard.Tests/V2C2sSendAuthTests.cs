@@ -44,7 +44,7 @@ public class V2C2sSendAuthTests
         // ECDH is symmetric: Z(peer_priv, clientPub) == Z(client_priv, peerPub) the client used for _send.
         byte[] z = HalyardStreamKeySchedule.DeriveSharedSecret(peerEcdh, clientPub);
         var dir2 = HalyardStreamKeySchedule.DeriveDirection(z, X, HalyardStreamKeySchedule.DirectionClientToServer);
-        var verifier = new HalyardPacketCrypto(dir2, HalyardGmacWindowRule.FromKeyPosMinusOne);
+        var verifier = new HalyardPacketCrypto(dir2);
         return (client, verifier);
     }
 

@@ -33,6 +33,23 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The GMAC window changes one unit later than we thought (2026-11-16)
+
+The rotating GMAC key's window was `keyPos / 45000` for v1 and `(keyPos - 1) / 45000` for v2, and the code
+carried an enum to pick between them. The two only disagree when a key position is an exact multiple of
+45000, so only a packet sitting right on a boundary can tell them apart. I went looking for those packets in
+every capture we have keys for, and they all say the same thing: v1 and v2, console to client and client to
+console, a packet on a boundary verifies in the window below and fails in the window above.
+
+So there's one rule, and v1 had it wrong. The cost was small, one packet at each boundary a key position
+happened to land on exactly (78 in a long v1 session), which FEC mostly hid on the way in. It's also why
+nothing ever looked broken. The enum is gone, `HalyardPacketCrypto.WindowOf` is the rule, and the C core and
+the Rust engine match it. A new test runs real boundary packets from both planes and both directions, and it
+fails on the old rule.
+
+The C change hasn't been compiled yet, since this machine has no C toolchain, and none of it has met the
+console beyond the captures.
+
 ### v2 streams on hardware, and the "wrong signature" was the SESSION_REQUEST's version byte (2026-11-13)
 
 The commit that wrote off the random-handshakeKey model said hardware disproved it: on a session that

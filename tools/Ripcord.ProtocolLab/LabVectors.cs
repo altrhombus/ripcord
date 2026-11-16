@@ -935,8 +935,9 @@ internal static class LabVectors
     }
 
     // packetnonce <aesKey16> <baseIv16> <keyPos> <gmacNonce16> <ctrNonce16> <gmacKey16>
-    // keyPos values bracket the 16-byte block boundary (nonce derivation divides by 16), the rotation
-    // window edge (45000, where the GMAC key changes), and the 32-/64-bit edges the same way the
+    // keyPos values bracket the 16-byte block boundary (nonce derivation divides by 16), a rotation
+    // window edge (720000 is an exact multiple of 45000 and still in the window below; the key changes
+    // after it, HalyardPacketCrypto.WindowOf), and the 32-/64-bit edges the same way the
     // control-plane IV vectors already do - a port that adds the key-position delta as a 32-bit value
     // passes every short session and fails only past 2^32.
     private static int EmitPacketNonce(StringBuilder sb, DerivedBytes stream)

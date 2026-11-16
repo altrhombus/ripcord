@@ -15,7 +15,7 @@
 //!
 //! ```text
 //! window 0:    gmacKey = fold(aesKey, baseIv)
-//! window n>=1: gmacKey = fold(gmacKey_0, baseIv + n * 0xAF6E)          n = keyPos / 45000
+//! window n>=1: gmacKey = fold(gmacKey_0, baseIv + n * 0xAF6E)          n = (keyPos - 1) / 45000, 0 at keyPos 0
 //! fold(a, b) = SHA-256(a || b)[0:16] XOR SHA-256(a || b)[16:32]
 //! ```
 //!
@@ -57,6 +57,13 @@ pub struct PacketCrypto {
     prepared: Option<(u64, Gmac)>,
 }
 
+/// The rotation window of a key position. An exact multiple of 45,000 still belongs to the window below
+/// it, in both control planes and both directions: every captured packet on a boundary verifies this way
+/// (`HalyardPacketCrypto.WindowOf` has the evidence).
+pub fn window_of(key_pos: u64) -> u64 {
+    key_pos.saturating_sub(1) / ROTATION_INTERVAL
+}
+
 fn fold(a: &[u8; 16], b: &[u8; 16]) -> [u8; 16] {
     let digest = Sha256::new().chain_update(a).chain_update(b).finalize();
     std::array::from_fn(|i| digest[i] ^ digest[i + 16])
@@ -83,7 +90,7 @@ impl PacketCrypto {
     }
 
     pub fn gmac_key(&self, key_pos: u64) -> [u8; 16] {
-        self.gmac_key_for_window(key_pos / ROTATION_INTERVAL)
+        self.gmac_key_for_window(window_of(key_pos))
     }
 
     fn gmac_key_for_window(&self, window: u64) -> [u8; 16] {
@@ -120,7 +127,7 @@ impl PacketCrypto {
         let clear = (TAG_LENGTH + if zero_key_pos { 4 } else { 0 }).min(packet.len() - tag_offset);
         aad[tag_offset..tag_offset + clear].fill(0);
 
-        let window = key_pos / ROTATION_INTERVAL;
+        let window = window_of(key_pos);
         if !matches!(self.prepared, Some((w, _)) if w == window) {
             let key = self.gmac_key_for_window(window);
             self.prepared = Some((window, Gmac::new(&key.into())));

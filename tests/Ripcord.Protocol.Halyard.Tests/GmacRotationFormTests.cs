@@ -76,7 +76,7 @@ public class GmacRotationFormTests
         using var crypto = new HalyardPacketCrypto(AesKey, BaseIv);
 
         Span<byte> actual = stackalloc byte[16];
-        crypto.GmacKey((ulong)(window * HalyardPacketCrypto.RotationWindow), actual);
+        crypto.GmacKey((ulong)(window * HalyardPacketCrypto.RotationWindow + 1), actual);
 
         byte[] superseded = Fold(Concat(AesKey, IvAdd(BaseIv, window * HalyardPacketCrypto.RotationFactor)));
 
@@ -96,12 +96,15 @@ public class GmacRotationFormTests
 
     private static IEnumerable<ulong> Positions(long window)
     {
+        // Window n spans (n*45000, (n+1)*45000]: an exact multiple still belongs to the window below it
+        // (HalyardPacketCrypto.WindowOf). Window 0 also holds key position 0.
         long start = window * HalyardPacketCrypto.RotationWindow;
 
-        yield return (ulong)start;                                              // first unit of the window
-        yield return (ulong)(start + 1);
+        if (window == 0) yield return 0;
+        yield return (ulong)(start + 1);                                        // first unit of the window
+        yield return (ulong)(start + 16);
         yield return (ulong)(start + HalyardPacketCrypto.RotationWindow / 2);
-        yield return (ulong)(start + HalyardPacketCrypto.RotationWindow - 1);    // last unit before rotating
+        yield return (ulong)(start + HalyardPacketCrypto.RotationWindow);        // last unit before rotating
     }
 
     /// <summary>The spec's formula, written out from §5.4 rather than called into the implementation.</summary>
