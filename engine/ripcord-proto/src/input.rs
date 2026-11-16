@@ -47,13 +47,12 @@ pub const CREATE: u32 = 1 << 13;
 pub const PS: u32 = 1 << 14;
 pub const L3: u32 = 1 << 15;
 pub const R3: u32 = 1 << 16;
-/// .NET's touchpad click, code 0x91 `[X]`: our capture's scripted touchpad step produced no code, so the
-/// value is provisional (.NET's ButtonMap says so, and spec §6.3 names the other candidate). The C core has
-/// no bit for it.
+/// The touchpad click, code 0x91: `rp_input_labels`' timed L3, R3, PS, touchpad-click sequence shows it twice
+/// (spec §6.3, note 2). The C core has no bit for it.
 pub const TOUCHPAD: u32 = 1 << 17;
 
 /// (bit, code, press folded into the code). .NET's order, which decides the order of simultaneous
-/// events. D-pad up and down were assigned by elimination in the derivation; the rest are timed.
+/// events. Every code is from timed presses (spec §6.3).
 const BUTTONS: [(u32, u8, bool); 16] = [
     (CROSS, 0x88, false),
     (CIRCLE, 0x89, false),
@@ -70,7 +69,7 @@ const BUTTONS: [(u32, u8, bool); 16] = [
     (OPTIONS, 0x8c, true),
     (CREATE, 0x8d, true),
     (PS, 0x8e, true),
-    (TOUCHPAD, 0x91, true), // [X], see TOUCHPAD
+    (TOUCHPAD, 0x91, true),
 ];
 
 /// One controller snapshot, wire-facing. Sticks are s16 with left and up negative (cap48: full up drove

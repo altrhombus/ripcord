@@ -269,7 +269,8 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     /// <summary>
     /// Neutral button → feedback-history code, per the spec §6.3 table derived from cap48. Codes 0x80–0x8b
     /// use the 3-byte form (trailing 0xff/0x00 state byte); 0x8c–0x90 use the 2-byte form with the press bit
-    /// folded into the code. The whole observed code space is 0x80–0x90 and nothing else appeared.
+    /// folded into the code. cap48 shows 0x80–0x90 and nothing else; the touchpad click's 0x91 comes from
+    /// rp_input_labels.
     /// </summary>
     private static readonly (ControllerButtons Flag, byte Code, bool StateInCode)[] ButtonMap =
     [
@@ -277,9 +278,8 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
         (ControllerButtons.East, 0x89, false),          // circle        — t=78.9s
         (ControllerButtons.West, 0x8a, false),          // square        — t=80.9s
         (ControllerButtons.North, 0x8b, false),         // triangle      — t=82.4s
-        // D-pad up/down are assigned BY ELIMINATION: both were pressed during an earlier period of
-        // misbehaving input, so their first-press times predate the scripted D-pad step and cannot order
-        // them. Left/right are directly timed. One clean press of each would settle it.
+        // D-pad up/down can't be ordered from cap48 (both pressed during a stretch of misbehaving input);
+        // rp_input_v2's timed presses settle them (spec §6.3, note 1).
         (ControllerButtons.DPadUp, 0x80, false),
         (ControllerButtons.DPadDown, 0x81, false),
         (ControllerButtons.DPadLeft, 0x82, false),      // t=87.8s
@@ -291,10 +291,8 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
         (ControllerButtons.Start, 0x8c, true),          // options       — t=119.6s
         (ControllerButtons.Select, 0x8d, true),         // share/create  — t=124.0s
         (ControllerButtons.Guide, 0x8e, true),          // PS            — t=0.0s (opened the session)
-        // NOT CONFIRMED by our capture: the scripted touchpad-click step produced no eighteenth code, so
-        // this entry is the one value here still owed an independent derivation. It is retained so touchpad
-        // clicks keep working, but treat it as provisional — the click may instead be carried by the
-        // "00 00 00 21" event family that our history parser currently skips (spec §6.3).
+        // cap48's touchpad step produced no code; rp_input_labels' timed L3, R3, PS, touchpad-click sequence
+        // shows the click as 0x91, twice (spec §6.3, note 2).
         (ControllerButtons.TouchpadClick, 0x91, true),
     ];
 

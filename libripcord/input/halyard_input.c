@@ -14,10 +14,8 @@
  * 3-byte form with a trailing 0xff/0x00 state byte; 0x8c-0x90 use the 2-byte form with the press folded
  * into the code as +0x20. The whole observed code space is 0x80-0x90 and nothing else appeared.
  *
- * D-pad up/down are assigned BY ELIMINATION in the original derivation - both were pressed during an
- * earlier period of misbehaving input, so their first-press times cannot order them. Left/right are
- * directly timed. Carried across as-is rather than re-guessed: if it turns out inverted on hardware, the
- * fix belongs in the spec and in the .NET writer too, not quietly here.
+ * cap48 can't order D-pad up/down (both were pressed during a stretch of misbehaving input); the timed
+ * presses in rp_input_v2 settle them (spec 6.3, note 1).
  */
 #define PRESSED_CODE_BIAS 0x20u
 
@@ -26,8 +24,8 @@ static const struct { uint32_t flag; uint8_t code; int state_in_code; } kButtonM
     { HALYARD_PAD_CIRCLE,     0x89u, 0 },   /* t=78.9s */
     { HALYARD_PAD_SQUARE,     0x8au, 0 },   /* t=80.9s */
     { HALYARD_PAD_TRIANGLE,   0x8bu, 0 },   /* t=82.4s */
-    { HALYARD_PAD_DPAD_UP,    0x80u, 0 },   /* by elimination */
-    { HALYARD_PAD_DPAD_DOWN,  0x81u, 0 },   /* by elimination */
+    { HALYARD_PAD_DPAD_UP,    0x80u, 0 },   /* rp_input_v2, timed */
+    { HALYARD_PAD_DPAD_DOWN,  0x81u, 0 },   /* rp_input_v2, timed */
     { HALYARD_PAD_DPAD_LEFT,  0x82u, 0 },   /* t=87.8s */
     { HALYARD_PAD_DPAD_RIGHT, 0x83u, 0 },   /* t=89.1s */
     { HALYARD_PAD_L1,         0x84u, 0 },   /* t=91.4s */
