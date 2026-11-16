@@ -211,14 +211,14 @@ static void test_single_unit_keyframe(void)
 /*
  * A FRAME WITH MORE UNITS THAN THE OLD CAP ALLOWED.
  *
- * Until STREAM_DEMUX_MAX_UNITS_PER_FRAME existed, a frame wanting more than FEC_MAX_TOTAL_UNITS slots was
+ * Until STREAM_DEMUX_MAX_UNITS_PER_FRAME existed, a frame wanting more than FEC_MAX_TOTAL_UNITS units was
  * refused outright, so no test ever built one and no console ever delivered one this code assembled.
  * Raising the cap made them reachable for the first time, and on hardware the first thing they did was
  * decode to black at 15 Mbps while the same build at 8 Mbps was perfect - the difference being frames of
  * about 90 units against about 21.
  *
  * 96 source units, each carrying a distinct byte pattern, checked back in order. If the assembly walks
- * its slots wrongly past 64 this fails on the bytes rather than on the count.
+ * its units wrongly past 64 this fails on the bytes rather than on the count.
  */
 static void test_frame_with_more_units_than_the_old_cap(void)
 {
@@ -266,8 +266,7 @@ static void test_frame_with_more_units_than_the_old_cap(void)
 static void test_fec_recovers_dropped_source_units(void)
 {
     const int k = 4, m = 2, total = k + m;
-    const size_t unit_size = 32; /* includes the 2-byte prefix */
-    const size_t stride = 32;
+    const size_t unit_size = 32; /* the coded length, including the 2-byte prefix */
     uint8_t frame_buf[6 * 32];
     uint8_t slices[4][30]; /* unit_size - 2-byte prefix */
     uint8_t expected_assembly[4 * 30];
@@ -282,17 +281,17 @@ static void test_fec_recovers_dropped_source_units(void)
     for (u = 0; u < k; u++) {
         int t;
         /* [2-byte prefix = 0 (no extra padding, unit_size already the coded length)][deterministic slice] */
-        frame_buf[(size_t)u * stride] = 0;
-        frame_buf[(size_t)u * stride + 1] = 0;
+        frame_buf[(size_t)u * unit_size] = 0;
+        frame_buf[(size_t)u * unit_size + 1] = 0;
         for (t = 0; t < 30; t++) {
             uint8_t b = (uint8_t)(0x10 * u + t);
             slices[u][t] = b;
-            frame_buf[(size_t)u * stride + 2 + (size_t)t] = b;
+            frame_buf[(size_t)u * unit_size + 2 + (size_t)t] = b;
         }
         memcpy(expected_assembly + expected_length, slices[u], sizeof(slices[u]));
         expected_length += sizeof(slices[u]);
     }
-    CHECK(fec_reed_solomon_encode(frame_buf, unit_size, stride, k, m), "fixture encode failed");
+    CHECK(fec_reed_solomon_encode(frame_buf, unit_size, k, m), "fixture encode failed");
 
     reset_capture(&state);
     stream_demux_init(&g_demux, stream_demux_passthrough_crypto(), make_sink(&state));
@@ -303,7 +302,7 @@ static void test_fec_recovers_dropped_source_units(void)
         if (u == 0 || u == 2)
             continue; /* dropped on the wire */
         packet_length = build_video_packet(packet, sizeof(packet), 5, u, total, m, 0, 0,
-            frame_buf + (size_t)u * stride + 2, unit_size - 2);
+            frame_buf + (size_t)u * unit_size + 2, unit_size - 2);
         CHECK(packet_length > 0, "failed to build unit %d packet", u);
         stream_demux_ingest(&g_demux, packet, packet_length);
     }
@@ -346,6 +345,33 @@ static void test_incomplete_frame_reports_loss_but_still_emits(void)
         state.loss_first, state.loss_last);
 }
 
+/* m = 0 is a frame with nothing to recover with, not a frame with one parity unit missing: a complete one is
+ * emitted whole and counts no loss; one missing a source unit counts exactly that unit. */
+static void test_frame_with_no_parity_counts_only_real_loss(void)
+{
+    capture_state state;
+    static const uint8_t slice[] = { 0xaa, 0xbb };
+    uint8_t packet[64];
+    size_t packet_length;
+    long received, lost;
+
+    reset_capture(&state);
+    stream_demux_init(&g_demux, stream_demux_passthrough_crypto(), make_sink(&state));
+
+    packet_length = build_video_packet(packet, sizeof(packet), 30, 0, 2, 0, 0, 0, slice, sizeof(slice));
+    stream_demux_ingest(&g_demux, packet, packet_length);
+    packet_length = build_video_packet(packet, sizeof(packet), 30, 1, 2, 0, 0, 0, slice, sizeof(slice));
+    stream_demux_ingest(&g_demux, packet, packet_length);
+    packet_length = build_video_packet(packet, sizeof(packet), 31, 0, 2, 0, 0, 0, slice, sizeof(slice));
+    stream_demux_ingest(&g_demux, packet, packet_length); /* flushes 30; unit 1 of 31 never comes */
+    packet_length = build_video_packet(packet, sizeof(packet), 32, 0, 1, 0, 0, 0, slice, sizeof(slice));
+    stream_demux_ingest(&g_demux, packet, packet_length); /* flushes 31 */
+
+    CHECK(state.video_frame_count == 2, "both frames should be emitted, got %d", state.video_frame_count);
+    CHECK(state.loss_count == 1 && state.loss_first == 31, "only frame 31 should report loss");
+    stream_demux_take_packet_stats(&g_demux, &received, &lost);
+    CHECK(received == 3 && lost == 1, "stats should be (3, 1), got (%ld, %ld)", received, lost);
+}
 static void test_frame_index_gap_reports_missing_frames(void)
 {
     capture_state state;
@@ -420,6 +446,7 @@ int main(void)
     test_frame_with_more_units_than_the_old_cap();
     test_fec_recovers_dropped_source_units();
     test_incomplete_frame_reports_loss_but_still_emits();
+    test_frame_with_no_parity_counts_only_real_loss();
     test_frame_index_gap_reports_missing_frames();
     test_audio_strips_redundant_units();
     test_control_packet_passthrough();

@@ -4,28 +4,29 @@
 //! deliberately exact: the same caps, the same drop rules and the same loss reports, so differential
 //! runs against the C core compare outputs directly.
 //!
-//! Video reassembly keys on the frame index. Units collect in stride-sized slots while the index holds,
-//! and the frame is flushed when a new index arrives (spec sec 6.1). Audio carries one Opus frame plus
+//! Video reassembly keys on the frame index. Units collect at `u * coded_length`, as the console lays
+//! them out (spec sec 6.2), while the index holds, and the frame is flushed when a new index arrives
+//! (spec sec 6.1). Audio carries one Opus frame plus
 //! redundant copies of the same 10 ms; only the first unit is emitted.
 //!
 //! Everything is allocated in [`StreamDemux::new`]. `ingest` never allocates, and a frame whose
 //! declared geometry exceeds the caps is skipped rather than grown into.
 
-use super::fec::{self, DecodeScratch};
+use super::fec::{self, RecoverScratch};
 use super::header::{self, StreamHeader};
 use super::packet_crypto::{self, PacketCrypto};
 
 pub const VIDEO_UNIT_PREFIX_LENGTH: usize = 2;
 pub const OPUS_CODEC: u8 = 5;
-pub const MAX_UNIT_STRIDE: usize = 4096;
-/// Slots per frame, which is not the FEC group size: a 1080p frame needs well over a hundred units,
+pub const MAX_CODED_LENGTH: usize = 4096;
+/// Units per frame, which is not the FEC group size: a 1080p frame needs well over a hundred units,
 /// and FEC recovers groups of up to [`fec::MAX_TOTAL_UNITS`]. See `stream_demux.h` for what conflating
 /// the two cost. 256 is the bound the console's own Cauchy builder implies: every coefficient is the
 /// GF(2^8) inverse of `(m + j) ^ i`, defined only below 256, so a codable frame has `k + m <= 256`
 /// (spec §6.2). The largest frame in any of our captures is 130 units.
 pub const MAX_UNITS_PER_FRAME: usize = 256;
 pub const VIDEO_HEADER_CAPACITY: usize = 512;
-pub const ASSEMBLY_CAPACITY: usize = MAX_UNITS_PER_FRAME * MAX_UNIT_STRIDE + VIDEO_HEADER_CAPACITY;
+pub const ASSEMBLY_CAPACITY: usize = MAX_UNITS_PER_FRAME * MAX_CODED_LENGTH + VIDEO_HEADER_CAPACITY;
 
 /// The crypto seam: verify one media packet's tag and, only if it holds, decrypt
 /// `packet[payload_offset..]` in place. `false` drops the packet.
@@ -81,7 +82,7 @@ pub trait DemuxSink {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DemuxCounters {
     pub auth_failures: u64,
-    /// Frames refused because they wanted more than [`MAX_UNITS_PER_FRAME`] slots. Counted, because a
+    /// Frames refused because they wanted more than [`MAX_UNITS_PER_FRAME`] units. Counted, because a
     /// silent refusal looked exactly like a network that had lost everything.
     pub frames_too_many_units: u64,
 }
@@ -96,18 +97,19 @@ pub struct StreamDemux<O> {
     assembly_overflowed: bool,
 
     frame_index: Option<u16>,
-    frame_allocated: bool,
-    source_expected: usize,
-    fec_expected: usize,
-    fec_actual: usize,
-    source_received: usize,
-    fec_received: usize,
-    unit_padded_size: usize,
-    unit_stride: usize,
-    slot_buf: Box<[u8]>,
-    slot_present: Box<[bool]>,
-    slot_data_size: Box<[usize]>,
-    scratch: Box<DecodeScratch>,
+    frame_open: bool,
+    source_count: usize,
+    /// As the header says; 0 means the frame has no parity and nothing to recover with.
+    parity_count: usize,
+    source_arrived: usize,
+    parity_arrived: usize,
+    /// What FEC codes over, and the spacing of units in `units` (spec sec 6.2).
+    coded_length: usize,
+    units: Box<[u8]>,
+    arrived: Box<[bool]>,
+    /// Each unit's payload length, as it arrived or as recovered.
+    arrived_length: Box<[usize]>,
+    scratch: Box<RecoverScratch>,
 
     units_received: u64,
     units_lost: u64,
@@ -164,17 +166,15 @@ impl<O: PacketOpener> StreamDemux<O> {
             assembly: Vec::with_capacity(ASSEMBLY_CAPACITY),
             assembly_overflowed: false,
             frame_index: None,
-            frame_allocated: false,
-            source_expected: 0,
-            fec_expected: 0,
-            fec_actual: 0,
-            source_received: 0,
-            fec_received: 0,
-            unit_padded_size: 0,
-            unit_stride: 0,
-            slot_buf: vec![0; MAX_UNITS_PER_FRAME * MAX_UNIT_STRIDE].into_boxed_slice(),
-            slot_present: vec![false; MAX_UNITS_PER_FRAME].into_boxed_slice(),
-            slot_data_size: vec![0; MAX_UNITS_PER_FRAME].into_boxed_slice(),
+            frame_open: false,
+            source_count: 0,
+            parity_count: 0,
+            source_arrived: 0,
+            parity_arrived: 0,
+            coded_length: 0,
+            units: vec![0; MAX_UNITS_PER_FRAME * MAX_CODED_LENGTH].into_boxed_slice(),
+            arrived: vec![false; MAX_UNITS_PER_FRAME].into_boxed_slice(),
+            arrived_length: vec![0; MAX_UNITS_PER_FRAME].into_boxed_slice(),
             scratch: Box::default(),
             units_received: 0,
             units_lost: 0,
@@ -264,11 +264,11 @@ impl<O: PacketOpener> StreamDemux<O> {
                 self.flush_video_frame(sink);
             }
             self.frame_index = Some(header.frame_index);
-            self.allocate_frame(header, payload);
+            self.open_frame(header, payload);
         }
 
-        if self.frame_allocated {
-            self.place_unit(header, payload);
+        if self.frame_open {
+            self.store_unit(header, payload);
         }
     }
 
@@ -280,77 +280,74 @@ impl<O: PacketOpener> StreamDemux<O> {
         }
     }
 
-    /// Sizes the slots for a new frame from its first-arriving unit, which fixes the common coded unit
-    /// length. Leaves the frame unallocated, and so skipped, on invalid or oversized geometry.
-    fn allocate_frame(&mut self, header: &StreamHeader, payload: &[u8]) {
-        self.frame_allocated = false;
+    /// Starts a new frame from whichever of its units arrives first, which fixes the coded length (spec
+    /// sec 6.2). Leaves the frame closed, and so skipped, on impossible or oversized geometry.
+    fn open_frame(&mut self, header: &StreamHeader, payload: &[u8]) {
+        self.frame_open = false;
 
         let source = header.source_units();
-        let fec = usize::from(header.parity_units).max(1);
-        let slots = source + fec;
+        // As the header says; 0 means the frame has no parity and nothing to recover with.
+        let parity = usize::from(header.parity_units);
+        let unit_count = source + parity;
         if source == 0 {
             return;
         }
-        if slots > MAX_UNITS_PER_FRAME {
+        if unit_count > MAX_UNITS_PER_FRAME {
             self.counters.frames_too_many_units += 1;
             return;
         }
 
-        // Source units carry a size extension added to their transmitted size to reach the common
-        // coded length; parity units are that length already. Either arrival order gives the same value.
-        let mut padded = payload.len();
+        // A source unit's size extension, added to its own length, gives the coded length; a parity unit
+        // is the coded length already. Either kind of unit, arriving first, gives the same answer.
+        let mut coded_length = payload.len();
         if usize::from(header.unit_index) < source && payload.len() >= VIDEO_UNIT_PREFIX_LENGTH {
-            padded += be16(payload);
+            coded_length += be16(payload);
         }
-        let stride = (padded + 0xf) & !0xf;
-        if stride > MAX_UNIT_STRIDE {
+        if coded_length == 0 || coded_length > MAX_CODED_LENGTH {
             return;
         }
 
-        self.slot_buf[..slots * stride].fill(0);
-        self.slot_present[..slots].fill(false);
-        self.slot_data_size[..slots].fill(0);
+        self.units[..unit_count * coded_length].fill(0);
+        self.arrived[..unit_count].fill(false);
+        self.arrived_length[..unit_count].fill(0);
 
-        self.source_expected = source;
-        self.fec_expected = fec;
-        self.fec_actual = usize::from(header.parity_units);
-        self.unit_padded_size = padded;
-        self.unit_stride = stride;
-        self.source_received = 0;
-        self.fec_received = 0;
-        self.frame_allocated = true;
+        self.source_count = source;
+        self.parity_count = parity;
+        self.coded_length = coded_length;
+        self.source_arrived = 0;
+        self.parity_arrived = 0;
+        self.frame_open = true;
     }
 
-    /// Copies one decrypted unit into its slot, indexed by unit index so arrival order is irrelevant.
-    fn place_unit(&mut self, header: &StreamHeader, payload: &[u8]) {
-        let idx = usize::from(header.unit_index);
-        if idx >= self.source_expected + self.fec_expected
-            || self.slot_present[idx]
-            || payload.len() > self.unit_padded_size
+    /// Copies one decrypted unit to its place in the frame, by unit index.
+    fn store_unit(&mut self, header: &StreamHeader, payload: &[u8]) {
+        let index = usize::from(header.unit_index);
+        if index >= self.source_count + self.parity_count
+            || self.arrived[index]
+            || payload.len() > self.coded_length
         {
             return;
         }
-        let off = idx * self.unit_stride;
-        self.slot_buf[off..off + payload.len()].copy_from_slice(payload);
-        self.slot_present[idx] = true;
-        self.slot_data_size[idx] = payload.len();
-        if idx < self.source_expected {
-            self.source_received += 1;
+        let offset = index * self.coded_length;
+        self.units[offset..offset + payload.len()].copy_from_slice(payload);
+        self.arrived[index] = true;
+        self.arrived_length[index] = payload.len();
+        if index < self.source_count {
+            self.source_arrived += 1;
         } else {
-            self.fec_received += 1;
+            self.parity_arrived += 1;
         }
     }
-
     /// Whether the first present source unit's slice is an IDR (H.264 NAL type 5) or an HEVC IRAP
     /// picture (types 16 to 21).
     fn first_source_slice_is_idr(&self) -> bool {
-        for i in 0..self.source_expected {
-            let size = self.slot_data_size[i];
-            if !self.slot_present[i] || size <= VIDEO_UNIT_PREFIX_LENGTH {
+        for i in 0..self.source_count {
+            let size = self.arrived_length[i];
+            if !self.arrived[i] || size <= VIDEO_UNIT_PREFIX_LENGTH {
                 continue;
             }
-            let off = i * self.unit_stride;
-            let slice = &self.slot_buf[off + VIDEO_UNIT_PREFIX_LENGTH..off + size];
+            let offset = i * self.coded_length;
+            let slice = &self.units[offset + VIDEO_UNIT_PREFIX_LENGTH..offset + size];
             let p = slice.iter().take_while(|&&b| b == 0).count();
             return match slice.get(p..p + 2) {
                 Some(&[0x01, nal]) if self.video_is_hevc => (16..=21).contains(&((nal >> 1) & 0x3f)),
@@ -361,12 +358,12 @@ impl<O: PacketOpener> StreamDemux<O> {
         false
     }
 
-    fn append_to_assembly(&mut self, from_slot: Option<(usize, usize)>) {
+    fn append_to_assembly(&mut self, from_units: Option<(usize, usize)>) {
         if self.assembly_overflowed {
             return;
         }
-        let data = match from_slot {
-            Some((start, end)) => &self.slot_buf[start..end],
+        let data = match from_units {
+            Some((start, end)) => &self.units[start..end],
             None => &self.video_header[..],
         };
         if self.assembly.len() + data.len() > ASSEMBLY_CAPACITY {
@@ -377,46 +374,44 @@ impl<O: PacketOpener> StreamDemux<O> {
     }
 
     fn flush_video_frame(&mut self, sink: &mut impl DemuxSink) {
-        if !self.frame_allocated || self.source_expected == 0 {
-            self.frame_allocated = false;
+        if !self.frame_open || self.source_count == 0 {
+            self.frame_open = false;
             return;
         }
-        let (source, fec, stride, padded) =
-            (self.source_expected, self.fec_expected, self.unit_stride, self.unit_padded_size);
+        let (source, parity, len) = (self.source_count, self.parity_count, self.coded_length);
 
         // Wire loss for congestion feedback, before FEC: recovery does not change what the network
-        // dropped. fec_actual, not the one-slot minimum, so a frame with no parity is not false loss.
-        let expected_units = (source + self.fec_actual) as u64;
-        let received_units = (self.source_received + self.fec_received) as u64;
+        // dropped.
+        let expected_units = (source + parity) as u64;
+        let received_units = (self.source_arrived + self.parity_arrived) as u64;
         self.units_received += received_units;
         self.units_lost += expected_units.saturating_sub(received_units);
 
         // Recovery is bounded by what the FEC module holds, which is fewer units than a frame may occupy.
-        if source + fec <= fec::MAX_TOTAL_UNITS
-            && self.source_received < source
-            && self.source_received + self.fec_received >= source
-            && fec::decode(
+        if source + parity <= fec::MAX_TOTAL_UNITS
+            && self.source_arrived < source
+            && self.source_arrived + self.parity_arrived >= source
+            && fec::recover_source(
                 &mut self.scratch,
-                &mut self.slot_buf,
-                padded,
-                stride,
+                &mut self.units[..(source + parity) * len],
+                len,
                 source,
-                fec,
-                &self.slot_present[..source + fec],
+                parity,
+                &self.arrived[..source + parity],
             )
         {
+            // A recovered source unit's own size extension, now restored, gives back its length.
             for i in 0..source {
-                if self.slot_present[i] {
+                if self.arrived[i] {
                     continue;
                 }
-                let padding = be16(&self.slot_buf[i * stride..]);
-                if padding < padded {
-                    self.slot_data_size[i] = padded - padding;
-                    self.slot_present[i] = true;
+                let extension = be16(&self.units[i * len..]);
+                if extension < len {
+                    self.arrived_length[i] = len - extension;
+                    self.arrived[i] = true;
                 }
             }
         }
-
         let is_key = self.first_source_slice_is_idr();
 
         self.assembly.clear();
@@ -426,16 +421,16 @@ impl<O: PacketOpener> StreamDemux<O> {
         }
         let mut incomplete = false;
         for i in 0..source {
-            if !self.slot_present[i] {
+            if !self.arrived[i] {
                 incomplete = true;
                 continue;
             }
-            let size = self.slot_data_size[i];
+            let size = self.arrived_length[i];
             if size > VIDEO_UNIT_PREFIX_LENGTH {
-                self.append_to_assembly(Some((i * stride + VIDEO_UNIT_PREFIX_LENGTH, i * stride + size)));
+                self.append_to_assembly(Some((i * len + VIDEO_UNIT_PREFIX_LENGTH, i * len + size)));
             }
         }
-        self.frame_allocated = false;
+        self.frame_open = false;
 
         // Slices FEC could not recover: ask for a fresh IDR rather than accumulate corruption.
         if incomplete || self.assembly_overflowed {
@@ -572,7 +567,7 @@ mod tests {
 
     #[test]
     fn fec_recovers_dropped_source_units() {
-        let (k, m, unit_size) = (4usize, 2usize, 32usize);
+        let (k, m, unit_size) = (4usize, 2usize, 32usize); // unit_size is the coded length
         let mut frame = vec![0u8; (k + m) * unit_size];
         let mut expected = Vec::new();
         for u in 0..k {
@@ -581,7 +576,7 @@ mod tests {
             }
             expected.extend_from_slice(&frame[u * unit_size + 2..(u + 1) * unit_size]);
         }
-        assert!(fec::encode(&mut frame, unit_size, unit_size, k, m));
+        assert!(fec::encode(&mut frame, unit_size, k, m));
 
         let mut d = StreamDemux::new(Passthrough);
         let mut c = Capture::default();
@@ -597,6 +592,23 @@ mod tests {
         assert!(c.loss.is_empty(), "FEC should have recovered the frame");
         assert_eq!(c.video[0].0, expected);
         assert_eq!(d.take_packet_stats(), (4, 2), "wire loss is counted before recovery");
+    }
+
+    /// m = 0 is a frame with nothing to recover with, not a frame with one parity unit missing: a
+    /// complete one is emitted whole and counts no loss; one missing a source unit counts that unit only.
+    #[test]
+    fn a_frame_with_no_parity_counts_only_real_loss() {
+        let mut d = StreamDemux::new(Passthrough);
+        let mut c = Capture::default();
+        d.ingest(&video_packet(30, 0, 2, 0, 0, &[0xaa, 0xbb]), &mut c);
+        d.ingest(&video_packet(30, 1, 2, 0, 0, &[0xcc, 0xdd]), &mut c);
+        d.ingest(&video_packet(31, 0, 2, 0, 0, &[0xaa, 0xbb]), &mut c);
+        d.ingest(&video_packet(32, 0, 1, 0, 0, &[0xaa, 0xbb]), &mut c);
+
+        assert_eq!(c.video.len(), 2);
+        assert_eq!(c.video[0].0, [0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(c.loss, [(31, 31)]);
+        assert_eq!(d.take_packet_stats(), (3, 1));
     }
 
     #[test]
@@ -736,7 +748,7 @@ mod tests {
     fn hostile_geometry_does_not_panic() {
         let mut d = StreamDemux::new(Passthrough);
         let mut c = Capture::default();
-        // Parity above total, a size extension that pushes the stride past the cap, maximal indices.
+        // Parity above total, a size extension that pushes the coded length past the cap, maximal indices.
         for (unit, total, parity, pad) in
             [(0, 1, 0x3ff, 0), (0, 4, 1, 0xffff), (0x7ff, 0x800, 0x3ff, 0), (3, 4, 0, 0)]
         {

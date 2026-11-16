@@ -26,35 +26,42 @@ int fec_reed_solomon_build_matrix(int k, int m, uint8_t *out)
     return 1;
 }
 
-int fec_reed_solomon_encode(uint8_t *frame_buf, size_t unit_size, size_t stride, int k, int m)
+/* C[i][j] = 1 / (i XOR (m + j)). i < m <= m + j, so the argument is never zero and the inverse exists. */
+static uint8_t coefficient(int parity_row, int source_column, int m)
 {
-    uint8_t matrix[MAX_MATRIX];
+    uint8_t inv = 0;
+    (void)fec_galois_inverse((uint8_t)(parity_row ^ (m + source_column)), &inv);
+    return inv;
+}
+
+/* destination ^= coeff * source, byte by byte. */
+static void multiply_add(uint8_t *destination, uint8_t coeff, const uint8_t *source, size_t length)
+{
+    size_t t;
+
+    if (coeff == 0)
+        return;
+    for (t = 0; t < length; t++)
+        destination[t] = (uint8_t)(destination[t] ^ fec_galois_multiply(coeff, source[t]));
+}
+
+int fec_reed_solomon_encode(uint8_t *units, size_t coded_length, int k, int m)
+{
     int i, j;
 
-    if (!fec_reed_solomon_build_matrix(k, m, matrix))
+    if (k <= 0 || m < 0 || k + m > FEC_MAX_TOTAL_UNITS)
         return 0;
 
+    fec_galois_init();
     for (i = 0; i < m; i++) {
-        size_t parity_offset = (size_t)(k + i) * stride;
-        size_t t;
+        uint8_t *parity = units + (size_t)(k + i) * coded_length;
 
-        memset(frame_buf + parity_offset, 0, unit_size);
-        for (j = 0; j < k; j++) {
-            uint8_t coeff = matrix[i * k + j];
-            size_t src_offset;
-
-            if (coeff == 0)
-                continue;
-            src_offset = (size_t)j * stride;
-            for (t = 0; t < unit_size; t++) {
-                frame_buf[parity_offset + t] = (uint8_t)(frame_buf[parity_offset + t] ^
-                    fec_galois_multiply(coeff, frame_buf[src_offset + t]));
-            }
-        }
+        memset(parity, 0, coded_length);
+        for (j = 0; j < k; j++)
+            multiply_add(parity, coefficient(i, j, m), units + (size_t)j * coded_length, coded_length);
     }
     return 1;
 }
-
 static void swap_rows(uint8_t *matrix, int n, int r0, int r1)
 {
     int j;
@@ -114,92 +121,79 @@ static int invert(uint8_t *work, uint8_t *inv, int n)
     return 1;
 }
 
-int fec_reed_solomon_decode(uint8_t *frame_buf, size_t unit_size, size_t stride, int k, int m,
-    const uint8_t *present)
+int fec_reed_solomon_recover_source(uint8_t *units, size_t coded_length, int k, int m,
+    const uint8_t *arrived)
 {
-    int total = k + m;
-    int chosen[FEC_MAX_TOTAL_UNITS];
-    int chosen_count = 0;
-    int any_erased_source = 0;
+    int missing[FEC_MAX_TOTAL_UNITS];
+    int rows[FEC_MAX_TOTAL_UNITS];
+    int e = 0, row_count = 0;
     /*
-     * static, NOT locals. Three 64x64 matrices are 12.6 KB, and a .3dsx main thread has a 32 KB stack in
-     * total - so as locals this one function claimed 40% of it, several frames deep inside the demux
-     * flush path. That is not a theoretical concern on this target: the Takion probe's 49.6 KB local
-     * data-aborted on real hardware for the same reason (see takion_reliable_channel.h), and the 3DS
-     * build now enforces -Wframe-larger-than=8192, which is what flagged this.
+     * static, NOT locals. Two 64x64 matrices are 8 KB, and a .3dsx main thread has a 32 KB stack in total,
+     * several frames deep inside the demux flush path. The Takion probe's 49.6 KB local data-aborted on
+     * real hardware for the same reason (see takion_reliable_channel.h), and the 3DS build enforces
+     * -Wframe-larger-than=8192.
      *
-     * THE TRADE: this makes fec_reed_solomon_decode non-reentrant and single-threaded-only. That is true
-     * of nothing else in source/stream, and it is safe today only because this port has no threads at
-     * all (no threadCreate anywhere). If the media pipeline ever decodes on its own thread, these must
-     * become a caller-supplied scratch struct rather than quietly racing.
+     * THE TRADE: this makes recovery non-reentrant and single-threaded-only. That is safe today only
+     * because this port has no threads at all. If the media pipeline ever decodes on its own thread, these
+     * must become a caller-supplied scratch struct rather than quietly racing.
      */
-    static uint8_t matrix[MAX_MATRIX];
-    static uint8_t a[MAX_MATRIX];
-    static uint8_t inv[MAX_MATRIX];
-    int u, e, r, j;
+    static uint8_t cauchy[MAX_MATRIX];
+    static uint8_t inverse[MAX_MATRIX];
+    uint8_t owed[FEC_MAX_TOTAL_UNITS];
+    int i, j, r, c;
+    size_t t;
 
-    if (k <= 0 || m <= 0 || total > FEC_MAX_TOTAL_UNITS)
+    if (k <= 0 || m < 0 || k + m > FEC_MAX_TOTAL_UNITS)
         return 0;
 
-    for (u = 0; u < total && chosen_count < k; u++) {
-        if (present[u])
-            chosen[chosen_count++] = u;
+    for (j = 0; j < k; j++) {
+        if (!arrived[j])
+            missing[e++] = j;
     }
-    if (chosen_count < k)
-        return 0; /* too many erasures */
+    if (e == 0)
+        return 1; /* every source unit arrived; nothing to rebuild */
 
-    for (e = 0; e < k; e++) {
-        if (!present[e]) {
-            any_erased_source = 1;
-            break;
-        }
+    for (i = 0; i < m && row_count < e; i++) {
+        if (arrived[k + i])
+            rows[row_count++] = i;
     }
-    if (!any_erased_source)
-        return 1; /* every source unit survived; nothing to reconstruct */
+    if (row_count < e)
+        return 0; /* fewer parity units than missing source units */
 
-    if (!fec_reed_solomon_build_matrix(k, m, matrix))
-        return 0;
+    fec_galois_init();
 
-    /* Build A (k*k): row r is the generator row of chosen unit r - identity row for a surviving source
-     * unit, the coding-matrix row for a surviving parity unit. A . data = chosenValues. */
-    memset(a, 0, (size_t)k * (size_t)k);
-    memset(inv, 0, (size_t)k * (size_t)k);
-    for (r = 0; r < k; r++) {
-        u = chosen[r];
-        inv[r * k + r] = 1;
-        if (u < k) {
-            a[r * k + u] = 1;
-        } else {
-            int coding_row = u - k;
-            for (j = 0; j < k; j++)
-                a[r * k + j] = matrix[coding_row * k + j];
+    /* What each chosen parity unit owes to the missing source units alone: the parity unit minus the share
+     * of every source unit that arrived. Written into the missing units' own places, which are free. */
+    for (r = 0; r < e; r++) {
+        uint8_t *dest = units + (size_t)missing[r] * coded_length;
+
+        memcpy(dest, units + (size_t)(k + rows[r]) * coded_length, coded_length);
+        for (j = 0; j < k; j++) {
+            if (arrived[j])
+                multiply_add(dest, coefficient(rows[r], j, m), units + (size_t)j * coded_length, coded_length);
         }
     }
 
-    if (!invert(a, inv, k))
-        return 0;
+    /* remainder = S . missing_units, S[r][c] = C[rows[r]][missing[c]]. Invert S. */
+    memset(inverse, 0, (size_t)e * (size_t)e);
+    for (r = 0; r < e; r++) {
+        inverse[r * e + r] = 1;
+        for (c = 0; c < e; c++)
+            cauchy[r * e + c] = coefficient(rows[r], missing[c], m);
+    }
+    if (!invert(cauchy, inverse, e))
+        return 0; /* unreachable for a Cauchy submatrix; kept so a bad table fails closed */
 
-    /* For each erased source unit e: data[e] = sum_r inv[e][r] . chosenUnit[r] (per byte). */
-    for (e = 0; e < k; e++) {
-        size_t dest_offset;
-        size_t t;
+    /* Apply the inverse one byte position at a time, so the remainders can be overwritten in place. */
+    for (t = 0; t < coded_length; t++) {
+        for (r = 0; r < e; r++)
+            owed[r] = units[(size_t)missing[r] * coded_length + t];
+        for (c = 0; c < e; c++) {
+            uint8_t value = 0;
 
-        if (present[e])
-            continue;
-
-        dest_offset = (size_t)e * stride;
-        memset(frame_buf + dest_offset, 0, unit_size);
-        for (r = 0; r < k; r++) {
-            uint8_t coeff = inv[e * k + r];
-            size_t src_offset;
-
-            if (coeff == 0)
-                continue;
-            src_offset = (size_t)chosen[r] * stride;
-            for (t = 0; t < unit_size; t++) {
-                frame_buf[dest_offset + t] = (uint8_t)(frame_buf[dest_offset + t] ^
-                    fec_galois_multiply(coeff, frame_buf[src_offset + t]));
-            }
+            for (r = 0; r < e; r++)
+                value = (uint8_t)(value ^ fec_galois_multiply(inverse[c * e + r], owed[r]));
+            units[(size_t)missing[c] * coded_length + t] = value;
         }
     }
 

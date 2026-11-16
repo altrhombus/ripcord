@@ -1001,7 +1001,7 @@ void rc_mvd_set_profile(rc_profile *profile)
  * decoder was struggling but because a fifth of the stream never reached it.
  *
  * The scale is the right stage to move first: it reads MVD's output buffer and writes the framebuffer,
- * and touches nothing else. In particular it does NOT touch fec_reed_solomon_decode's 12.6 KB of static
+ * and touches nothing else. In particular it does NOT touch fec_reed_solomon_recover_source's 8 KB of static
  * scratch, which is the thing that has been recorded as blocking threading for several phases - that
  * constraint applies to the demux path, not here.
  *

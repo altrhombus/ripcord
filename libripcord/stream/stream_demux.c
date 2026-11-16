@@ -166,81 +166,73 @@ static void check_for_frame_gap(stream_demux *demux, int new_frame_index)
     }
 }
 
-/* Size the slot buffer for a new frame from its first-arriving unit (which fixes the common padded unit
- * size). Leaves frame_allocated false on invalid or oversized geometry so the frame is skipped rather than
- * risking a buffer overflow from console-controlled wire fields (see stream_demux.h's header comment). */
-static void allocate_frame(stream_demux *demux, const stream_header *header, int data_size,
+/* Start a new frame from whichever of its units arrives first, which fixes the coded length (spec sec6.2).
+ * Leaves frame_open clear on impossible or oversized geometry so the frame is skipped rather than risking
+ * a buffer overflow from console-controlled wire fields (see stream_demux.h's header comment). */
+static void open_frame(stream_demux *demux, const stream_header *header, int data_size,
     const uint8_t *payload, size_t payload_length)
 {
-    int source, fec, slots, padded, stride;
-    size_t buf_needed;
+    int source, parity, unit_count, coded_length;
+    size_t bytes;
 
-    demux->frame_allocated = 0;
+    demux->frame_open = 0;
 
     source = stream_header_source_units(header);
-    fec = header->parity_units > 1 ? header->parity_units : 1;
-    slots = source + fec;
-    if (source <= 0)
+    parity = header->parity_units; /* as the header says; 0 means no parity and nothing to recover with */
+    unit_count = source + parity;
+    if (source <= 0 || parity < 0)
         return;
-    if (slots > STREAM_DEMUX_MAX_UNITS_PER_FRAME) {
-        /* Counted, not just refused. A frame that wants more slots than this build provides is a
+    if (unit_count > STREAM_DEMUX_MAX_UNITS_PER_FRAME) {
+        /* Counted, not just refused. A frame that wants more units than this build provides is a
          * configuration answer - raise STREAM_DEMUX_MAX_UNITS_PER_FRAME - and used to look exactly like
          * a network that had lost everything. */
         demux->stat_frames_too_many_units++;
         return;
     }
 
-    /* Source units carry a 2-byte size-extension ADDED to the transmitted size to get the common coded
-     * unit length all units share for FEC; parity units are already exactly that length. Both arrival
-     * orders land on the same value, which is why this can key off whichever unit comes first. */
-    padded = data_size;
+    /* A source unit's 2-byte size-extension, added to its own length, gives the coded length; a parity
+     * unit is the coded length already. So either kind of unit, arriving first, gives the same answer. */
+    coded_length = data_size;
     if (header->unit_index < source && payload_length >= STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH) {
-        padded += (int)(((uint32_t)payload[0] << 8) | payload[1]);
+        coded_length += (int)(((uint32_t)payload[0] << 8) | payload[1]);
     }
-    if (padded <= 0)
+    if (coded_length <= 0 || coded_length > STREAM_DEMUX_MAX_CODED_LENGTH)
+        return;
+    bytes = (size_t)unit_count * (size_t)coded_length;
+    if (bytes > sizeof(demux->units))
         return;
 
-    stride = (padded + 0xf) & ~0xf;
-    if (stride > STREAM_DEMUX_MAX_UNIT_STRIDE)
-        return;
-    buf_needed = (size_t)slots * (size_t)stride;
-    if (buf_needed > sizeof(demux->slot_buf))
-        return;
+    memset(demux->units, 0, bytes);
+    memset(demux->arrived, 0, (size_t)unit_count);
+    memset(demux->arrived_length, 0, (size_t)unit_count * sizeof(demux->arrived_length[0]));
 
-    memset(demux->slot_buf, 0, buf_needed);
-    memset(demux->slot_present, 0, (size_t)slots);
-    memset(demux->slot_data_size, 0, (size_t)slots * sizeof(demux->slot_data_size[0]));
-
-    demux->source_expected = source;
-    demux->fec_expected = fec;
-    demux->fec_actual = header->parity_units;
-    demux->unit_padded_size = padded;
-    demux->unit_stride = stride;
-    demux->source_received = 0;
-    demux->fec_received = 0;
-    demux->frame_allocated = 1;
+    demux->source_count = source;
+    demux->parity_count = parity;
+    demux->coded_length = coded_length;
+    demux->source_arrived = 0;
+    demux->parity_arrived = 0;
+    demux->frame_open = 1;
 }
 
-/* Copy one decrypted unit into its slot (indexed by unit index, so arrival order is irrelevant). */
-static void place_unit(stream_demux *demux, const stream_header *header, int data_size,
+/* Copy one decrypted unit to its place in the frame, by unit index. */
+static void store_unit(stream_demux *demux, const stream_header *header, int data_size,
     const uint8_t *payload, size_t payload_length)
 {
-    int idx = header->unit_index;
+    int index = header->unit_index;
 
-    if (idx < 0 || idx >= demux->source_expected + demux->fec_expected || demux->slot_present[idx] ||
-        data_size > demux->unit_padded_size) {
+    if (index < 0 || index >= demux->source_count + demux->parity_count || demux->arrived[index] ||
+        data_size > demux->coded_length) {
         return;
     }
 
-    memcpy(demux->slot_buf + (size_t)idx * (size_t)demux->unit_stride, payload, payload_length);
-    demux->slot_present[idx] = 1;
-    demux->slot_data_size[idx] = data_size;
-    if (idx < demux->source_expected)
-        demux->source_received++;
+    memcpy(demux->units + (size_t)index * (size_t)demux->coded_length, payload, payload_length);
+    demux->arrived[index] = 1;
+    demux->arrived_length[index] = data_size;
+    if (index < demux->source_count)
+        demux->source_arrived++;
     else
-        demux->fec_received++;
+        demux->parity_arrived++;
 }
-
 /* Whether the first present source unit's slice is an IDR (H.264 NAL type 5) or an HEVC IRAP picture.
  * Scans past the 2-byte unit prefix and the Annex-B start code (3- or 4-byte) to the NAL header byte. */
 static int first_source_slice_is_idr(const stream_demux *demux)
@@ -249,26 +241,26 @@ static int first_source_slice_is_idr(const stream_demux *demux)
 
     /*
      * Defence in depth, NOT a fix for anything observed. flush_video_frame already refuses to call this
-     * when frame_allocated is clear, so these values are sound by the time we get here. The check is
-     * cheap and this function indexes slot_buf by console-controlled geometry, which is the class of
+     * when frame_open is clear, so these values are sound by the time we get here. The check is
+     * cheap and this function indexes units by console-controlled geometry, which is the class of
      * thing worth being unconditionally safe about - but it should not be mistaken for a diagnosis.
      */
-    if (!demux->frame_allocated || demux->unit_stride <= 0
-        || demux->source_expected <= 0
-        || demux->source_expected > STREAM_DEMUX_MAX_UNITS_PER_FRAME) {
+    if (!demux->frame_open || demux->coded_length <= 0
+        || demux->source_count <= 0
+        || demux->source_count > STREAM_DEMUX_MAX_UNITS_PER_FRAME) {
         return 0;
     }
 
-    for (i = 0; i < demux->source_expected; i++) {
+    for (i = 0; i < demux->source_count; i++) {
         const uint8_t *slice;
         int slice_length;
         int p;
 
-        if (!demux->slot_present[i] || demux->slot_data_size[i] <= STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH)
+        if (!demux->arrived[i] || demux->arrived_length[i] <= STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH)
             continue;
 
-        slice = demux->slot_buf + (size_t)i * (size_t)demux->unit_stride + STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH;
-        slice_length = demux->slot_data_size[i] - STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH;
+        slice = demux->units + (size_t)i * (size_t)demux->coded_length + STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH;
+        slice_length = demux->arrived_length[i] - STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH;
 
         p = 0;
         while (p < slice_length && slice[p] == 0)
@@ -297,45 +289,45 @@ static void flush_video_frame(stream_demux *demux)
     int incomplete = 0;
     int i;
 
-    if (!demux->frame_allocated || demux->source_expected == 0) {
-        demux->frame_allocated = 0;
+    if (!demux->frame_open || demux->source_count == 0) {
+        demux->frame_open = 0;
         return;
     }
 
     /* Record wire loss for congestion feedback before FEC - FEC recovery doesn't change what the network
-     * actually dropped. fec_actual (not the min-1 slot count) so a frame with no parity isn't false loss. */
-    expected_units = demux->source_expected + demux->fec_actual;
-    received_units = demux->source_received + demux->fec_received;
+     * actually dropped. */
+    expected_units = demux->source_count + demux->parity_count;
+    received_units = demux->source_arrived + demux->parity_arrived;
     demux->stat_units_received += received_units;
     if (expected_units > received_units)
         demux->stat_units_lost += expected_units - received_units;
 
-    /* Recover missing source units from the parity units when enough total units survived. */
     /*
-     * Recovery is bounded by what the Reed-Solomon module can hold, which is a smaller number than the
-     * slots a frame may occupy. A group too large to recover is left alone rather than handed to a
-     * function whose buffers cannot take it; the frame is still assembled from whatever arrived.
+     * Recover missing source units from the parity units when enough units survived. Recovery is bounded
+     * by what the Reed-Solomon module can hold, a smaller number than the units a frame may occupy; a
+     * group too large is left alone, and the frame is still assembled from whatever arrived.
      */
-    if (demux->source_expected + demux->fec_expected <= FEC_MAX_TOTAL_UNITS &&
-        demux->source_received < demux->source_expected &&
-        demux->source_received + demux->fec_received >= demux->source_expected &&
-        fec_reed_solomon_decode(demux->slot_buf, (size_t)demux->unit_padded_size, (size_t)demux->unit_stride,
-            demux->source_expected, demux->fec_expected, demux->slot_present)) {
-        for (i = 0; i < demux->source_expected; i++) {
-            int off, padding;
+    if (demux->source_count + demux->parity_count <= FEC_MAX_TOTAL_UNITS &&
+        demux->source_arrived < demux->source_count &&
+        demux->source_arrived + demux->parity_arrived >= demux->source_count &&
+        fec_reed_solomon_recover_source(demux->units, (size_t)demux->coded_length,
+            demux->source_count, demux->parity_count, demux->arrived)) {
+        /* A recovered source unit's own size-extension, now restored, gives back its length. */
+        for (i = 0; i < demux->source_count; i++) {
+            size_t offset;
+            int extension;
 
-            if (demux->slot_present[i])
+            if (demux->arrived[i])
                 continue;
 
-            off = i * demux->unit_stride;
-            padding = (int)(((uint32_t)demux->slot_buf[off] << 8) | demux->slot_buf[off + 1]);
-            if (padding < demux->unit_padded_size) {
-                demux->slot_data_size[i] = demux->unit_padded_size - padding;
-                demux->slot_present[i] = 1;
+            offset = (size_t)i * (size_t)demux->coded_length;
+            extension = (int)(((uint32_t)demux->units[offset] << 8) | demux->units[offset + 1]);
+            if (extension < demux->coded_length) {
+                demux->arrived_length[i] = demux->coded_length - extension;
+                demux->arrived[i] = 1;
             }
         }
     }
-
     /* A frame is a keyframe iff its slices are IDR NAL units - drives both the keyframe flag and the
      * SPS/PPS re-send below. */
     is_key = first_source_slice_is_idr(demux);
@@ -345,24 +337,24 @@ static void flush_video_frame(stream_demux *demux)
     if (is_key && demux->video_header_length > 0)
         append_to_assembly(demux, demux->video_header, demux->video_header_length);
 
-    for (i = 0; i < demux->source_expected; i++) {
+    for (i = 0; i < demux->source_count; i++) {
         int size;
 
-        if (!demux->slot_present[i]) {
+        if (!demux->arrived[i]) {
             incomplete = 1;
             continue;
         }
 
-        size = demux->slot_data_size[i];
+        size = demux->arrived_length[i];
         if (size <= STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH)
             continue;
 
         append_to_assembly(demux,
-            demux->slot_buf + (size_t)i * (size_t)demux->unit_stride + STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH,
+            demux->units + (size_t)i * (size_t)demux->coded_length + STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH,
             (size_t)(size - STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH));
     }
 
-    demux->frame_allocated = 0;
+    demux->frame_open = 0;
 
     /* Slices lost that FEC could not recover (or an assembly that overflowed this port's static capacity)
      * - ask the console for a fresh IDR so the picture recovers fast rather than accumulating corruption. */
@@ -409,11 +401,11 @@ static void ingest_video(stream_demux *demux, const stream_header *header, const
         }
 
         demux->frame_index = header->frame_index;
-        allocate_frame(demux, header, data_size, payload, (size_t)data_size);
+        open_frame(demux, header, data_size, payload, (size_t)data_size);
     }
 
-    if (demux->frame_allocated)
-        place_unit(demux, header, data_size, payload, (size_t)data_size);
+    if (demux->frame_open)
+        store_unit(demux, header, data_size, payload, (size_t)data_size);
 }
 
 static void ingest_audio(stream_demux *demux, const stream_header *header, const uint8_t *packet,

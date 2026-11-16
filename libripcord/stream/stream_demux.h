@@ -5,18 +5,18 @@
  * HalyardStreamDemuxer.cs - see that file for the fuller rationale behind each piece; comments here cover
  * only where this port's fixed-buffer C differs from the reference's dynamically-growing C# arrays.
  *
- * Video reassembly keys on the frame index: units accumulate in a slot buffer (one stride-sized slot per
- * unit index) while the frame index is constant, and the previous frame is flushed when a new index
+ * Video reassembly keys on the frame index: units accumulate in one buffer, laid out as the console lays
+ * them out (unit u at u * coded_length, spec sec6.2), while the frame index is constant, and the previous frame is flushed when a new index
  * arrives (spec sec6.1). Audio packs one Opus source frame plus redundant loss-concealment copies of the
  * same 10ms per packet; only the first (source) unit is ever emitted - see stream_demux.c's ingest_audio.
  *
  * FEC_MAX_TOTAL_UNITS bounds units-per-frame (shared with fec_reed_solomon.h - a frame's FEC group can
- * never exceed what that module can recover anyway). STREAM_DEMUX_MAX_UNIT_STRIDE is this port's own cap
+ * never exceed what that module can recover anyway). STREAM_DEMUX_MAX_CODED_LENGTH is this port's own cap
  * on a single unit's coded length: unlike the reference's List<byte>/Array.Resize, nothing in this port
  * allocates, so a frame whose declared geometry would exceed either cap is skipped defensively (see
- * allocate_frame in the .c) rather than risking a buffer overflow from console-controlled wire fields.
+ * open_frame in the .c) rather than risking a buffer overflow from console-controlled wire fields.
  * Both caps are sized generously above what a 3DS-appropriate stream resolution/bitrate needs - see the
- * .c file's allocate_frame for the exact reasoning - not derived from any protocol constant.
+ * .c file's open_frame for the exact reasoning - not derived from any protocol constant.
  */
 #ifndef STREAM_DEMUX_H
 #define STREAM_DEMUX_H
@@ -31,14 +31,14 @@
 #define STREAM_DEMUX_VIDEO_UNIT_PREFIX_LENGTH 2
 #define STREAM_DEMUX_OPUS_CODEC 5
 
-#define STREAM_DEMUX_MAX_UNIT_STRIDE 4096
+#define STREAM_DEMUX_MAX_CODED_LENGTH 4096
 
 /*
  * UNITS PER FRAME, WHICH IS NOT THE SAME NUMBER AS THE FEC GROUP SIZE, and conflating the two is what
  * kept 1080p from working at all.
  *
  * FEC_MAX_TOTAL_UNITS bounds what fec_reed_solomon.c can RECOVER - k+m against its fixed working
- * buffers. The slots a frame occupies is a different quantity that merely happens to have been smaller
+ * buffers. The units a frame occupies is a different quantity that merely happens to have been smaller
  * on every stream this code had seen: 640x360 needs a handful and 1280x720 measured about 21, both
  * comfortably inside 64. A 1920x1080 frame needs well over a hundred, and the frame was then abandoned
  * before assembly began - silently, which is why 103,371 video packets became 32 frames and nobody
@@ -48,8 +48,8 @@
  * GF(2^8) inverse of (m + j) XOR i, and that lookup is an inverse only while both operands are below
  * 256, so a frame the console can FEC-code has k + m <= 256 (ps5-remoteplay-v1-spec.md, section 6.2).
  * The header's 11-bit total-units field could say up to 2048, but the largest frame in any of our
- * captures is 130 units. The same number sizes HalyardStreamDemuxer's dynamic slots; here it is a fixed
- * buffer, 1 MB at this stride.
+ * captures is 130 units. The same number sizes HalyardStreamDemuxer's dynamic buffers; here it is a fixed
+ * buffer, 1 MB at this coded length.
  *
  * NOT OVERRIDABLE, AND THAT IS THE POINT. b168 made it a per-port -D and the console hung before it
  * reached the network: this port's core-test objects are compiled from their own flag list rather than
@@ -61,7 +61,7 @@
 #define STREAM_DEMUX_MAX_UNITS_PER_FRAME 256
 #define STREAM_DEMUX_VIDEO_HEADER_CAPACITY 512
 #define STREAM_DEMUX_ASSEMBLY_CAPACITY \
-    (STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_UNIT_STRIDE \
+    (STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_CODED_LENGTH \
      + STREAM_DEMUX_VIDEO_HEADER_CAPACITY)
 
 /*
@@ -105,7 +105,7 @@ typedef struct {
 } stream_demux_sink;
 
 /*
- * ~513 KB - by far the largest object in this port (whole-frame reassembly buffers x FEC unit slots).
+ * ~513 KB - by far the largest object in this port (whole-frame reassembly buffers x FEC units).
  * NEVER DECLARE ONE AS A LOCAL, and do not casually put one per-session on a 3DS either: a .3dsx main
  * thread gets a 32 KB stack, so a local is an instant data abort in the prologue with nothing logged.
  * File scope, `static`, or the heap. See takion_reliable_channel.h - the same mistake, 10x smaller, is
@@ -125,21 +125,19 @@ typedef struct {
 
     int frame_index; /* -1 = no frame in progress */
     long frame_timestamp_ms;
-    int frame_allocated;
-    int source_expected;
-    int fec_expected;
-    int fec_actual;
-    int source_received;
-    int fec_received;
-    int unit_padded_size;
-    int unit_stride;
-    uint8_t slot_buf[STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_UNIT_STRIDE];
-    uint8_t slot_present[STREAM_DEMUX_MAX_UNITS_PER_FRAME];
-    int slot_data_size[STREAM_DEMUX_MAX_UNITS_PER_FRAME];
+    int frame_open;
+    int source_count;
+    int parity_count; /* as the header says; 0 = no parity, nothing to recover with */
+    int source_arrived;
+    int parity_arrived;
+    int coded_length; /* what FEC codes over, and the spacing of units in `units` (spec sec6.2) */
+    uint8_t units[STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_CODED_LENGTH];
+    uint8_t arrived[STREAM_DEMUX_MAX_UNITS_PER_FRAME];
+    int arrived_length[STREAM_DEMUX_MAX_UNITS_PER_FRAME]; /* each unit's payload length, as it arrived or as recovered */
 
     long stat_units_received;
     long stat_units_lost;
-    /* Frames refused because they wanted more slots than STREAM_DEMUX_MAX_UNITS_PER_FRAME. Counted
+    /* Frames refused because they wanted more units than STREAM_DEMUX_MAX_UNITS_PER_FRAME. Counted
      * because this used to be a bare `return` - see that constant's note. */
     long stat_frames_too_many_units;
     long auth_failures;
