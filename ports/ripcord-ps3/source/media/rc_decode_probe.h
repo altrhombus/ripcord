@@ -152,7 +152,7 @@ void rc_decode_live_close(void);
  * WHICH DECODER IS ACTUALLY RUNNING, and the two behind the seam.
  *
  * The console's own H.264 decoder (cellVdec, on the SPEs) is the one to use and openh264 on the PPE is
- * the fallback, following the seam-and-stub pattern CLAUDE.md describes for the crypto: the rest of the
+ * the fallback, following the seam-and-stub pattern docs/architecture.md describes for the crypto: the rest of the
  * pipeline neither knows nor cares which answered.
  *
  * The choice is made at open time and reported, because a silent fallback to a decoder that manages

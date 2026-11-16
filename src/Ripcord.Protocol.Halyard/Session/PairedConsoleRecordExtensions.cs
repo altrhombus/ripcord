@@ -9,7 +9,7 @@ namespace Ripcord.Protocol.Halyard.Session;
 ///
 /// <para>
 /// This used to be <c>PairedConsole.ToRecord</c>, a method on the record itself. That put a Halyard return type
-/// on a type that otherwise knows nothing about PlayStation, which inverted the dependency direction CLAUDE.md
+/// on a type that otherwise knows nothing about PlayStation, which inverted the dependency direction docs/architecture.md
 /// sets out — platform-specific depends on shared, never the reverse — and was the one thing preventing the
 /// paired-console store from living in Ripcord.Core at all. As an extension method here, the arrow points the
 /// right way and the record stays a plain credential holder.

@@ -74,7 +74,7 @@ extern const uint8_t halyard_v1_ps4_registration_table[HALYARD_REGISTRATION_TABL
 extern const uint8_t halyard_v1_ps4_material_wrap_table[HALYARD_MATERIAL_WRAP_TABLE_LENGTH];
 
 /* v2 PlayStation 5 registration-authentication key: the fixed value the console checks a v2 pairing request's
- * authentication code against (CLAUDE.md "Bounded exception 1"). Emitted only with --registration, like the
+ * authentication code against (NOTICE, "Interoperability constants"). Emitted only with --registration, like the
  * tables above; the other console family's value is [X] and not bundled. No v2 C consumer yet, but declared so
  * the generated unit links and so a future port finds it here. */
 #define HALYARD_REGISTRATION_AUTH_KEY_LENGTH 16

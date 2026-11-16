@@ -31,7 +31,7 @@
 /*
  * The Client-Type value: a FIXED 64-hex-character client identifier, not a per-device one. Identical
  * for every client and tied to no account or console, which is why it is in source rather than in the
- * captures folder - see CLAUDE.md, which lists it beside the bundled constants for exactly this reason.
+ * captures folder - see NOTICE, which lists it beside the bundled constants for exactly this reason.
  */
 #define HALYARD_REGIST_CLIENT_TYPE_HEX \
     "dabfa2ec873de5839bee8d3f4c0239c4282c07c25c6077a2931afcf0adc0d34f"

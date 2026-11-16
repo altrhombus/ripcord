@@ -44,7 +44,7 @@ pub fn has_ps4_registration() -> bool {
 /// Whether the v2 PlayStation 5 registration-authentication key is in this engine's bundle. The v2
 /// registration path (not yet ported) authenticates a pairing request with it; a build without it cannot
 /// PIN-pair a PS5 over v2, the way a PS4-less bundle cannot pair a PS4. Generic to the PS5 console family and
-/// tied to no console or account (CLAUDE.md "Bounded exception 1").
+/// tied to no console or account (NOTICE, "Interoperability constants").
 pub fn v2_registration_auth_key_bundled() -> bool {
     constants::REGIST_AUTH_KEY.is_some()
 }

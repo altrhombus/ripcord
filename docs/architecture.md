@@ -3,8 +3,6 @@
 How Ripcord is arranged, and the rules that keep it that way. Read this before adding a project,
 moving a type between layers, or touching anything in `Ripcord.Presentation`.
 
-[`CLAUDE.md`](../CLAUDE.md) states the same rules tersely for AI coding agents. This file has the reasoning.
-If the two ever disagree, this one is right and the other is stale.
 
 ## The one rule everything else follows
 
@@ -150,7 +148,7 @@ the reverse, and `crypto/` knows nothing about PlayStation.
 
 **The independence rule does not apply between Ripcord's own front ends.** A port may read, port and
 directly adapt code from `src/` at will — that is this project's own reference implementation, not the
-external source the rule exists to keep out. [`CLAUDE.md`](../CLAUDE.md) states the exception. Citing what
+external source the rule exists to keep out. [`CONTRIBUTING.md`](../CONTRIBUTING.md) states the exception too. Citing what
 a file was ported from is good practice, because it tells the next reader where to look when the two
 diverge, but it is a courtesy rather than an obligation.
 
@@ -213,11 +211,10 @@ The rationale for each lives in the file that implements it; what follows is wha
 | Senkusha | **Vendor's own codename**, retained | The echo/MTU/bandwidth probe sub-protocol |
 
 `Halyard` replaces Sony's product name and is our invention. `Takion` and `Senkusha` are **Sony's own
-internal codenames**, recovered from strings in our own copy of the vendor binary — not names we coined, and
-not borrowed from any third-party implementation, which uses them for the same reason. They are retained deliberately as protocol terminology: they are load-bearing
+internal codenames**, recovered from strings in our own copy of the vendor binary — not names we coined. They are retained deliberately as protocol terminology: they are load-bearing
 in namespaces, ~10 class names, and assembly names, and renaming them buys little once their provenance is
 stated. **This is a stated exception to the "never the vendor's own symbol/string names" rule** in
-[`CLAUDE.md`](../CLAUDE.md) — the rule still governs everything else. Do not extend the exception without recording it here.
+[`docs/protocol/README.md`](protocol/README.md) — the rule still governs everything else. Do not extend the exception without recording it here.
 
 For protobuf **message and enum** names the rule is two-tier, and `docs/protocol/README.md` states it in
 full: the vendor's *coined or arbitrary* names are renamed (`BIG`/`BANG` → `SESSION_REQUEST`/

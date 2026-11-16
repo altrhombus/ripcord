@@ -11,7 +11,7 @@
     discovery, registration and reachability seams in terms of Halyard, plus the composition root that wires
     them together. The one place a front end has to name Halyard at all.
 
-    This is the crypto-seam pattern from CLAUDE.md applied to the app layer rather than to crypto. Keeping the
+    This is the crypto-seam pattern from docs/architecture.md applied to the app layer rather than to crypto. Keeping the
     Halyard dependency here instead of in Ripcord.Presentation buys three concrete things:
 
       1. Ripcord.Presentation.Tests references exactly one project, so the pairing state machine — the most

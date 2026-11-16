@@ -479,7 +479,7 @@ public class PublishedTreeSweepTests
     /// them (<c>BundledInteropConstantsTests</c>) can only see key names, so without this there is no
     /// value-level check at all on the highest-value file in the repository.</para>
     ///
-    /// <para>If one fails, do not re-pin reflexively: open the file, confirm against CLAUDE.md's inventory
+    /// <para>If one fails, do not re-pin reflexively: open the file, confirm against NOTICE's inventory
     /// that nothing per-console has appeared, and only then update the hash.</para>
     ///
     /// <para>Hashed with line endings normalised to LF, which is how git stores them. The first version of
@@ -783,7 +783,7 @@ public class PublishedTreeSweepTests
     /// <summary>
     /// Values that are not in a file the sweep can usefully read, pinned by the SHA-256 of the value itself.
     ///
-    /// <para><c>ClientTypeHex</c> is the third declared committed constant (CLAUDE.md and <c>NOTICE</c> both
+    /// <para><c>ClientTypeHex</c> is the third declared committed constant (<c>NOTICE</c>
     /// carry it), and until this pin it was the only one with no value-level guard of any kind: it lives in a
     /// C# string literal with no comment, so the prose-only scope above cannot see it, and the two tests that
     /// name it assert how a message is built rather than what the value is. The hash is of the constant's
@@ -1338,7 +1338,7 @@ public class PublishedTreeSweepTests
         Assert.True(
             drifted.Count == 0,
             "A pinned data file changed. This is the only value-level check on the files the name-based guard "
-            + "cannot see into. Open it, confirm against CLAUDE.md's inventory that nothing per-console has "
+            + "cannot see into. Open it, confirm against NOTICE's inventory that nothing per-console has "
             + "appeared, and only then re-pin:\n    " + string.Join("\n    ", drifted));
     }
 
@@ -1909,7 +1909,7 @@ public class PublishedTreeSweepTests
         Assert.True(
             drifted.Count == 0,
             "A pinned constant changed. It is committed under a bounded exception, so confirm against "
-            + "CLAUDE.md's inventory that the new value is still generic — identical for every console and "
+            + "NOTICE's inventory that the new value is still generic — identical for every console and "
             + "every account — and amend NOTICE with it before re-pinning:\n    "
             + string.Join("\n    ", drifted));
     }

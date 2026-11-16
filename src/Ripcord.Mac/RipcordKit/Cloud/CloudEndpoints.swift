@@ -2,7 +2,7 @@
 // (HalyardEndpoints) and HalyardPushChannel.cs (HalyardPushHeaders). Structure from
 // docs/protocol/ps5-cloud-session-api.md.
 //
-// Every string here is an interoperability fact, not a naming choice (CLAUDE.md, "Naming"): hostnames,
+// Every string here is an interoperability fact, not a naming choice (docs/architecture.md, "Naming"): hostnames,
 // paths, header names and values, platform tags. They are verbatim from the .NET reference, which has them
 // verbatim from our own captures. Do not tidy them, and do not "fix" the Windows ones for the Mac: they are
 // what the service has been shown to accept, and nothing has shown it accepts anything else.

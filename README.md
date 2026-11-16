@@ -224,7 +224,7 @@ PlayStation.
 | `tools/` | `ProtocolLab` (the harness), `HidCapture`, and the leak guard |
 
 `Halyard`, `Takion` and `Senkusha` are the codenames used throughout. Only `Halyard` is ours; the other two
-are the vendor's own names, kept as protocol terminology. [`CLAUDE.md`](CLAUDE.md) has the naming table and
+are the vendor's own names, kept as protocol terminology. [`docs/architecture.md`](docs/architecture.md) has the naming table and
 the reasoning.
 
 ---

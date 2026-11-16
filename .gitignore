@@ -56,7 +56,7 @@ account.json
 ## the two rules above earned their place.
 ##
 ## It is the per-console half of the same split: registkey and companion are tied to one console and
-## one account, and the file also carries login_pin, the console's own sign-in PIN. CLAUDE.md puts all
+## one account, and the file also carries login_pin, the console's own sign-in PIN. CONTRIBUTING.md puts all
 ## of that on the personal side of the generic-versus-personal line, where the bundled interop
 ## constants are on the other. Never committed.
 ##
@@ -69,8 +69,12 @@ pairing.txt
 ## tree. Anything worth keeping belongs in the captures folder.
 .claude/
 
+## Ripcord: the coding agent's local instructions. Per-machine working notes; the public rules they
+## restate live in CONTRIBUTING.md, NOTICE, docs/architecture.md and docs/protocol/README.md.
+/CLAUDE.md
+
 ## Ripcord: root-level project prose was withheld pending the same publication review, and now
-## ships - README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, ROADMAP and CLAUDE.md are all in the
+## ships - README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT and ROADMAP are all in the
 ## tree. Nothing root-anchored is withheld any more. .claude/ (below) is a different thing and
 ## stays ignored: it is per-machine tool state, not project prose.
 

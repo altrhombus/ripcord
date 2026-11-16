@@ -8,7 +8,7 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 ///
 /// <para>
 /// Named for what they do in the exchange rather than by any vendor symbol, per the naming rules in
-/// CLAUDE.md. The handshake reads as a cookie exchange: the client says hello, the console answers with a
+/// docs/protocol/README.md. The handshake reads as a cookie exchange: the client says hello, the console answers with a
 /// cookie, the client echoes it back, and the console accepts.
 /// </para>
 ///

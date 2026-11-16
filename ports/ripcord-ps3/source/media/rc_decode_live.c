@@ -1,7 +1,7 @@
 /*
  * ripcord-ps3 - which decoder the live path uses, and the fallback when the first one will not open.
  *
- * The seam is the one in rc_decode_probe.h and the shape is the one CLAUDE.md describes for the crypto:
+ * The seam is the one in rc_decode_probe.h and the shape is the one docs/architecture.md describes for the crypto:
  * two implementations behind one interface, chosen once, with the rest of the pipeline unaware of which
  * answered. cellVdec on the SPEs is the decoder; openh264 on the PPE is what happens if it will not open.
  *

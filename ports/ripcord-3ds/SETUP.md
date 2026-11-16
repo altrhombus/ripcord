@@ -41,7 +41,7 @@ error CS0246: The type or namespace name 'ControlMessage' could not be found
 ```
 
 which names *types*, not missing files, several projects downstream of the cause. You would also be
-missing the spec itself and `CLAUDE.md` / `ROADMAP.md`. Copy them out of band — and never `git add -f`
+missing the spec itself and `ROADMAP.md`. Copy them out of band — and never `git add -f`
 them through a branch, since those ignore rules are the publication-review gate.
 
 </details>
@@ -329,7 +329,7 @@ exchange that talks to a real console, and the first end-to-end use of the crypt
 from `Ripcord.Protocol.Halyard.Common.Control` (`SessProtocol`, `HalyardSessCtrlFields`,
 `HalyardCtrlMessage`) and `HalyardControlSearch`/`HalyardTcpControlChannel` - the same project's own
 reference implementation, so there is no independence boundary to keep here the way there is against the
-protocol's other, unrelated implementations (CLAUDE.md's independence section says so explicitly).
+protocol's other, unrelated implementations (CONTRIBUTING.md's independence section says so explicitly).
 
 **A real doc correction surfaced during this phase.** `docs/protocol/ps5-session-transport.md` (and every
 doc file that repeats it) describes the persistent binary control channel as `RPCS`-magic framing. That

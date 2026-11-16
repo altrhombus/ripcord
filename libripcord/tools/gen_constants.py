@@ -119,7 +119,7 @@ def main(argv):
 
     context_key = unhex("contextKey", bundle.get("contextKey"), CONTEXT_KEY_LENGTH)
 
-    # The v2 PS5 registration-authentication key (CLAUDE.md Bounded exception 1). Separate from the v1 PIN
+    # The v2 PS5 registration-authentication key (NOTICE, "Interoperability constants"). Separate from the v1 PIN
     # registration tables above: a v1-only port needs those but not this, and the other console family's value
     # is [X] and not bundled, so it is emitted independently under its own flag.
     regist_auth = unhex("registAuthKey", bundle.get("registAuthKey"), REGISTRATION_AUTH_KEY_LENGTH)
@@ -210,7 +210,7 @@ def main(argv):
             "",
             emit_array("halyard_v1_ps4_material_wrap_table", ps4_wrap, MATERIAL_WRAP_TABLE_LENGTH),
             "",
-            "/* v2 PS5 registration-authentication key (CLAUDE.md Bounded exception 1); the other console",
+            "/* v2 PS5 registration-authentication key (NOTICE, "Interoperability constants"); the other console",
             " * family's value is [X] and not bundled. */",
             f"const int halyard_v1_registration_auth_bundled = {1 if regist_auth else 0};",
             "",

@@ -2,7 +2,7 @@
 // HalyardClientConfig.cs, HalyardClientConfigFile.cs and HalyardBundledClient.cs.
 //
 // WHAT THE BUNDLED CREDENTIAL IS. It is the vendor desktop client's own client id and secret, recovered from
-// this project's own capture of its own traffic (CLAUDE.md, "Bounded exception 2", and NOTICE, which argues
+// this project's own capture of its own traffic (NOTICE, which argues
 // it on its own grounds). It is an access credential, not a protocol value: a LAN session works without it.
 // It is generic, tied to no account or console.
 //
