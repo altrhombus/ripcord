@@ -4,12 +4,14 @@ Status: **implementation-ready for the crypto + control plane; transport reliabi
 a live LAN capture (Takion-internal SCTP INIT/COOKIE/SACK — not the binary's secondary RUDP module).**
 Scope: the older PS Remote Play protocol (client build ~5.5.0.8250, the client control library), which Ripcord
 implements as **v1** for LAN play — meaning a control plane keyed from `RP-Registkey` + `RP-Nonce` with **no
-public-key exchange in the HTTP handshake**. The newer client's `RP-Pubkey`/`RP-Hmac` control plane (our
-**v2**) was observed but never reverse-engineered; see `README.md`, "Protocol generations".
+public-key exchange in the HTTP handshake**. The `RP-Pubkey`/`RP-Hmac` control plane (our **v2**) is in
+[`ps5-v2-control-plane.md`](ps5-v2-control-plane.md); `README.md`, "The control-plane schemes", says how the
+two relate. The stream plane below is shared by both, with the v2 differences in that document's §6–§8.
 
 > **`v1` is our label, not the `RP-Version` header.** `RP-Version` is a console-family value — `1.0` on PS5,
-> `10.0` on PS4 — and `1.0` appears in the newer generation's captures too. Do not read `RP-Version: 1.0`
-> below as "this is v1"; it is not the discriminator.
+> `10.0` on PS4 — and `1.0` appears under the v2 scheme too. Do not read `RP-Version: 1.0`
+> below as "this is v1"; it is not the discriminator. `v1` and `v2` name the control-plane scheme, not a vendor
+> application version.
 
 This document is an **independent derivation**: the substance is derived from our own copy of the client control library
 (static Ghidra RE + the embedded protobuf reflection metadata) and our own live packet/memory captures. No

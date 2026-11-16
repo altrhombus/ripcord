@@ -31,7 +31,12 @@ including through a TLS-terminating proxy on the authors' own machine, with the
 client's certificate pinning defeated by a hook in that client; and attempted
 work against the current release's anti-debugging protection, abandoned in
 favour of an older, unprotected official release of the same client, installed
-from archived copies of the vendor's installers on the Internet Archive. It
+from archived copies of the vendor's installers on the Internet Archive. The
+v2 control plane used the same methods, applied to later official releases:
+chiefly the 8.5 Windows release, analysed statically and instrumented with
+hooks that read its session keys during sessions with the authors' own console,
+and, for comparison, the current Windows and macOS releases, analysed
+statically and, where their protection allowed, while running. It
 reproduces the
 values a client needs to interoperate -- protocol field numbers, byte offsets, enum
 values, JSON keys and HTTP header names -- and does not reproduce vendor source

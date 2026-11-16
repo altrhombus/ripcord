@@ -226,14 +226,17 @@ purchased signing certificate.
 
 ### Streaming quality and the protocol
 
-- [ ] **v2 (the PS5 GCM control plane): get the stream up.** With `RIPCORD_V2_HANDSHAKE` set, the last hardware
+- [ ] **v2 (the PS5 GCM control plane): get the stream up.** Implemented, opt-in, and specified in
+      [`docs/protocol/ps5-v2-control-plane.md`](docs/protocol/ps5-v2-control-plane.md); it has not streamed from
+      our own client yet. With `RIPCORD_V2_HANDSHAKE` set, the last hardware
       run (2026-10-22) got through `/sess/rgst`→`init`→`init2`→`ctrl`, RPCS and senkusha, then stopped at
       SESSION_REPLY: the console's stream-pubkey signature didn't verify. The stream-key model isn't the problem.
       The vendor client's own sessions sign with `HMAC(handshakeKey, pubkey)` over the handshakeKey the client
       sent (2026-11-13). The difference is the SESSION_REQUEST: the vendor offers versions up to 20, the console
       acks 20, and the request carries field 7. The v2 path now offers the same list and sends field 7 (2026-11-16),
-      and 20 is taken as P-521 from the console's 133-byte key. Next: capture our own v2 session with
-      `RIPCORD_V2_HANDSHAKE` set and see whether the console acks 20 and the signature verifies.
+      and 20 is taken as P-521 from the console's 133-byte key. Next: pair by PIN (an account-route pairing never
+      selects v2), then capture our own v2 session with `RIPCORD_V2_HANDSHAKE` set and see whether the console
+      acks 20 and the signature verifies.
 - [ ] **Do the senkusha probes succeed, or fall back silently?** `MtuConfirmed` answers the MTU half in two
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try

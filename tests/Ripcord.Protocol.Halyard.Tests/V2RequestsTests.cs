@@ -12,7 +12,7 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The v2 control-plane HTTP request builders (spec §4): the /sess/init header set, and /sess/init2 (the
+/// The v2 control-plane HTTP request builders (v2 spec §4): the /sess/init header set, and /sess/init2 (the
 /// GCM-sealed RP-VerifyKey). init2 is round-tripped against a synthetic console that strips RP-Data/RP-Tag,
 /// recomputes the AAD from the bytes we sent, and opens the envelope.
 /// </summary>

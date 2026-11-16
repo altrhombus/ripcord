@@ -1,16 +1,10 @@
 # PS5 Remote Play — session establishment (HTTP-over-RUDP exchange)
 
-> **HISTORICAL — this is the `v2` control plane, which Ripcord does not implement.** These captures
-> (2026-07-10) were taken against the *then-current* vendor client, whose HTTP handshake carries an ECDH
-> exchange in `RP-Pubkey`/`RP-Hmac` plus `RP-DevACha`/`RP-DevAChaTag`. On 2026-07-18 the project pivoted to
-> the older, unobfuscated client, whose control plane is materially different — `RP-Registkey` + `RP-Nonce`
-> → KDF → AES-128-CFB, **no public key in the HTTP handshake at all**. That one is specified in
-> [`ps5-remoteplay-v1-spec.md`](ps5-remoteplay-v1-spec.md) and is what ships.
->
-> This document is retained as an accurate record of what was *observed* on the wire. It was never
-> reverse-engineered: the header set and shapes below are real, the constructions behind them are not known.
-> Individual statements that were later superseded are marked inline. Note that `RP-Version: 1.0` appears
-> here too — it is a console-family value, not a generation marker (see `README.md`).
+> **Superseded by [`ps5-v2-control-plane.md`](ps5-v2-control-plane.md).** These are the first captures of the
+> v2 control plane (2026-07-10), taken before it was worked out. The header set and shapes below are an accurate
+> record of what was on the wire; the constructions behind them are specified in that document (§1–§4, §12), and
+> statements below that call them unknown are superseded. `RP-Version: 1.0` appears here too: it is a
+> console-family value, not a scheme marker (see `README.md`).
 
 Status: draft, based on five capture sessions now (see provenance log) - a reconnect, a genuinely
 first-time connection from a client device that had never spoken to this console before ("online

@@ -23,6 +23,7 @@ not by topic, so several cover the same subject from different angles. Pick by t
 | **What happened, and when?** | [`journal.md`](journal.md) |
 | **What are the sources behind each part of the spec?** | [`protocol-research-log.md`](protocol-research-log.md) |
 | How does the PS5 Remote Play protocol actually work? | [`protocol/`](protocol/) |
+| How does the v2 control plane (the PS5's GCM scheme) work, and how far is it implemented? | [`protocol/ps5-v2-control-plane.md`](protocol/ps5-v2-control-plane.md) |
 | In what order would I build a client from the spec? | [`protocol/IMPLEMENTATION.md`](protocol/IMPLEMENTATION.md) |
 | How would a console port pair through a desktop? (design, for review) | [`port-pairing.md`](port-pairing.md) |
 | What is the portable C core the console ports share? | [`libripcord/README.md`](../libripcord/README.md) |
