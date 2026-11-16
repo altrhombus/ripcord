@@ -24,6 +24,15 @@ public class TakionSessionNegotiatorTests
     private static readonly byte[] HandshakeKey = Convert.FromHexString("7a8b9c0d1e2f3344556677889900aabb");
 
     [Fact]
+    public void OfferedVersions_V1StopsAt17_V2ExtendsItTo20()
+    {
+        Assert.Equal([9u, 10, 11, 13, 14, 15, 16, 17], TakionSessionNegotiator.V1OfferedVersions);
+        Assert.Equal(
+            [.. TakionSessionNegotiator.V1OfferedVersions, 18u, 19, (uint)HalyardStreamKeySchedule.V2Version],
+            TakionSessionNegotiator.V2OfferedVersions);
+    }
+
+    [Fact]
     public async Task Negotiate_EstablishesStreamKeysThatDecryptServerPacket()
     {
         using var serverSocket = new UdpChannel();

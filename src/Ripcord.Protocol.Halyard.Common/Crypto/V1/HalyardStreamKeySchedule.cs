@@ -41,6 +41,13 @@ public static class HalyardStreamKeySchedule
     public const int HighestValidatedVersion = 0x11;
 
     /// <summary>
+    /// The version the console acks on the v2 path, outside the range above. Its curve is P-521 by the console's
+    /// 133-byte stream public key in the vendor client's own session (rp_sethk9 frame 10739); no session of ours
+    /// has used it yet.
+    /// </summary>
+    public const int V2Version = 0x14;
+
+    /// <summary>
     /// Map a negotiated protocol version to its ECDH curve.
     ///
     /// <para><b>Throws for any version outside 0x0d–0x11, and that is the point.</b> This used to answer
@@ -62,12 +69,12 @@ public static class HalyardStreamKeySchedule
     /// </summary>
     /// <exception cref="NotSupportedException">The version's curve has never been observed.</exception>
     public static HalyardStreamCurve CurveForVersion(int protocolVersion)
-        => protocolVersion is >= LowestValidatedVersion and <= HighestValidatedVersion
+        => protocolVersion is (>= LowestValidatedVersion and <= HighestValidatedVersion) or V2Version
             ? HalyardStreamCurve.NistP521
             : throw new NotSupportedException(
                 $"No ECDH curve is known for protocol version {protocolVersion} (0x{protocolVersion:x2}). "
-                + $"Only versions 0x{LowestValidatedVersion:x2}-0x{HighestValidatedVersion:x2} have been "
-                + "observed, and those use P-521. P-256 was previously returned here for everything else, but "
+                + $"Only versions 0x{LowestValidatedVersion:x2}-0x{HighestValidatedVersion:x2} and "
+                + $"0x{V2Version:x2} have been observed, and those use P-521. P-256 was previously returned here for everything else, but "
                 + "that was a guess the spec has since retracted, and an unvalidated curve fails as an opaque "
                 + "session rejection rather than as an error. If you have a capture of this version, widen the "
                 + "validated range; do not reinstate a default.");

@@ -231,9 +231,9 @@ purchased signing certificate.
       SESSION_REPLY: the console's stream-pubkey signature didn't verify. The stream-key model isn't the problem.
       The vendor client's own sessions sign with `HMAC(handshakeKey, pubkey)` over the handshakeKey the client
       sent (2026-11-13). The difference is the SESSION_REQUEST: the vendor offers versions up to 20, the console
-      acks 20, and the request carries field 7. We offer up to 17 and never set field 7. Next: offer 20 on the v2
-      path only (`TakionSessionNegotiator`), accept its curve (the 133-byte key points to P-521, `[X]`), set
-      field 7, and capture our own session before calling it done.
+      acks 20, and the request carries field 7. The v2 path now offers the same list and sends field 7 (2026-11-16),
+      and 20 is taken as P-521 from the console's 133-byte key. Next: capture our own v2 session with
+      `RIPCORD_V2_HANDSHAKE` set and see whether the console acks 20 and the signature verifies.
 - [ ] **Do the senkusha probes succeed, or fall back silently?** `MtuConfirmed` answers the MTU half in two
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
