@@ -140,7 +140,11 @@ fn history_windows_hold_the_same_polls_within_one_hundred_bytes() {
                     let payload = &packet[input::HEADER_LENGTH..];
                     assert!(payload.len() <= input::HISTORY_LIMIT && c_payload.len() <= input::HISTORY_LIMIT);
                     if c_payload.is_empty() {
-                        assert_eq!(payload, &last_payload[..], "a packet C did not owe is the unchanged repeat");
+                        assert_eq!(
+                            payload,
+                            &last_payload[..],
+                            "a packet C did not owe is the unchanged repeat"
+                        );
                     } else {
                         let engine = events(payload);
                         // This poll's events lead; what follows is the front of the previous window.
