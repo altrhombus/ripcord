@@ -143,7 +143,13 @@ impl PacketCrypto {
 
     /// Writes the tag into `packet[tag_offset..tag_offset + 4]` (sender side). `false` on the same
     /// conditions as [`compute_tag`](Self::compute_tag), or if the tag does not fit.
-    pub fn seal(&mut self, keystream_offset: u64, packet: &mut [u8], tag_offset: usize, zero_keystream_offset: bool) -> bool {
+    pub fn seal(
+        &mut self,
+        keystream_offset: u64,
+        packet: &mut [u8],
+        tag_offset: usize,
+        zero_keystream_offset: bool,
+    ) -> bool {
         if tag_offset.checked_add(TAG_LENGTH).is_none_or(|end| end > packet.len()) {
             return false;
         }
@@ -158,11 +164,18 @@ impl PacketCrypto {
 
     /// Whether the packet's on-wire tag is correct (receiver side). A packet too short to carry a tag
     /// fails; "cannot be authenticated" is never "fine".
-    pub fn verify(&mut self, keystream_offset: u64, packet: &[u8], tag_offset: usize, zero_keystream_offset: bool) -> bool {
+    pub fn verify(
+        &mut self,
+        keystream_offset: u64,
+        packet: &[u8],
+        tag_offset: usize,
+        zero_keystream_offset: bool,
+    ) -> bool {
         let Some(on_wire) = packet.get(tag_offset..tag_offset.saturating_add(TAG_LENGTH)) else {
             return false;
         };
-        let Some(expected) = self.compute_tag(keystream_offset, packet, tag_offset, zero_keystream_offset) else {
+        let Some(expected) = self.compute_tag(keystream_offset, packet, tag_offset, zero_keystream_offset)
+        else {
             return false;
         };
         expected.iter().zip(on_wire).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
@@ -192,7 +205,10 @@ mod tests {
         let mut packet: Vec<u8> = (0..64u8).collect();
         assert!(c.seal(90_001, &mut packet, AV_TAG_OFFSET, false));
         assert!(c.verify(90_001, &packet, AV_TAG_OFFSET, false));
-        assert!(!c.verify(90_017, &packet, AV_TAG_OFFSET, false), "a different keystream offset must not verify");
+        assert!(
+            !c.verify(90_017, &packet, AV_TAG_OFFSET, false),
+            "a different keystream offset must not verify"
+        );
         packet[40] ^= 1;
         assert!(!c.verify(90_001, &packet, AV_TAG_OFFSET, false));
     }

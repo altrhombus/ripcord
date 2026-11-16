@@ -49,7 +49,8 @@ impl PacketOpener for PacketCrypto {
         // A/V: tag at offset 10, keystream offset not zeroed (confirmed byte for byte against a live
         // capture; see HalyardPacketCrypto.ComputeTag).
         let keystream_offset = u64::from(keystream_offset);
-        if payload_offset > packet.len() || !self.verify(keystream_offset, packet, header::TAG_OFFSET, false) {
+        if payload_offset > packet.len() || !self.verify(keystream_offset, packet, header::TAG_OFFSET, false)
+        {
             return false;
         }
         self.crypt_payload(keystream_offset, &mut packet[payload_offset..]);

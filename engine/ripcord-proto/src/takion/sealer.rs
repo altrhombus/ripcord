@@ -41,7 +41,8 @@ impl Sealer {
     fn reserve(&mut self, packet: &mut [u8], keystream_offset_at: usize) -> u64 {
         let keystream_offset = self.keystream_offset;
         self.keystream_offset += packet.len().next_multiple_of(16) as u64;
-        packet[keystream_offset_at..keystream_offset_at + 4].copy_from_slice(&(keystream_offset as u32).to_be_bytes());
+        packet[keystream_offset_at..keystream_offset_at + 4]
+            .copy_from_slice(&(keystream_offset as u32).to_be_bytes());
         keystream_offset
     }
 
