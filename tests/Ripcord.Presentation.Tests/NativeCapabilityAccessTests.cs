@@ -60,6 +60,79 @@ public class NativeCapabilityAccessTests
             + string.Join(", ", offenders));
     }
 
+    /// <summary>
+    /// Every native runtime class, and the one managed file allowed to name it. Each owner is where the class's
+    /// thread is decided, and the reason says which thread that is.
+    ///
+    /// <para>
+    /// The capability query above is the case that crashed, but it is one of four native classes, and the ROADMAP
+    /// follow-up to that crash asked for the rest to be held to the same rule. Which call exactly cannot run on the
+    /// UI thread is still <c>[X]</c> (<c>MFStartup</c> from an STA is the suspect). This guard does not need the
+    /// answer: it keeps each class behind one owner whose threading is stated, so the answer, when it comes, has
+    /// one place to be applied.
+    /// </para>
+    /// </summary>
+    private static readonly Dictionary<string, (string File, string Thread)> NativeOwners = new()
+    {
+        ["VideoCapabilities"] = ("NativeVideoCapabilitiesProbe.cs", "every call through Task.Run"),
+        ["VideoRenderer"] = ("D3D12VideoDecodePipeline.cs", "Media Foundation starts on the decode worker"),
+        ["AudioRenderer"] = ("AudioOutput.cs", "created and fed on the audio thread"),
+        ["GamepadReader"] = ("GameInputControllerSource.cs", "polled on a timer thread"),
+    };
+
+    [Fact]
+    public void EveryNativeClass_HasAnOwner()
+    {
+        // Read from the IDL rather than listed by hand, so a fifth native class fails here until someone decides
+        // which file owns it and on which thread.
+        var runtimeClass = new Regex(@"^\s*runtimeclass\s+(\w+)", RegexOptions.Multiline);
+        string[] declared = [.. Directory
+            .EnumerateFiles(Path.Combine(RepositoryRoot(), "src"), "*.idl", SearchOption.AllDirectories)
+            .Where(file => !IsGenerated(file))
+            .SelectMany(file => runtimeClass.Matches(File.ReadAllText(file)).Select(m => m.Groups[1].Value))
+            .Distinct()
+            .Order()];
+
+        Assert.NotEmpty(declared);
+        Assert.Equal(NativeOwners.Keys.Order(), declared);
+    }
+
+    [Fact]
+    public void EachNativeClass_IsNamedOnlyByItsOwner()
+    {
+        string root = RepositoryRoot();
+        List<string> offenders = [];
+
+        foreach (string tree in new[] { "src", "tools" })
+        {
+            foreach (string file in Directory.EnumerateFiles(Path.Combine(root, tree), "*.cs", SearchOption.AllDirectories))
+            {
+                if (IsGenerated(file))
+                {
+                    continue;
+                }
+
+                // Code only: a doc comment explaining why a class is kept behind its owner is not a use of it.
+                string code = string.Join('\n', File.ReadAllLines(file).Where(line => !line.TrimStart().StartsWith("//")));
+                string name = Path.GetFileName(file);
+
+                foreach ((string type, (string owner, string _)) in NativeOwners)
+                {
+                    if (name != owner && Regex.IsMatch(code, $@"\b{type}\b(?!\w)(\s*[.(]|\s+\w)"))
+                    {
+                        offenders.Add($"{Path.GetRelativePath(root, file)} names {type}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            "Native interop classes are reached through one owner each, which decides the thread they run on. "
+            + "Go through the owner, or add the class to NativeOwners with the thread it runs on. "
+            + string.Join("; ", offenders));
+    }
+
     private static bool IsGenerated(string path)
         => path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
            || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
