@@ -6,7 +6,7 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// Controller-input serialization: the writer emits feedback state (type 6) and history (type 1) packets.
+/// Controller-input serialization: the writer emits input state (type 6) and history (type 1) packets.
 /// These assert the byte layout against spec §6.3 — re-derived from our own instrumented capture
 /// (<c>cap48</c>) on 2026-07-29 — covering the header, the 0x1c state payload, button-history events, and
 /// re-send behaviour, so a wire-format regression is caught off-device.
@@ -32,7 +32,7 @@ public class HalyardInputPacketWriterTests
         var packets = writer.BuildPackets(Frame());
 
         Assert.Single(packets);
-        Assert.Equal(0x06, packets[0][0]); // feedback state
+        Assert.Equal(0x06, packets[0][0]); // input state
         Assert.Equal(HeaderLength + 0x1c, packets[0].Length);
     }
 

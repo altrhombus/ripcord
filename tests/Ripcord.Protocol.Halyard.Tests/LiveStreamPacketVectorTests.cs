@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 using Xunit;
 
@@ -6,10 +7,10 @@ namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
 /// Pins the <b>control-plane GMAC AAD rule</b> (spec §5.5b) against real captured packets: control zeroes the
-/// 4-byte key_pos field <i>in addition to</i> the 4-byte tag, unlike A/V and feedback which zero only the tag.
+/// 4-byte keystream_offset field <i>in addition to</i> the 4-byte tag, unlike A/V and input which zero only the tag.
 ///
 /// <para>Settled 2026-08-02 by recomputing the MAC over <c>cap3</c> with that session's dumped stream keys —
-/// 727/727 authenticated type-0 packets reproduce with tag+key_pos zeroed, and the tag-only rule matches none
+/// 727/727 authenticated type-0 packets reproduce with tag+keystream_offset zeroed, and the tag-only rule matches none
 /// of the discriminating ones. That result previously lived only in prose; this is what makes it executable.
 /// Complements <see cref="LiveStreamKeyVectorTests"/>, which pins the key <i>schedule</i> that produces the
 /// keys used here — together they cover the chain from ECDH shared secret through to an authenticated packet.
@@ -23,7 +24,7 @@ public class LiveStreamPacketVectorTests
 {
     private static readonly string FixturePath = LocateFixture();
 
-    /// <summary>Every captured control packet's on-wire tag reproduces under the tag+key_pos AAD rule.</summary>
+    /// <summary>Every captured control packet's on-wire tag reproduces under the tag+keystream_offset AAD rule.</summary>
     [SkippableFact]
     public void ControlGmac_ReproducesCapturedTags()
     {
@@ -36,7 +37,7 @@ public class LiveStreamPacketVectorTests
             foreach (var v in dir.Packets!)
             {
                 byte[] packet = Hex.Bytes(v.Packet!);
-                byte[] tag = crypto.ComputeTag(v.KeyPos, packet, fx.ControlTagOffset, zeroKeyPos: true);
+                byte[] tag = crypto.ComputeTag(v.KeystreamOffset, packet, fx.ControlTagOffset, zeroKeystreamOffset: true);
                 Assert.Equal(v.Tag, Hex.String(tag));
                 checkedPackets++;
             }
@@ -48,8 +49,8 @@ public class LiveStreamPacketVectorTests
     /// <summary>
     /// The negative control, and the assertion that actually pins the <i>rule</i> rather than merely "some AAD
     /// reproduces": zeroing only the tag — the A/V rule — must NOT reproduce these tags. Without this, flipping
-    /// <c>zeroKeyPos</c> to false would still be caught only by chance. The fixture generator deliberately
-    /// excludes <c>key_pos == 0</c> packets, where the two rules are byte-identical and discriminate nothing.
+    /// <c>zeroKeystreamOffset</c> to false would still be caught only by chance. The fixture generator deliberately
+    /// excludes <c>keystream_offset == 0</c> packets, where the two rules are byte-identical and discriminate nothing.
     /// </summary>
     [SkippableFact]
     public void ControlGmac_TagOnlyAad_DoesNotReproduceTags()
@@ -62,9 +63,9 @@ public class LiveStreamPacketVectorTests
             var crypto = new HalyardPacketCrypto(Hex.Bytes(dir.AesKey!), Hex.Bytes(dir.BaseIv!));
             foreach (var v in dir.Packets!)
             {
-                Assert.NotEqual(0u, v.KeyPos); // a zero key_pos would make the two rules identical
+                Assert.NotEqual(0u, v.KeystreamOffset); // a zero keystream_offset would make the two rules identical
                 byte[] packet = Hex.Bytes(v.Packet!);
-                byte[] tagOnly = crypto.ComputeTag(v.KeyPos, packet, fx.ControlTagOffset, zeroKeyPos: false);
+                byte[] tagOnly = crypto.ComputeTag(v.KeystreamOffset, packet, fx.ControlTagOffset, zeroKeystreamOffset: false);
                 Assert.NotEqual(v.Tag, Hex.String(tagOnly));
                 discriminating++;
             }
@@ -74,19 +75,19 @@ public class LiveStreamPacketVectorTests
     }
 
     /// <summary>
-    /// Congestion (base type 0x05, tag @7, key_pos @0xb) follows the SAME rule as control — measured, not
-    /// assumed by analogy. Vectors come from a different session than the control ones above (congestion
-    /// packets only exist in a capture that reached streaming), hence their own keys in the fixture.
+    /// Loss reports (base type 0x05, tag @7, keystream_offset @0xb) follows the SAME rule as control — measured, not
+    /// assumed by analogy. Vectors come from a different session than the control ones above (loss
+    /// reports only exist in a capture that reached streaming), hence their own keys in the fixture.
     ///
-    /// <para>Both directions asserted for the same reason as control: reproducing under tag+key_pos proves
+    /// <para>Both directions asserted for the same reason as control: reproducing under tag+keystream_offset proves
     /// little on its own unless the tag-only rule is also shown to fail.</para>
     /// </summary>
     [SkippableFact]
-    public void CongestionGmac_ReproducesCapturedTags_AndTagOnlyDoesNot()
+    public void LossReportGmac_ReproducesCapturedTags_AndTagOnlyDoesNot()
     {
         var fx = LoadOrSkip();
-        Skip.If(fx.Congestion is null, "Fixture has no congestion section (regenerate to run).");
-        var c = fx.Congestion!;
+        Skip.If(fx.LossReport is null, "Fixture has no loss-report section (regenerate to run).");
+        var c = fx.LossReport!;
         int checkedPackets = 0;
 
         foreach (var dir in c.Directions!.Values)
@@ -94,19 +95,19 @@ public class LiveStreamPacketVectorTests
             var crypto = new HalyardPacketCrypto(Hex.Bytes(dir.AesKey!), Hex.Bytes(dir.BaseIv!));
             foreach (var v in dir.Packets!)
             {
-                Assert.NotEqual(0u, v.KeyPos); // else the two rules coincide and nothing is proven
+                Assert.NotEqual(0u, v.KeystreamOffset); // else the two rules coincide and nothing is proven
                 byte[] packet = Hex.Bytes(v.Packet!);
 
-                byte[] both = crypto.ComputeTag(v.KeyPos, packet, c.TagOffset, zeroKeyPos: true);
+                byte[] both = crypto.ComputeTag(v.KeystreamOffset, packet, c.TagOffset, zeroKeystreamOffset: true);
                 Assert.Equal(v.Tag, Hex.String(both));
 
-                byte[] tagOnly = crypto.ComputeTag(v.KeyPos, packet, c.TagOffset, zeroKeyPos: false);
+                byte[] tagOnly = crypto.ComputeTag(v.KeystreamOffset, packet, c.TagOffset, zeroKeystreamOffset: false);
                 Assert.NotEqual(v.Tag, Hex.String(tagOnly));
                 checkedPackets++;
             }
         }
 
-        Assert.True(checkedPackets > 0, "Fixture congestion section contained no packets.");
+        Assert.True(checkedPackets > 0, "Fixture loss-report section contained no packets.");
     }
 
     private static Fixture LoadOrSkip()
@@ -141,9 +142,11 @@ public class LiveStreamPacketVectorTests
     private sealed class Fixture
     {
         public int ControlTagOffset { get; set; } = 5;
-        public int ControlKeyPosOffset { get; set; } = 9;
+        [JsonPropertyName("controlKeyPosOffset")] // the private fixture's key
+        public int ControlKeystreamOffsetAt { get; set; } = 9;
         public Dictionary<string, DirectionVectors>? Directions { get; set; }
-        public CongestionVectors? Congestion { get; set; }
+        [JsonPropertyName("congestion")] // the private fixture's key
+        public LossReportVectors? LossReport { get; set; }
 
         public IEnumerable<(string Name, DirectionVectors Vectors)> EnumerateDirections()
         {
@@ -155,10 +158,11 @@ public class LiveStreamPacketVectorTests
         }
     }
 
-    private sealed class CongestionVectors
+    private sealed class LossReportVectors
     {
         public int TagOffset { get; set; } = 7;
-        public int KeyPosOffset { get; set; } = 0xB;
+        [JsonPropertyName("keyPosOffset")] // the private fixture's key
+        public int KeystreamOffsetAt { get; set; } = 0xB;
         public Dictionary<string, DirectionVectors>? Directions { get; set; }
     }
 
@@ -172,7 +176,8 @@ public class LiveStreamPacketVectorTests
     private sealed class PacketVector
     {
         public string? Packet { get; set; }
-        public ulong KeyPos { get; set; }
+        [JsonPropertyName("keyPos")] // the private fixture's key
+        public ulong KeystreamOffset { get; set; }
         public string? Tag { get; set; }
     }
 }

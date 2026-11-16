@@ -67,13 +67,13 @@
 /*
  * The crypto seam (same shape as IHalyardSessionCrypto's seam-and-stub pattern - see CLAUDE.md): verify +
  * decrypt one media packet in place. Must verify the packet's GMAC tag (AV: offset
- * STREAM_HEADER_TAG_OFFSET, key position NOT zeroed - confirmed byte-for-byte against a live console
+ * STREAM_HEADER_TAG_OFFSET, keystream offset NOT zeroed - confirmed byte-for-byte against a live console
  * capture, see HalyardPacketCrypto.ComputeTag) and, only on success, CTR-decrypt
  * packet[payload_offset..packet_length). Returns 1 on success (packet is now plaintext from
  * payload_offset on), 0 to drop it.
  */
 typedef int (*stream_demux_open_packet_fn)(void *crypto_ctx, uint8_t *packet, size_t packet_length,
-    uint32_t key_position, int payload_offset);
+    uint32_t keystream_offset, int payload_offset);
 
 typedef struct {
     stream_demux_open_packet_fn open_packet;
@@ -166,7 +166,7 @@ void stream_demux_set_video_header(stream_demux *demux, const uint8_t *header, s
 void stream_demux_ingest(stream_demux *demux, const uint8_t *packet, size_t packet_length);
 
 /* Reads and resets the accumulated wire unit stats (received, lost) since the last call - the input to the
- * periodic congestion-feedback packet that lets the console's rate controller adapt. Not thread-safe (no
+ * periodic loss report that lets the console's rate controller adapt. Not thread-safe (no
  * Interlocked here, unlike the .NET reference): callers on this single-threaded target must call this from
  * the same thread that calls stream_demux_ingest, or add their own locking. */
 void stream_demux_take_packet_stats(stream_demux *demux, long *out_received, long *out_lost);

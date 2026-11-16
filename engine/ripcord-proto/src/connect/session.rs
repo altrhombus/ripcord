@@ -65,8 +65,8 @@ const ARM_SETTLE_US: u64 = 200_000;
 /// PROBE_REPORT.
 const SESSION_READY_WINDOW_US: u64 = 8_000_000;
 const STREAM_READY_WINDOW_US: u64 = 10_000_000;
-/// The stream channel's cadences; the congestion window is also the stats window.
-const CONGESTION_US: u64 = 200_000;
+/// The stream channel's cadences; the report window is also the stats window.
+const LOSS_REPORT_US: u64 = 200_000;
 const INPUT_POLL_US: u64 = 4_000;
 /// One IDR repairs the whole chain; asking while the answer is in flight wastes upstream.
 const IDR_MIN_US: u64 = 200_000;
@@ -152,7 +152,7 @@ struct Opened {
 struct Streaming {
     writer: input::Writer,
     next_input: u64,
-    next_congestion: u64,
+    next_loss_report: u64,
     window_start: u64,
     window_bytes: u64,
     last_activity: u64,
@@ -387,7 +387,7 @@ impl Session {
         }
         at(self.stun.as_ref().and_then(|(_, g)| g.next_timeout()));
         if let Some(l) = &self.live {
-            at(Some(l.next_congestion));
+            at(Some(l.next_loss_report));
             if self.controller.is_some() {
                 at(Some(l.next_input));
             }
@@ -2186,7 +2186,7 @@ impl Session {
         self.live = Some(Streaming {
             writer: input::Writer::new(),
             next_input: now,
-            next_congestion: now + CONGESTION_US,
+            next_loss_report: now + LOSS_REPORT_US,
             window_start: now,
             window_bytes: 0,
             last_activity: now,
@@ -2242,16 +2242,16 @@ impl Session {
             }
         }
 
-        if now >= live.next_congestion {
-            live.next_congestion = now + CONGESTION_US;
+        if now >= live.next_loss_report {
+            live.next_loss_report = now + LOSS_REPORT_US;
             let (got, missed) = self.demux.as_mut().map_or((0, 0), |d| d.take_packet_stats());
             live.packets_received += got;
             live.packets_lost += missed;
-            let mut feedback = sealer::congestion_packet(got, missed);
+            let mut report = sealer::loss_report(got, missed);
             if let Some(sealer) = stream.sealer_mut() {
-                sealer.seal_congestion(&mut feedback);
-                self.io.push_back(Io::UdpSend { socket, to, data: feedback.to_vec() });
-                self.outcome.congestion_sent += 1;
+                sealer.seal_loss_report(&mut report);
+                self.io.push_back(Io::UdpSend { socket, to, data: report.to_vec() });
+                self.outcome.loss_reports_sent += 1;
             }
             let rtt_ms = stream.round_trip().0 / 1000.0;
             let observed = got + missed;

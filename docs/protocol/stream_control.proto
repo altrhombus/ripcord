@@ -284,7 +284,7 @@ message StreamInfoPayload {
   optional uint32 startTimeout = 3;
   optional uint32 afkTimeout = 4;
   optional uint32 afkTimeoutDisconnect = 5;
-  optional uint32 congestionControlInterval = 6;
+  optional uint32 lossReportInterval = 6;
   repeated AudioChannelPayload audioChannel = 7;
 }
 
@@ -343,7 +343,7 @@ message ControllerConnectionPayload {
 message ClientInfoPayload {
   required string sessionKey = 1;
   optional uint32 gcmTag = 2;
-  optional uint32 keyPos = 3;
+  optional uint32 keystreamOffset = 3;
 }
 
 message VideoCapturePayload {
@@ -365,7 +365,7 @@ message ServerSettingsPayload {
 message TracePayload {
   required uint32 seqNo = 1;
   required uint32 gcmTag = 2;
-  required uint32 keyPos = 3;
+  required uint32 keystreamOffset = 3;
 }
 
 message PeriodicTimestampPayload {

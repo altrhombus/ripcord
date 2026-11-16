@@ -9,10 +9,10 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// off 0      u8   base type (low nibble selects the class; 0 = control)
 /// off 1..4   u32  verification tag (the peer's connection tag; 0 in the initial INIT)
 /// off 5..8   u32  4-byte GMAC tag  (0 on the unencrypted handshake packets)
-/// off 9..12  u32  key position     (0 on the unencrypted handshake packets)
+/// off 9..12  u32  keystream offset     (0 on the unencrypted handshake packets)
 /// off 13..   ...  SCTP chunk(s)
 /// </code>
-/// All multi-byte integers are big-endian. For control packets the GMAC tag and key position live at
+/// All multi-byte integers are big-endian. For control packets the GMAC tag and keystream offset live at
 /// offsets 5 and 9 respectively - the same class-specific offsets the per-packet crypto uses (§3).
 /// </summary>
 public readonly struct TakionMessageHeader
@@ -32,18 +32,18 @@ public readonly struct TakionMessageHeader
     /// </summary>
     public const byte BaseTypeSenkushaEcho = 0x03;
 
-    public TakionMessageHeader(byte baseType, uint verificationTag, uint gmacTag = 0, uint keyPosition = 0)
+    public TakionMessageHeader(byte baseType, uint verificationTag, uint gmacTag = 0, uint keystreamOffset = 0)
     {
         BaseType = baseType;
         VerificationTag = verificationTag;
         GmacTag = gmacTag;
-        KeyPosition = keyPosition;
+        KeystreamOffset = keystreamOffset;
     }
 
     public byte BaseType { get; }
     public uint VerificationTag { get; }
     public uint GmacTag { get; }
-    public uint KeyPosition { get; }
+    public uint KeystreamOffset { get; }
 
     /// <summary>The offset of the SCTP chunk region (also the byte offset the control-class GMAC tag lives at is 5).</summary>
     public const int ChunkOffset = Length;
@@ -56,7 +56,7 @@ public readonly struct TakionMessageHeader
         destination[0] = BaseType;
         BinaryPrimitives.WriteUInt32BigEndian(destination[1..], VerificationTag);
         BinaryPrimitives.WriteUInt32BigEndian(destination[5..], GmacTag);
-        BinaryPrimitives.WriteUInt32BigEndian(destination[9..], KeyPosition);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[9..], KeystreamOffset);
     }
 
     public static bool TryParse(ReadOnlySpan<byte> packet, out TakionMessageHeader header)

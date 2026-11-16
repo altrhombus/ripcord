@@ -144,7 +144,7 @@ pub struct ScriptedLanConsole {
     pub senkusha_messages: u32,
     pub stream_messages: Vec<u32>,
     pub input_packets: u32,
-    pub congestion_packets: u32,
+    pub loss_reports: u32,
     pub stream_info_acks: u32,
     pub heartbeats: u32,
     pub idr_requests: u32,
@@ -185,7 +185,7 @@ impl ScriptedLanConsole {
             senkusha_messages: 0,
             stream_messages: Vec::new(),
             input_packets: 0,
-            congestion_packets: 0,
+            loss_reports: 0,
             stream_info_acks: 0,
             heartbeats: 0,
             idr_requests: 0,
@@ -422,7 +422,7 @@ impl ScriptedLanConsole {
             9296 => {
                 if !crate::takion::connection::is_control(data) {
                     match data.first().map(|b| b & 0x0f) {
-                        Some(5) => self.congestion_packets += 1,
+                        Some(5) => self.loss_reports += 1,
                         Some(1) | Some(6) => self.input_packets += 1,
                         _ => {}
                     }
@@ -498,14 +498,14 @@ impl ScriptedLanConsole {
 
     /// One sealed single-unit IDR frame on the stream port. A frame is delivered when the next begins.
     pub fn video_keyframe(&mut self) -> Option<Vec<u8>> {
-        let (crypto, key_pos) = self.av.as_mut()?;
+        let (crypto, keystream_offset) = self.av.as_mut()?;
         let h = StreamHeader {
             packet_type: header::TYPE_VIDEO,
             packet_index: self.frame,
             frame_index: self.frame,
             unit_index: 0,
             total_units: 1,
-            key_position: *key_pos,
+            keystream_offset: *keystream_offset,
             ..Default::default()
         };
         let mut p = h.build()?.to_vec();
@@ -513,9 +513,9 @@ impl ScriptedLanConsole {
         p.extend_from_slice(&[0, 0]);
         p.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x65, 0xde, 0xad]);
         let offset = h.payload_offset();
-        crypto.crypt_payload(u64::from(*key_pos), &mut p[offset..]);
-        crypto.seal(u64::from(*key_pos), &mut p, header::TAG_OFFSET, false);
-        *key_pos += p.len().next_multiple_of(16) as u32;
+        crypto.crypt_payload(u64::from(*keystream_offset), &mut p[offset..]);
+        crypto.seal(u64::from(*keystream_offset), &mut p, header::TAG_OFFSET, false);
+        *keystream_offset += p.len().next_multiple_of(16) as u32;
         self.frame = self.frame.wrapping_add(1);
         Some(p)
     }

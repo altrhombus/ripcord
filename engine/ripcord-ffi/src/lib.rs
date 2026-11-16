@@ -88,7 +88,7 @@ pub struct RipcordStreamHeader {
     pub total_units: u16,
     pub parity_units: u16,
     pub codec: u8,
-    pub key_position: u32,
+    pub keystream_offset: u32,
 }
 
 impl From<&StreamHeader> for RipcordStreamHeader {
@@ -102,7 +102,7 @@ impl From<&StreamHeader> for RipcordStreamHeader {
             total_units: h.total_units,
             parity_units: h.parity_units,
             codec: h.codec,
-            key_position: h.key_position,
+            keystream_offset: h.keystream_offset,
         }
     }
 }
@@ -386,8 +386,8 @@ pub unsafe extern "C" fn ripcord_packet_crypto_free(ctx: *mut RipcordPacketCrypt
     }
 }
 
-/// Verifies the packet's on-wire 4-byte tag at `tag_offset`. `zero_key_pos` selects the control and
-/// congestion AAD rule, which also zeroes the key position after the tag; A/V and feedback leave it.
+/// Verifies the packet's on-wire 4-byte tag at `tag_offset`. `zero_keystream_offset` selects the control and
+/// loss-report AAD rule, which also zeroes the keystream offset after the tag; A/V and input leave it.
 /// [`RipcordStatus::Ok`] if the tag holds, [`RipcordStatus::Rejected`] if not.
 ///
 /// # Safety
@@ -395,18 +395,18 @@ pub unsafe extern "C" fn ripcord_packet_crypto_free(ctx: *mut RipcordPacketCrypt
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ripcord_packet_crypto_verify(
     ctx: *mut RipcordPacketCrypto,
-    key_pos: u64,
+    keystream_offset: u64,
     packet: *const u8,
     length: usize,
     tag_offset: usize,
-    zero_key_pos: bool,
+    zero_keystream_offset: bool,
 ) -> RipcordStatus {
     with_handle(ctx, |c| {
         // SAFETY: forwarded from this function's contract.
         let Some(packet) = (unsafe { bytes(packet, length) }) else {
             return RipcordStatus::InvalidArgument;
         };
-        if c.inner.verify(key_pos, packet, tag_offset, zero_key_pos) {
+        if c.inner.verify(keystream_offset, packet, tag_offset, zero_keystream_offset) {
             RipcordStatus::Ok
         } else {
             RipcordStatus::Rejected
@@ -421,18 +421,18 @@ pub unsafe extern "C" fn ripcord_packet_crypto_verify(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ripcord_packet_crypto_seal(
     ctx: *mut RipcordPacketCrypto,
-    key_pos: u64,
+    keystream_offset: u64,
     packet: *mut u8,
     length: usize,
     tag_offset: usize,
-    zero_key_pos: bool,
+    zero_keystream_offset: bool,
 ) -> RipcordStatus {
     with_handle(ctx, |c| {
         // SAFETY: forwarded from this function's contract.
         let Some(packet) = (unsafe { bytes_mut(packet, length) }) else {
             return RipcordStatus::InvalidArgument;
         };
-        if c.inner.seal(key_pos, packet, tag_offset, zero_key_pos) {
+        if c.inner.seal(keystream_offset, packet, tag_offset, zero_keystream_offset) {
             RipcordStatus::Ok
         } else {
             RipcordStatus::Rejected
@@ -447,7 +447,7 @@ pub unsafe extern "C" fn ripcord_packet_crypto_seal(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ripcord_packet_crypto_crypt_payload(
     ctx: *mut RipcordPacketCrypto,
-    key_pos: u64,
+    keystream_offset: u64,
     payload: *mut u8,
     length: usize,
 ) -> RipcordStatus {
@@ -456,7 +456,7 @@ pub unsafe extern "C" fn ripcord_packet_crypto_crypt_payload(
         let Some(payload) = (unsafe { bytes_mut(payload, length) }) else {
             return RipcordStatus::InvalidArgument;
         };
-        c.inner.crypt_payload(key_pos, payload);
+        c.inner.crypt_payload(keystream_offset, payload);
         RipcordStatus::Ok
     })
 }
@@ -573,7 +573,7 @@ pub unsafe extern "C" fn ripcord_stream_demux_ingest(
     })
 }
 
-/// Reads and resets the wire unit counts since the last call, for congestion feedback.
+/// Reads and resets the wire unit counts since the last call, for the loss report.
 ///
 /// # Safety
 /// `demux` as for [`ripcord_stream_demux_free`]; `received` and `lost` valid for writes.

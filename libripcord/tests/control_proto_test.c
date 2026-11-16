@@ -418,7 +418,7 @@ static void run_stream_info(void)
     r += put_varint_field(resolution + r, 2, 360);
     r += put_len_field(resolution + r, 3, kVideoHeader, sizeof(kVideoHeader));
 
-    /* StreamInfoPayload{resolution=<above>, audioHeader=..., congestionControlInterval=200} */
+    /* StreamInfoPayload{resolution=<above>, audioHeader=..., lossReportInterval=200} */
     p += put_len_field(payload + p, 1, resolution, r);
     p += put_len_field(payload + p, 2, kAudioHeader, sizeof(kAudioHeader));
     p += put_varint_field(payload + p, 6, 200); /* an unmodelled field, to prove it is skipped */

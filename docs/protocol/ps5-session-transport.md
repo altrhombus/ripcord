@@ -31,7 +31,7 @@ covered here — see the "Not yet captured" section.
 | Framing | Custom reliable-UDP-style layer, not a standard protocol Wireshark recognizes |
 
 A separate, much higher-volume UDP flow was observed on port 9297 immediately after this exchange
-completes — the multiplexed audio/video/input/feedback stream, now documented in `ps5-av-stream.md`.
+completes — the multiplexed audio/video/input stream, now documented in `ps5-av-stream.md`.
 For where both of these fit in the overall client→PSN→console picture (cloud auth, the persistent
 WebRTC signaling channel, and this direct LAN link), see `ps5-network-architecture.md`.
 

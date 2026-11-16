@@ -5,14 +5,14 @@ using Ripcord.Protocol.Halyard.Common.Crypto;
 namespace Ripcord.Protocol.Halyard.Common.Input;
 
 /// <summary>
-/// Serializes neutral <see cref="ControllerStateFrame"/> snapshots into up-direction controller-feedback
+/// Serializes neutral <see cref="ControllerStateFrame"/> snapshots into up-direction controller-input
 /// packets and seals them through the crypto seam. Two packet kinds (spec §6.3), both sharing a 12-byte
-/// header <c>[type][seq u16 BE][0][keyPos u32][gmac u32]</c> followed by an AES-CTR-encrypted payload:
+/// header <c>[type][seq u16 BE][0][keystreamOffset u32][gmac u32]</c> followed by an AES-CTR-encrypted payload:
 ///
 /// <list type="bullet">
-///   <item><description><b>Feedback state</b> (type 6): an analog snapshot every 15 ms — sticks, and (when
+///   <item><description><b>Input state</b> (type 6): an analog snapshot every 15 ms — sticks, and (when
 ///   present) motion/orientation. Fixed 0x1c-byte payload.</description></item>
-///   <item><description><b>Feedback history</b> (type 1): button/trigger <em>transitions</em> as a list of
+///   <item><description><b>Input events</b> (type 1): button/trigger <em>transitions</em> as a list of
 ///   short events, sent at once on a transition and repeated every 200 ms while unchanged. Recent events stay
 ///   in later history packets so a dropped packet doesn't strand a press/release (the channel is
 ///   unreliable).</description></item>
@@ -26,23 +26,23 @@ namespace Ripcord.Protocol.Halyard.Common.Input;
 /// unconfirmed — leave them marked, and derive them rather than filling them in from anywhere else.
 /// </para>
 ///
-/// All up-direction packets draw their key position from one shared counter inside the crypto seam
-/// (<see cref="IHalyardSessionCrypto.SealFeedbackPacket"/>), so feedback, control and congestion never
+/// All up-direction packets draw their keystream offset from one shared counter inside the crypto seam
+/// (<see cref="IHalyardSessionCrypto.SealInputPacket"/>), so input, control and loss reports never
 /// reuse a nonce.
 /// </summary>
 public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
 {
-    private const byte TypeFeedbackHistory = 0x01;
-    private const byte TypeFeedbackState = 0x06;
+    private const byte TypeInputEvents = 0x01;
+    private const byte TypeInputState = 0x06;
 
     /// <summary>
-    /// Header before the payload: [type][seq u16 BE][0][keyPos u32][gmac u32]. Verified by decrypting
-    /// cap48: the feedback key position reads as a u32 at offset 4 and the payload begins at offset 12.
+    /// Header before the payload: [type][seq u16 BE][0][keystreamOffset u32][gmac u32]. Verified by decrypting
+    /// cap48: the input keystream offset reads as a u32 at offset 4 and the payload begins at offset 12.
     /// </summary>
     private const int HeaderLength = 0xc;
 
     /// <summary>
-    /// The feedback-state payload is a fixed 0x1c bytes — 10,165 of 10,165 state packets in cap48 were
+    /// The input-state payload is a fixed 0x1c bytes — 10,165 of 10,165 state packets in cap48 were
     /// exactly this length.
     /// </summary>
     private const int StatePayloadLength = 0x1c;
@@ -102,7 +102,7 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     private readonly List<byte[]> _history = [];
 
     /// <summary>
-    /// Build the feedback packets for a controller frame: a state packet when the analog state changed or the
+    /// Build the input packets for a controller frame: a state packet when the analog state changed or the
     /// keepalive elapsed, and a history packet when any button/trigger transitioned. Returns 0–2 packets, each
     /// sealed and ready to send on the stream socket.
     /// </summary>
@@ -179,9 +179,9 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     private byte[] BuildStatePacket(in ControllerStateFrame frame, short leftX, short leftY, short rightX, short rightY)
     {
         byte[] packet = new byte[HeaderLength + StatePayloadLength];
-        packet[0] = TypeFeedbackState;
+        packet[0] = TypeInputState;
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(1), _stateSeq++);
-        // packet[3] = 0; keyPos@4 + gmac@8 written by the crypto seal.
+        // packet[3] = 0; keystreamOffset@4 + gmac@8 written by the crypto seal.
 
         Span<byte> p = packet.AsSpan(HeaderLength);
         p[0x0] = StateLeadByte;
@@ -199,7 +199,7 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
         // [0x19] and [0x1a] stay zero — constant in 100% of captured packets.
         p[0x1b] = StateTailByte;
 
-        _crypto.SealFeedbackPacket(packet, HeaderLength);
+        _crypto.SealInputPacket(packet, HeaderLength);
         return packet;
     }
 
@@ -221,7 +221,7 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
         _history.RemoveRange(kept, _history.Count - kept);
 
         byte[] packet = new byte[HeaderLength + payloadLength];
-        packet[0] = TypeFeedbackHistory;
+        packet[0] = TypeInputEvents;
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(1), _historySeq++);
 
         int offset = HeaderLength;
@@ -231,7 +231,7 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
             offset += e.Length;
         }
 
-        _crypto.SealFeedbackPacket(packet, HeaderLength);
+        _crypto.SealInputPacket(packet, HeaderLength);
         return packet;
     }
 
@@ -267,7 +267,7 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     private static byte[] BuildAnalogEvent(byte code, byte state) => [0x80, code, state];
 
     /// <summary>
-    /// Neutral button → feedback-history code, per the spec §6.3 table derived from cap48. Codes 0x80–0x8b
+    /// Neutral button → input-events code, per the spec §6.3 table derived from cap48. Codes 0x80–0x8b
     /// use the 3-byte form (trailing 0xff/0x00 state byte); 0x8c–0x90 use the 2-byte form with the press bit
     /// folded into the code. cap48 shows 0x80–0x90 and nothing else; the touchpad click's 0x91 comes from
     /// rp_input_labels.

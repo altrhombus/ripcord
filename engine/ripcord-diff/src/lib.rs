@@ -25,14 +25,14 @@ unsafe extern "C" {
     fn diff_pc_free(c: *mut c_void);
     fn diff_pc_compute_tag(
         c: *mut c_void,
-        key_pos: u64,
+        keystream_offset: u64,
         packet: *const u8,
         length: usize,
         tag_offset: c_int,
-        zero_key_pos: c_int,
+        zero_keystream_offset: c_int,
         out: *mut u8,
     ) -> c_int;
-    fn diff_pc_crypt(c: *mut c_void, key_pos: u64, payload: *mut u8, length: usize);
+    fn diff_pc_crypt(c: *mut c_void, keystream_offset: u64, payload: *mut u8, length: usize);
 
     fn diff_fec_encode(buf: *mut u8, coded_length: usize, k: c_int, m: c_int) -> c_int;
     fn diff_fec_recover_source(
@@ -225,10 +225,10 @@ impl CPacketCrypto {
 
     pub fn compute_tag(
         &mut self,
-        key_pos: u64,
+        keystream_offset: u64,
         packet: &[u8],
         tag_offset: usize,
-        zero_key_pos: bool,
+        zero_keystream_offset: bool,
     ) -> Option<[u8; 4]> {
         let _core = c_core();
         let mut out = [0u8; 4];
@@ -237,21 +237,21 @@ impl CPacketCrypto {
         let ok = unsafe {
             diff_pc_compute_tag(
                 self.0,
-                key_pos,
+                keystream_offset,
                 packet.as_ptr(),
                 packet.len(),
                 offset,
-                c_int::from(zero_key_pos),
+                c_int::from(zero_keystream_offset),
                 out.as_mut_ptr(),
             )
         };
         (ok == 1).then_some(out)
     }
 
-    pub fn crypt_payload(&mut self, key_pos: u64, payload: &mut [u8]) {
+    pub fn crypt_payload(&mut self, keystream_offset: u64, payload: &mut [u8]) {
         let _core = c_core();
         // SAFETY: a valid mutable slice.
-        unsafe { diff_pc_crypt(self.0, key_pos, payload.as_mut_ptr(), payload.len()) }
+        unsafe { diff_pc_crypt(self.0, keystream_offset, payload.as_mut_ptr(), payload.len()) }
     }
 }
 
@@ -621,7 +621,7 @@ pub fn c_control_version_ack(data: &[u8]) -> Option<u32> {
     (unsafe { diff_control_version_ack(data.as_ptr(), data.len(), &mut v) } == 1).then_some(v)
 }
 
-/// Seals `packets` in order through one C sealer: kind 0 control, 1 congestion, 2 input at `offset`.
+/// Seals `packets` in order through one C sealer: kind 0 control, 1 loss report, 2 input at `offset`.
 pub fn c_seal_sequence(key: &[u8; 16], iv: &[u8; 16], packets: &mut [(i32, Vec<u8>, usize)]) {
     let _core = c_core();
     let kinds: Vec<c_int> = packets.iter().map(|p| p.0).collect();

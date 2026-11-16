@@ -4,7 +4,7 @@
 //! `halyard_client_policy.c`. Where they differ this follows .NET, except where noted in `engine/README.md`.
 //!
 //! Both packets share a 12-byte header: type (6 state, 1 history), a per-type big-endian sequence, a
-//! zero, then the key position and tag the sealer writes ([`crate::takion::sealer::Sealer::seal_input`]).
+//! zero, then the keystream offset and tag the sealer writes ([`crate::takion::sealer::Sealer::seal_input`]).
 //!
 //! HISTORY is cumulative, newest event first, and keeps the newest events that fit in
 //! [`HISTORY_LIMIT`] bytes: the console tracks button state from it, so one lost packet would otherwise

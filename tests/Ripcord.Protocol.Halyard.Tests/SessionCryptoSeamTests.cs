@@ -75,7 +75,7 @@ public class SessionCryptoSeamTests
             var s2c = HalyardStreamKeySchedule.DeriveDirection(serverShared, handshakeKey, HalyardStreamKeySchedule.DirectionServerToClient);
             var serverDown = new HalyardPacketCrypto(s2c);
 
-            const ulong keyPos = 0x00013060;
+            const ulong keystreamOffset = 0x00013060;
             const int payloadOffset = 21; // video: base 18 + 3-byte prefix
             var plaintext = System.Text.Encoding.ASCII.GetBytes(new string('V', 160));
 
@@ -83,19 +83,19 @@ public class SessionCryptoSeamTests
             var packet = new byte[payloadOffset + plaintext.Length];
             packet[0] = 0x02;
             plaintext.CopyTo(packet, payloadOffset);
-            var ct = serverDown.CryptPayload(keyPos, packet.AsSpan(payloadOffset));
+            var ct = serverDown.CryptPayload(keystreamOffset, packet.AsSpan(payloadOffset));
             ct.CopyTo(packet.AsSpan(payloadOffset));
-            WriteKeyPos(packet, keyPos);
-            var sealed_ = serverDown.SealPacket(keyPos, packet, HalyardPacketCrypto.AvTagOffset);
+            WriteKeystreamOffset(packet, keystreamOffset);
+            var sealed_ = serverDown.SealPacket(keystreamOffset, packet, HalyardPacketCrypto.AvTagOffset);
 
             // Client opens through the seam: verify + decrypt in place.
-            Assert.True(client.TryOpenPacket(sealed_, HalyardPacketLayout.Av(keyPos, payloadOffset)));
+            Assert.True(client.TryOpenPacket(sealed_, HalyardPacketLayout.Av(keystreamOffset, payloadOffset)));
             Assert.Equal(Hex.String(plaintext), Hex.String(sealed_.AsSpan(payloadOffset)));
 
             // Tampering with the payload fails the GMAC.
             var tampered = (byte[])sealed_.Clone();
             tampered[payloadOffset] ^= 0x01;
-            Assert.False(client.TryOpenPacket(tampered, HalyardPacketLayout.Av(keyPos, payloadOffset)));
+            Assert.False(client.TryOpenPacket(tampered, HalyardPacketLayout.Av(keystreamOffset, payloadOffset)));
         }
     }
 
@@ -118,17 +118,17 @@ public class SessionCryptoSeamTests
             var s2c = HalyardStreamKeySchedule.DeriveDirection(shared, handshakeKey, HalyardStreamKeySchedule.DirectionServerToClient);
             var serverDown = new HalyardPacketCrypto(s2c);
 
-            const ulong keyPos = 0x00013060;
+            const ulong keystreamOffset = 0x00013060;
             const int payloadOffset = 21;
             var plaintext = System.Text.Encoding.ASCII.GetBytes(new string('P', 128));
             var packet = new byte[payloadOffset + plaintext.Length];
             packet[0] = 0x02;
             plaintext.CopyTo(packet, payloadOffset);
-            serverDown.CryptPayload(keyPos, packet.AsSpan(payloadOffset)).CopyTo(packet.AsSpan(payloadOffset));
-            WriteKeyPos(packet, keyPos);
-            var sealed_ = serverDown.SealPacket(keyPos, packet, HalyardPacketCrypto.AvTagOffset);
+            serverDown.CryptPayload(keystreamOffset, packet.AsSpan(payloadOffset)).CopyTo(packet.AsSpan(payloadOffset));
+            WriteKeystreamOffset(packet, keystreamOffset);
+            var sealed_ = serverDown.SealPacket(keystreamOffset, packet, HalyardPacketCrypto.AvTagOffset);
 
-            Assert.True(client.TryOpenPacket(sealed_, HalyardPacketLayout.Av(keyPos, payloadOffset)));
+            Assert.True(client.TryOpenPacket(sealed_, HalyardPacketLayout.Av(keystreamOffset, payloadOffset)));
             Assert.Equal(Hex.String(plaintext), Hex.String(sealed_.AsSpan(payloadOffset)));
         }
     }
@@ -148,20 +148,20 @@ public class SessionCryptoSeamTests
             var c2s = HalyardStreamKeySchedule.DeriveDirection(serverShared, handshakeKey, HalyardStreamKeySchedule.DirectionClientToServer);
             var serverUp = new HalyardPacketCrypto(c2s);
 
-            const ulong keyPos = 0;
-            const int payloadOffset = 12; // feedback: tag@8, payload@12
+            const ulong keystreamOffset = 0;
+            const int payloadOffset = 12; // input: tag@8, payload@12
             var plaintext = System.Text.Encoding.ASCII.GetBytes(new string('I', 45));
 
             // Client seals an input packet through the seam.
             var packet = new byte[payloadOffset + plaintext.Length];
             packet[0] = 0x0e;
             plaintext.CopyTo(packet, payloadOffset);
-            client.SealPacket(packet, HalyardPacketLayout.Feedback(keyPos, payloadOffset));
+            client.SealPacket(packet, HalyardPacketLayout.Input(keystreamOffset, payloadOffset));
 
             // Payload must now be ciphertext, and the server verifies + decrypts it.
             Assert.NotEqual(Hex.String(plaintext), Hex.String(packet.AsSpan(payloadOffset)));
-            Assert.True(serverUp.VerifyPacket(keyPos, packet, HalyardPacketCrypto.FeedbackTagOffset));
-            var recovered = serverUp.CryptPayload(keyPos, packet.AsSpan(payloadOffset));
+            Assert.True(serverUp.VerifyPacket(keystreamOffset, packet, HalyardPacketCrypto.InputTagOffset));
+            var recovered = serverUp.CryptPayload(keystreamOffset, packet.AsSpan(payloadOffset));
             Assert.Equal(Hex.String(plaintext), Hex.String(recovered));
         }
     }
@@ -176,16 +176,16 @@ public class SessionCryptoSeamTests
         Assert.True(crypto.TryOpenPacket(packet, HalyardPacketLayout.Av(100, 18)));
         Assert.Equal(Hex.String(original), Hex.String(packet)); // unchanged
 
-        crypto.SealPacket(packet, HalyardPacketLayout.Feedback(0, 12));
+        crypto.SealPacket(packet, HalyardPacketLayout.Input(0, 12));
         Assert.Equal(Hex.String(original), Hex.String(packet)); // unchanged
     }
 
-    private static void WriteKeyPos(byte[] packet, ulong keyPos)
+    private static void WriteKeystreamOffset(byte[] packet, ulong keystreamOffset)
     {
-        packet[14] = (byte)(keyPos >> 24);
-        packet[15] = (byte)(keyPos >> 16);
-        packet[16] = (byte)(keyPos >> 8);
-        packet[17] = (byte)keyPos;
+        packet[14] = (byte)(keystreamOffset >> 24);
+        packet[15] = (byte)(keystreamOffset >> 16);
+        packet[16] = (byte)(keystreamOffset >> 8);
+        packet[17] = (byte)keystreamOffset;
     }
 
     private static byte[] RandomBytes(int n)

@@ -4,16 +4,16 @@
  * takion_reliable_channel takes a takion_seal_fn rather than doing this itself, deliberately: that layer
  * is pure transport and knows nothing about the stream cipher. But every port that reaches this point
  * needs the identical callback, and ports/ripcord-3ds already grew one. Rather than have the PS3 grow a
- * second copy of a key-position counter and a pair of magic offsets, it lives here once.
+ * second copy of a keystream-offset counter and a pair of magic offsets, it lives here once.
  *
  * WHAT IT WRITES, and both halves are confirmed against captures on the .NET side
  * (src/Ripcord.Protocol.Halyard.Common/Crypto/V1/HalyardV1SessionCrypto.cs states the evidence in full):
  *
- *   - the 32-bit key position at offset 9, and the 32-bit GMAC tag at offset 5. **[V]** across 2528
+ *   - the 32-bit keystream offset at offset 9, and the 32-bit GMAC tag at offset 5. **[V]** across 2528
  *     type-0 packets in one capture.
- *   - the AAD zeroes BOTH the tag and the key-position field. **[V]** by recomputing 727 authenticated
- *     packets offline against dumped keys: zeroing tag+key_pos reproduces the on-wire tag 727/727, while
- *     zeroing the tag alone matches only the two packets whose key_pos is 0 - where the two rules are
+ *   - the AAD zeroes BOTH the tag and the keystream-offset field. **[V]** by recomputing 727 authenticated
+ *     packets offline against dumped keys: zeroing tag+keystream_offset reproduces the on-wire tag 727/727, while
+ *     zeroing the tag alone matches only the two packets whose keystream_offset is 0 - where the two rules are
  *     byte-identical and so prove nothing.
  *
  * A/V packets zero only the tag and sit at different offsets; this is the control rule and is not it.
@@ -32,18 +32,18 @@
 
 /* Where the two sealed fields live in a control packet's header. */
 #define TAKION_CONTROL_TAG_OFFSET    5u
-#define TAKION_CONTROL_KEYPOS_OFFSET 9u
+#define TAKION_CONTROL_KEYSTREAM_OFFSET_AT 9u
 
 typedef struct {
     stream_packet_crypto crypto;
 
     /*
-     * The send-direction key position, which is a BYTE COUNT and not a packet count: each packet
+     * The send-direction keystream offset, which is a BYTE COUNT and not a packet count: each packet
      * advances it by its own length rounded up to the cipher's 16-byte block. Control DATA and SACKs
      * share this one sequence, which is exactly why the counter belongs to the sealer and not to
      * whatever is building a particular message.
      */
-    uint64_t key_pos;
+    uint64_t keystream_offset;
     int enabled;
 } takion_control_sealer;
 
@@ -56,35 +56,35 @@ void takion_control_sealer_init(takion_control_sealer *sealer,
 void takion_control_sealer_seal(void *ctx, uint8_t *packet, size_t length);
 
 /*
- * CONGESTION FEEDBACK, which is a different packet at different offsets and MUST use this sealer.
+ * LOSS REPORTS, which is a different packet at different offsets and MUST use this sealer.
  *
- * Not a convenience: the outgoing key position is a single advancing sequence shared by control DATA,
- * SACKs and congestion packets alike, so a congestion path with a counter of its own would repeat a
+ * Not a convenience: the outgoing keystream offset is a single advancing sequence shared by control DATA,
+ * SACKs and loss reports alike, so a loss-report path with a counter of its own would repeat a
  * position that control had already spent - and a repeated position is a repeated GMAC nonce under one
  * key. That is a key-recovery bug, not an inefficiency, and it is the reason this lives on the sealer
  * rather than beside the code that builds the packet.
  *
  * The offsets differ from control's and from A/V's, and all three are [V] against captures on the .NET
- * side: control tag@5 key_pos@9 (2528 packets), congestion tag@7 key_pos@11 (474 packets), A/V tag@10
- * key_pos@14. The AAD rule here matches CONTROL - both the tag and the key-position field are zeroed -
+ * side: control tag@5 keystream_offset@9 (2528 packets), loss-report tag@7 keystream_offset@11 (474 packets), A/V tag@10
+ * keystream_offset@14. The AAD rule here matches CONTROL - both the tag and the keystream-offset field are zeroed -
  * which is not what A/V does.
  */
-#define TAKION_CONGESTION_TAG_OFFSET    7u
-#define TAKION_CONGESTION_KEYPOS_OFFSET 11u
+#define TAKION_LOSS_REPORT_TAG_OFFSET    7u
+#define TAKION_LOSS_REPORT_KEYSTREAM_OFFSET_AT 11u
 
-#define TAKION_INPUT_KEYPOS_OFFSET      4u
+#define TAKION_INPUT_KEYSTREAM_OFFSET_AT      4u
 #define TAKION_INPUT_TAG_OFFSET         8u
 
-void takion_control_sealer_seal_congestion(takion_control_sealer *sealer,
+void takion_control_sealer_seal_loss_report(takion_control_sealer *sealer,
                                            uint8_t *packet, size_t length);
 
 /*
  * CONTROLLER INPUT, which is a third shape again and MUST use this sealer for the same reason
- * congestion does: one advancing key position for every outgoing sealed packet, so no GMAC nonce is
+ * a loss report does: one advancing keystream offset for every outgoing sealed packet, so no GMAC nonce is
  * ever spent twice under one key.
  *
- * Its offsets are key position at 4 and tag at 8 - both different from control's and congestion's -
- * and its AAD rule matches A/V rather than control: only the TAG is zeroed, not the key-position
+ * Its offsets are keystream offset at 4 and tag at 8 - both different from control's and the loss report's -
+ * and its AAD rule matches A/V rather than control: only the TAG is zeroed, not the keystream-offset
  * field. Three shapes, three rules, and nothing about any of them is inferable from the others.
  *
  * IT ALSO ENCRYPTS, which the other two do not. Spec 6.3 is explicit that input payloads are AES-CTR
@@ -102,28 +102,28 @@ void takion_control_sealer_seal_input(takion_control_sealer *sealer,
 
 /* Wipes the key material. */
 /*
- * Builds one congestion-feedback packet: 15 bytes, base type 5, carrying the A/V units received and lost
+ * Builds one loss report: 15 bytes, base type 5, carrying the A/V units received and lost
  * since the last one. Returns the length written, or 0 if the buffer is too small.
  *
  * LAYOUT AND ITS PROVENANCE, which differ in confidence and should not be blurred. Derived on the .NET
- * side from 474 congestion packets in one capture: type at 0; bytes 1-2 zero in every packet **[V]**;
+ * side from 474 loss reports in one capture: type at 0; bytes 1-2 zero in every packet **[V]**;
  * received at 3 as a big-endian u16 **[V]**, observed between 2 and 351 per interval; lost at 5, also
  * u16 big-endian - its POSITION is confirmed but its MEANING is **[X]**, because that session had no
- * loss and every one of those 474 packets carried zero there. GMAC at 7 and key position at 11 are
+ * loss and every one of those 474 packets carried zero there. GMAC at 7 and keystream offset at 11 are
  * written by the sealer, not here.
  *
  * VERSION CAVEAT, recorded because a future firmware will make it matter: this 15-byte form is what that
  * capture shows. An older capture shows a 23-byte variant of the same base type with a sequence at 1, a
- * 90 kHz timestamp at 3, GMAC at 15 and key position at 19. The size is protocol-version-specific rather
+ * 90 kHz timestamp at 3, GMAC at 15 and keystream offset at 19. The size is protocol-version-specific rather
  * than universal. This port only negotiates the version the 15-byte capture used; if a console ever
  * rejects these, that variant is the first thing to look at.
  *
  * The counts SATURATE rather than wrap. A u16 cannot carry more than 65535 and an interval that busy is
  * a reporting problem, not a reason to tell the console a small number.
  */
-#define TAKION_CONGESTION_PACKET_SIZE 15u
+#define TAKION_LOSS_REPORT_SIZE 15u
 
-size_t takion_congestion_build(unsigned long received, unsigned long lost,
+size_t takion_loss_report_build(unsigned long received, unsigned long lost,
                                uint8_t *buf, size_t buf_size);
 
 void takion_control_sealer_reset(takion_control_sealer *sealer);
@@ -135,7 +135,7 @@ void takion_control_sealer_reset(takion_control_sealer *sealer);
  * message from anyone at all parses perfectly well, and a client that only seals is protected in one
  * direction while accepting whatever arrives in the other. That is the gap this closes.
  *
- * The key position is taken FROM THE PACKET rather than from a local counter. A receiver has no business
+ * The keystream offset is taken FROM THE PACKET rather than from a local counter. A receiver has no business
  * predicting where the sender is in its own byte sequence - it is told, and the tag is what makes being
  * told safe. A forged position simply produces a tag that does not verify.
  */

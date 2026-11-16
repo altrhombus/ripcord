@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 using Ripcord.Protocol.Halyard.Common.Crypto.V2;
@@ -10,7 +11,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// Byte-exact checks of the v2 (PS5) stream plane against the console's own outputs (sessions 003/004):
 /// the per-direction key schedule (<c>HMAC(Z_stream, 01|dir|00|X|0100)</c>, dir 2 c2s / 3 s2c), the
 /// <c>ecdhSignature = HMAC(X, pubkey)</c>, and the s2c A/V per-packet GMAC + AES-CTR with the v2 header layout
-/// (tag@18, key_pos@22, payload@26) and the GMAC window rule <c>(key_pos-1)/45000</c>.
+/// (tag@18, keystream_offset@22, payload@26) and the GMAC window rule <c>(keystream_offset-1)/45000</c>.
 ///
 /// <para>These exercise exactly what <see cref="HalyardV2SessionCrypto"/> uses internally
 /// (<see cref="HalyardStreamKeySchedule"/> + <see cref="HalyardPacketCrypto"/>). The secret <c>X</c> comes from the fixture (a
@@ -23,7 +24,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 public class V2StreamPacketVectorTests
 {
     private const int AvTagOffset = 18;
-    private const int AvKeyPosOffset = 22;
+    private const int AvKeystreamOffsetAt = 22;
     private const int AvPayloadOffset = 26;
 
     /// <summary>The stream key schedule reproduces the console's per-direction keys (dir 2 c2s / 3 s2c).</summary>
@@ -66,7 +67,7 @@ public class V2StreamPacketVectorTests
     }
 
     /// <summary>
-    /// Every captured s2c A/V packet's 4-byte GMAC reproduces under the v2 layout (tag@18, window=(key_pos-1)/45000),
+    /// Every captured s2c A/V packet's 4-byte GMAC reproduces under the v2 layout (tag@18, window=(keystream_offset-1)/45000),
     /// and AES-CTR decrypts the payload to the captured plaintext head. Packets span several rotation windows, so
     /// this exercises the v2 window rotation, not just window 0.
     /// </summary>
@@ -82,36 +83,36 @@ public class V2StreamPacketVectorTests
             using var crypto = new HalyardPacketCrypto(Hex.Bytes(v.AesKey!), Hex.Bytes(v.BaseIv!));
 
             byte[] packet = Hex.Bytes(v.Packet!);
-            Assert.Equal(v.Tag, Hex.String(crypto.ComputeTag(v.KeyPos, packet, AvTagOffset)));
-            Assert.True(crypto.VerifyPacket(v.KeyPos, packet, AvTagOffset));
+            Assert.Equal(v.Tag, Hex.String(crypto.ComputeTag(v.KeystreamOffset, packet, AvTagOffset)));
+            Assert.True(crypto.VerifyPacket(v.KeystreamOffset, packet, AvTagOffset));
 
-            byte[] head = crypto.CryptPayload(v.KeyPos, packet.AsSpan(AvPayloadOffset))[..16];
+            byte[] head = crypto.CryptPayload(v.KeystreamOffset, packet.AsSpan(AvPayloadOffset))[..16];
             Assert.Equal(v.PlaintextHead, Hex.String(head));
 
             if (v.Window > 0) checkedAboveWindow0++;
         }
 
         Assert.True(checkedAboveWindow0 > 0,
-            "Fixture exercised only window 0 — the (key_pos-1)/45000 rotation was not tested.");
+            "Fixture exercised only window 0 — the (keystream_offset-1)/45000 rotation was not tested.");
     }
 
     /// <summary>
-    /// <c>(keyPos-1)/45000</c> and the plain quotient differ <b>exactly</b> at multiples of 45000, so only a
+    /// <c>(keystreamOffset-1)/45000</c> and the plain quotient differ <b>exactly</b> at multiples of 45000, so only a
     /// packet sitting on a boundary can tell them apart on the wire. Every such packet in our captures, v1 and
     /// v2, both directions, verifies under the first; this pins where the window changes.
     /// </summary>
     [Fact]
     public void WindowOf_PutsAnExactMultipleInTheWindowBelow()
     {
-        foreach ((ulong keyPos, long window) in new (ulong, long)[]
+        foreach ((ulong keystreamOffset, long window) in new (ulong, long)[]
                  { (0, 0), (1, 0), (44999, 0), (45000, 0), (45001, 1), (90000, 1), (90001, 2), (3240000, 71) })
         {
-            Assert.Equal(window, HalyardPacketCrypto.WindowOf(keyPos));
+            Assert.Equal(window, HalyardPacketCrypto.WindowOf(keystreamOffset));
         }
     }
 
     /// <summary>
-    /// The v2 per-packet path round-trips symmetrically at a window&gt;0 key position (so the v2 rotation runs):
+    /// The v2 per-packet path round-trips symmetrically at a window&gt;0 keystream offset (so the v2 rotation runs):
     /// encrypt-then-MAC then verify-then-decrypt recovers the payload, and a tampered tag fails. Uses one
     /// per-direction key from a real ECDH so the keys are genuine; byte-exact agreement with the console is the
     /// wire-KAT tests above.
@@ -129,23 +130,23 @@ public class V2StreamPacketVectorTests
             var dir = HalyardStreamKeySchedule.DeriveDirection(z, x, HalyardStreamKeySchedule.DirectionClientToServer);
             using var pc = new HalyardPacketCrypto(dir);
 
-            const ulong keyPos = 90000; // window 1 under (keyPos-1)/45000
+            const ulong keystreamOffset = 90000; // window 1 under (keystreamOffset-1)/45000
             byte[] packet = new byte[AvPayloadOffset + 48];
             Random.Shared.NextBytes(packet.AsSpan(AvPayloadOffset));
             byte[] original = (byte[])packet.Clone();
 
             // encrypt-then-MAC
-            pc.CryptPayloadInPlace(keyPos, packet.AsSpan(AvPayloadOffset));
-            pc.SealPacket(keyPos, packet, AvTagOffset).CopyTo(packet, 0);
+            pc.CryptPayloadInPlace(keystreamOffset, packet.AsSpan(AvPayloadOffset));
+            pc.SealPacket(keystreamOffset, packet, AvTagOffset).CopyTo(packet, 0);
             Assert.False(packet.AsSpan(AvPayloadOffset).SequenceEqual(original.AsSpan(AvPayloadOffset)));
 
             // verify-then-decrypt
-            Assert.True(pc.VerifyPacket(keyPos, packet, AvTagOffset));
-            pc.CryptPayloadInPlace(keyPos, packet.AsSpan(AvPayloadOffset));
+            Assert.True(pc.VerifyPacket(keystreamOffset, packet, AvTagOffset));
+            pc.CryptPayloadInPlace(keystreamOffset, packet.AsSpan(AvPayloadOffset));
             Assert.True(packet.AsSpan(AvPayloadOffset).SequenceEqual(original.AsSpan(AvPayloadOffset)));
 
             packet[AvTagOffset] ^= 0xFF;
-            Assert.False(pc.VerifyPacket(keyPos, packet, AvTagOffset));
+            Assert.False(pc.VerifyPacket(keystreamOffset, packet, AvTagOffset));
         }
     }
 
@@ -196,7 +197,8 @@ public class V2StreamPacketVectorTests
     {
         public string? AesKey { get; set; }
         public string? BaseIv { get; set; }
-        public ulong KeyPos { get; set; }
+        [JsonPropertyName("keyPos")] // the private fixture's key
+        public ulong KeystreamOffset { get; set; }
         public int Window { get; set; }
         public string? Packet { get; set; }
         public string? Tag { get; set; }

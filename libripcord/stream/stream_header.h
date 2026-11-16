@@ -9,7 +9,7 @@
  *                   audio: byte-wide fields (see stream_header_parse)
  *   off 9      u8   codec
  *   off 10..13 u32  4-byte GMAC tag (zeroed for the GMAC computation)
- *   off 14..17 u32  key position (running byte counter; drives the crypto nonce - NOT a timestamp)
+ *   off 14..17 u32  keystream offset (running byte counter; drives the crypto nonce - NOT a timestamp)
  *   off 18..   ...  media payload; +3 bytes for video (size_extension u16 + stream_variant, spec 6.1),
  *                   +2 for audio (an "unknown" byte plus a haptics-indicator byte), +3 more if the
  *                   extended-header flag is set
@@ -32,7 +32,7 @@
 #define STREAM_HEADER_TYPE_AUDIO 0x03
 
 #define STREAM_HEADER_TAG_OFFSET 10
-#define STREAM_HEADER_KEY_POSITION_OFFSET 14
+#define STREAM_HEADER_KEYSTREAM_OFFSET_AT 14
 
 typedef struct {
     uint8_t type;               /* STREAM_HEADER_TYPE_VIDEO or STREAM_HEADER_TYPE_AUDIO */
@@ -43,7 +43,7 @@ typedef struct {
     int total_units;
     int parity_units;           /* audio: retained raw only - see stream_header_parse */
     uint8_t codec;
-    uint32_t key_position;
+    uint32_t keystream_offset;
 } stream_header;
 
 /* Number of source units in the frame (total minus FEC units). */
@@ -76,7 +76,7 @@ int stream_header_parse(const uint8_t *packet, size_t packet_length, stream_head
 
 /* Writes the fixed 18-byte header to `out` (exactly STREAM_HEADER_LENGTH bytes) - the inverse of
  * stream_header_parse, for constructing test fixtures and any future client-originated stream packet
- * (e.g. feedback). The tag region (bytes 10..13, STREAM_HEADER_TAG_OFFSET) is not part of this struct -
+ * (e.g. input). The tag region (bytes 10..13, STREAM_HEADER_TAG_OFFSET) is not part of this struct -
  * it is written separately by stream_packet_crypto once the rest of the packet exists - and is zeroed
  * here, matching stream_packet_crypto_compute_tag's own AAD-zeroing convention for that region. Returns 0
  * if header->type is neither STREAM_HEADER_TYPE_VIDEO nor STREAM_HEADER_TYPE_AUDIO, or a field does not

@@ -34,7 +34,7 @@ int stream_header_parse(const uint8_t *packet, size_t packet_length, stream_head
     }
 
     out->codec = packet[9];
-    out->key_position = ((uint32_t)packet[14] << 24) | ((uint32_t)packet[15] << 16) |
+    out->keystream_offset = ((uint32_t)packet[14] << 24) | ((uint32_t)packet[15] << 16) |
         ((uint32_t)packet[16] << 8) | (uint32_t)packet[17];
 
     return 1;
@@ -89,10 +89,10 @@ int stream_header_build(const stream_header *header, uint8_t out[STREAM_HEADER_L
     out[11] = 0;
     out[12] = 0;
     out[13] = 0;
-    out[14] = (uint8_t)(header->key_position >> 24);
-    out[15] = (uint8_t)(header->key_position >> 16);
-    out[16] = (uint8_t)(header->key_position >> 8);
-    out[17] = (uint8_t)header->key_position;
+    out[14] = (uint8_t)(header->keystream_offset >> 24);
+    out[15] = (uint8_t)(header->keystream_offset >> 16);
+    out[16] = (uint8_t)(header->keystream_offset >> 8);
+    out[17] = (uint8_t)header->keystream_offset;
 
     return 1;
 }

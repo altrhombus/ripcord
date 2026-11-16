@@ -16,8 +16,8 @@ fn packet_crypto() {
         let (key, iv) = (rng.bytes::<16>(), rng.bytes::<16>());
         let mut rust = PacketCrypto::new(&key, &iv);
         let mut c = CPacketCrypto::new(&key, &iv);
-        // Key positions across rotation windows, near the 32-bit edge, and near the 64-bit wrap.
-        let key_pos = match rng.below(4) {
+        // Keystream offsets across rotation windows, near the 32-bit edge, and near the 64-bit wrap.
+        let keystream_offset = match rng.below(4) {
             0 => rng.below(200_000),
             1 => (1 << 32) - 100 + rng.below(200),
             2 => u64::MAX - rng.below(64),
@@ -28,13 +28,13 @@ fn packet_crypto() {
         let offset = rng.below(len as u64 + 8) as usize;
         let zero = rng.below(2) == 1;
         assert_eq!(
-            rust.compute_tag(key_pos, &packet, offset, zero),
-            c.compute_tag(key_pos, &packet, offset, zero),
+            rust.compute_tag(keystream_offset, &packet, offset, zero),
+            c.compute_tag(keystream_offset, &packet, offset, zero),
             "tag, iteration {iteration}"
         );
         let (mut a, mut b) = (packet.clone(), packet);
-        rust.crypt_payload(key_pos, &mut a);
-        c.crypt_payload(key_pos, &mut b);
+        rust.crypt_payload(keystream_offset, &mut a);
+        c.crypt_payload(keystream_offset, &mut b);
         assert_eq!(a, b, "CTR, iteration {iteration}");
     }
 }
@@ -206,15 +206,15 @@ impl DemuxSink for Capture {
 fn stream(rng: &mut Rng, sealer: Option<&mut PacketCrypto>) -> Vec<Vec<u8>> {
     let mut packets = Vec::new();
     let mut frame: u16 = rng.next_u64() as u16;
-    let mut key_pos: u32 = rng.below(1 << 20) as u32;
+    let mut keystream_offset: u32 = rng.below(1 << 20) as u32;
     let mut sealer = sealer;
     let mut push = |mut p: Vec<u8>, rng: &mut Rng, packets: &mut Vec<Vec<u8>>| {
         if let Some(s) = sealer.as_deref_mut() {
-            p[header::KEY_POSITION_OFFSET..header::LENGTH].copy_from_slice(&key_pos.to_be_bytes());
+            p[header::KEYSTREAM_OFFSET_AT..header::LENGTH].copy_from_slice(&keystream_offset.to_be_bytes());
             let off = StreamHeader::parse(&p).map_or(p.len(), |h| h.payload_offset()).min(p.len());
-            s.crypt_payload(u64::from(key_pos), &mut p[off..]);
-            s.seal(u64::from(key_pos), &mut p, header::TAG_OFFSET, false);
-            key_pos = key_pos.wrapping_add((p.len() - off.min(p.len())) as u32);
+            s.crypt_payload(u64::from(keystream_offset), &mut p[off..]);
+            s.seal(u64::from(keystream_offset), &mut p, header::TAG_OFFSET, false);
+            keystream_offset = keystream_offset.wrapping_add((p.len() - off.min(p.len())) as u32);
         }
         match rng.below(40) {
             0 => p.truncate(rng.below(p.len() as u64) as usize),

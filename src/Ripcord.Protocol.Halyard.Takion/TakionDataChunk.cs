@@ -52,7 +52,7 @@ public static class TakionDataChunk
         bool endOfMessage = true,
         bool firstFragment = true,
         uint gmacTag = 0,
-        uint keyPosition = 0)
+        uint keystreamOffset = 0)
     {
         int payloadOffset = firstFragment ? FirstFragmentOffset : ContinuationOffset;
         int valueLength = payloadOffset + payload.Length;
@@ -60,7 +60,7 @@ public static class TakionDataChunk
         var packet = new byte[TakionMessageHeader.Length + chunkLength];
         var span = packet.AsSpan();
 
-        new TakionMessageHeader(TakionMessageHeader.BaseTypeControl, verificationTag, gmacTag, keyPosition).Write(span);
+        new TakionMessageHeader(TakionMessageHeader.BaseTypeControl, verificationTag, gmacTag, keystreamOffset).Write(span);
 
         var chunk = span[TakionMessageHeader.Length..];
         chunk[0] = (byte)SctpChunkType.Data;

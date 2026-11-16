@@ -58,12 +58,12 @@ public class V2SessionCryptoStubTests
         crypto.SealControlMessage(control);
         Assert.All(control, b => Assert.Equal(0, b));
 
-        byte[] congestion = new byte[32];
-        crypto.SealCongestionPacket(congestion);
-        Assert.All(congestion, b => Assert.Equal(0, b));
+        byte[] lossReport = new byte[32];
+        crypto.SealLossReport(lossReport);
+        Assert.All(lossReport, b => Assert.Equal(0, b));
 
-        byte[] feedback = new byte[32];
-        crypto.SealFeedbackPacket(feedback, 20);
-        Assert.All(feedback, b => Assert.Equal(0, b));
+        byte[] input = new byte[32];
+        crypto.SealInputPacket(input, 20);
+        Assert.All(input, b => Assert.Equal(0, b));
     }
 }

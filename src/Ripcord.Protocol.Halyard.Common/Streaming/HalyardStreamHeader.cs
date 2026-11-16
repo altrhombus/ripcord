@@ -5,7 +5,7 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming;
 /// <summary>
 /// The v1 A/V data-packet header, bit-exact per docs/protocol/ps5-remoteplay-v1-spec.md §6.1 (all
 /// multi-byte integers big-endian). The byte layout is code-exact from our binary <c>[C]</c> and supersedes the
-/// earlier tentative framing: the key position (offset 14) drives the per-packet crypto, and the 4-byte GMAC
+/// earlier tentative framing: the keystream offset (offset 14) drives the per-packet crypto, and the 4-byte GMAC
 /// tag sits at offset 10. Most field meanings are still <c>[X]</c> in the spec; the offsets are not.
 ///
 /// <code>
@@ -15,7 +15,7 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming;
 /// off 5..8   u32  bits[31:21] unit_index | bits[20:10] total_units-1 | bits[9:0] parity_units
 /// off 9      u8   codec
 /// off 10..13 u32  4-byte GMAC tag (zeroed for the GMAC computation)
-/// off 14..17 u32  key position (running byte counter; drives the crypto nonce - NOT a timestamp)
+/// off 14..17 u32  keystream offset (running byte counter; drives the crypto nonce - NOT a timestamp)
 /// off 18..   ...  media payload; +3 bytes for video (size_extension u16 + stream_variant, spec §6.1),
 ///                 +3 more if the extended-header flag is set
 /// </code>
@@ -35,11 +35,11 @@ public readonly struct HalyardStreamHeader
     // they are video packets whose unit index falls at or above SourceUnits. Use IsParityUnit.
 
     public const int TagOffset = 10;
-    public const int KeyPositionOffset = 14;
+    public const int KeystreamOffsetAt = 14;
 
     public HalyardStreamHeader(
         byte type, bool hasExtendedHeader, ushort packetIndex, ushort frameIndex,
-        int unitIndex, int totalUnits, int parityUnits, byte codec, uint keyPosition)
+        int unitIndex, int totalUnits, int parityUnits, byte codec, uint keystreamOffset)
     {
         Type = type;
         HasExtendedHeader = hasExtendedHeader;
@@ -49,7 +49,7 @@ public readonly struct HalyardStreamHeader
         TotalUnits = totalUnits;
         ParityUnits = parityUnits;
         Codec = codec;
-        KeyPosition = keyPosition;
+        KeystreamOffset = keystreamOffset;
     }
 
     public byte Type { get; }
@@ -60,7 +60,7 @@ public readonly struct HalyardStreamHeader
     public int TotalUnits { get; }
     public int ParityUnits { get; }
     public byte Codec { get; }
-    public uint KeyPosition { get; }
+    public uint KeystreamOffset { get; }
 
     public bool IsVideo => Type == TypeVideo;
     public bool IsAudio => Type == TypeAudio;
@@ -118,11 +118,11 @@ public readonly struct HalyardStreamHeader
             parityUnits = (int)(packed & 0xffff);
         }
         byte codec = packet[9];
-        uint keyPosition = BinaryPrimitives.ReadUInt32BigEndian(packet[KeyPositionOffset..]);
+        uint keystreamOffset = BinaryPrimitives.ReadUInt32BigEndian(packet[KeystreamOffsetAt..]);
 
         header = new HalyardStreamHeader(
             type, hasExtendedHeader, packetIndex, frameIndex,
-            unitIndex, totalUnits, parityUnits, codec, keyPosition);
+            unitIndex, totalUnits, parityUnits, codec, keystreamOffset);
         return true;
     }
 }

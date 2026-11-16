@@ -2,7 +2,7 @@
 //! PacketCryptoBenchmark.swift` runs against the C core, reproduced exactly so the two figures compare.
 //!
 //! Each iteration does what the demuxer does to every A/V packet: verify the 4-byte GMAC, then
-//! CTR-decrypt the payload. 256 distinct packets are sealed up front at key positions 64 payloads
+//! CTR-decrypt the payload. 256 distinct packets are sealed up front at keystream offsets 64 payloads
 //! apart. That spacing puts every packet in its own GMAC rotation window, so each one pays for a key
 //! derivation and a fresh authenticator: the worst case, and the same case the C figure measured.
 //!

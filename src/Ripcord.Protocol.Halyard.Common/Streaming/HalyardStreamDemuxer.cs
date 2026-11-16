@@ -11,7 +11,7 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming;
 /// (payloads are already plaintext), so this runs end to end against captures/synthetic data; the real
 /// crypto slots in unchanged.
 ///
-/// Per-packet crypto is keyed by the header's key position and covers the whole packet (spec §5.5), so the
+/// Per-packet crypto is keyed by the header's keystream offset and covers the whole packet (spec §5.5), so the
 /// demuxer hands the crypto the full packet and reads the decrypted payload back from
 /// <see cref="HalyardStreamHeader.PayloadOffset"/>.
 ///
@@ -55,8 +55,8 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     private int _sourceArrived;
     private int _parityArrived;
 
-    // Accumulated wire packet stats for congestion feedback (received vs lost units across frames). Read+reset
-    // via TakePacketStats from the congestion loop, so guarded with Interlocked.
+    // Accumulated wire packet stats for the loss report (received vs lost units across frames). Read+reset
+    // via TakePacketStats from the loss-report loop, so guarded with Interlocked.
     private long _statUnitsReceived;
     private long _statUnitsLost;
     // The frame's coded unit length: what FEC codes over, shared by every unit, and the spacing of units in
@@ -175,7 +175,7 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     /// </summary>
     public event Action<int, int>? VideoLossDetected;
 
-    /// <summary>Non-media packets (control/congestion/FEC) surfaced for feedback/diagnostics.</summary>
+    /// <summary>Non-media packets (control, loss-report, FEC) surfaced for diagnostics.</summary>
     public event Action<HalyardStreamHeader, ReadOnlyMemory<byte>>? ControlPacketReceived;
 
     /// <summary>Number of media packets that failed GMAC verification (diagnostics).</summary>
@@ -183,7 +183,7 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
 
     /// <summary>
     /// Atomically read and reset the accumulated wire unit stats (received, lost) since the last call — the
-    /// input to the periodic congestion-feedback packet that lets the console's rate controller adapt.
+    /// input to the periodic loss report that lets the console's rate controller adapt.
     /// </summary>
     public (long Received, long Lost) TakePacketStats()
         => (Interlocked.Exchange(ref _statUnitsReceived, 0), Interlocked.Exchange(ref _statUnitsLost, 0));
@@ -358,7 +358,7 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
             return;
         }
 
-        // Record wire loss for congestion feedback before FEC: recovery doesn't change what the network dropped.
+        // Record wire loss for the loss report before FEC: recovery doesn't change what the network dropped.
         long expectedUnits = _sourceCount + _parityCount;
         long receivedUnits = _sourceArrived + _parityArrived;
         Interlocked.Add(ref _statUnitsReceived, receivedUnits);
@@ -549,7 +549,7 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     private bool TryOpenMedia(in HalyardStreamHeader header, ReadOnlySpan<byte> packet, out byte[] opened)
     {
         opened = packet.ToArray();
-        var layout = HalyardPacketLayout.Av(header.KeyPosition, header.PayloadOffset);
+        var layout = HalyardPacketLayout.Av(header.KeystreamOffset, header.PayloadOffset);
         if (_crypto.TryOpenPacket(opened, layout))
         {
             return true;

@@ -129,7 +129,7 @@ static size_t build_video_packet(uint8_t *out, size_t out_capacity, int frame_in
     h.total_units = total_units;
     h.parity_units = parity_units;
     h.codec = codec;
-    h.key_position = 0;
+    h.keystream_offset = 0;
 
     if (!stream_header_build(&h, out))
         return 0;
@@ -163,7 +163,7 @@ static size_t build_audio_packet(uint8_t *out, size_t out_capacity, int frame_in
     h.total_units = total_units;
     h.parity_units = 0;
     h.codec = STREAM_DEMUX_OPUS_CODEC;
-    h.key_position = 0;
+    h.keystream_offset = 0;
 
     if (!stream_header_build(&h, out))
         return 0;
@@ -427,7 +427,7 @@ static void test_control_packet_passthrough(void)
     stream_demux_init(&g_demux, stream_demux_passthrough_crypto(), make_sink(&state));
 
     memset(packet, 0, sizeof(packet));
-    packet[0] = 0x05; /* congestion, base-type byte per spec - not video (2) or audio (3) */
+    packet[0] = 0x05; /* loss report, base-type byte per spec - not video (2) or audio (3) */
     /* stream_header_payload_offset() is IsVideo ? 3 : 2 regardless of the exact non-video type, so the
      * payload starts 2 bytes after the base header here too. */
     memcpy(packet + STREAM_HEADER_LENGTH + 2, body, sizeof(body));

@@ -44,10 +44,10 @@ typedef struct {
  * The 3DS build passes -Wframe-larger-than=8192 so this fails at compile time now rather than on device.
  */
 /*
- * Seals one outgoing packet in place - writes its key position and GMAC tag. Supplied by the caller
+ * Seals one outgoing packet in place - writes its keystream offset and GMAC tag. Supplied by the caller
  * rather than implemented here on purpose: this layer is pure transport and knows nothing about the
  * stream cipher (that is source/stream's business, and Phase 5 was built deliberately without it). The
- * callback owns the key-position counter, because control DATA and SACKs share one advancing sequence.
+ * callback owns the keystream-offset counter, because control DATA and SACKs share one advancing sequence.
  */
 typedef void (*takion_seal_fn)(void *ctx, uint8_t *packet, size_t length);
 
@@ -153,7 +153,7 @@ int takion_channel_connect_filtered(takion_reliable_channel *ch, int sock, struc
  * SACKs are sealed too, and forgetting that is a specific, well-documented failure: the console never
  * sees the acknowledgement of its STREAM_INFO and drops the session reporting "streaminfoack fail". A
  * retransmitted DATA chunk keeps the tag it was sealed with, because the stored packet is resent
- * verbatim - its key position was reserved once, when it was built.
+ * verbatim - its keystream offset was reserved once, when it was built.
  */
 void takion_channel_enable_sealing(takion_reliable_channel *ch, takion_seal_fn seal, void *seal_ctx);
 

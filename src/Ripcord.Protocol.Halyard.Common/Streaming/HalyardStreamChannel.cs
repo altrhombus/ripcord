@@ -17,10 +17,10 @@ public enum HalyardStreamChannel : byte
     Audio = 0x03,
 
     /// <summary>
-    /// Up-direction congestion/quality telemetry family, the dominant up traffic on a real WAN path
+    /// Up-direction quality telemetry family, the dominant up traffic on a real WAN path
     /// (docs/protocol/ps5-wan-relay.md). Sparse on LAN.
     /// </summary>
-    Congestion = 0x06,
+    Telemetry = 0x06,
 
     /// <summary>Controller input (66-byte UDP payload; see docs/protocol/ps5-controller-input-packet.md).</summary>
     Input = 0x0e,

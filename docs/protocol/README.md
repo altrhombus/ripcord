@@ -100,6 +100,15 @@ Two corrections to earlier framing, recorded because they were wrong for a while
     (`mtuReq`, `naluCount`, `sendDelay`, …) are most likely the vendor's own, read from the binary's
     reflection metadata. Field names never appear on the wire, so these are not interop facts and could be
     renamed; they simply have not been.
+  - **Three packet-level terms are our own.** The vendor has words of its own for the client's controller
+    packets, its periodic receive report and the per-packet cipher position; Ripcord uses these instead, in
+    the code, the specs and the `.proto` field names:
+
+    | Ours | What it names |
+    |---|---|
+    | **input** packets (input state, input events) | base types 6 and 1, the client's controller packets (§6.3) |
+    | **loss report** | base type 5, the client's periodic received/lost counts (§3, §8) |
+    | **keystream offset** | the per-packet position that selects the GMAC window and the CTR nonce (§5.4) |
   - **No vendor *symbol* name is used anywhere** — no C++ class, function, or log string recovered from the
     binary appears in the code or this spec; those are cited by RVA only. (The control-plane cipher is named
     for what it does, not after the vendor's own class.)

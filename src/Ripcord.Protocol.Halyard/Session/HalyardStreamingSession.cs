@@ -192,7 +192,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     public double? MillisecondsSinceConsoleActivity => _takionStream?.MillisecondsSinceConsoleActivity;
 
     /// <summary>
-    /// Turn each congestion-window (received, lost) A/V unit sample into a <see cref="SessionStatistics"/> so
+    /// Turn each report-window (received, lost) A/V unit sample into a <see cref="SessionStatistics"/> so
     /// consumers (the on-screen readout) can show the wire loss ratio. Only loss + the requested bitrate are
     /// known here; frame rate / decode time come from the decode pipeline on the app side.
     /// </summary>

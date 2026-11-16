@@ -100,44 +100,44 @@ static unsafe class Checks
             try
             {
                 ulong[] positions = [0, 16, 44_999, 45_000, 45_001, 719_984, 720_000, 4_294_967_295, 4_294_967_296, (ulong)rng.NextInt64()];
-                foreach (var keyPos in positions)
+                foreach (var keystreamOffset in positions)
                 {
                     cases++;
                     var packet = new byte[rng.Next(24, 1500)];
                     rng.NextBytes(packet);
 
                     // CTR: both engines produce the same keystream.
-                    var viaManaged = managed.CryptPayload(keyPos, packet.AsSpan(21));
+                    var viaManaged = managed.CryptPayload(keystreamOffset, packet.AsSpan(21));
                     var viaNative = packet.AsSpan(21).ToArray();
                     fixed (byte* p = viaNative)
-                        NativeMethods.ripcord_packet_crypto_crypt_payload(native, keyPos, p, (nuint)viaNative.Length);
+                        NativeMethods.ripcord_packet_crypto_crypt_payload(native, keystreamOffset, p, (nuint)viaNative.Length);
                     if (!viaManaged.AsSpan().SequenceEqual(viaNative))
-                        f += Fail($"CTR differs at keyPos {keyPos}");
+                        f += Fail($"CTR differs at keystreamOffset {keystreamOffset}");
 
                     // A/V rule: managed seals, native verifies; native seals, managed verifies.
-                    var sealedManaged = managed.SealPacket(keyPos, packet);
+                    var sealedManaged = managed.SealPacket(keystreamOffset, packet);
                     fixed (byte* p = sealedManaged)
-                        if (NativeMethods.ripcord_packet_crypto_verify(native, keyPos, p, (nuint)sealedManaged.Length, 10, false) != RipcordStatus.Ok)
-                            f += Fail($"native rejects a managed A/V seal at keyPos {keyPos}");
+                        if (NativeMethods.ripcord_packet_crypto_verify(native, keystreamOffset, p, (nuint)sealedManaged.Length, 10, false) != RipcordStatus.Ok)
+                            f += Fail($"native rejects a managed A/V seal at keystreamOffset {keystreamOffset}");
                     var sealedNative = packet.ToArray();
                     fixed (byte* p = sealedNative)
-                        NativeMethods.ripcord_packet_crypto_seal(native, keyPos, p, (nuint)sealedNative.Length, 10, false);
-                    if (!managed.VerifyPacket(keyPos, sealedNative))
-                        f += Fail($"managed rejects a native A/V seal at keyPos {keyPos}");
+                        NativeMethods.ripcord_packet_crypto_seal(native, keystreamOffset, p, (nuint)sealedNative.Length, 10, false);
+                    if (!managed.VerifyPacket(keystreamOffset, sealedNative))
+                        f += Fail($"managed rejects a native A/V seal at keystreamOffset {keystreamOffset}");
 
-                    // Control rule (tag at 5, key position zeroed too): compare the tags directly.
-                    var tagManaged = managed.ComputeTag(keyPos, packet, tagOffset: 5, zeroKeyPos: true);
+                    // Control rule (tag at 5, keystream offset zeroed too): compare the tags directly.
+                    var tagManaged = managed.ComputeTag(keystreamOffset, packet, tagOffset: 5, zeroKeystreamOffset: true);
                     var sealedControl = packet.ToArray();
                     fixed (byte* p = sealedControl)
-                        NativeMethods.ripcord_packet_crypto_seal(native, keyPos, p, (nuint)sealedControl.Length, 5, true);
+                        NativeMethods.ripcord_packet_crypto_seal(native, keystreamOffset, p, (nuint)sealedControl.Length, 5, true);
                     if (!tagManaged.AsSpan().SequenceEqual(sealedControl.AsSpan(5, 4)))
-                        f += Fail($"control tags differ at keyPos {keyPos}");
+                        f += Fail($"control tags differ at keystreamOffset {keystreamOffset}");
 
                     // And a tampered packet fails in native.
                     sealedManaged[^1] ^= 0x40;
                     fixed (byte* p = sealedManaged)
-                        if (NativeMethods.ripcord_packet_crypto_verify(native, keyPos, p, (nuint)sealedManaged.Length, 10, false) != RipcordStatus.Rejected)
-                            f += Fail($"native accepts a tampered packet at keyPos {keyPos}");
+                        if (NativeMethods.ripcord_packet_crypto_verify(native, keystreamOffset, p, (nuint)sealedManaged.Length, 10, false) != RipcordStatus.Rejected)
+                            f += Fail($"native accepts a tampered packet at keystreamOffset {keystreamOffset}");
                 }
             }
             finally
@@ -145,7 +145,7 @@ static unsafe class Checks
                 NativeMethods.ripcord_packet_crypto_free(native);
             }
         }
-        Console.WriteLine($"differential: {cases} key positions x 4 checks against HalyardPacketCrypto");
+        Console.WriteLine($"differential: {cases} keystream offsets x 4 checks against HalyardPacketCrypto");
         return f;
     }
 
@@ -182,20 +182,20 @@ static unsafe class Checks
         using var managed = new HalyardPacketCrypto(key, iv);
         byte[] slice = [0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21];
 
-        byte[] Packet(ushort frame, uint keyPosition)
+        byte[] Packet(ushort frame, uint keystreamOffset)
         {
             var p = new byte[18 + 3 + 2 + slice.Length];
             p[0] = 0x02;
             p[3] = (byte)(frame >> 8);
             p[4] = (byte)frame;
             // unit 0 of 1, no parity: total_units - 1 = 0 in bits 20..10
-            p[14] = (byte)(keyPosition >> 24);
-            p[15] = (byte)(keyPosition >> 16);
-            p[16] = (byte)(keyPosition >> 8);
-            p[17] = (byte)keyPosition;
+            p[14] = (byte)(keystreamOffset >> 24);
+            p[15] = (byte)(keystreamOffset >> 16);
+            p[16] = (byte)(keystreamOffset >> 8);
+            p[17] = (byte)keystreamOffset;
             slice.CopyTo(p, 23);
-            managed.CryptPayloadInPlace(keyPosition, p.AsSpan(21));
-            return managed.SealPacket(keyPosition, p);
+            managed.CryptPayloadInPlace(keystreamOffset, p.AsSpan(21));
+            return managed.SealPacket(keystreamOffset, p);
         }
 
         var collected = new Collected();

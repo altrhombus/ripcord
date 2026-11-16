@@ -31,7 +31,7 @@ pub const ASSEMBLY_CAPACITY: usize = MAX_UNITS_PER_FRAME * MAX_CODED_LENGTH + VI
 /// The crypto seam: verify one media packet's tag and, only if it holds, decrypt
 /// `packet[payload_offset..]` in place. `false` drops the packet.
 pub trait PacketOpener {
-    fn open(&mut self, packet: &mut [u8], key_position: u32, payload_offset: usize) -> bool;
+    fn open(&mut self, packet: &mut [u8], keystream_offset: u32, payload_offset: usize) -> bool;
 }
 
 /// Identity, matching `PassthroughHalyardSessionCrypto`: lets framing, reassembly and FEC run against
@@ -45,27 +45,27 @@ impl PacketOpener for Passthrough {
 }
 
 impl PacketOpener for PacketCrypto {
-    fn open(&mut self, packet: &mut [u8], key_position: u32, payload_offset: usize) -> bool {
-        // A/V: tag at offset 10, key position not zeroed (confirmed byte for byte against a live
+    fn open(&mut self, packet: &mut [u8], keystream_offset: u32, payload_offset: usize) -> bool {
+        // A/V: tag at offset 10, keystream offset not zeroed (confirmed byte for byte against a live
         // capture; see HalyardPacketCrypto.ComputeTag).
-        let key_pos = u64::from(key_position);
-        if payload_offset > packet.len() || !self.verify(key_pos, packet, header::TAG_OFFSET, false) {
+        let keystream_offset = u64::from(keystream_offset);
+        if payload_offset > packet.len() || !self.verify(keystream_offset, packet, header::TAG_OFFSET, false) {
             return false;
         }
-        self.crypt_payload(key_pos, &mut packet[payload_offset..]);
+        self.crypt_payload(keystream_offset, &mut packet[payload_offset..]);
         true
     }
 }
 
 impl<T: PacketOpener + ?Sized> PacketOpener for &mut T {
-    fn open(&mut self, packet: &mut [u8], key_position: u32, payload_offset: usize) -> bool {
-        (**self).open(packet, key_position, payload_offset)
+    fn open(&mut self, packet: &mut [u8], keystream_offset: u32, payload_offset: usize) -> bool {
+        (**self).open(packet, keystream_offset, payload_offset)
     }
 }
 
 impl<T: PacketOpener + ?Sized> PacketOpener for Box<T> {
-    fn open(&mut self, packet: &mut [u8], key_position: u32, payload_offset: usize) -> bool {
-        (**self).open(packet, key_position, payload_offset)
+    fn open(&mut self, packet: &mut [u8], keystream_offset: u32, payload_offset: usize) -> bool {
+        (**self).open(packet, keystream_offset, payload_offset)
     }
 }
 
@@ -206,7 +206,7 @@ impl<O: PacketOpener> StreamDemux<O> {
         self.counters
     }
 
-    /// The wire unit counts (received, lost) since the last call, for congestion feedback. Resets them.
+    /// The wire unit counts (received, lost) since the last call, for the loss report. Resets them.
     pub fn take_packet_stats(&mut self) -> (u64, u64) {
         let stats = (self.units_received, self.units_lost);
         self.units_received = 0;
@@ -235,7 +235,7 @@ impl<O: PacketOpener> StreamDemux<O> {
     ) -> Option<usize> {
         let buf = opened.get_mut(..packet.len())?;
         buf.copy_from_slice(packet);
-        if self.opener.open(buf, header.key_position, header.payload_offset()) {
+        if self.opener.open(buf, header.keystream_offset, header.payload_offset()) {
             Some(packet.len())
         } else {
             self.counters.auth_failures += 1;
@@ -380,7 +380,7 @@ impl<O: PacketOpener> StreamDemux<O> {
         }
         let (source, parity, len) = (self.source_count, self.parity_count, self.coded_length);
 
-        // Wire loss for congestion feedback, before FEC: recovery does not change what the network
+        // Wire loss for the loss report, before FEC: recovery does not change what the network
         // dropped.
         let expected_units = (source + parity) as u64;
         let received_units = (self.source_arrived + self.parity_arrived) as u64;
@@ -680,12 +680,12 @@ mod tests {
         let iv = [0x22; 16];
         let mut sender = PacketCrypto::new(&key, &iv);
         let slice = [0x00, 0x00, 0x00, 0x01, 0x65, 0x01, 0x02];
-        let mut seal = |frame: u16, key_position: u32| {
+        let mut seal = |frame: u16, keystream_offset: u32| {
             let mut p = video_packet(frame, 0, 1, 0, 0, &slice);
-            p[header::KEY_POSITION_OFFSET..header::LENGTH].copy_from_slice(&key_position.to_be_bytes());
+            p[header::KEYSTREAM_OFFSET_AT..header::LENGTH].copy_from_slice(&keystream_offset.to_be_bytes());
             let off = StreamHeader::parse(&p).unwrap().payload_offset();
-            sender.crypt_payload(u64::from(key_position), &mut p[off..]);
-            assert!(sender.seal(u64::from(key_position), &mut p, header::TAG_OFFSET, false));
+            sender.crypt_payload(u64::from(keystream_offset), &mut p[off..]);
+            assert!(sender.seal(u64::from(keystream_offset), &mut p, header::TAG_OFFSET, false));
             p
         };
         let a = seal(0, 0);

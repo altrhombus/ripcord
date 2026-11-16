@@ -7,20 +7,20 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
 /// <summary>
 /// The v1 per-packet stream crypto for one channel direction: AES-128-CTR payload encryption plus a
-/// 4-byte GMAC, both keyed off the packet's 64-bit key position. Encrypt-then-MAC — the tag is computed
+/// 4-byte GMAC, both keyed off the packet's 64-bit keystream offset. Encrypt-then-MAC — the tag is computed
 /// over the (already encrypted) packet with its tag field zeroed, so a receiver verifies the GMAC first,
 /// then AES-CTR-decrypts the payload (both operations are symmetric).
 ///
 /// <para>
 /// Key material comes from <see cref="HalyardStreamKeySchedule.DeriveDirection"/> (a per-direction
 /// <c>aesKey</c> + <c>baseIv</c>). The cipher key is <c>aesKey</c> used directly (no rotation); the GMAC
-/// key rotates every <see cref="RotationWindow"/> key-position units.
+/// key rotates every <see cref="RotationWindow"/> keystream-offset units.
 /// </para>
 ///
 /// Nonces (all 16 bytes, little-endian addition into the base IV):
 /// <list type="bullet">
-///   <item><description>GMAC nonce = baseIv + keyPos/16</description></item>
-///   <item><description>CTR nonce  = baseIv + keyPos/16 + 1 (one block above the GMAC's; the GMAC
+///   <item><description>GMAC nonce = baseIv + keystreamOffset/16</description></item>
+///   <item><description>CTR nonce  = baseIv + keystreamOffset/16 + 1 (one block above the GMAC's; the GMAC
 ///   conceptually consumes keystream block 0, GCM-style)</description></item>
 /// </list>
 /// </summary>
@@ -34,8 +34,8 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// <summary>A/V (video/audio) packets: 4-byte tag at offset 10.</summary>
     public const int AvTagOffset = 10;
 
-    /// <summary>Input/feedback packets: 4-byte tag at offset 8.</summary>
-    public const int FeedbackTagOffset = 8;
+    /// <summary>Input packets: 4-byte tag at offset 8.</summary>
+    public const int InputTagOffset = 8;
 
     private readonly byte[] _aesKey;
     private readonly byte[] _baseIv;
@@ -64,11 +64,11 @@ public sealed class HalyardPacketCrypto : IDisposable
 
     // ---- payload cipher (§5.5a) ----------------------------------------------------------------
 
-    /// <summary>AES-128-CTR encrypt/decrypt a payload (symmetric) at the given key position.</summary>
-    public byte[] CryptPayload(ulong keyPos, ReadOnlySpan<byte> payload)
+    /// <summary>AES-128-CTR encrypt/decrypt a payload (symmetric) at the given keystream offset.</summary>
+    public byte[] CryptPayload(ulong keystreamOffset, ReadOnlySpan<byte> payload)
     {
         var output = payload.ToArray();
-        CryptPayloadInPlace(keyPos, output);
+        CryptPayloadInPlace(keystreamOffset, output);
         return output;
     }
 
@@ -80,10 +80,10 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// buffer nor re-expands the AES key per packet.
     /// </para>
     /// </summary>
-    public void CryptPayloadInPlace(ulong keyPos, Span<byte> payload)
+    public void CryptPayloadInPlace(ulong keystreamOffset, Span<byte> payload)
     {
         Span<byte> nonce = stackalloc byte[BlockSize];
-        CtrNonce(keyPos, nonce);
+        CtrNonce(keystreamOffset, nonce);
         // The PS5 packet cipher increments the CTR counter little-endian (matches its GMAC nonce derivation).
         AesKeystreamModes.CtrInPlace(_payloadAes, nonce, payload, littleEndianCounter: true);
     }
@@ -94,38 +94,38 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// Compute the 4-byte GMAC tag over an entire packet whose tag field (at <paramref name="tagOffset"/>)
     /// is treated as zero. The packet is the on-the-wire (encrypted-payload) form.
     /// </summary>
-    public byte[] ComputeTag(ulong keyPos, ReadOnlySpan<byte> packet, int tagOffset = AvTagOffset, bool zeroKeyPos = false)
+    public byte[] ComputeTag(ulong keystreamOffset, ReadOnlySpan<byte> packet, int tagOffset = AvTagOffset, bool zeroKeystreamOffset = false)
     {
-        // AAD = whole packet with the 4-byte GMAC tag zeroed. For CONTROL packets the 4-byte key position
+        // AAD = whole packet with the 4-byte GMAC tag zeroed. For CONTROL packets the 4-byte keystream offset
         // that immediately follows the tag is ALSO zeroed; for A/V it is NOT (validated byte-for-byte against
-        // the live console: video/audio tag-only, control tag+key_pos). Both directions, all key positions.
+        // the live console: video/audio tag-only, control tag+keystream_offset). Both directions, all keystream offsets.
         var aad = packet.ToArray();
-        int clear = Math.Min(TagLength + (zeroKeyPos ? 4 : 0), aad.Length - tagOffset);
+        int clear = Math.Min(TagLength + (zeroKeystreamOffset ? 4 : 0), aad.Length - tagOffset);
         aad.AsSpan(tagOffset, clear).Clear();
 
         Span<byte> gmacKey = stackalloc byte[BlockSize];
-        GmacKey(keyPos, gmacKey);
+        GmacKey(keystreamOffset, gmacKey);
         Span<byte> nonce = stackalloc byte[BlockSize];
-        GmacNonce(keyPos, nonce);
+        GmacNonce(keystreamOffset, nonce);
 
         var fullTag = AesGcmCore.Mac(gmacKey, nonce, aad);
         return fullTag[..TagLength];
     }
 
     /// <summary>Write the computed tag into a packet's tag field (sender side); returns the sealed packet.</summary>
-    public byte[] SealPacket(ulong keyPos, ReadOnlySpan<byte> packet, int tagOffset = AvTagOffset)
+    public byte[] SealPacket(ulong keystreamOffset, ReadOnlySpan<byte> packet, int tagOffset = AvTagOffset)
     {
         var sealed_ = packet.ToArray();
-        var tag = ComputeTag(keyPos, sealed_, tagOffset);
+        var tag = ComputeTag(keystreamOffset, sealed_, tagOffset);
         tag.CopyTo(sealed_.AsSpan(tagOffset, TagLength));
         return sealed_;
     }
 
     /// <summary>Verify a packet's 4-byte tag (receiver side), constant-time.</summary>
-    public bool VerifyPacket(ulong keyPos, ReadOnlySpan<byte> packet, int tagOffset = AvTagOffset)
+    public bool VerifyPacket(ulong keystreamOffset, ReadOnlySpan<byte> packet, int tagOffset = AvTagOffset)
     {
         ReadOnlySpan<byte> onWire = packet.Slice(tagOffset, TagLength);
-        var expected = ComputeTag(keyPos, packet, tagOffset);
+        var expected = ComputeTag(keystreamOffset, packet, tagOffset);
         return CryptographicOperations.FixedTimeEquals(expected, onWire);
     }
 
@@ -139,9 +139,9 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// Recovered and verified byte-for-byte against a live console capture (13670/13672 A/V packets over 223
     /// rotation windows) - the earlier "sha256_fold(aesKey || ...)" form was correct only for window 0.
     /// </summary>
-    public void GmacKey(ulong keyPos, Span<byte> destination)
+    public void GmacKey(ulong keystreamOffset, Span<byte> destination)
     {
-        long window = WindowOf(keyPos);
+        long window = WindowOf(keystreamOffset);
         if (window == 0)
         {
             _gmacBaseKey.CopyTo(destination);
@@ -154,15 +154,15 @@ public sealed class HalyardPacketCrypto : IDisposable
     }
 
     /// <summary>
-    /// The rotation window a key position falls in: <c>(keyPos - 1) / 45000</c>, with keyPos 0 in window 0. A
+    /// The rotation window a keystream offset falls in: <c>(keystreamOffset - 1) / 45000</c>, with keystreamOffset 0 in window 0. A
     /// position that is an exact multiple of 45000 still belongs to the window below it; everywhere else this
-    /// equals <c>keyPos / 45000</c>. Both control planes use it, in both directions [V]: every packet sitting
+    /// equals <c>keystreamOffset / 45000</c>. Both control planes use it, in both directions [V]: every packet sitting
     /// exactly on a boundary verifies this way and fails the plain quotient, in v1 (78 console-to-client
     /// packets in one session, 4 client-to-console in cap48) and in v2 (the s2c A/V of 003/004 and three longer
     /// sessions, and every c2s packet type through window 24).
     /// </summary>
-    public static long WindowOf(ulong keyPos)
-        => keyPos == 0 ? 0 : (long)((keyPos - 1) / (ulong)RotationWindow);
+    public static long WindowOf(ulong keystreamOffset)
+        => keystreamOffset == 0 ? 0 : (long)((keystreamOffset - 1) / (ulong)RotationWindow);
 
     /// <summary>sha256_fold(a || b) = SHA-256(a‖b)[0:16] XOR SHA-256(a‖b)[16:32], for two 16-byte inputs.</summary>
     private static void Fold(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b, Span<byte> destination)
@@ -176,13 +176,13 @@ public sealed class HalyardPacketCrypto : IDisposable
             destination[i] = (byte)(digest[i] ^ digest[i + BlockSize]);
     }
 
-    /// <summary>GMAC nonce = baseIv + keyPos/16.</summary>
-    public void GmacNonce(ulong keyPos, Span<byte> destination)
-        => IvAddFast(_baseIv, keyPos >> 4, destination);
+    /// <summary>GMAC nonce = baseIv + keystreamOffset/16.</summary>
+    public void GmacNonce(ulong keystreamOffset, Span<byte> destination)
+        => IvAddFast(_baseIv, keystreamOffset >> 4, destination);
 
-    /// <summary>CTR nonce = baseIv + (keyPos + 16)/16 = GMAC nonce + 1.</summary>
-    public void CtrNonce(ulong keyPos, Span<byte> destination)
-        => IvAddFast(_baseIv, (keyPos + BlockSize) >> 4, destination);
+    /// <summary>CTR nonce = baseIv + (keystreamOffset + 16)/16 = GMAC nonce + 1.</summary>
+    public void CtrNonce(ulong keystreamOffset, Span<byte> destination)
+        => IvAddFast(_baseIv, (keystreamOffset + BlockSize) >> 4, destination);
 
     /// <summary>
     /// Add a 64-bit value to a 16-byte little-endian IV, modulo 2^128 — as two <see cref="ulong"/> halves with
@@ -191,8 +191,8 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// <para>
     /// The <see cref="IvAdd"/> BigInteger form below is correct but allocates, and the two nonce derivations
     /// above run on every single packet (~3600 calls/second at 20 Mbps between them). Both callers pass an
-    /// addend derived from a <see cref="ulong"/> key position, so 64 bits is always sufficient; the wider
-    /// BigInteger path is kept for the GMAC key rotation, which happens once per 45000 key positions and can
+    /// addend derived from a <see cref="ulong"/> keystream offset, so 64 bits is always sufficient; the wider
+    /// BigInteger path is kept for the GMAC key rotation, which happens once per 45000 keystream offsets and can
     /// exceed 64 bits when multiplied by the rotation factor.
     /// </para>
     /// </summary>

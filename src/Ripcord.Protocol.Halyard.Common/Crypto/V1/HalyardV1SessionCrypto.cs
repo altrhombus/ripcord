@@ -97,12 +97,12 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
         var receive = _receive;
         if (receive is null)
             return false; // stream not yet established - drop rather than throw
-        if (!receive.VerifyPacket(layout.KeyPos, packet, layout.TagOffset))
+        if (!receive.VerifyPacket(layout.KeystreamOffset, packet, layout.TagOffset))
             return false;
 
         // Decrypt the payload genuinely in place (AES-CTR is symmetric) — the previous form allocated a result
         // buffer and copied it back, per packet.
-        receive.CryptPayloadInPlace(layout.KeyPos, packet[layout.PayloadOffset..]);
+        receive.CryptPayloadInPlace(layout.KeystreamOffset, packet[layout.PayloadOffset..]);
         return true;
     }
 
@@ -111,18 +111,18 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
         var send = _send ?? throw new InvalidOperationException("Stream crypto not established.");
 
         // Encrypt the payload in place, then MAC the whole (encrypted) packet and write the tag.
-        var encrypted = send.CryptPayload(layout.KeyPos, packet[layout.PayloadOffset..]);
+        var encrypted = send.CryptPayload(layout.KeystreamOffset, packet[layout.PayloadOffset..]);
         encrypted.CopyTo(packet[layout.PayloadOffset..]);
 
-        var tag = send.ComputeTag(layout.KeyPos, packet, layout.TagOffset);
+        var tag = send.ComputeTag(layout.KeystreamOffset, packet, layout.TagOffset);
         tag.CopyTo(packet.Slice(layout.TagOffset, HalyardPacketCrypto.TagLength));
     }
 
-    // Control DATA header (base-type 0x00): GMAC tag at [5..8], key position at [9..12].
+    // Control DATA header (base-type 0x00): GMAC tag at [5..8], keystream offset at [9..12].
     private const int ControlTagOffset = 5;
-    private const int ControlKeyPosOffset = 9;
-    private ulong _sendKeyPos; // advancing local key position for outgoing (control) DATA + SACKs
-    private readonly Lock _sendKeyPosGate = new();
+    private const int ControlKeystreamOffsetAt = 9;
+    private ulong _sendKeystreamOffset; // advancing local keystream offset for outgoing (control) DATA + SACKs
+    private readonly Lock _sendKeystreamOffsetGate = new();
 
     public void SealControlMessage(Span<byte> packet)
     {
@@ -132,79 +132,79 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
             return; // pre-key-agreement (or malformed) — leave unauthenticated, which is correct before keys
         }
 
-        // Reserve a key position; outgoing control (DATA on one thread, SACKs on the receive-loop thread)
+        // Reserve a keystream offset; outgoing control (DATA on one thread, SACKs on the receive-loop thread)
         // may seal concurrently, so serialise the advance to keep positions/nonces distinct.
-        ulong keyPos;
+        ulong keystreamOffset;
         int aligned = packet.Length + (HalyardPacketCrypto.BlockSize - packet.Length % HalyardPacketCrypto.BlockSize) % HalyardPacketCrypto.BlockSize;
-        lock (_sendKeyPosGate)
+        lock (_sendKeystreamOffsetGate)
         {
-            keyPos = _sendKeyPos;
-            _sendKeyPos += (ulong)aligned;
+            keystreamOffset = _sendKeystreamOffset;
+            _sendKeystreamOffset += (ulong)aligned;
         }
 
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(ControlKeyPosOffset, 4), (uint)keyPos);
-        // Control GMAC zeroes both the tag and the key_pos field in the AAD; A/V zeroes only the tag.
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(ControlKeystreamOffsetAt, 4), (uint)keystreamOffset);
+        // Control GMAC zeroes both the tag and the keystream_offset field in the AAD; A/V zeroes only the tag.
         // PROVENANCE, and the two halves differ — keep them apart:
-        //  * The field OFFSETS are [V] as of 2026-07-29: control tag@5 / key_pos@9 confirmed across 2528
+        //  * The field OFFSETS are [V] as of 2026-07-29: control tag@5 / keystream_offset@9 confirmed across 2528
         //    type-0 packets in cap47 (bytes 5-8 random, 2516/2528 distinct; bytes 9-12 all multiples of 16,
-        //    2508 distinct). Congestion tag@7 / key_pos@11 confirmed the same way over 474 packets.
-        //  * The AAD RULE — that control zeroes the key_pos field as well as the tag — is [V] as of
+        //    2508 distinct). Loss report tag@7 / keystream_offset@11 confirmed the same way over 474 packets.
+        //  * The AAD RULE — that control zeroes the keystream_offset field as well as the tag — is [V] as of
         //    2026-08-02. Recomputed offline over cap3 (the session whose stream keys were dumped from the
         //    same connection attempt): of 727 authenticated type-0 packets, 364 client->server and 363
-        //    server->client, zeroing tag+key_pos reproduces the on-wire tag on 727/727. Zeroing the tag
-        //    alone matches only the 2 packets (one per direction) whose key_pos is 0, where the two rules
+        //    server->client, zeroing tag+keystream_offset reproduces the on-wire tag on 727/727. Zeroing the tag
+        //    alone matches only the 2 packets (one per direction) whose keystream_offset is 0, where the two rules
         //    are byte-identical and so prove nothing. A wrong AAD cannot coincidentally match a 32-bit tag
         //    727 times. The remaining 67 type-0 packets carry an all-zero tag — pre-key INIT/COOKIE
         //    handshake, unauthenticated — and are excluded rather than counted as failures.
-        byte[] tag = send.ComputeTag(keyPos, packet, ControlTagOffset, zeroKeyPos: true);
+        byte[] tag = send.ComputeTag(keystreamOffset, packet, ControlTagOffset, zeroKeystreamOffset: true);
         tag.CopyTo(packet.Slice(ControlTagOffset, HalyardPacketCrypto.TagLength));
     }
 
-    // Congestion packet (base-type 0x05): 4-byte GMAC tag at [7..10], key position at [0xb..0xe]. Because the
-    // key position immediately follows the tag, zeroing tag+key_pos (zeroKeyPos: true) covers offsets [7..15).
+    // Loss report (base-type 0x05): 4-byte GMAC tag at [7..10], keystream offset at [0xb..0xe]. Because the
+    // keystream offset immediately follows the tag, zeroing tag+keystream_offset (zeroKeystreamOffset: true) covers offsets [7..15).
     //
     // The AAD rule here is [V] as of 2026-08-02, measured rather than assumed by analogy with control:
     // recomputed over cap48 (a full gameplay session whose stream keys were dumped in the same run), 300/300
-    // congestion packets reproduce their on-wire tag with tag+key_pos zeroed, and the tag-only A/V rule
-    // matches none of them. So control and congestion share a rule, and feedback is the odd one out.
+    // loss reports reproduce their on-wire tag with tag+keystream_offset zeroed, and the tag-only A/V rule
+    // matches none of them. So control and loss reports share a rule, and input is the odd one out.
     //
     // Worth keeping, because it cost a planned console trip: this was recorded as needing "a capture that
     // reaches streaming with correlated keys", which cap48 had *already* been for days. The claim descended
     // from a capture inventory written before cap48 existed and never revisited. Check the captures folder against
     // the claim before believing a capture-blocked note.
-    private const int CongestionTagOffset = 7;
-    private const int CongestionKeyPosOffset = 0xb;
-    private const int CongestionPacketLength = 15;
+    private const int LossReportTagOffset = 7;
+    private const int LossReportKeystreamOffsetAt = 0xb;
+    private const int LossReportLength = 15;
 
-    public void SealCongestionPacket(Span<byte> packet)
+    public void SealLossReport(Span<byte> packet)
     {
         var send = _send;
-        if (send is null || packet.Length < CongestionPacketLength)
+        if (send is null || packet.Length < LossReportLength)
         {
             return; // pre-key-agreement — leave unauthenticated (never sent before keys exist anyway)
         }
 
-        // Share the outgoing key-position counter with control DATA/SACKs so no nonce is ever reused.
-        ulong keyPos;
+        // Share the outgoing keystream-offset counter with control DATA/SACKs so no nonce is ever reused.
+        ulong keystreamOffset;
         int aligned = packet.Length + (HalyardPacketCrypto.BlockSize - packet.Length % HalyardPacketCrypto.BlockSize) % HalyardPacketCrypto.BlockSize;
-        lock (_sendKeyPosGate)
+        lock (_sendKeystreamOffsetGate)
         {
-            keyPos = _sendKeyPos;
-            _sendKeyPos += (ulong)aligned;
+            keystreamOffset = _sendKeystreamOffset;
+            _sendKeystreamOffset += (ulong)aligned;
         }
 
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(CongestionKeyPosOffset, 4), (uint)keyPos);
-        byte[] tag = send.ComputeTag(keyPos, packet, CongestionTagOffset, zeroKeyPos: true);
-        tag.CopyTo(packet.Slice(CongestionTagOffset, HalyardPacketCrypto.TagLength));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(LossReportKeystreamOffsetAt, 4), (uint)keystreamOffset);
+        byte[] tag = send.ComputeTag(keystreamOffset, packet, LossReportTagOffset, zeroKeystreamOffset: true);
+        tag.CopyTo(packet.Slice(LossReportTagOffset, HalyardPacketCrypto.TagLength));
     }
 
-    // Feedback packet (base-type 6 = state, 1 = history): 4-byte key position at [4..8], 4-byte GMAC tag at
-    // [8..12], payload from [0xc]. Unlike control/congestion, the GMAC zeroes ONLY the tag (like A/V), and the
+    // Input packet (base-type 6 = state, 1 = history): 4-byte keystream offset at [4..8], 4-byte GMAC tag at
+    // [8..12], payload from [0xc]. Unlike control and loss reports, the GMAC zeroes ONLY the tag (like A/V), and the
     // payload IS AES-CTR encrypted.
-    private const int FeedbackKeyPosOffset = 4;
-    private const int FeedbackTagOffset = 8;
+    private const int InputKeystreamOffsetAt = 4;
+    private const int InputTagOffset = 8;
 
-    public void SealFeedbackPacket(Span<byte> packet, int payloadOffset)
+    public void SealInputPacket(Span<byte> packet, int payloadOffset)
     {
         var send = _send;
         if (send is null || packet.Length < payloadOffset)
@@ -212,21 +212,21 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
             return; // pre-key-agreement — never sent before keys exist
         }
 
-        // Share the outgoing key-position counter with control DATA/SACKs and congestion so no nonce repeats.
-        ulong keyPos;
+        // Share the outgoing keystream-offset counter with control DATA/SACKs and loss reports so no nonce repeats.
+        ulong keystreamOffset;
         int aligned = packet.Length + (HalyardPacketCrypto.BlockSize - packet.Length % HalyardPacketCrypto.BlockSize) % HalyardPacketCrypto.BlockSize;
-        lock (_sendKeyPosGate)
+        lock (_sendKeystreamOffsetGate)
         {
-            keyPos = _sendKeyPos;
-            _sendKeyPos += (ulong)aligned;
+            keystreamOffset = _sendKeystreamOffset;
+            _sendKeystreamOffset += (ulong)aligned;
         }
 
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(FeedbackKeyPosOffset, 4), (uint)keyPos);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(InputKeystreamOffsetAt, 4), (uint)keystreamOffset);
 
         // Encrypt the payload genuinely in place, then MAC the whole (encrypted) packet with only the tag zeroed.
-        send.CryptPayloadInPlace(keyPos, packet[payloadOffset..]);
-        byte[] tag = send.ComputeTag(keyPos, packet, FeedbackTagOffset, zeroKeyPos: false);
-        tag.CopyTo(packet.Slice(FeedbackTagOffset, HalyardPacketCrypto.TagLength));
+        send.CryptPayloadInPlace(keystreamOffset, packet[payloadOffset..]);
+        byte[] tag = send.ComputeTag(keystreamOffset, packet, InputTagOffset, zeroKeystreamOffset: false);
+        tag.CopyTo(packet.Slice(InputTagOffset, HalyardPacketCrypto.TagLength));
     }
 
     private const int TakionControlHeaderLength = 13;

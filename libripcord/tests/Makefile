@@ -221,7 +221,7 @@ CONTROL_PROTO_SOURCES := \
 	$(CORE)/takion/senkusha_echo.c \
 	control_proto_test.c
 
-# Phase 6g: the feedback packet writer. No crypto - what is under test is the byte map from spec 6.3.
+# Phase 6g: the input packet writer. No crypto - what is under test is the byte map from spec 6.3.
 INPUT_SOURCES := \
 	$(CORE)/input/halyard_input.c \
 	input_test.c

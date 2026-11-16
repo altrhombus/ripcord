@@ -26,15 +26,15 @@ void *diff_pc_new(const uint8_t key[16], const uint8_t iv[16])
 
 void diff_pc_free(void *c) { free(c); }
 
-int diff_pc_compute_tag(void *c, uint64_t key_pos, const uint8_t *packet, size_t length, int tag_offset,
-                        int zero_key_pos, uint8_t out[4])
+int diff_pc_compute_tag(void *c, uint64_t keystream_offset, const uint8_t *packet, size_t length, int tag_offset,
+                        int zero_keystream_offset, uint8_t out[4])
 {
-    return stream_packet_crypto_compute_tag(c, key_pos, packet, length, tag_offset, zero_key_pos, out);
+    return stream_packet_crypto_compute_tag(c, keystream_offset, packet, length, tag_offset, zero_keystream_offset, out);
 }
 
-void diff_pc_crypt(void *c, uint64_t key_pos, uint8_t *payload, size_t length)
+void diff_pc_crypt(void *c, uint64_t keystream_offset, uint8_t *payload, size_t length)
 {
-    stream_packet_crypto_crypt_payload(c, key_pos, payload, length);
+    stream_packet_crypto_crypt_payload(c, keystream_offset, payload, length);
 }
 
 /* ---- FEC ---- */
@@ -291,8 +291,8 @@ int diff_control_version_ack(const uint8_t *data, size_t length, uint32_t *versi
     return takion_control_parse_protocol_version_ack(data, length, version);
 }
 
-/* kind: 0 control, 1 congestion, 2 input (payload_offset used). Seals `count` packets in sequence
- * through one sealer, each in place, so the shared key position is compared too. */
+/* kind: 0 control, 1 loss report, 2 input (payload_offset used). Seals `count` packets in sequence
+ * through one sealer, each in place, so the shared keystream offset is compared too. */
 void diff_seal_sequence(const uint8_t key[16], const uint8_t iv[16], const int *kinds, uint8_t **packets,
                         const size_t *lengths, const size_t *payload_offsets, size_t count)
 {
@@ -303,7 +303,7 @@ void diff_seal_sequence(const uint8_t key[16], const uint8_t iv[16], const int *
         if (kinds[i] == 0)
             takion_control_sealer_seal(&s, packets[i], lengths[i]);
         else if (kinds[i] == 1)
-            takion_control_sealer_seal_congestion(&s, packets[i], lengths[i]);
+            takion_control_sealer_seal_loss_report(&s, packets[i], lengths[i]);
         else
             takion_control_sealer_seal_input(&s, packets[i], lengths[i], payload_offsets[i]);
     }

@@ -147,10 +147,10 @@ public class StreamCryptoTests
 
         Span<byte> gmac = stackalloc byte[16];
         Span<byte> ctr = stackalloc byte[16];
-        foreach (ulong keyPos in new ulong[] { 0, 0x400, 0x00013060, 45000, 123456789 })
+        foreach (ulong keystreamOffset in new ulong[] { 0, 0x400, 0x00013060, 45000, 123456789 })
         {
-            crypto.GmacNonce(keyPos, gmac);
-            crypto.CtrNonce(keyPos, ctr);
+            crypto.GmacNonce(keystreamOffset, gmac);
+            crypto.CtrNonce(keystreamOffset, ctr);
 
             // ctr == gmac + 1 (little-endian)
             var g = new System.Numerics.BigInteger(gmac, isUnsigned: true, isBigEndian: false);
@@ -215,8 +215,8 @@ public class StreamCryptoTests
         Assert.Equal(Hex.String(k45001), Hex.String(k90000));    // stable within a window, through its end
     }
 
-    // [type][seq u16][sub-hdr 7][tag@10 placeholder][keypos@14 u32 BE][payload]
-    private static byte[] MakeAvPacket(int seq, ulong keyPos, byte[] payload)
+    // [type][seq u16][sub-hdr 7][tag@10 placeholder][keystream_offset@14 u32 BE][payload]
+    private static byte[] MakeAvPacket(int seq, ulong keystreamOffset, byte[] payload)
     {
         var packet = new byte[18 + payload.Length];
         packet[0] = 0x02;
@@ -225,10 +225,10 @@ public class StreamCryptoTests
         // off 3..9 sub-header (arbitrary but fixed), off 10..13 zero tag placeholder
         packet[3] = 0x00; packet[4] = 0x02; packet[5] = 0x00; packet[6] = 0x00;
         packet[7] = 0x1c; packet[8] = 0x01; packet[9] = 0x03;
-        packet[14] = (byte)(keyPos >> 24);
-        packet[15] = (byte)(keyPos >> 16);
-        packet[16] = (byte)(keyPos >> 8);
-        packet[17] = (byte)keyPos;
+        packet[14] = (byte)(keystreamOffset >> 24);
+        packet[15] = (byte)(keystreamOffset >> 16);
+        packet[16] = (byte)(keystreamOffset >> 8);
+        packet[17] = (byte)keystreamOffset;
         payload.CopyTo(packet, 18);
         return packet;
     }

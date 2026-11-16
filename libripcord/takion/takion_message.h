@@ -7,7 +7,7 @@
  * protocol 132, with this 13-byte header in front of every one.
  *
  * WIRE FORMAT (all big-endian), wire-validated against captures/rudp_control_setup.pcapng:
- *   offset  0, 1 byte : base type - which of control/video/audio/feedback/congestion/input this is.
+ *   offset  0, 1 byte : base type - which of control/video/audio/input/loss report this is.
  *                       Phase 5 only builds/parses TAKION_BASE_TYPE_CONTROL: the SCTP handshake and
  *                       DATA/SACK chunks all ride base type 0, confirmed by every vector below.
  *   offset  1, 4 bytes: verification tag - the PEER's tag (the one THEY generated during the handshake
@@ -15,7 +15,7 @@
  *                       in the client's own INIT).
  *   offset  5, 4 bytes: GMAC tag - authenticates the packet once stream keys exist; zero before that
  *                       (which is everything Phase 5 handles - GMAC sealing is a later phase).
- *   offset  9, 4 bytes: key position - a running byte counter tied to the stream cipher; zero before
+ *   offset  9, 4 bytes: keystream offset - a running byte counter tied to the stream cipher; zero before
  *                       stream keys exist, same as the GMAC tag.
  *   offset 13          : one or more SCTP-shaped chunks (see takion_handshake.h / takion_data_chunk.h /
  *                        takion_sack_chunk.h).
@@ -37,7 +37,7 @@ typedef struct {
     unsigned base_type;
     uint32_t verification_tag;
     uint32_t gmac_tag;
-    uint32_t key_position;
+    uint32_t keystream_offset;
 } takion_message_header;
 
 /*

@@ -17,7 +17,7 @@ pub struct Rung {
     pub bitrate_kbps: i32,
 }
 
-/// One congestion window's measurements.
+/// One report window's measurements.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sample {
     pub rtt_ms: f64,

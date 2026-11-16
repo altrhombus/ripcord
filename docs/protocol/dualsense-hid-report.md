@@ -75,6 +75,6 @@ So the button/face masks are identical to the full report; only the field *posit
 
 Cross→South, Circle→East, Square→West, Triangle→North; Options→Start, Create→Select, **PS→Guide**,
 touchpad-click→TouchpadClick. Stick Y is inverted to the shared neutral convention (up = +1); the protocol
-layer re-inverts for the console wire. Gyro/accel are left null until calibrated (the feedback sender then
+layer re-inverts for the console wire. Gyro/accel are left null until calibrated (the input sender then
 sends idle motion). Touchpad finger position is decoded into `TouchpadSample` but not yet forwarded on the wire
-(the feedback writer currently sends only touchpad *click*; finger-drag events are a follow-up).
+(the input writer currently sends only touchpad *click*; finger-drag events are a follow-up).

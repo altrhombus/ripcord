@@ -16,7 +16,7 @@ public class TakionTests
     [Fact]
     public void Header_RoundTrips()
     {
-        var header = new TakionMessageHeader(TakionMessageHeader.BaseTypeControl, 0x00b18ccf, gmacTag: 0x1a586cb3, keyPosition: 0x00000010);
+        var header = new TakionMessageHeader(TakionMessageHeader.BaseTypeControl, 0x00b18ccf, gmacTag: 0x1a586cb3, keystreamOffset: 0x00000010);
         Span<byte> buffer = stackalloc byte[TakionMessageHeader.Length];
         header.Write(buffer);
 
@@ -24,14 +24,14 @@ public class TakionTests
         Assert.Equal(header.BaseType, parsed.BaseType);
         Assert.Equal(header.VerificationTag, parsed.VerificationTag);
         Assert.Equal(header.GmacTag, parsed.GmacTag);
-        Assert.Equal(header.KeyPosition, parsed.KeyPosition);
+        Assert.Equal(header.KeystreamOffset, parsed.KeystreamOffset);
     }
 
     [Fact]
     public void BuildInit_MatchesWireStructure()
     {
         // The exact INIT a client emits for connection tag 0x00004823: 13-byte header (all-zero: unknown
-        // server tag, no GMAC/keypos yet) + a 20-byte INIT chunk { tag, a_rwnd=0x19000, streams=0x64/0x64,
+        // server tag, no GMAC/keystream_offset yet) + a 20-byte INIT chunk { tag, a_rwnd=0x19000, streams=0x64/0x64,
         // initial_tsn=tag }. Verified byte-for-byte against the wire-validated handshake capture.
         var handshake = new TakionHandshake();
         byte[] init = handshake.BuildInit(0x00004823);

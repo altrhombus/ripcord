@@ -258,6 +258,6 @@ size_t halyard_input_write_header(uint8_t type, uint16_t sequence, uint8_t *buf,
     /* Sequence is BIG-endian, unlike the little-endian CTR counter this same packet's crypto uses. */
     buf[1] = (uint8_t)(sequence >> 8);
     buf[2] = (uint8_t)sequence;
-    /* [3] zero; [4..7] key position and [8..11] tag are the sealer's. */
+    /* [3] zero; [4..7] keystream offset and [8..11] tag are the sealer's. */
     return HALYARD_INPUT_HEADER_LENGTH;
 }

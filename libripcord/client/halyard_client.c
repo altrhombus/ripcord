@@ -103,9 +103,9 @@
  */
 #define CLIENT_SESSION_AFTER_LOGIN_MS 30000u
 
-/* The stream channel's congestion cadence (rc_connect.c 804-811; HalyardTakionStream CongestionInterval).
- * The congestion window is also the stats window. */
-#define CLIENT_CONGESTION_MS  200u
+/* The stream channel's loss-report cadence (rc_connect.c 804-811; HalyardTakionStream LossReportInterval).
+ * The report window is also the stats window. */
+#define CLIENT_LOSS_REPORT_MS  200u
 
 /* A/V datagrams taken per drain before yielding (rc_connect.h RC_AV_DRAIN_BURST, b91), and how many
  * drain-and-poll rounds one pump may run before it returns to the host. */
@@ -195,7 +195,7 @@ struct halyard_client {
     halyard_input_writer writer;
     halyard_client_input_cadence cadence;
     halyard_client_idr_latch idr;
-    uint64_t next_input_ms, next_congestion_ms;
+    uint64_t next_input_ms, next_loss_report_ms;
     uint64_t window_start_ms, window_bytes;
     uint64_t last_activity_ms, last_video_ms;
     uint64_t packets_received, packets_lost;
@@ -1134,7 +1134,7 @@ static void begin_streaming(halyard_client *c)
     halyard_client_idr_arm(&c->idr);
 
     c->next_input_ms = now;
-    c->next_congestion_ms = now + CLIENT_CONGESTION_MS;
+    c->next_loss_report_ms = now + CLIENT_LOSS_REPORT_MS;
     c->window_start_ms = now;
     c->window_bytes = 0u;
     c->last_activity_ms = now;
@@ -1155,7 +1155,7 @@ static void send_idr(halyard_client *c, uint64_t now)
  * send_input, rc_connect.c 1238-1408, without the PS3's in-session menu and synthesised PS press: those
  * are a front end's, and a host that wants one neutralises the state before handing it over. Nothing is
  * sent when poll_input says no controller - neutral is a position, and absence is a different statement
- * (1247-1254). The sealer encrypts and tags input together, at the sealer's shared key position.
+ * (1247-1254). The sealer encrypts and tags input together, at the sealer's shared keystream offset.
  */
 static void send_input(halyard_client *c, uint64_t now)
 {
@@ -1221,11 +1221,11 @@ static void send_periodic(halyard_client *c)
     if (c->cb.poll_input != NULL && halyard_client_timer_due(&c->next_input_ms, now, HALYARD_CLIENT_INPUT_POLL_MS))
         send_input(c, now);
 
-    /* Congestion feedback: what arrived and what did not. take_packet_stats RESETS on read, so each
+    /* Loss reports: what arrived and what did not. take_packet_stats RESETS on read, so each
      * report covers its own window (1422-1448). The stats window rides the same tick. */
-    if (halyard_client_timer_due(&c->next_congestion_ms, now, CLIENT_CONGESTION_MS)) {
+    if (halyard_client_timer_due(&c->next_loss_report_ms, now, CLIENT_LOSS_REPORT_MS)) {
         long got = 0, missed = 0;
-        uint8_t feedback[TAKION_CONGESTION_PACKET_SIZE];
+        uint8_t report[TAKION_LOSS_REPORT_SIZE];
         size_t length;
 
         stream_demux_take_packet_stats(&c->demux, &got, &missed);
@@ -1233,12 +1233,12 @@ static void send_periodic(halyard_client *c)
             c->packets_received += (uint64_t)got;
         if (missed > 0)
             c->packets_lost += (uint64_t)missed;
-        length = takion_congestion_build((unsigned long)(got < 0 ? 0 : got), (unsigned long)(missed < 0 ? 0 : missed),
-                                         feedback, sizeof(feedback));
+        length = takion_loss_report_build((unsigned long)(got < 0 ? 0 : got), (unsigned long)(missed < 0 ? 0 : missed),
+                                         report, sizeof(report));
         if (length > 0u) {
-            takion_control_sealer_seal_congestion(&c->sealer, feedback, length);
-            if (stream_sendto(c, feedback, length))
-                c->result.congestion_sent++;
+            takion_control_sealer_seal_loss_report(&c->sealer, report, length);
+            if (stream_sendto(c, report, length))
+                c->result.loss_reports_sent++;
         }
         report_stats(c, now);
     }
@@ -1917,7 +1917,7 @@ int halyard_client_pump(halyard_client *client, uint32_t *next_deadline_ms)
         uint32_t wait = CLIENT_MAX_WAIT_MS;
         uint32_t w;
 
-        w = halyard_client_timer_wait_ms(c->next_congestion_ms, now);
+        w = halyard_client_timer_wait_ms(c->next_loss_report_ms, now);
         if (w < wait)
             wait = w;
         if (c->cb.poll_input != NULL) {

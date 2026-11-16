@@ -358,8 +358,8 @@ session carried **1250 A/V packets, 842,990 bytes** — 653 video, 597 audio —
 verified under the A/V rule.
 
 That rule is not the control rule, and the differences are exactly where it goes wrong quietly: the tag
-sits at offset 10, the key position travels **in the packet** at offset 14 rather than being ours to
-choose, and only the tag region is zeroed in the AAD — not the key position. Getting either half wrong
+sits at offset 10, the keystream offset travels **in the packet** at offset 14 rather than being ours to
+choose, and only the tag region is zeroed in the AAD — not the keystream offset. Getting either half wrong
 makes every packet fail, which is a far better outcome than silently decrypting noise.
 
 **And it had been arriving all along.** One UDP socket carries both the control association and the A/V
@@ -530,7 +530,7 @@ The MTU close is unconditional: past the open the console *is* in client-MTU mod
 being cleared, and the .NET side records that this was once a sequential send a timeout could unwind
 past, leaving the console stuck.
 
-## Congestion feedback — done, and the bitrate was never the protocol
+## Loss reports — done, and the bitrate was never the protocol
 
 The reference sends a sealed 15-byte type-5 packet every 200 ms carrying received/lost unit counts, and
 describes it as what lets "the console's rate controller adapt the encoder bitrate to the link". This
@@ -538,7 +538,7 @@ port sent none, which made it the obvious remaining suspect. It now sends them �
 and the bitrate did not move. **1.35 Mbps before, 1.35 Mbps after.**
 
 Three explanations were offered for that number and all three were wrong: decode headroom, then the
-declared `rtt`/`mtu`, then congestion feedback. Looking at the frames instead of the protocol settles it:
+declared `rtt`/`mtu`, then the loss report. Looking at the frames instead of the protocol settles it:
 
 | | |
 |---|---|
@@ -556,11 +556,11 @@ declaring figures nobody measured is a defect whether or not it is the binding o
 answer to the question that motivated them, and the honest measurement of throughput needs **moving
 content on the console**.
 
-**Where congestion feedback lives, and why.** In `libripcord`, on the sealer — because the reference is
-explicit that the outgoing key position is one sequence shared by control DATA, SACKs and congestion
-packets alike. A congestion path with its own counter would repeat a position control had already spent,
+**Where the loss report lives, and why.** In `libripcord`, on the sealer — because the reference is
+explicit that the outgoing keystream offset is one sequence shared by control DATA, SACKs and loss
+reports alike. A loss-report path with its own counter would repeat a position control had already spent,
 and a repeated position is a repeated GMAC nonce under one key. Three offset pairs that look alike and
-are not: control tag@5/pos@9, congestion tag@7/pos@11, A/V tag@10/pos@14 — and A/V zeroes only the tag in
+are not: control tag@5/pos@9, loss-report tag@7/pos@11, A/V tag@10/pos@14 — and A/V zeroes only the tag in
 its AAD where the other two zero both. PSL1GHT exposes the PS3's own H.264 decoder
 (`codec/vdec.h`, `libvdec.a`, `SYSMODULE_VDEC_H264`), which is the path to 1080p and would free the PPE
 almost entirely — the same shape as the 3DS port's MVD hardware path.

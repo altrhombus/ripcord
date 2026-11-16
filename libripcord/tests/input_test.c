@@ -1,5 +1,5 @@
 /*
- * Known-answer tests for the feedback packet writer, checked against spec 6.3's byte map (itself derived
+ * Known-answer tests for the input packet writer, checked against spec 6.3's byte map (itself derived
  * from cap48). Hand-encoded expectations, not round-trips: what is under test is agreement with the
  * capture, and a round-trip would agree with itself while both were wrong.
  */
@@ -220,9 +220,9 @@ static void test_header(void)
     check(buf[0] == 0x06, "type at offset 0");
     check(buf[1] == 0x12 && buf[2] == 0x34, "sequence is big-endian at 1..2");
     check(buf[3] == 0, "offset 3 is zero");
-    /* Key position (4..7) and tag (8..11) belong to the sealer and must start clear. */
+    /* Keystream offset (4..7) and tag (8..11) belong to the sealer and must start clear. */
     check(buf[4] == 0 && buf[7] == 0 && buf[8] == 0 && buf[11] == 0,
-          "key position and tag left for the sealer");
+          "keystream offset and tag left for the sealer");
     check(halyard_input_write_header(0x06, 0, buf, 11) == 0, "short header buffer refused");
 }
 

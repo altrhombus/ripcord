@@ -41,7 +41,7 @@
  * A byte-indexed table replaces that with one lookup and two XORs per input byte, about 5x fewer
  * operations - but the tables cost ~4.6 KB to build, so rebuilding them per call would be far worse than
  * the problem. Hence a prepared key: this protocol rotates its GMAC key roughly every 650 packets
- * (45,000 key-position units), so one build serves hundreds of packets.
+ * (45,000 keystream-offset units), so one build serves hundreds of packets.
  *
  * DO NOT put one on the stack in the 3DS build - it is over the 8 KB frame limit the build enforces, and
  * for good reason (see takion_reliable_channel.h for what an oversized local does on this hardware).

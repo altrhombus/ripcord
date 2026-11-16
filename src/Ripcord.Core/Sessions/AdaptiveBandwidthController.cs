@@ -41,7 +41,7 @@ public sealed class AdaptiveBandwidthController : IBandwidthController
     ///
     /// <para>
     /// Set above 1/<see cref="StepDownLossRatio"/> (= 50) so that a single lost unit can never on its own exceed
-    /// the step-down threshold. Below this the ratio is noise: the first congestion window after connect held
+    /// the step-down threshold. Below this the ratio is noise: the first report window after connect held
     /// around eight units, where one loss reads as 12% and cost a healthy stream a quality rung immediately on
     /// connect.
     /// </para>

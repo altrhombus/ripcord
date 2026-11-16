@@ -1069,9 +1069,9 @@ arriving - so polling from the drain makes the controller laggy exactly when the
 is exactly when it is being used.
 
 **The sealer gained an input variant rather than this port sealing its own.** Input is a third packet
-shape with a third set of offsets - key position at 4, tag at 8 - and an AAD rule that matches A/V
+shape with a third set of offsets - keystream offset at 4, tag at 8 - and an AAD rule that matches A/V
 rather than control, and it is the only one of the three whose payload is ENCRYPTED. That is not
-tidiness: the outgoing key position is ONE advancing sequence shared by control, SACKs, congestion and
+tidiness: the outgoing keystream offset is ONE advancing sequence shared by control, SACKs, loss reports and
 input, and a path with a counter of its own would repeat a position, which is a repeated GMAC nonce
 under one key.
 

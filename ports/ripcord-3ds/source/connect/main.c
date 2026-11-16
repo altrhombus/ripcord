@@ -20,7 +20,7 @@
  *      on-screen entry yet), so it reports and stops rather than proceeding into guaranteed silence.
  *   4. wait for session-ready (SESSION_ID, 0x0033)
  *   5. senkusha bring-up on UDP 9297 - the console requires this to have happened before it will answer
- *      the stream's SESSION exchange. Keyless: full Takion framing with the GMAC and key-position fields
+ *      the stream's SESSION exchange. Keyless: full Takion framing with the GMAC and keystream-offset fields
  *      left zero.
  *   6. Takion handshake on UDP 9296 (NOT 9297 - that is senkusha's port)
  *   7. SESSION_REQUEST -> SESSION_REPLY -> per-direction stream keys (takion_session_negotiator)
@@ -101,17 +101,17 @@
  * denominator was fiction.
  */
 #define CANDIDATE_DWELL_MS        8000u
-#define CONGESTION_INTERVAL_MS   200u
+#define LOSS_REPORT_INTERVAL_MS   200u
 /* 60 Hz. Integer milliseconds: 16 rather than 16.67, which paces slightly fast and so never starves the
  * display of a frame that is ready. */
 #define VBLANK_INTERVAL_MS        16u
 
-/* Control DATA/SACK carry the GMAC tag at offset 5 and the key position at 9 (both [V] against captures:
- * 2528 type-0 packets for the offsets, 727/727 for the AAD rule). Congestion uses 7 and 0x0b. */
+/* Control DATA/SACK carry the GMAC tag at offset 5 and the keystream offset at 9 (both [V] against captures:
+ * 2528 type-0 packets for the offsets, 727/727 for the AAD rule). Loss reports use 7 and 0x0b. */
 #define CONTROL_TAG_OFFSET   5
-#define CONTROL_KEYPOS_OFFSET 9
-#define CONGESTION_TAG_OFFSET 7
-#define CONGESTION_KEYPOS_OFFSET 0x0b
+#define CONTROL_KEYSTREAM_OFFSET_AT 9
+#define LOSS_REPORT_TAG_OFFSET 7
+#define LOSS_REPORT_KEYSTREAM_OFFSET_AT 0x0b
 
 /* The launch spec's declared MTU when senkusha's measurement legs are not run. LinkMetrics.VendorMtu. */
 #define DEFAULT_DECLARED_MTU 1454
@@ -140,8 +140,8 @@ static long g_heartbeats_answered, g_control_messages_other;
 static uint32_t g_last_control_type = 0xffffffffu;
 
 /*
- * The stream-plane sender state. One advancing key position is shared by every outgoing sealed packet -
- * control DATA, SACKs and congestion reports alike - and it advances by the packet's 16-byte-aligned
+ * The stream-plane sender state. One advancing keystream offset is shared by every outgoing sealed packet -
+ * control DATA, SACKs and loss reports alike - and it advances by the packet's 16-byte-aligned
  * length, not by 1. Reusing a position across two packets reuses a GMAC nonce, which is a real forgery
  * problem and produces no visible symptom.
  */
@@ -393,37 +393,37 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
 
 static stream_packet_crypto g_send_crypto;
 static stream_packet_crypto g_recv_crypto;
-static uint64_t g_send_key_pos;
+static uint64_t g_send_keystream_offset;
 static int g_sealing;
 
-static uint64_t reserve_key_pos(size_t packet_length)
+static uint64_t reserve_keystream_offset(size_t packet_length)
 {
-    uint64_t reserved = g_send_key_pos;
+    uint64_t reserved = g_send_keystream_offset;
     size_t remainder = packet_length % 16u;
     size_t aligned = packet_length + ((remainder == 0u) ? 0u : (16u - remainder));
 
-    g_send_key_pos += (uint64_t)aligned;
+    g_send_keystream_offset += (uint64_t)aligned;
     return reserved;
 }
 
-/* Seals one outgoing control DATA or SACK: key position at offset 9, 4-byte GMAC tag at offset 5, with
- * both the tag and the key-position field zeroed in the AAD (the control/congestion rule; A/V zeroes the
+/* Seals one outgoing control DATA or SACK: keystream offset at offset 9, 4-byte GMAC tag at offset 5, with
+ * both the tag and the keystream-offset field zeroed in the AAD (the control and loss-report rule; A/V zeroes the
  * tag only). Handed to takion_channel_enable_sealing. */
 static void seal_control_packet(void *ctx, uint8_t *packet, size_t length)
 {
-    uint64_t key_pos;
+    uint64_t keystream_offset;
 
     (void)ctx;
-    if (!g_sealing || length < (size_t)(CONTROL_KEYPOS_OFFSET + 4))
+    if (!g_sealing || length < (size_t)(CONTROL_KEYSTREAM_OFFSET_AT + 4))
         return;
 
-    key_pos = reserve_key_pos(length);
-    packet[CONTROL_KEYPOS_OFFSET + 0] = (uint8_t)(key_pos >> 24);
-    packet[CONTROL_KEYPOS_OFFSET + 1] = (uint8_t)(key_pos >> 16);
-    packet[CONTROL_KEYPOS_OFFSET + 2] = (uint8_t)(key_pos >> 8);
-    packet[CONTROL_KEYPOS_OFFSET + 3] = (uint8_t)key_pos;
-    (void)stream_packet_crypto_seal(&g_send_crypto, key_pos, packet, length,
-                                    CONTROL_TAG_OFFSET, 1 /* zero_key_pos */);
+    keystream_offset = reserve_keystream_offset(length);
+    packet[CONTROL_KEYSTREAM_OFFSET_AT + 0] = (uint8_t)(keystream_offset >> 24);
+    packet[CONTROL_KEYSTREAM_OFFSET_AT + 1] = (uint8_t)(keystream_offset >> 16);
+    packet[CONTROL_KEYSTREAM_OFFSET_AT + 2] = (uint8_t)(keystream_offset >> 8);
+    packet[CONTROL_KEYSTREAM_OFFSET_AT + 3] = (uint8_t)keystream_offset;
+    (void)stream_packet_crypto_seal(&g_send_crypto, keystream_offset, packet, length,
+                                    CONTROL_TAG_OFFSET, 1 /* zero_keystream_offset */);
 }
 
 /*
@@ -1282,7 +1282,7 @@ static int run_media(int sock)
     size_t ack_len;
     u64 start_ms, elapsed_ms;
     double elapsed_secs;
-    u64 last_congestion_ms = 0;
+    u64 last_loss_report_ms = 0;
     int stream_info_seen = 0;
     int video_packets = 0;
     int audio_packets = 0;
@@ -1293,7 +1293,7 @@ static int run_media(int sock)
     rc_mvd_set_profile(&g_profile);
     stream_packet_crypto_init(&g_send_crypto, g_negotiator.send_aes_key, g_negotiator.send_base_iv);
     stream_packet_crypto_init(&g_recv_crypto, g_negotiator.receive_aes_key, g_negotiator.receive_base_iv);
-    g_send_key_pos = 0;
+    g_send_keystream_offset = 0;
     g_sealing = 1;
 
     /* The demuxer, wired to the REAL crypto for the first time - every host test of this layer so far
@@ -1394,8 +1394,8 @@ static int run_media(int sock)
 
     if (!stream_info_seen) {
         rc_log("\x1b[31mFAIL\x1b[0m no STREAM_INFO within %u ms.\n", STREAM_INFO_TIMEOUT_MS);
-        rc_log("        The keys are agreed, so suspect the SEALING: tag offset 5, key position 9,\n");
-        rc_log("        AAD with tag+keypos zeroed, position advancing by 16-byte-aligned length.\n");
+        rc_log("        The keys are agreed, so suspect the SEALING: tag offset 5, keystream offset 9,\n");
+        rc_log("        AAD with tag+keystream_offset zeroed, position advancing by 16-byte-aligned length.\n");
         return 0;
     }
 
@@ -1417,7 +1417,7 @@ static int run_media(int sock)
 
     /*
      * 3. The media window. The console's Takion HEARTBEATs are answered as they arrive, and a 200 ms
-     * congestion report runs off the same tick as everything else.
+     * loss report runs off the same tick as everything else.
      *
      * This build does NOT decode. It counts what arrives and whether it authenticates, which is the one
      * question worth answering first - the whole stream_demux/FEC layer has 2,808 host cases behind it
@@ -1447,13 +1447,13 @@ static int run_media(int sock)
         if (!g_control_alive)
             break;
 
-        if (now_ms - last_congestion_ms >= (u64)CONGESTION_INTERVAL_MS) {
-            /* 15 bytes: [0]=0x05, u16BE received at 3, u16BE lost at 5, tag at 7, key position at 0x0b.
-             * Sealed with the same shared counter and the same tag+keypos-zeroed AAD as control. */
-            uint8_t congestion[15];
-            uint64_t key_pos;
+        if (now_ms - last_loss_report_ms >= (u64)LOSS_REPORT_INTERVAL_MS) {
+            /* 15 bytes: [0]=0x05, u16BE received at 3, u16BE lost at 5, tag at 7, keystream offset at 0x0b.
+             * Sealed with the same shared counter and the same tag+keystream_offset-zeroed AAD as control. */
+            uint8_t report[15];
+            uint64_t keystream_offset;
 
-            memset(congestion, 0, sizeof(congestion));
+            memset(report, 0, sizeof(report));
             long window_received = 0, window_lost = 0;
 
             /*
@@ -1478,27 +1478,27 @@ static int run_media(int sock)
             g_total_received += window_received;
             g_total_lost += window_lost;
 
-            congestion[0] = 0x05;
-            congestion[3] = (uint8_t)((unsigned long)window_received >> 8);
-            congestion[4] = (uint8_t)window_received;
-            congestion[5] = (uint8_t)((unsigned long)window_lost >> 8);
-            congestion[6] = (uint8_t)window_lost;
-            key_pos = reserve_key_pos(sizeof(congestion));
-            congestion[CONGESTION_KEYPOS_OFFSET + 0] = (uint8_t)(key_pos >> 24);
-            congestion[CONGESTION_KEYPOS_OFFSET + 1] = (uint8_t)(key_pos >> 16);
-            congestion[CONGESTION_KEYPOS_OFFSET + 2] = (uint8_t)(key_pos >> 8);
-            congestion[CONGESTION_KEYPOS_OFFSET + 3] = (uint8_t)key_pos;
-            (void)stream_packet_crypto_seal(&g_send_crypto, key_pos, congestion, sizeof(congestion),
-                                            CONGESTION_TAG_OFFSET, 1);
-            sendto(sock, congestion, sizeof(congestion), 0,
+            report[0] = 0x05;
+            report[3] = (uint8_t)((unsigned long)window_received >> 8);
+            report[4] = (uint8_t)window_received;
+            report[5] = (uint8_t)((unsigned long)window_lost >> 8);
+            report[6] = (uint8_t)window_lost;
+            keystream_offset = reserve_keystream_offset(sizeof(report));
+            report[LOSS_REPORT_KEYSTREAM_OFFSET_AT + 0] = (uint8_t)(keystream_offset >> 24);
+            report[LOSS_REPORT_KEYSTREAM_OFFSET_AT + 1] = (uint8_t)(keystream_offset >> 16);
+            report[LOSS_REPORT_KEYSTREAM_OFFSET_AT + 2] = (uint8_t)(keystream_offset >> 8);
+            report[LOSS_REPORT_KEYSTREAM_OFFSET_AT + 3] = (uint8_t)keystream_offset;
+            (void)stream_packet_crypto_seal(&g_send_crypto, keystream_offset, report, sizeof(report),
+                                            LOSS_REPORT_TAG_OFFSET, 1);
+            sendto(sock, report, sizeof(report), 0,
                    (struct sockaddr *)&g_stream_channel.peer, sizeof(g_stream_channel.peer));
-            last_congestion_ms = now_ms;
+            last_loss_report_ms = now_ms;
         }
 
         /*
          * CONTROLLER INPUT, up the same socket.
          *
-         * Two packets, both sealed exactly like congestion: the shared up-direction key position, written
+         * Two packets, both sealed exactly like the loss report: the shared up-direction keystream offset, written
          * into the header before sealing, and a GMAC that zeroes ONLY the tag. A history packet goes
          * whenever a button transitioned and again every 200 ms; a state packet every 15 ms (cap48).
          *
@@ -1511,7 +1511,7 @@ static int run_media(int sock)
             circlePosition circle, cstick;
             uint8_t input_packet[HALYARD_INPUT_MAX_PACKET];
             size_t payload_len;
-            uint64_t input_key_pos;
+            uint64_t input_keystream_offset;
             u32 held;
 
             hidScanInput();
@@ -1536,17 +1536,17 @@ static int run_media(int sock)
 
                 g_last_input_history_ms = now_ms;
                 (void)halyard_input_write_header(0x01, g_input.history_seq++, input_packet, sizeof(input_packet));
-                input_key_pos = reserve_key_pos(total);
-                input_packet[4] = (uint8_t)(input_key_pos >> 24);
-                input_packet[5] = (uint8_t)(input_key_pos >> 16);
-                input_packet[6] = (uint8_t)(input_key_pos >> 8);
-                input_packet[7] = (uint8_t)input_key_pos;
+                input_keystream_offset = reserve_keystream_offset(total);
+                input_packet[4] = (uint8_t)(input_keystream_offset >> 24);
+                input_packet[5] = (uint8_t)(input_keystream_offset >> 16);
+                input_packet[6] = (uint8_t)(input_keystream_offset >> 8);
+                input_packet[7] = (uint8_t)input_keystream_offset;
                 /*
                  * ENCRYPT, THEN SEAL - and the first version did neither, which is what made input
                  * unusable.
                  *
                  * stream_packet_crypto_seal only computes the GMAC tag; it does not touch the payload.
-                 * Congestion packets get away with that, but spec 6.3 is explicit that feedback payloads
+                 * Loss reports get away with that, but spec 6.3 is explicit that input payloads
                  * ARE AES-CTR encrypted. So the console was faithfully DECRYPTING our plaintext button
                  * events into noise - which is why one press arrived as D-pad movement, at an
                  * unpredictable time, having passed authentication the whole way.
@@ -1554,10 +1554,10 @@ static int run_media(int sock)
                  * Order matters: the tag is computed over the packet AS IT GOES ON THE WIRE, i.e. over
                  * ciphertext. Sealing first would authenticate a payload nobody will ever see.
                  */
-                stream_packet_crypto_crypt_payload(&g_send_crypto, input_key_pos,
+                stream_packet_crypto_crypt_payload(&g_send_crypto, input_keystream_offset,
                                                    input_packet + HALYARD_INPUT_HEADER_LENGTH,
                                                    total - HALYARD_INPUT_HEADER_LENGTH);
-                (void)stream_packet_crypto_seal(&g_send_crypto, input_key_pos, input_packet, total, 8, 0);
+                (void)stream_packet_crypto_seal(&g_send_crypto, input_keystream_offset, input_packet, total, 8, 0);
                 sendto(sock, input_packet, total, 0,
                        (struct sockaddr *)&g_stream_channel.peer, sizeof(g_stream_channel.peer));
                 g_input_history_packets++;
@@ -1570,16 +1570,16 @@ static int run_media(int sock)
                                                                 sizeof(input_packet) - HALYARD_INPUT_HEADER_LENGTH);
                 total = HALYARD_INPUT_HEADER_LENGTH + payload_len;
                 (void)halyard_input_write_header(0x06, g_input.state_seq++, input_packet, sizeof(input_packet));
-                input_key_pos = reserve_key_pos(total);
-                input_packet[4] = (uint8_t)(input_key_pos >> 24);
-                input_packet[5] = (uint8_t)(input_key_pos >> 16);
-                input_packet[6] = (uint8_t)(input_key_pos >> 8);
-                input_packet[7] = (uint8_t)input_key_pos;
+                input_keystream_offset = reserve_keystream_offset(total);
+                input_packet[4] = (uint8_t)(input_keystream_offset >> 24);
+                input_packet[5] = (uint8_t)(input_keystream_offset >> 16);
+                input_packet[6] = (uint8_t)(input_keystream_offset >> 8);
+                input_packet[7] = (uint8_t)input_keystream_offset;
                 /* Encrypt then seal - see the history packet above. */
-                stream_packet_crypto_crypt_payload(&g_send_crypto, input_key_pos,
+                stream_packet_crypto_crypt_payload(&g_send_crypto, input_keystream_offset,
                                                    input_packet + HALYARD_INPUT_HEADER_LENGTH,
                                                    total - HALYARD_INPUT_HEADER_LENGTH);
-                (void)stream_packet_crypto_seal(&g_send_crypto, input_key_pos, input_packet, total, 8, 0);
+                (void)stream_packet_crypto_seal(&g_send_crypto, input_keystream_offset, input_packet, total, 8, 0);
                 sendto(sock, input_packet, total, 0,
                        (struct sockaddr *)&g_stream_channel.peer, sizeof(g_stream_channel.peer));
                 g_input_state_packets++;
@@ -1621,16 +1621,16 @@ static int run_media(int sock)
                 if (n > 0 && (size_t)n >= STREAM_HEADER_LENGTH) {
                     /*
                      * Authenticate it. This is the question the whole stream layer has been waiting to
-                     * be asked: the A/V rule differs from control's - the key position travels IN the
+                     * be asked: the A/V rule differs from control's - the keystream offset travels IN the
                      * packet (u32 BE at offset 14) rather than being ours to choose, and only the TAG
-                     * region is zeroed in the AAD, not the key position. Getting either wrong makes
+                     * region is zeroed in the AAD, not the keystream offset. Getting either wrong makes
                      * every packet fail, which is a far better outcome than silently decrypting noise.
                      */
-                    uint64_t key_pos =
-                        ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 0] << 24) |
-                        ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 1] << 16) |
-                        ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 2] << 8) |
-                        ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 3]);
+                    uint64_t keystream_offset =
+                        ((uint64_t)packet[STREAM_HEADER_KEYSTREAM_OFFSET_AT + 0] << 24) |
+                        ((uint64_t)packet[STREAM_HEADER_KEYSTREAM_OFFSET_AT + 1] << 16) |
+                        ((uint64_t)packet[STREAM_HEADER_KEYSTREAM_OFFSET_AT + 2] << 8) |
+                        ((uint64_t)packet[STREAM_HEADER_KEYSTREAM_OFFSET_AT + 3]);
                     /*
                      * SAMPLED, not every packet. stream_demux_ingest below already verifies every
                      * packet through its crypto seam (packet_crypto_open_packet) and drops what fails -
@@ -1647,7 +1647,7 @@ static int run_media(int sock)
 
                     if ((video_packets + audio_packets) % 16 == 0) {
                         uint64_t t = rc_profile_start();
-                        verified = stream_packet_crypto_verify(&g_recv_crypto, key_pos, packet,
+                        verified = stream_packet_crypto_verify(&g_recv_crypto, keystream_offset, packet,
                             (size_t)n, STREAM_HEADER_TAG_OFFSET, 0 /* A/V zeroes the tag only */);
                         rc_profile_stop(&g_profile, RC_STAGE_GMAC_VERIFY, t);
                     }
@@ -1671,15 +1671,15 @@ static int run_media(int sock)
                          * the one shape that IS a crypto bug.
                          */
                         if (verify_failures <= 4) {
-                            rc_log("\x1b[33mGMAC fail #%d\x1b[0m base %u, %u bytes, keypos %u "
+                            rc_log("\x1b[33mGMAC fail #%d\x1b[0m base %u, %u bytes, keystream_offset %u "
                                    "(rotation window %u)\n", verify_failures, base_type, (unsigned)n,
-                                   (unsigned)key_pos, (unsigned)(key_pos / 16u / 45000u));
+                                   (unsigned)keystream_offset, (unsigned)(keystream_offset / 16u / 45000u));
                         }
                     }
 
                     if (video_packets + audio_packets == 1) {
-                        rc_log("\x1b[32mFIRST A/V PACKET\x1b[0m base type %u, %u bytes, keypos %u, "
-                               "GMAC %s\n", base_type, (unsigned)n, (unsigned)key_pos,
+                        rc_log("\x1b[32mFIRST A/V PACKET\x1b[0m base type %u, %u bytes, keystream_offset %u, "
+                               "GMAC %s\n", base_type, (unsigned)n, (unsigned)keystream_offset,
                                verified ? "\x1b[32mVERIFIED\x1b[0m" : "\x1b[31mFAILED\x1b[0m");
                     }
 
@@ -1807,7 +1807,7 @@ static int run_media(int sock)
     rc_profile_report(&g_profile, (unsigned)elapsed_ms);
     {
         /*
-         * The RUNNING totals, not another drain. take_packet_stats resets as it reads, and the congestion
+         * The RUNNING totals, not another drain. take_packet_stats resets as it reads, and the loss
          * reporter now drains it every 200 ms - so reading it again here would show only the residual
          * since the last report rather than the session.
          */
@@ -1914,12 +1914,12 @@ static int run_media(int sock)
                    "GMAC derivation are both correct against real traffic.\n");
         else
             rc_log("\x1b[31m%d packet(s) failed GMAC\x1b[0m - suspect the receive-direction key (dir 3),\n"
-                   "the nonce derivation, or the A/V AAD rule (tag zeroed, key position NOT).\n",
+                   "the nonce derivation, or the A/V AAD rule (tag zeroed, keystream offset NOT).\n",
                    verify_failures);
     }
     if (video_packets == 0 && audio_packets == 0) {
         rc_log("\x1b[31mFAIL\x1b[0m the console acked our STREAM_INFO_ACK and sent no media.\n");
-        rc_log("        Suspect the heartbeat replies, the 200 ms congestion report, or their sealing.\n");
+        rc_log("        Suspect the heartbeat replies, the 200 ms loss report, or their sealing.\n");
     }
     return (video_packets > 0) ? 1 : 0;
 }

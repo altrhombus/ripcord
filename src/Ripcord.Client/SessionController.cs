@@ -1012,7 +1012,7 @@ public sealed class SessionController : IAsyncDisposable
             // healthy and still talking to us. Escalating on frames alone would show "Video has stopped" and then
             // tear down a perfectly good session because the user paused their game.
             //
-            // Console activity is the discriminator: our own congestion loop is timer-driven and keeps producing
+            // Console activity is the discriminator: our own loss-report loop is timer-driven and keeps producing
             // statistics regardless, so only inbound datagrams prove the far end is alive.
             double? sinceConsole = session.MillisecondsSinceConsoleActivity;
             bool consoleStillTalking =

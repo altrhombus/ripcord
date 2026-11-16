@@ -165,7 +165,7 @@ public class AdaptiveBandwidthControllerTests
     [Fact]
     public void ATinySampleDoesNotStepDownHoweverBadItLooks()
     {
-        // The observed regression: the first congestion window after connect held about eight A/V units, so one
+        // The observed regression: the first report window after connect held about eight A/V units, so one
         // lost unit read as 12% loss and immediately cost a healthy 1080p60 stream a rung. The overlay showed
         // "stepped down after 12.0% packet loss" beside a 30-second history reading 0.0% — the ratio was real
         // arithmetic on a meaningless sample.

@@ -47,7 +47,7 @@ static void send_sack(takion_reliable_channel *ch)
     header.base_type = TAKION_BASE_TYPE_CONTROL;
     header.verification_tag = ch->peer_tag;
     header.gmac_tag = 0;
-    header.key_position = 0;
+    header.keystream_offset = 0;
     packet_len = takion_message_build(&header, sack_chunk, sack_len, packet, sizeof(packet));
     if (packet_len > 0) {
         seal_if_enabled(ch, packet, packet_len);
@@ -164,7 +164,7 @@ static int connect_impl(takion_reliable_channel *ch, int sock, struct sockaddr_i
         header.base_type = TAKION_BASE_TYPE_CONTROL;
         header.verification_tag = 0; /* the server's tag is not known yet */
         header.gmac_tag = 0;
-        header.key_position = 0;
+        header.keystream_offset = 0;
         packet_len = takion_message_build(&header, init_chunk, init_chunk_len, packet, sizeof(packet));
         if (packet_len > 0)
             sendto(sock, packet, packet_len, 0, (struct sockaddr *)&peer, sizeof(peer));
@@ -216,7 +216,7 @@ static int connect_impl(takion_reliable_channel *ch, int sock, struct sockaddr_i
         header.base_type = TAKION_BASE_TYPE_CONTROL;
         header.verification_tag = ch->peer_tag;
         header.gmac_tag = 0;
-        header.key_position = 0;
+        header.keystream_offset = 0;
         packet_len = takion_message_build(&header, echo_chunk, echo_chunk_len, packet, sizeof(packet));
         if (packet_len > 0)
             sendto(sock, packet, packet_len, 0, (struct sockaddr *)&peer, sizeof(peer));
@@ -300,7 +300,7 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
         header.base_type = TAKION_BASE_TYPE_CONTROL;
         header.verification_tag = ch->peer_tag;
         header.gmac_tag = 0;
-        header.key_position = 0;
+        header.keystream_offset = 0;
         slot->length = takion_message_build(&header, chunk, chunk_len, slot->packet, sizeof(slot->packet));
         if (slot->length == 0)
             return 0;
@@ -309,7 +309,7 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
         slot->in_use = 1;
         slot->last_sent_ms = rc_time_ms();
         /* Sealed once, here. Retransmits below resend these exact bytes rather than re-sealing, so the
-         * key position reserved for this packet stays associated with it. */
+         * keystream offset reserved for this packet stays associated with it. */
         seal_if_enabled(ch, slot->packet, slot->length);
         sendto(ch->sock, slot->packet, slot->length, 0, (struct sockaddr *)&ch->peer, sizeof(ch->peer));
 
