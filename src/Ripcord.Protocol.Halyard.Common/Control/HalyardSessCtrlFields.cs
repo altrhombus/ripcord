@@ -69,9 +69,12 @@ public static class HalyardSessCtrlFields
     /// <summary>The 32-byte device-id length (RP-Did plaintext), wire-confirmed.</summary>
     public const int DidSize = 32;
 
-    // The device id is a fixed 32-byte structure (NOT a length-prefixed value): a 10-byte marker prefix,
-    // then 16 identifying bytes (we use the hex-decoded MachineGuid), then 6 zero bytes. Prefix read from
-    // the vendor wire (cap22). The console treats the middle as an opaque client id.
+    // The device id is be16(24), then 24 bytes: four u16 BE header words (0, 7, 0x40, 0x80) and the 16 bytes
+    // of the hex-decoded MachineGuid; 6 zero bytes pad it to 32. [C] from our own binary: FUN_101e0d20 formats
+    // the header words and the GUID as one hex string (the x64 8.5 build pushes the same four values), and the
+    // be16 length is its caller's. cap22's RP-Did decrypts to the same shape [W], but with 0x41 as the third
+    // word: the vendor client can be handed a prebuilt id (FUN_101dc480 -> FUN_101e1390), and the 0x40 here
+    // is the binary's own default. The console accepts 0x40 in our sessions; what the word means is [X].
     private static readonly byte[] DidPrefix = [0x00, 0x18, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x80];
     private const int DidSuffixLength = 6;
 

@@ -58,7 +58,8 @@ public class HandshakeAssemblyTests
     {
         var deviceId = Hex.Bytes("00112233445566778899aabbccddeeff"); // 16-byte hex-decoded MachineGuid
         var plaintext = HalyardSessCtrlFields.BuildDidPlaintext(deviceId);
-        // 10-byte marker prefix + the 16 device bytes + 6 zero bytes = 32 bytes (matches cap22).
+        // be16(24) + four header words + the 16 device bytes + 6 zero bytes = 32 bytes (the binary's default;
+        // cap22 has the same shape with 0x41 as the third word).
         Assert.Equal(32, plaintext.Length);
         Assert.Equal(
             "00180000000700400080" + "00112233445566778899aabbccddeeff" + "000000000000",

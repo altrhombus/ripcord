@@ -13,8 +13,9 @@ void halyard_sess_field_auth_plaintext(const uint8_t *registration_key, size_t r
     memcpy(out, registration_key, n);
 }
 
-/* Wire-confirmed prefix (cap22); the console treats the following 16 bytes as an opaque client id and
- * the trailing 6 bytes as fixed zero padding. */
+/* be16(24), then four u16 BE header words (0, 7, 0x40, 0x80) ahead of the 16 device-id bytes; 6 zero bytes
+ * pad it to 32. From our own binary (FUN_101e0d20), as HalyardSessCtrlFields.cs records; the vendor client
+ * has also been seen sending 0x41 as the third word (cap22), meaning [X]. */
 static const uint8_t kDidPrefix[10] = { 0x00, 0x18, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x80 };
 #define DID_MIDDLE_SIZE 16 /* HALYARD_SESS_DID_PLAINTEXT_SIZE - sizeof(kDidPrefix) - 6 trailing zero bytes */
 
