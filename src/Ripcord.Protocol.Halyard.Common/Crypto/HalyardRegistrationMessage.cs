@@ -81,8 +81,9 @@ public static class HalyardRegistrationMessage
 
     /// <summary>
     /// The <c>Client-Type</c> value: a FIXED 64-hex-char client identifier, not a per-device value. Every
-    /// client sends this exact constant (observed on our own wire in cap19 and cap22); the console validates
-    /// it, so it must be verbatim.
+    /// client sends this exact constant. It was read in the clear from our own client's field-encrypt call
+    /// (<c>FUN_101f8cc0</c>, cap19), and that plaintext re-encrypts to the request bytes on the wire
+    /// (research log, 2026-11-16). The console validates it, so it must be verbatim.
     /// </summary>
     public const string ClientTypeHex = "dabfa2ec873de5839bee8d3f4c0239c4282c07c25c6077a2931afcf0adc0d34f";
 
