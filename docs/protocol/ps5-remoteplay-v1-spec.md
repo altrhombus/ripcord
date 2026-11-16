@@ -461,6 +461,11 @@ message ControlMessage {
 }
 ```
 
+**`HEARTBEAT` runs console to client, and the client answers [W].** In the vendor client's sessions the
+console sends a bare `HEARTBEAT` on channel 1 and the client replies with one within about a millisecond;
+the client never starts one (cap48: 1,218 of 1,218 pairs console-first; likewise cap52 and cap56). The
+console's period was about 210–216 ms on the PS5 (cap48–cap52) and about 1.1 s on the PS4 (cap53–cap59).
+
 ### 4.1 Connection & key-exchange sequence  **[C]**
 
 ```
@@ -1175,7 +1180,7 @@ The **wire format and handshake are now validated** (§8, `[V]`). What's left is
 Takion DATA/SACK loop, not wire format: RTO computation, retransmit timers, and send/receive window
 sizing (the advertised window is `a_rwnd = 0x19000`). For a **clean-LAN first picture** a minimal
 in-order + timeout-retransmit of DATA/SACK is sufficient; fuller fidelity only matters on lossy links.
-Congestion is reported via base-type-5 packets — **every 200 ms**, `{received u16, lost u16}` counts [X].
+Congestion is reported via base-type-5 packets — **about every 200 ms** (§3, `[V]`), `{received u16, lost u16}` counts (`lost` is inferred, §3).
 Media-side remainder (FEC is fully settled as of 2026-08-02 — §6.2): the pre-stream **bandwidth/MTU
 probe** (§6) — a Takion sub-flow using the [`bandwidth_probe.proto`](bandwidth_probe.proto) message set.
 Its **sequence ordering is [W]** as of 2026-08-02, wire-observed identically in two of our own independent

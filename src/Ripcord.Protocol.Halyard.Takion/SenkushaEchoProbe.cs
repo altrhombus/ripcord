@@ -83,7 +83,7 @@ internal static class SenkushaEchoProbe
     /// <summary>First byte of the payload tail, after the header fields and the timestamp.</summary>
     public const int PaddingOffset = 27;
 
-    /// <summary>Pings the vendor sends before turning echo back off.</summary>
+    /// <summary>Pings the vendor sends before turning echo back off (spec §6.4: session8, cap47).</summary>
     public const int PingCount = 10;
 
     private const int SequenceOffset = 5;
