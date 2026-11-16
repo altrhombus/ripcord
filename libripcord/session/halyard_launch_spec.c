@@ -111,9 +111,9 @@ size_t halyard_launch_spec_build(const halyard_launch_spec_params *params,
     append(out, out_size, &offset, ladder);
     append(out, out_size, &offset, "],\"network\":{\"bwKbpsSent\":");
     append_int(out, out_size, &offset, params->bitrate_kbps);
-    /* bwLoss is the literal string 0.001000 - six decimals, hardcoded on the .NET side too. Printing a
-     * float here would risk a locale-dependent decimal comma, which newlib can do. */
-    append(out, out_size, &offset, ",\"bwLoss\":0.001000,\"mtu\":");
+    /* bwLoss is the literal string 0.001, as the vendor's own launch-spec template writes it (spec 4.3).
+     * Printing a float here would risk a locale-dependent decimal comma, which newlib can do. */
+    append(out, out_size, &offset, ",\"bwLoss\":0.001,\"mtu\":");
     append_int(out, out_size, &offset, params->mtu);
     append(out, out_size, &offset, ",\"rtt\":");
     append_int(out, out_size, &offset, params->rtt_ms);

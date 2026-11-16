@@ -1517,7 +1517,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         return "{"
             + "\"sessionId\":\"sessionId4321\","
             + "\"streamResolutions\":[" + BuildStreamResolutions(w, h, fps) + "],"
-            + "\"network\":{\"bwKbpsSent\":" + bitrate + ",\"bwLoss\":0.001000,\"mtu\":" + mtu + ",\"rtt\":" + rtt + ",\"ports\":[53,2053]},"
+            + "\"network\":{\"bwKbpsSent\":" + bitrate + ",\"bwLoss\":0.001,\"mtu\":" + mtu + ",\"rtt\":" + rtt + ",\"ports\":[53,2053]},"
             + "\"slotId\":1,"
             + "\"appSpecification\":{\"minFps\":" + fps + ",\"minBandwidth\":0,\"extTitleId\":\"ps3\",\"version\":1,\"timeLimit\":1,\"startTimeout\":100,\"afkTimeout\":100,\"afkTimeoutDisconnect\":100},"
             + "\"konan\":{\"ps3AccessToken\":\"accessToken\",\"ps3RefreshToken\":\"refreshToken\"},"

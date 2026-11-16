@@ -45,7 +45,7 @@ pub fn build(p: &Params, handshake_key: &[u8; 16]) -> String {
     format!(
         concat!(
             r#"{{"sessionId":"sessionId4321","streamResolutions":[{ladder}],"network":{{"bwKbpsSent":{bitrate},"#,
-            r#""bwLoss":0.001000,"mtu":{mtu},"rtt":{rtt},"ports":[53,2053]}},"slotId":1,"appSpecification":{{"#,
+            r#""bwLoss":0.001,"mtu":{mtu},"rtt":{rtt},"ports":[53,2053]}},"slotId":1,"appSpecification":{{"#,
             r#""minFps":{fps},"minBandwidth":0,"extTitleId":"ps3","version":1,"timeLimit":1,"startTimeout":100,"#,
             r#""afkTimeout":100,"afkTimeoutDisconnect":100}},"konan":{{"ps3AccessToken":"accessToken","#,
             r#""ps3RefreshToken":"refreshToken"}},"requestGameSpecification":{{"model":"bravia_tv","#,
