@@ -60,6 +60,7 @@ public class StreamCryptoTests
     [InlineData(0x0e)]
     [InlineData(0x10)]
     [InlineData(17)] // 0x11 — the version our live capture negotiated
+    [InlineData(20)] // 0x14 — the v2 ack, with a 133-byte console key
     public void CurveForVersion_AnswersP521_ForTheVersionsWeHaveObserved(int version)
         => Assert.Equal(HalyardStreamCurve.NistP521, HalyardStreamKeySchedule.CurveForVersion(version));
 
@@ -80,6 +81,8 @@ public class StreamCryptoTests
     [InlineData(9)]
     [InlineData(0x0c)]  // one below the validated range
     [InlineData(0x12)]  // one above it
+    [InlineData(0x13)]  // one below the v2 version, offered but never seen acked
+    [InlineData(0x15)]  // one above it
     [InlineData(0xff)]
     public void CurveForVersion_RefusesAVersionWhoseCurveWeHaveNeverSeen(int version)
     {

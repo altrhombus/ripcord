@@ -12,6 +12,7 @@ using Ripcord.Core.Sessions;
 using Ripcord.Protocol.Halyard.Discovery;
 using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 using Ripcord.Protocol.Halyard.Common.Crypto.V2;
 using Ripcord.Protocol.Halyard.Common.Input;
 using Ripcord.Protocol.Halyard.Common.Streaming;
@@ -1411,10 +1412,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <summary>
     /// Assemble the SESSION_REQUEST inputs. From a wire-parsed real SESSION_REQUEST: <c>sessionKey</c> is the
     /// literal "InvalidSessionId", <c>encryptedKey</c> is unused (left empty by the negotiator), and
-    /// <c>clientVersion</c> is 17 (0x11) on the v1 wire. The value set here is only the negotiator's fallback:
-    /// <see cref="TakionSessionNegotiator"/> sends the version the console acked, from the list it offered, so
-    /// the v2 value of 20 does not reach the wire yet, and neither does field 7 (<c>sessionId</c>). See
-    /// <c>ROADMAP.md</c>. The launchSpec is built from the spec §4.3 fields (the template corroborated against our
+    /// <c>clientVersion</c> is 17 (0x11) on the v1 wire. The v2 path offers the vendor's v2 version list, so the
+    /// console can ack 20, and adds field 7 (<c>sessionId = "InvalidSessionId"</c>), as the vendor client does
+    /// (rp_sethk9). The version actually sent is the one the console acks; the value here is the negotiator's
+    /// fallback. The launchSpec is built from the spec §4.3 fields (the template corroborated against our
     /// own client's memory + wire keystream) carrying a fresh handshakeKey, out1-encrypted under the control
     /// key. The handshakeKey is 16 random bytes; the console signs its stream pubkey with
     /// <c>HMAC(handshakeKey, consolePubkey)</c> using exactly these bytes.
@@ -1444,14 +1445,16 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
         byte[] launchWire = _streamCrypto.CryptStreaminfo(0, launchBytes);
 
-        // Fallback only: the negotiator overrides it with the console's acked version.
-        uint clientVersion = _streamCrypto is HalyardV2SessionCrypto ? 20u : 17u;
+        // _streamCrypto is the v2 instance only after RunV2ControlHandshakeAsync, so it tells the two planes apart.
+        bool v2 = _streamCrypto is HalyardV2SessionCrypto;
 
         return new TakionSessionRequest(
-            ClientVersion: clientVersion,
+            ClientVersion: v2 ? (uint)HalyardStreamKeySchedule.V2Version : 17u,
             SessionKey: "InvalidSessionId",
             LaunchSpecJson: Convert.ToBase64String(launchWire),
-            HandshakeKey: handshakeKey);
+            HandshakeKey: handshakeKey,
+            SessionId: v2 ? "InvalidSessionId" : null,
+            OfferedVersions: v2 ? TakionSessionNegotiator.V2OfferedVersions : null);
     }
 
     /// <summary>

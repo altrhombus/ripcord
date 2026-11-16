@@ -12,12 +12,15 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// the launchSpec as handshakeKey; v2 mints them as X, used only for the signature and the stream KDF).</param>
 /// <param name="SessionId">v2 only: the SESSION_REQUEST field-7 sessionId sentinel (<c>"InvalidSessionId"</c>);
 /// null for v1, which omits the field.</param>
+/// <param name="OfferedVersions">The versions to offer before the request; null offers
+/// <see cref="TakionSessionNegotiator.V1OfferedVersions"/>.</param>
 public readonly record struct TakionSessionRequest(
     uint ClientVersion,
     string SessionKey,
     string LaunchSpecJson,
     byte[] HandshakeKey,
-    string? SessionId = null);
+    string? SessionId = null,
+    IReadOnlyList<uint>? OfferedVersions = null);
 
 /// <summary>Outcome of the session negotiation.</summary>
 public readonly record struct TakionSessionResult(bool Success, string? FailureReason, ControlMessage? Reply)
@@ -56,7 +59,13 @@ public sealed class TakionSessionNegotiator
     /// exception and offers only 9, because a probe needs no key agreement.
     /// </para>
     /// </summary>
-    private static readonly uint[] SupportedVersions = [9, 10, 11, 13, 14, 15, 16, 17];
+    public static readonly IReadOnlyList<uint> V1OfferedVersions = [9, 10, 11, 13, 14, 15, 16, 17];
+
+    /// <summary>
+    /// The v2 offer: the vendor client's own list on the v2 path (rp_sethk9 frame 10731, the same in rp_sethk and
+    /// rp_sethk8), to which the console acked 20. Our curve table refuses 18 and 19, which no session has shown.
+    /// </summary>
+    public static readonly IReadOnlyList<uint> V2OfferedVersions = [9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20];
 
     public async Task<TakionSessionResult> NegotiateAsync(TakionSessionRequest request, CancellationToken cancellationToken)
     {
@@ -64,7 +73,10 @@ public sealed class TakionSessionNegotiator
         var versionRequest = new ControlMessage
         {
             Type = ControlMessage.Types.MessageType.ProtocolVersionRequest,
-            ProtocolVersionRequest = new ProtocolVersionRequestPayload { SupportedVersions = { SupportedVersions } },
+            ProtocolVersionRequest = new ProtocolVersionRequestPayload
+            {
+                SupportedVersions = { request.OfferedVersions ?? V1OfferedVersions },
+            },
         };
         await _channel.SendMessageAsync(
             TakionDataChunk.ChannelProtocolVersion, versionRequest, cancellationToken).ConfigureAwait(false);
@@ -106,8 +118,8 @@ public sealed class TakionSessionNegotiator
             },
         };
 
-        // v2 SESSION_REQUEST carries field 7, the sessionId sentinel "InvalidSessionId" (purpose [X]); v1 omits
-        // it, so set it only when the caller supplies one.
+        // v2 SESSION_REQUEST carries field 7, the sessionId sentinel "InvalidSessionId" (rp_sethk9 frame 10736;
+        // purpose [X]); v1 omits it, so set it only when the caller supplies one.
         if (request.SessionId is not null)
         {
             message.SessionRequestPayload.SessionId = request.SessionId;
