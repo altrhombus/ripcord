@@ -10,11 +10,12 @@ namespace Ripcord.Protocol.Halyard.Common.Input;
 /// header <c>[type][seq u16 BE][0][keyPos u32][gmac u32]</c> followed by an AES-CTR-encrypted payload:
 ///
 /// <list type="bullet">
-///   <item><description><b>Feedback state</b> (type 6): a periodic analog snapshot — sticks, and (when
+///   <item><description><b>Feedback state</b> (type 6): an analog snapshot every 15 ms — sticks, and (when
 ///   present) motion/orientation. Fixed 0x1c-byte payload.</description></item>
 ///   <item><description><b>Feedback history</b> (type 1): button/trigger <em>transitions</em> as a list of
-///   short events, sent only when something changed. Recent events are re-sent in later history packets so a
-///   dropped packet doesn't strand a press/release (the channel is unreliable).</description></item>
+///   short events, sent at once on a transition and repeated every 200 ms while unchanged. Recent events stay
+///   in later history packets so a dropped packet doesn't strand a press/release (the channel is
+///   unreliable).</description></item>
 /// </list>
 ///
 /// <para>
@@ -64,32 +65,36 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     private const ushort SensorRest = 0x7fff;
 
     /// <summary>
-    /// How often to re-send a state packet when nothing analog changed. This is <em>our</em> send policy, not
-    /// a wire requirement — so far as we know the console does not mandate a cadence, though that has never
-    /// been tested by changing it. Treat it as a knob that wants a live session to validate rather than a free
-    /// one: lengthening it risks a console-side state timeout that would only show up on hardware.
+    /// State packets go out on a fixed period, changed or not: in cap48 the vendor client sent all 10,165 of
+    /// them 15 ms apart (median 15 ms, none closer).
     /// </summary>
-    private const long StateKeepaliveTicks = 200 * TimeSpan.TicksPerMillisecond;
+    private const long StateIntervalTicks = 15 * TimeSpan.TicksPerMillisecond;
 
     /// <summary>
-    /// How many recent history events to repeat in later history packets to survive a dropped packet. Our own
-    /// policy and genuinely free to tune: events carry absolute state, so re-sends are idempotent and no value
-    /// here can desync the console.
+    /// An unchanged history packet is sent again on this period: in cap48 the vendor client repeated an
+    /// unchanged history packet every 200 ms (median of 1,258 history packets), and sent a new one at once
+    /// on a transition.
     /// </summary>
-    private const int HistoryResendCount = 4;
+    private const long HistoryRepeatTicks = 200 * TimeSpan.TicksPerMillisecond;
+
+    /// <summary>
+    /// History keeps the newest events that fit in this many payload bytes. No history payload in cap48 is
+    /// longer, and full ones drop their oldest events. Re-sends are idempotent: events carry absolute state.
+    /// </summary>
+    private const int HistoryPayloadLimit = 100;
 
     private readonly IHalyardSessionCrypto _crypto = crypto;
 
     private ushort _stateSeq;
     private ushort _historySeq;
 
-    // Previous frame, to diff button/trigger transitions and detect analog change for the keepalive cadence.
+    // Previous frame, to diff button/trigger transitions.
     private bool _havePrev;
     private ControllerButtons _prevButtons;
     private byte _prevLeftTrigger;
     private byte _prevRightTrigger;
-    private short _prevLeftX, _prevLeftY, _prevRightX, _prevRightY;
     private long _lastStateTicks;
+    private long _lastHistoryTicks;
 
     // Recent history events, newest-first (index 0 = most recent). cap48 confirms newest-first ordering:
     // consecutive history packets are cumulative, with each new event PREPENDED (an older packet is a strict
@@ -116,7 +121,7 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
         byte rightTrigger = ToU8(frame.RightTrigger);
 
         // History: emit an event for every button/trigger transition since the previous frame.
-        bool historyDirty = false;
+        bool transitioned = false;
         if (_havePrev)
         {
             ControllerButtons changed = _prevButtons ^ frame.Buttons;
@@ -129,32 +134,30 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
 
                 bool pressed = (frame.Buttons & flag) != 0;
                 PushHistory(BuildButtonEvent(code, stateInCode, pressed));
-                historyDirty = true;
+                transitioned = true;
             }
 
             if (leftTrigger != _prevLeftTrigger)
             {
                 PushHistory(BuildAnalogEvent(L2Code, leftTrigger));
-                historyDirty = true;
+                transitioned = true;
             }
 
             if (rightTrigger != _prevRightTrigger)
             {
                 PushHistory(BuildAnalogEvent(R2Code, rightTrigger));
-                historyDirty = true;
+                transitioned = true;
             }
         }
 
-        if (historyDirty)
+        if (transitioned
+            || (_history.Count > 0 && frame.TimestampTicks - _lastHistoryTicks >= HistoryRepeatTicks))
         {
             packets.Add(BuildHistoryPacket());
+            _lastHistoryTicks = frame.TimestampTicks;
         }
 
-        // State: send when a stick moved (quantized) or the keepalive interval elapsed.
-        bool analogChanged = !_havePrev
-            || leftX != _prevLeftX || leftY != _prevLeftY || rightX != _prevRightX || rightY != _prevRightY;
-        bool keepalive = frame.TimestampTicks - _lastStateTicks >= StateKeepaliveTicks;
-        if (analogChanged || keepalive)
+        if (!_havePrev || frame.TimestampTicks - _lastStateTicks >= StateIntervalTicks)
         {
             packets.Add(BuildStatePacket(frame, leftX, leftY, rightX, rightY));
             _lastStateTicks = frame.TimestampTicks;
@@ -163,10 +166,6 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
         _prevButtons = frame.Buttons;
         _prevLeftTrigger = leftTrigger;
         _prevRightTrigger = rightTrigger;
-        _prevLeftX = leftX;
-        _prevLeftY = leftY;
-        _prevRightX = rightX;
-        _prevRightY = rightY;
         _havePrev = true;
         return packets;
     }
@@ -207,10 +206,19 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     private byte[] BuildHistoryPacket()
     {
         int payloadLength = 0;
-        foreach (byte[] e in _history)
+        int kept = 0;
+        foreach (byte[] e in _history) // newest-first
         {
+            if (payloadLength + e.Length > HistoryPayloadLimit)
+            {
+                break;
+            }
+
             payloadLength += e.Length;
+            kept++;
         }
+
+        _history.RemoveRange(kept, _history.Count - kept);
 
         byte[] packet = new byte[HeaderLength + payloadLength];
         packet[0] = TypeFeedbackHistory;
@@ -221,12 +229,6 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
         {
             e.CopyTo(packet.AsSpan(offset));
             offset += e.Length;
-        }
-
-        // Keep only the newest few events to re-send in the next history packet (loss resilience).
-        if (_history.Count > HistoryResendCount)
-        {
-            _history.RemoveRange(HistoryResendCount, _history.Count - HistoryResendCount);
         }
 
         _crypto.SealFeedbackPacket(packet, HeaderLength);
