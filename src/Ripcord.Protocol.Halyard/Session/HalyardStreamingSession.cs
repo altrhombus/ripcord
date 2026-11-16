@@ -1411,9 +1411,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <summary>
     /// Assemble the SESSION_REQUEST inputs. From a wire-parsed real SESSION_REQUEST: <c>sessionKey</c> is the
     /// literal "InvalidSessionId", <c>encryptedKey</c> is unused (left empty by the negotiator), and
-    /// <c>clientVersion</c> is 17 (0x11) on the v1 wire; the v2 path bumps it to 20 (0x14), observed in the
-    /// vendor's own v2 traces (V2-SPEC §5; proto field 7 adds <c>sessionId = "InvalidSessionId"</c> at the
-    /// same time). The launchSpec is built from the spec §4.3 fields (the template corroborated against our
+    /// <c>clientVersion</c> is 17 (0x11) on the v1 wire. The value set here is only the negotiator's fallback:
+    /// <see cref="TakionSessionNegotiator"/> sends the version the console acked, from the list it offered, so
+    /// the v2 value of 20 does not reach the wire yet, and neither does field 7 (<c>sessionId</c>). See
+    /// <c>ROADMAP.md</c>. The launchSpec is built from the spec §4.3 fields (the template corroborated against our
     /// own client's memory + wire keystream) carrying a fresh handshakeKey, out1-encrypted under the control
     /// key. The handshakeKey is 16 random bytes; the console signs its stream pubkey with
     /// <c>HMAC(handshakeKey, consolePubkey)</c> using exactly these bytes.
@@ -1443,9 +1444,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
         byte[] launchWire = _streamCrypto.CryptStreaminfo(0, launchBytes);
 
-        // v1 ships clientVersion 17; v2 is observed as 20 on the wire (V2-SPEC §5). _streamCrypto is set to the
-        // v2 instance during RunV2ControlHandshakeAsync and left as v1 otherwise, so the type check is a
-        // reliable discriminator at this point in the flow — see the field remarks on _streamCrypto.
+        // Fallback only: the negotiator overrides it with the console's acked version.
         uint clientVersion = _streamCrypto is HalyardV2SessionCrypto ? 20u : 17u;
 
         return new TakionSessionRequest(
