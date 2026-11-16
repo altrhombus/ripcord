@@ -4,8 +4,7 @@
  * functions.
  *
  * ON READING THOSE AT ALL, since this repository has an independence rule: that rule is scoped to "another
- * implementation of these protocols" - the PS5 Remote Play wire protocol, whose independent derivation
- * is what docs/protocol/ has to defend. MVD is a Nintendo hardware decoder and 3dbrew is hardware
+ * implementation of these protocols" - the PS5 Remote Play wire protocol that docs/protocol/ specifies. MVD is a Nintendo hardware decoder and 3dbrew is hardware
  * documentation; neither touches the protocol spec. Reading them is no more an independence concern than
  * reading the ARM architecture reference. The rule WOULD apply to another Remote Play client, for
  * protocol detail. Separately, Ripcord is Apache-2.0, so COPYING code from a GPL homebrew player would

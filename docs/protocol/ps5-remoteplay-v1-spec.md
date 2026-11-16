@@ -13,8 +13,8 @@ two relate. The stream plane below is shared by both, with the v2 differences in
 > below as "this is v1"; it is not the discriminator. `v1` and `v2` name the control-plane scheme, not a vendor
 > application version.
 
-This document is an **independent derivation**: the substance is derived from our own copy of the client control library
-(static Ghidra RE + the embedded protobuf reflection metadata) and our own live packet/memory captures. No
+This document draws on our own copy of the client control library (static Ghidra RE + the embedded protobuf
+reflection metadata) and our own live packet/memory captures. No
 vendor code is reproduced. A small number of values remain **assumptions** rather than findings; each carries
 the **[X]** tag so it cannot be mistaken for settled. The raw RE trace lives in
 `captures/lab-notebook.md` — part of the gitignored captures folder, so it is **not present in a published copy** of
@@ -29,9 +29,10 @@ the vendor binary — are **not** redacted: they are identical for every console
 the substance of the document. Where a passage explains how one encoding derives from another, the
 stand-ins are internally consistent so the derivation still reads correctly.
 
-**Naming & IP note.** All message/field/enum/type names in this spec and the `.proto` files are our own
-descriptive labels — the vendor's coined names, symbol names, and log strings are deliberately not
-reproduced (a private vendor↔ours mapping lives in the gitignored captures folder, `captures/name-mapping.md`).
+**Naming & IP note.** Names in this spec and the `.proto` files follow the rule in
+[`README.md`](README.md) ("What is reproduced here"): the vendor's coined message and enum names are
+replaced with ours, purely descriptive ones are kept as interface labels, and no vendor symbol name or log
+string is used.
 What *is* reproduced verbatim is limited to **on-the-wire interoperability facts** that the console parses
 by value and that therefore cannot be changed: protobuf **field numbers / enum values / wire types**, the
 JSON config **keys** (`handshakeKey`, `sessionId`, `streamResolutions`, `disableRPEncryption`, …), and the
@@ -298,8 +299,8 @@ IV = HMAC-SHA256( context_key, out2 ‖ big-endian-uint64(counter) )[0:16]
 - `context_key` is one of four hardcoded 16-byte constants selected by protocol/version selectors
   (`FUN_101eddb0`): `sel0∈{8,9}→A`; `elif sel1==1→B_eq_1`; `elif sel1==0→B_eq_0`; else zero. Observed
   sessions resolve to the `B_eq_1` variant. **The four values are not reproduced in this document** — this
-  spec redacts observed constant values by default, and our own working copy is in the captures folder
-  (`captures/name-mapping.md`). They *are* shipped in this repository's client, in
+  spec redacts observed constant values by default, and our own working copy is in the captures folder.
+  They *are* shipped in this repository's client, in
   `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json`, as a deliberate bounded exception for values
   identical across every console and account; see [`NOTICE`](../../NOTICE). Reimplementing from this document
   alone means recovering them from your own captures.
@@ -448,8 +449,8 @@ wire format (connection setup, seq/ack/SACK, retransmit, window/congestion) is a
 Control-plane messages are the protobuf schema in [`stream_control.proto`](stream_control.proto) (package
 `avstream`, 41 messages), recovered from the embedded `FileDescriptorProto` in our own copy of the client
 binary and verified to compile. Field numbers, enum values, and wire types are interoperability facts and are
-reproduced exactly; **every name below is our own descriptive choice**, per the provenance note at the head
-of the `.proto`. Top-level:
+reproduced exactly; names follow the rule in [`README.md`](README.md): coined vendor names are replaced, plain
+descriptive ones kept. Top-level:
 
 ```proto
 message ControlMessage {

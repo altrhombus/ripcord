@@ -109,7 +109,7 @@
     <comment>Name on the About page.</comment>
   </data>
   <data name="AboutPage_RipcordFromScratchClient.Text" xml:space="preserve">
-    <value>Ripcord is a from-scratch client. Its wire protocol was derived independently, from this project's own captures and analysis, and no vendor code is included in it.</value>
+    <value>Ripcord is a from-scratch client. Its wire protocol was worked out from this project's own captures and analysis, and no vendor code is included in it.</value>
     <comment>Static text on the About page. Ripcord is a product or standard name - do not translate.</comment>
   </data>
   <data name="AboutPage_RipcordLogo.AutomationProperties.Name" xml:space="preserve">
