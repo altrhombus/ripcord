@@ -1,5 +1,5 @@
 //! Takion, the SCTP-over-UDP transport. The name is the vendor's own codename, retained as protocol
-//! terminology (CLAUDE.md, "Naming"). Ported from `libripcord/takion/`, cross-checked against the .NET
+//! terminology (docs/architecture.md, "Naming"). Ported from `libripcord/takion/`, cross-checked against the .NET
 //! reference in `src/Ripcord.Protocol.Halyard.Takion/`, which wins where the two differ.
 
 pub mod chunks;

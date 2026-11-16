@@ -271,7 +271,7 @@ field-IV/CFB machinery; only the context key differs, and it follows from the mo
 → **`B_eq_0`** (PS5's mode 1 → `B_eq_1`). Validated three ways against cap53: all three sessions' on-wire
 `RP-Auth` reproduce byte-for-byte, and `RP-OSType` decrypts to the readable ASCII `Win11.0\0`. Implementation
 needs PS4's two KDF tables added to the bundled interop constants (widening the committed-constants exception →
-amend `NOTICE` + `CLAUDE.md`) and the KDF/context selection keyed on console family.
+amend `NOTICE`) and the KDF/context selection keyed on console family.
 
 ### PS4 A/V stream key schedule — same as PS5, **[V]** (2026-08-03)
 

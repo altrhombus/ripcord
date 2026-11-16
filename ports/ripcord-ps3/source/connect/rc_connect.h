@@ -9,7 +9,7 @@
  * the console's internet blocked at the router.
  *
  * THE RECORD IS CAPTURES-FOLDER MATERIAL. registkey and companion are tied to a specific console and account,
- * which is the wrong side of CLAUDE.md's generic-versus-personal test. The file is copied to the console
+ * which is the wrong side of CONTRIBUTING.md's generic-versus-personal test. The file is copied to the console
  * by hand, is not embedded in any binary, and NOTHING HERE LOGS ITS CONTENTS - not the keys, not the
  * derived wake credential, not the host address. The report says whether a field was present and what
  * happened, never what it was.

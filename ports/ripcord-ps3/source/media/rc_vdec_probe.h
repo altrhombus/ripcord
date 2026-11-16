@@ -8,7 +8,7 @@
  *
  * The obstacle is that vdecType.profile_level has no constant anywhere in the SDK headers. It is a number
  * the library expects and that this project has no derivation for. Guessing it from recall is exactly the
- * failure mode CLAUDE.md names - fluent, confident specificity about a value nobody checked - so this
+ * failure mode CONTRIBUTING.md names - fluent, confident specificity about a value nobody checked - so this
  * sweeps the space instead and lets the console say which values it accepts. That is a derivation.
  *
  * The same probe reports the memory each accepted level wants, which sizes the allocation the real

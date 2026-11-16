@@ -24,7 +24,7 @@ namespace Ripcord.Presentation.Tests;
 ///     diagnosing a fault, and translating them makes a stack trace less useful, not more.</item>
 ///   <item>The diagnostics report — a technical dump the user copies into an issue for a maintainer to
 ///     read. Its audience is the maintainer, so its language follows the maintainer.</item>
-///   <item>Protocol and product identifiers — <c>"Ps5"</c>, <c>"PS4"</c>, header names, wire tags. CLAUDE.md
+///   <item>Protocol and product identifiers — <c>"Ps5"</c>, <c>"PS4"</c>, header names, wire tags. docs/protocol/README.md
 ///     already requires these verbatim; a translated wire tag is a bug, not a courtesy.</item>
 /// </list>
 /// </summary>

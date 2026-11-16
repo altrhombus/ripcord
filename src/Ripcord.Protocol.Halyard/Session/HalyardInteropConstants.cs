@@ -106,7 +106,7 @@ public static partial class HalyardInteropConstants
     /// The bundled v2 PlayStation 5 registration-authentication key (16 bytes), or <see langword="null"/> if
     /// this build omits the constants (or an older bundle predates it). It is the fixed value the console
     /// checks a v2 pairing request's authentication code against — generic to the PS5 console family and tied
-    /// to no console or account (see <c>NOTICE</c> and CLAUDE.md "Bounded exception 1"). The other console
+    /// to no console or account (see <c>NOTICE</c>, "Interoperability constants"). The other console
     /// family's value is <b>[X]</b> (unconfirmed) and is not bundled.
     /// </summary>
     public static byte[]? RegistrationAuthKey()

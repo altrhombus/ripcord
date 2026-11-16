@@ -15,7 +15,7 @@ use std::path::PathBuf;
 const BUNDLE: &str = "../../src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json";
 
 /// Where the .NET reference implementation keeps `Client-Type`: the 32-byte value the console parses by content,
-/// generic to the application (CLAUDE.md, "Bounded exception 1"). The engine reads it from here at build
+/// generic to the application (NOTICE, "Interoperability constants"). The engine reads it from here at build
 /// time rather than holding a third committed copy.
 const CLIENT_TYPE_SOURCE: &str =
     "../../src/Ripcord.Protocol.Halyard.Common/Crypto/HalyardRegistrationMessage.cs";
@@ -137,7 +137,7 @@ fn emit_bundle(manifest: &std::path::Path, out: &mut String) {
     let ps4_kdf2 = unhex("ps4KdfTable2", &b["ps4KdfTable2"], 512);
     let ps4_registration = unhex("ps4RegistrationTable", &b["ps4RegistrationTable"], 512);
     let ps4_wrap = unhex("ps4MaterialWrapTable", &b["ps4MaterialWrapTable"], 512);
-    // The v2 PS5 registration-authentication key (CLAUDE.md Bounded exception 1). Optional like the PS4
+    // The v2 PS5 registration-authentication key (NOTICE, "Interoperability constants"). Optional like the PS4
     // tables: the other console family's value is [X] and not bundled.
     let regist_auth = unhex("registAuthKey", &b["registAuthKey"], 16);
     // A family's pair is both or neither: half a PS4 set would build and fail at the console.

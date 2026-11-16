@@ -206,7 +206,7 @@ written.
 
 *Done 2026-09-25.* See the journal.
 
-- `CLAUDE.md` and `architecture.md`: the Rust engine is the engine the first-class clients run; the .NET
+- `architecture.md`: the Rust engine is the engine the first-class clients run; the .NET
   protocol code is the reference for derivations; `libripcord` is the console ports' core.
 - `docs/README.md`: a row for this file.
 - `macos-plan.md`: a note under "Why the C core" pointing here.
@@ -416,7 +416,7 @@ the first of Linux or Android starts, not before.
 ## Independence
 
 Nothing here changes the rules. Rewriting this project's own C and C# in Rust is porting within one
-project, which `CLAUDE.md` permits explicitly. Other projects' implementations of this protocol stay
+project, which `CONTRIBUTING.md` permits explicitly. Other projects' implementations of this protocol stay
 out, in Rust as in any other language, and new protocol behaviour is still derived from this project's
 own captures and spec before it is written anywhere.
 

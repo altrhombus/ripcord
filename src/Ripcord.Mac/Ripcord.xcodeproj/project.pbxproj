@@ -524,7 +524,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# The bundled OAuth credential (CLAUDE.md, Bounded exception 2): the one committed file, copied into the\n# app's resources, never a second copy in the tree. RIPCORD_BUNDLE_OAUTH_CLIENT = NO builds the reduced\n# edition with no credential, where every account surface says sign-in is unavailable.\nset -eu\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/halyard-oauth-client.json\"\nif [ \"${RIPCORD_BUNDLE_OAUTH_CLIENT:-YES}\" = \"YES\" ]; then\n  cp \"${RIPCORD_REPO_ROOT}/src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json\" \"${DEST}\"\nelse\n  rm -f \"${DEST}\"\nfi\n";
+			shellScript = "# The bundled OAuth credential (NOTICE, Application OAuth credential): the one committed file, copied into the\n# app's resources, never a second copy in the tree. RIPCORD_BUNDLE_OAUTH_CLIENT = NO builds the reduced\n# edition with no credential, where every account surface says sign-in is unavailable.\nset -eu\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/halyard-oauth-client.json\"\nif [ \"${RIPCORD_BUNDLE_OAUTH_CLIENT:-YES}\" = \"YES\" ]; then\n  cp \"${RIPCORD_REPO_ROOT}/src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json\" \"${DEST}\"\nelse\n  rm -f \"${DEST}\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -89,7 +89,7 @@ Two corrections to earlier framing, recorded because they were wrong for a while
     and renaming them would obscure the mapping.
   - **Two further documented exceptions, both deliberate.** (1) `Takion` and `Senkusha` are the **vendor's own
     codenames**, retained throughout the code and this spec as protocol terminology — see the naming table in
-    `CLAUDE.md` for the rationale. Only `Halyard` is our invention. (2) Some protobuf **field** names
+    `docs/architecture.md` ("Naming") for the rationale. Only `Halyard` is our invention. (2) Some protobuf **field** names
     (`mtuReq`, `naluCount`, `sendDelay`, …) are most likely the vendor's own, read from the binary's
     reflection metadata. Field names never appear on the wire, so these are not interop facts and could be
     renamed; they simply have not been.

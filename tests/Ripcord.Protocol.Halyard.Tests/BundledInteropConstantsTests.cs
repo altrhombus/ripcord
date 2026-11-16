@@ -145,7 +145,7 @@ public class BundledInteropConstantsTests
 
         // The v2 PS5 registration-authentication key must be present and the full 16 bytes, and not the all-zero
         // placeholder an absent constant would read as. Shape only — the value is pinned nowhere but the bundle
-        // (CLAUDE.md "Bounded exception 1"); the live-vector tests own the bytes.
+        // (NOTICE, "Interoperability constants"); the live-vector tests own the bytes.
         byte[]? key = HalyardInteropConstants.RegistrationAuthKey();
         Assert.NotNull(key);
         Assert.Equal(16, key!.Length);
@@ -206,7 +206,7 @@ public class BundledInteropConstantsTests
     /// <summary>
     /// The ports' copy of <c>Client-Type</c> is the same value as the reference implementation's.
     ///
-    /// <para><c>CLAUDE.md</c> lists this constant beside the bundled interop constants as the one value
+    /// <para><c>NOTICE</c> lists this constant beside the bundled interop constants as the one value
     /// that travels with them while living in source rather than in the JSON, because a message builder
     /// needs it inline. It has two homes: <see cref="HalyardRegistrationMessage.ClientTypeHex"/> and
     /// <c>libripcord/session/halyard_regist_message.h</c>, the C core building a registration request
@@ -256,7 +256,7 @@ public class BundledInteropConstantsTests
             "The C core and the reference implementation disagree about Client-Type, so one of them "
             + "cannot register. The failure on hardware is a 403 that explains nothing, because this "
             + "value sits at the front of the encrypted field and a wrong one corrupts its first 16 "
-            + "bytes. Reconcile these two, and CLAUDE.md's inventory if a third appears:"
+            + "bytes. Reconcile these two, and NOTICE's inventory if a third appears:"
             + "\n  " + header
             + "\n  src/Ripcord.Protocol.Halyard.Common/Crypto/HalyardRegistrationMessage.cs");
     }
@@ -266,7 +266,7 @@ public class BundledInteropConstantsTests
     ///
     /// <para><c>engine/ripcord-proto/build.rs</c> extracts <see cref="HalyardRegistrationMessage.ClientTypeHex"/>
     /// from this repository's source into the build directory, as it generates the bundle constants, so the
-    /// engine cannot drift from the reference and <c>CLAUDE.md</c>'s inventory stays at two homes. This checks
+    /// engine cannot drift from the reference and <c>NOTICE</c>'s inventory stays at two homes. This checks
     /// both halves of that claim: the build script names the reference file and the constant, and no committed
     /// file under <c>engine/</c> contains the value. Shape and location, never the value itself.</para>
     /// </summary>
@@ -285,7 +285,7 @@ public class BundledInteropConstantsTests
             script.Contains("HalyardRegistrationMessage.cs", StringComparison.Ordinal)
                 && script.Contains("ClientTypeHex", StringComparison.Ordinal),
             "ripcord-proto/build.rs no longer reads ClientTypeHex from HalyardRegistrationMessage.cs. If the engine "
-            + "now holds its own copy, that is a third home: CLAUDE.md's inventory and this test change with it.");
+            + "now holds its own copy, that is a third home: NOTICE's inventory and this test change with it.");
 
         string[] extensions = [".rs", ".toml", ".swift", ".cs", ".c", ".h", ".md", ".json"];
         foreach (string file in Directory.EnumerateFiles(engineDir, "*", SearchOption.AllDirectories))
@@ -302,7 +302,7 @@ public class BundledInteropConstantsTests
             Assert.False(
                 File.ReadAllText(file).Contains(HalyardRegistrationMessage.ClientTypeHex, StringComparison.OrdinalIgnoreCase),
                 "engine/" + rel + " carries a literal copy of Client-Type. The engine reads it from the reference at "
-                + "build time; a copy here is an undeclared third home (CLAUDE.md, Bounded exception 1).");
+                + "build time; a copy here is an undeclared third home (NOTICE, Interoperability constants).");
         }
     }
 

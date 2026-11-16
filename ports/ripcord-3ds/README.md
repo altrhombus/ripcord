@@ -7,7 +7,7 @@ specification rather than from its implementation.
 > written standalone, and it was then audited for a second target: 71 of its 88 source files referenced
 > no operating system at all, so they were lifted into what is now [`libripcord`](../../libripcord) and this port became
 > the first of three consumers of a core extracted from it. It also compiles files ported from the .NET
-> side - `senkusha_echo.h` says so in its own header - because `CLAUDE.md`'s independence rule does not
+> side - `senkusha_echo.h` says so in its own header - because `CONTRIBUTING.md`'s independence rule does not
 > apply between Ripcord's own front ends: a same-project port may adapt `src/` at will, that being this
 > project's own reference implementation and not the external source the rule exists to exclude.
 >
@@ -376,7 +376,7 @@ toolchain steps:
       is a 32-entry table XOR-folded with the on-screen PIN, sealed with the same AES-128-CFB/HMAC-SHA256
       primitives already ported — nothing OAuth/TLS-shaped, unlike the account-based/no-PIN route. Two open
       questions before this is buildable, not just researched: (a) the registration table isn't a bundled
-      constant yet (captures-folder only) — bundling it needs the same deliberate NOTICE/CLAUDE.md amendment
+      constant yet (captures-folder only) — bundling it needs the same deliberate NOTICE amendment
       already made twice, a project-owner call; (b) the spec's request-body plaintext includes
       `Np-AccountId` even on the PIN route, meaning the client may need to already know its own PSN account
       ID from somewhere — unresolved

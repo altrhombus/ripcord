@@ -60,7 +60,7 @@ path.
   context keys. At this point they were fed in as config from the gitignored captures folder. They are **committed
   today**, in `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` — a deliberate, argued exception
   covering values that are identical for every console and every account; see [`NOTICE`](../../NOTICE) and
-  [`CLAUDE.md`](../../CLAUDE.md)'s "Bounded exception 1". Nothing tied to a specific console or account is
+  [`NOTICE`](../../NOTICE)'s "Interoperability constants". Nothing tied to a specific console or account is
   bundled, and a test enforces that line.
 - **Seam reshaped + wired** (`Crypto/IHalyardSessionCrypto.cs`): the seam now models v1's two crypto
   systems — control (`EstablishControl` → `EncryptControlField`/`DecryptControlField`/`CryptStreaminfo`) and

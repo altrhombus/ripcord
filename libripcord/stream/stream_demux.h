@@ -65,7 +65,7 @@
      + STREAM_DEMUX_VIDEO_HEADER_CAPACITY)
 
 /*
- * The crypto seam (same shape as IHalyardSessionCrypto's seam-and-stub pattern - see CLAUDE.md): verify +
+ * The crypto seam (same shape as IHalyardSessionCrypto's seam-and-stub pattern - see docs/architecture.md): verify +
  * decrypt one media packet in place. Must verify the packet's GMAC tag (AV: offset
  * STREAM_HEADER_TAG_OFFSET, keystream offset NOT zeroed - confirmed byte-for-byte against a live console
  * capture, see HalyardPacketCrypto.ComputeTag) and, only on success, CTR-decrypt

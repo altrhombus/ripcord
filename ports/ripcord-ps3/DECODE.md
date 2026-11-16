@@ -67,7 +67,7 @@ Fully Apache-2.0 and maximum control. Weeks or months depending on the profile:
 
 ### A note on the independence rule, so it is not over-applied
 
-`CLAUDE.md` forbids reading another implementation of **these protocols** to obtain implementation detail.
+`CONTRIBUTING.md` forbids reading another implementation of **these protocols** to obtain implementation detail.
 That rule is about Remote Play. H.264 is ITU-T H.264 / ISO-IEC 14496-10, a published international
 standard, and reading the specification or a BSD reference decoder is an ordinary engineering activity in
 a different category entirely. Stated plainly here so
@@ -446,7 +446,7 @@ The premise at the top of this document was never checked against the console. I
 exposes `codec/vdec.h` and `libvdec.a`, and `SYSMODULE_VDEC_H264` loads. The decoder runs on the SPEs.
 
 **It is now the live decoder, with openh264 the fallback**, behind the seam already in
-`rc_decode_probe.h` — the same seam-and-stub shape `CLAUDE.md` describes for the crypto. The choice is
+`rc_decode_probe.h` — the same seam-and-stub shape `docs/architecture.md` describes for the crypto. The choice is
 made at open and logged, never inferred from the frame rate.
 
 ### What it is worth
@@ -469,7 +469,7 @@ budget, where openh264 could not fit inside it at all.
 ### Four values no SDK header states
 
 Each cost at least one hardware run, and each is derived rather than recalled — the sweep or the
-measurement IS the derivation, which is the discipline `CLAUDE.md` asks for on protocol values and which
+measurement IS the derivation, which is the discipline `CONTRIBUTING.md` asks for on protocol values and which
 applies just as well to an undocumented API.
 
 1. **`vdecType.profile_level` is H.264's `level_idc`.** Swept 0..255; the console accepts exactly

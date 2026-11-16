@@ -211,8 +211,6 @@ structural reason `rgst`/`init`/`ctrl` are byte-identical over 9303 and TCP 9295
 wrapper — and the reason the `0x24` acknowledgement and the `0xD0` cookie are **librudp control messages**
 rather than anything the account route invented, which is why no account-route capture explains them.
 
-Vendor file names are cited here as evidence about layout only; our own naming stays independent of them
-(CLAUDE.md).
 
 #### Who opens it, and why it matters `[C]`
 

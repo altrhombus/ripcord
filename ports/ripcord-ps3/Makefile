@@ -525,7 +525,7 @@ $(BUILD)/rc_build_id.h: $(SOURCES) $(SPU_SOURCES) $(SPU2_SOURCES) $(CXXSOURCES)
 	 printf '#define RC_PS3_VERSION "%s"\n' "$$ver" >> $@; \
 	 echo "  build id: $$id"
 
-# THE INTEROP CONSTANTS, generated rather than committed as C. CLAUDE.md's bounded exception 1 keeps
+# THE INTEROP CONSTANTS, generated rather than committed as C. NOTICE's interoperability-constants exception keeps
 # ~4 KB of generic, every-console interop constants in one committed JSON file, and every port turns
 # that into a translation unit at build time rather than carrying a second copy.
 # halyard_control_crypto.c needs them; the control-session and discovery suites link it.

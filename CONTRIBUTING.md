@@ -57,6 +57,9 @@ So for any pull request touching `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Hal
    not whether a model was involved.**
 3. Anything you couldn't derive yourself is marked unconfirmed (`[X]`), not filled in from somewhere else.
 
+"Another implementation" means another project's. Ripcord's own front ends and ports may port and adapt each
+other freely; citing what a file came from is a courtesy.
+
 **AI assistance is fine, and it's how most of this project was built.** Using a model to write code, read this
 repository, reason about your own captures or work from public references is all welcome. Point 2 rules out
 exactly one thing: using a model as a back door into someone else's codebase.
@@ -105,7 +108,7 @@ unflagged one found later puts every line around it under suspicion.
 - **Never commit** captures, key material or vendor binaries. `docs/protocol/captures/` is gitignored and stays
   that way. The test is **generic versus personal**: anything tied to one console, account or session stays
   out. Two generic sets of values are committed on purpose (the v1 interop constants and the application OAuth
-  credential), and widening that needs [`NOTICE`](NOTICE) and [`CLAUDE.md`](CLAUDE.md) amended together, so
+  credential), and widening that needs [`NOTICE`](NOTICE) amended, so
   raise it in an issue first.
 - **Leak-shaped test values are synthetic.** When you widen a detector, illustrate it with a made-up value,
   never a real one. `PublishedTreeSweepTests.cs` keeps a table of fixtures for exactly this.
