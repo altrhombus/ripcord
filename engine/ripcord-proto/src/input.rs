@@ -167,8 +167,8 @@ impl Writer {
                 self.history.insert(0, vec![0x80, R2_CODE, r2]);
             }
             let transitioned = self.history.len() != fresh;
-            let repeat_due = !self.history.is_empty()
-                && now_us.saturating_sub(self.last_history_us) >= HISTORY_REPEAT_US;
+            let repeat_due =
+                !self.history.is_empty() && now_us.saturating_sub(self.last_history_us) >= HISTORY_REPEAT_US;
             if transitioned || repeat_due {
                 out.history = Some(self.history_packet());
                 self.last_history_us = now_us;
