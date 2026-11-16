@@ -33,7 +33,24 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Correction: v2 doesn't stream yet (2026-11-16)
+
+The entry below says v2 streams on hardware. Nothing shows that it did. The `clientVersion 20` change can't
+reach the wire: the negotiator sends whatever version the console acks, and we only offer up to 17. So the
+console picks 17 no matter what `BuildSessionRequest` asks for, and field 7 never goes out either. The session
+that ran that day was almost certainly plain v1. The v2 path writes its log as soon as the control handshake is
+accepted, and that log hadn't been touched since October.
+
+The half that came from the vendor client's own sessions still holds. The console signs its stream pubkey
+with `HMAC(handshakeKey, pubkey)` over the handshakeKey the client sent, so the model is fine. What's different
+is the request: the vendor offers up to 20, the console picks 20, and the request carries a field we never set.
+That's the next thing to try, and it's back on the roadmap until a capture of our own client says otherwise.
+
+From here on, "works on hardware" comes with the name of the capture that shows it.
+
 ### v2 streams on hardware, and the "wrong signature" was the SESSION_REQUEST's version byte (2026-11-13)
+
+*Corrected 2026-11-16, in the entry above: the hardware result described here did not happen.*
 
 The commit that wrote off the random-handshakeKey model said hardware disproved it: on a session that
 reached SESSION_REPLY, the console's stream pubkey signature did not match `HMAC(launchSpecHandshakeKey,

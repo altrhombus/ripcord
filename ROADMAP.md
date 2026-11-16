@@ -226,6 +226,14 @@ purchased signing certificate.
 
 ### Streaming quality and the protocol
 
+- [ ] **v2 (the PS5 GCM control plane): get the stream up.** With `RIPCORD_V2_HANDSHAKE` set, the last hardware
+      run (2026-10-22) got through `/sess/rgst`→`init`→`init2`→`ctrl`, RPCS and senkusha, then stopped at
+      SESSION_REPLY: the console's stream-pubkey signature didn't verify. The stream-key model isn't the problem.
+      The vendor client's own sessions sign with `HMAC(handshakeKey, pubkey)` over the handshakeKey the client
+      sent (2026-11-13). The difference is the SESSION_REQUEST: the vendor offers versions up to 20, the console
+      acks 20, and the request carries field 7. We offer up to 17 and never set field 7. Next: offer 20 on the v2
+      path only (`TakionSessionNegotiator`), accept its curve (the 133-byte key points to P-521, `[X]`), set
+      field 7, and capture our own session before calling it done.
 - [ ] **Do the senkusha probes succeed, or fall back silently?** `MtuConfirmed` answers the MTU half in two
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
