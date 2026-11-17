@@ -714,16 +714,16 @@ impl Session {
             l.last_activity = now_us;
         }
         if connection::is_control(data) {
-            if let Some(s) = self.stream.as_mut() {
-                for m in s.on_datagram(now_us, data) {
-                    // The console starts every HEARTBEAT exchange and the client answers each one (cap48).
-                    if tc::peek_type(&m.payload) == Some(tc::HEARTBEAT) {
-                        if s.send(now_us, CHANNEL_SESSION, &tc::build_bare(tc::HEARTBEAT)).is_ok() {
-                            self.outcome.heartbeats_answered += 1;
-                        }
-                    } else {
-                        self.stream_messages.push_back(m);
+            if let Some(s) = self.stream.as_mut()
+                && let Some(m) = s.on_datagram(now_us, data)
+            {
+                // The console starts every HEARTBEAT exchange and the client answers each one (cap48).
+                if tc::peek_type(&m.payload) == Some(tc::HEARTBEAT) {
+                    if s.send(now_us, CHANNEL_SESSION, &tc::build_bare(tc::HEARTBEAT)).is_ok() {
+                        self.outcome.heartbeats_answered += 1;
                     }
+                } else {
+                    self.stream_messages.push_back(m);
                 }
             }
             return;

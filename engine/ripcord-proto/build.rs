@@ -91,9 +91,13 @@ fn main() {
         ] {
             emit_optional(&mut out, name, None, 512);
         }
-        for name in
-            ["CTX_CODEC_IN_HIGH", "CTX_SELECTOR_ONE", "CTX_SELECTOR_ZERO", "CTX_FALLBACK_ZERO", "REGIST_AUTH_KEY"]
-        {
+        for name in [
+            "CTX_CODEC_IN_HIGH",
+            "CTX_SELECTOR_ONE",
+            "CTX_SELECTOR_ZERO",
+            "CTX_FALLBACK_ZERO",
+            "REGIST_AUTH_KEY",
+        ] {
             emit_optional(&mut out, name, None, 16);
         }
         writeln!(out, "pub(crate) const SELECTOR_OFFSET: Option<usize> = None;").unwrap();
