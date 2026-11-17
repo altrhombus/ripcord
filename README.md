@@ -23,7 +23,7 @@ hardware decoder handles the video and the RSX scales it, so the whole video pat
 16,667 µs frame** (that's 0.68%). It pairs using the PS3's on-screen keyboard, and if the PS3 is signed in to
 your PlayStation Network account it finds your account id on its own, so you never have to type 19 digits
 with a controller. It even has a home screen that looks right at home on the XMB.
-Grab it here: [`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0).
+A fresh package is being cut; until it lands, it builds from [`ports/ripcord-ps3`](ports/ripcord-ps3).
 
 Along the way it measured the clock every timeout in the protocol depends on: **79,800,986 Hz against the
 79,800,000 we expected**. Twelve parts per million out. Not bad for a console from 2006.
@@ -64,7 +64,7 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 
 - **A New 3DS** streams a PS5. It was the first port, and the proof that someone other than the spec's author
   could build a client from it.
-- **A PS Vita** port lives on its own branch.
+- **A PS Vita** port is under way; it isn't in the repository yet.
 - **Built with care.** Every pull request runs a dozen CI jobs across Windows, Linux and macOS, and the engine
   gets fuzzed and checked with Miri every night. The C core is fuzzed too (its very first CI run found a real
   bug). A published-tree sweep and a commit-time leak guard keep personal details out of the history, and the
@@ -77,11 +77,11 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 | Client | State |
 |---|---|
 | **Windows** (the dotnet client) | Streams PS5 and PS4, on the LAN and over the internet. Heading for **1.0**: no download yet |
-| **PlayStation 3** | **Released:** [`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0), 720p60 from a PS5 or PS4 |
+| **PlayStation 3** | Streams 720p60 from a PS5 or PS4. Builds from source; a fresh package is being cut |
 | **New 3DS** | Streams a PS5 |
 | **macOS** | On the Rust engine. Streams from its lab tool; the app is waiting for its first hardware session |
 | **iPhone, iPad, Apple TV** | Builds for all three; not yet run on a device |
-| **PS Vita** | On its own branch |
+| **PS Vita** | Under way, not yet in the repository |
 | **Linux** | Planned, on the Rust engine |
 
 ### What doesn't work yet

@@ -27,13 +27,13 @@ pub fn auth_plaintext(registration_key: &[u8]) -> [u8; 16] {
     out
 }
 
-const DID_PREFIX: [u8; 10] = [0x00, 0x18, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x80];
+const DEVICE_ID_HEADER: [u8; 10] = [0x00, 0x18, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x80];
 
 /// RP-Did: be16(24) and four u16 BE header words (0, 7, 0x40, 0x80), up to 16 bytes of device id, zero
 /// padding to 32. From our own binary (`FUN_101e0d20`); `HalyardSessCtrlFields.cs` has the detail.
 pub fn did_plaintext(device_id: &[u8]) -> [u8; 32] {
     let mut out = [0u8; 32];
-    out[..10].copy_from_slice(&DID_PREFIX);
+    out[..10].copy_from_slice(&DEVICE_ID_HEADER);
     let n = device_id.len().min(16);
     out[10..10 + n].copy_from_slice(&device_id[..n]);
     out

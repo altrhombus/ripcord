@@ -42,8 +42,8 @@ asks of an operating system, and it is **four functions**: `rc_time_ms`, `rc_sle
 `rc_tick`/`rc_tick_hz`, and `rc_random_bytes`. Sockets turned out to need no seam at all, because both
 consoles expose the BSD names.
 
-The Vita port is the measure of what a new target costs. It is on its own branch rather than in this
-tree — `feat/ports-common` carries the core without it — but the shape of the bill is what matters:
+The Vita port is the measure of what a new target costs. It is not in this tree, but the shape of the
+bill is what matters:
 
 ```
 rc_platform_vita.c    67 lines

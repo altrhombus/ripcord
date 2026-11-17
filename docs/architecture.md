@@ -152,7 +152,7 @@ external source the rule exists to keep out. [`CONTRIBUTING.md`](../CONTRIBUTING
 a file was ported from is good practice, because it tells the next reader where to look when the two
 diverge, but it is a courtesy rather than an obligation.
 
-A Vita port lives on its own branch (`feat/vita-port`), well behind `main`, and isn't in this tree;
+A Vita port exists, built against an older core, and isn't in this tree;
 [`journal.md`](journal.md) records what it established.
 
 ## The crypto seam pattern

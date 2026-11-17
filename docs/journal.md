@@ -10,19 +10,20 @@ different purpose.
 
 ## Session log
 
-> **↻ Attribution note — five commits without a model trailer.**
+> **↻ Attribution note — seven commits without a model trailer.**
 >
 > Almost every commit in this repository carries `Co-Authored-By: Claude <model>`, naming the specific
-> model. Five do not, and they are recorded here because they are the five where a reader would most want
-> the provenance — the commits that remove secrets and the commits that write the rules about secrets are
-> exactly the ones whose authorship should not be ambiguous:
+> model. Seven do not (merge commits aside), and they are recorded here because most of them are where a
+> reader would most want the provenance — the commits that remove secrets and the commits that write the rules
+> about secrets are exactly the ones whose authorship should not be ambiguous:
 >
 > - the two that widened the resource guards, 2026-08-02;
+> - two 3DS port commits, 2026-08-18;
 > - the pre-publication redaction pass, 2026-09-09;
 > - the commit that wrote the published-tree sweep, 2026-09-09;
 > - the commit that hardened that sweep after a review found it blind — and added this note, 2026-09-09.
 >
-> All five were AI-assisted on the same terms as the rest of the project, as
+> All seven were AI-assisted on the same terms as the rest of the project, as
 > [`README.md`](../README.md)'s AI-assistance disclosure describes. The trailer was omitted by mistake, not
 > by choice. It is recorded here rather than corrected in place because the history has been rewritten
 > several times already to remove real key material, and a further rewrite for a metadata line is not worth
@@ -32,6 +33,22 @@ different purpose.
 > it would either reject honest human commits or teach everyone to paste a trailer that no longer means
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
+
+### The repository was recreated (2026-11-17)
+
+The GitHub repository was deleted on 2026-11-16 and created again, and the history was rewritten on the way. Commit
+hashes differ from anything cloned between 2026-09-28 and now, and the pull request numbers in older merge
+subjects belong to the old repository.
+
+What the rewrite did: it removed one more identifier that had survived in a test comment; it dropped every
+version of the evidence manifest, which now lives beside the evidence, and of the coding agent's instructions
+file, which is local to each machine now, so older commit messages that cite either point at nothing; and it
+replaced some field labels and wording in older files and commit messages with what `main` says now. Authors
+and dates are unchanged.
+
+Only `main` came across. The `ps3-v1.0` tag and its release did not, so the PS3 package will be cut again from
+`main` under a new tag. The Vita branch did not either; that port stays out of the tree until it is brought
+up to the current core.
 
 ### The GMAC window changes one unit later than we thought (2026-11-16)
 
