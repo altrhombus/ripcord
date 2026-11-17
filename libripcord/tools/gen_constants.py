@@ -210,7 +210,7 @@ def main(argv):
             "",
             emit_array("halyard_v1_ps4_material_wrap_table", ps4_wrap, MATERIAL_WRAP_TABLE_LENGTH),
             "",
-            "/* v2 PS5 registration-authentication key (NOTICE, "Interoperability constants"); the other console",
+            "/* v2 PS5 registration-authentication key (NOTICE, \"Interoperability constants\"); the other console",
             " * family's value is [X] and not bundled. */",
             f"const int halyard_v1_registration_auth_bundled = {1 if regist_auth else 0};",
             "",
