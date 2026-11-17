@@ -9,8 +9,8 @@ This is what's left to do. Finished work moves to [`docs/journal.md`](docs/journ
 ## 1.0: the short version
 
 Here's the bar: someone who isn't me downloads Ripcord, pairs their own PS5 or PS4, and plays—without hitting
-a bug I already know about. 1.0 is the dotnet client's. The console ports version on their own (`ps3-v1.0`
-is the PS3 port's release, not Ripcord's).
+a bug I already know about. 1.0 is the dotnet client's. The console ports version on their own (a `ps3-v*`
+tag is the PS3 port's release, not Ripcord's).
 
 We're close, but not one check away. Here's what's left, in order:
 
@@ -36,11 +36,11 @@ Everything else in this file is real, and it can wait. (Yes, even the Apple TV a
 | Client | State |
 |---|---|
 | **Windows** (the dotnet client) | Streams PS5 and PS4, on the LAN and over the internet. Heading for 1.0 |
-| **PlayStation 3** | Released as [`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0): 720p60 from a PS5 or PS4 |
+| **PlayStation 3** | Streams 720p60 from a PS5 or PS4. Builds from source; the package is being re-cut |
 | **New 3DS** | Streams a PS5 |
 | **macOS** | On the Rust engine. Streams from `ripcord-lab`; the app itself hasn't met a console yet |
 | **iPhone, iPad, Apple TV** | Builds for all three; hasn't run on a device yet |
-| **PS Vita** | On its own branch (`feat/vita-port`), well behind `main` |
+| **PS Vita** | Under way, not yet in the repository |
 
 CI is green on every job, the nightly engine run (Miri plus the fuzzers) passes daily, and the engine
 measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs.
@@ -307,6 +307,7 @@ purchased signing certificate.
 
 ### Console ports and libripcord
 
+- [ ] **Re-cut the PS3 package** from `main` as a new `ps3-v*` tag, so there is a download again.
 - [ ] **The PS3 port reconnects on its own** after a stall, with bounded attempts and backoff, like
       `SessionController`'s watchdog.
 - [ ] **Pair a port from the desktop app.** Design note for review: [`docs/port-pairing.md`](docs/port-pairing.md).
@@ -331,7 +332,7 @@ purchased signing certificate.
 
 - [ ] **Verify the review's store and market claims** before acting on any of them.
 - [ ] **Signing the MSIX:** try Azure Artifact Signing.
-- [ ] **Retire or rebase `feat/vita-port`.**
+- [ ] **Bring the Vita port onto `main`,** or retire it. It was built against an older core.
 
 ---
 

@@ -28,7 +28,7 @@
 # that package rather than chosen freely.
 #
 # The Makefile of each caller runs it automatically; run it by hand only to re-fetch or to debug.
-# Only the host suite is in this tree - the Vita port is on its own branch - so the CROSS= (empty)
+# Only the host suite is in this tree - the Vita port is not - so the CROSS= (empty)
 # path below is the only one exercised here.
 
 set -eu
