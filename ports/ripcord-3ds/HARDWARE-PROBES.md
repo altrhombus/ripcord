@@ -411,7 +411,7 @@ Logs append rather than overwrite, so a second run does not destroy the first. C
 
 ## 5. Afterwards
 
-Update the "Where this stands" checklist in [`README.md`](README.md) and the relevant phase section in
+Update the "Where this stands" checklist in [`BRINGUP.md`](BRINGUP.md) and the relevant phase section in
 [`SETUP.md`](SETUP.md) with what actually happened — including the failures. Phases 1 and 2 both set the
 precedent that a first real run gets written up with its numbers and its caveats, and the Phase 2 writeup
 is more useful *because* it records the vblank bug the first run surfaced rather than quietly fixing it.

@@ -343,7 +343,7 @@ entirely, and is available precisely because there are no B-slices. It costs one
 
 ### What a job costs — **measured on hardware, 2026-09-11**
 
-Step 6 of README.md's order of work ran on a console. One SPE, one thread group, one job, synchronous:
+Step 6 of BRINGUP.md's order of work ran on a console. One SPE, one thread group, one job, synchronous:
 
 ```
 best of 10 runs each; spread is the worst case beside it

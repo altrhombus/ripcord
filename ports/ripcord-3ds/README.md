@@ -1,100 +1,62 @@
 # ripcord-3ds
 
-A PS5 Remote Play client for modded Nintendo 3DS hardware, in C, written from Ripcord's protocol
-specification rather than from its implementation.
+A PS5 Remote Play client for modded Nintendo 3DS hardware, in C. It runs from the Homebrew Launcher as
+`.3dsx` programs. **New 3DS only:** the original 3DS has no video decode hardware and is not a target.
 
-> **That sentence used to end "but none of its code", and that is no longer true.** This port was
-> written standalone, and it was then audited for a second target: 71 of its 88 source files referenced
-> no operating system at all, so they were lifted into what is now [`libripcord`](../../libripcord) and this port became
-> the first of three consumers of a core extracted from it. It also compiles files ported from the .NET
-> side - `senkusha_echo.h` says so in its own header - because `CONTRIBUTING.md`'s independence rule does not
-> apply between Ripcord's own front ends: a same-project port may adapt `src/` at will, that being this
-> project's own reference implementation and not the external source the rule exists to exclude.
->
-> What survives, and is the reason the port exists, is the **specification** claim: nothing here was
-> derived by reading somebody else's Remote Play client, and the spec proved complete enough to produce
-> a working one.
+## Status
 
-**Status: video from a real PS5, decoded and on screen.** As of 2026-08-13
-`ripcord-3ds-connect.3dsx` runs the whole connect flow against real hardware — discovery, `/sess/init` →
-`/sess/ctrl`, the binary control channel, senkusha, the Takion handshake on UDP 9296, and the
-`SESSION_REQUEST`/`SESSION_REPLY` ECDH exchange — derives the per-direction AES keys and IVs, seals its
-own control traffic with GMAC, acks `STREAM_INFO`, and decodes the resulting H.264 through the New 3DS's
-MVD block onto the top screen. A 60-second window: 1,782 pictures, 0 process errors, 0 render errors,
-29.7 fps presented, 2 units lost in 5,397.
+`ripcord-3ds-connect.3dsx` streams from a real PS5. It runs the whole connect flow: discovery,
+`/sess/init` → `/sess/ctrl`, the binary control channel, senkusha, the Takion handshake on UDP 9296, and
+the `SESSION_REQUEST`/`SESSION_REPLY` ECDH exchange. It then derives the per-direction keys, seals its own
+control traffic with GMAC and acks `STREAM_INFO`.
 
-**Since then — audio, input, and the senkusha measurement legs have all landed** (2026-08-17). Opus decodes
-to NDSP; the pad sends state snapshots and button history back up the stream socket; senkusha now measures
-rather than assumes (RTT 2 ms from 10/10 echoes, MTU 1454 confirmed both directions), so the launch spec
-declares real figures instead of `rtt: 0`. The stream is now requested at **960x540** rather than 640x360.
-The 60-second figures above are from the 2026-08-13 build at 640x360 and have not been re-measured since.
+| Area | State |
+|---|---|
+| Video | H.264 decoded by the New 3DS's MVD block onto the top screen. H.264 only; HEVC must be refused at negotiation. The stream is requested at 960x540. |
+| Audio | Opus decodes to NDSP. |
+| Input | The pad sends state snapshots and button history back up the stream socket. |
+| Senkusha | Measures RTT and MTU, so the launch spec declares measured figures. Measured: RTT 2 ms from 10/10 echoes, MTU 1454 in both directions. |
+| Pairing | Not done on the device. The connect flow reads a `pairing.txt` from the SD card; see below. |
 
-Still missing: on-device PIN pairing — it streams from an imported pairing record. Picture quality is bounded
-by the screen rather than the pipeline: the top screen has 240 rows, so most of the source rows are discarded
-on the way down. See [Where this stands](#where-this-stands).
+The last measured window is from the 2026-08-13 build at 640x360, over 60 seconds: 1,782 pictures, 0
+process errors, 0 render errors, 29.7 fps presented, 2 units lost in 5,397. It has not been re-measured at
+960x540.
+
+Not done:
+
+- On-device PIN pairing.
+- Pairing-record import from a desktop Ripcord install. The `pairing.txt` the programs read is a
+  provisional format; its header comment describes it.
+- The standalone Takion probe (`ripcord-3ds-takion.3dsx`) has not been run against a peer we control. The
+  transport itself is confirmed through the connect flow.
+
+Limits set by the hardware:
+
+- The top screen has 240 rows, so most of the source rows are discarded on the way down.
+- The C-stick is a poor right stick, ZL/ZR are digital so there are no analog triggers, and there is no
+  L3/R3. The touchscreen maps to the DualSense touchpad and the gyro to the gyro.
 
 ## Why this exists
 
-Two reasons, and the second matters more than the first.
+A PS5 streaming to a handheld you already own is useful in itself. The main reason is that this port is a
+completeness test for [`docs/protocol/`](../../docs/protocol): a second client, in a different language,
+on a different OS and CPU, shows which parts of the spec are enough to build from. Every place the port
+had to guess is a defect in the spec, which is why the port lives in this repository.
 
-The obvious one: a PS5 streaming to a handheld you already own is a good time.
+## Pairing happens on a PC, not here
 
-The real one: **this is a completeness test for `docs/protocol/`.** A spec is only as good as its
-ability to produce a working implementation, and so far it has produced exactly one — by the people who
-wrote it, in the language they wrote it alongside. Building a second client, in a different language,
-against a different OS, on a CPU with a different word order, is the cheapest honest way to find out which
-parts of that document are load-bearing and which parts only *look* complete because the author already
-knew the answer.
-
-Every place this port had to guess is a defect in the spec. That is the output worth having, and it is why
-the port lives in this repository rather than beside it: a "the spec didn't say" finding belongs in the
-same tracker as the spec.
-
-## Can the hardware actually do this?
-
-**New 3DS only.** The original 3DS has no video decode hardware and is not a target.
-
-| | Budget | Assessment |
-|---|---|---|
-| CPU | ARM11 MPCore @ 804 MHz, no crypto extensions | **Measured: ~25 µs per control-field encryption** (HMAC-SHA256 + one AES-128 block) — the control plane is free; the A/V path's AES-128-CTR is a real cost, extrapolated affordable at low bitrate but not yet measured directly |
-| Video | MVD hardware H.264 decoder (New 3DS only) | H.264 only — HEVC must be refused at negotiation |
-| Colour | Y2R hardware YUV→RGB | The established homebrew path: MVD → Y2R → PICA200 texture |
-| Screen | 400×240 | Everything downscales; quality loss is free |
-| Wi-Fi | 802.11b/g, 2.4 GHz | **Measured (UDP receive, idle): 2.16% loss at 2 Mbps, 4.33% at 3 Mbps** — not the blocker it was assumed to be, at the bottom rung's actual target |
-| Audio | Opus in software + DSP | Affordable |
-
-Wi-Fi was expected to be the binding constraint and is not, on an idle core. An `ftpd` transfer (TCP,
-upload) sustained around 10 Mbps, dipping to 8 and peaking near 13; the UDP link test in
-[`SETUP.md`](SETUP.md) Phase 2 confirmed the same picture in the actual direction and protocol the A/V
-path uses, reaching ~10.4 Mbps goodput at the top of a 1→12 Mbps ramp with modest loss well past the
-bottom rung's 1.5–3 Mbps target.
-
-**Toggling a simulated CPU load changes the picture.** At the same 2–3 Mbps target, loss roughly
-quadruples (9.68% / 17.93%), and above ~5 Mbps target the busy-CPU goodput flatlines around 3–3.4 Mbps
-regardless of how much more the sender pushes. The load used is a crude synthetic proxy, not real MVD/Y2R
-decode timing (which doesn't exist yet), so the direction — CPU contention costs real UDP throughput — is
-the finding to keep; the specific busy ceiling is not. See Phase 2 in [`SETUP.md`](SETUP.md) for the full
-numbers and that caveat.
-
-Controls map more gracefully than expected in places and not at all in others: the touchscreen is a real
-DualSense touchpad and the gyro is a real gyro, but the C-stick is a poor right stick, ZL/ZR are digital
-so there are no analog triggers, and there is no L3/R3 at all.
-
-### Pairing happens on a PC, not here
-
-Registration needs PSN OAuth and TLS, which is a lot of weight for a handheld and buys nothing: pair with
-desktop Ripcord, then copy the pairing record across. `PairedConsole` is deliberately a plain credential
-holder rather than a Halyard type, which makes this close to free. It also means the registration
-constants never need to exist in this binary — and `tools/gen_constants.py` deliberately does not emit
-them.
+Registration needs PSN OAuth and TLS, which is a lot of weight for a handheld. Pair with desktop Ripcord,
+then copy the pairing record across. `PairedConsole` is a plain credential holder rather than a Halyard
+type, so the record carries over easily. The registration constants never need to exist in this binary,
+and `gen_constants.py` does not emit them for this port.
 
 ## Layout
 
-**The protocol core no longer lives here.** As of 2026-08-17 it is in
-[`libripcord`](../../libripcord) — crypto, the Halyard control KDF, session, discovery, Takion, stream
-framing/FEC, input, and the portable half of `util/` — shared with every other Ripcord port and reached
-through the seam in [`libripcord/platform/rc_platform.h`](../../libripcord/platform/rc_platform.h). 71 of
-this port's 88 files turned out to reference no OS at all; what remains below is the 3DS.
+The protocol core is in [`libripcord`](../../libripcord): crypto, the Halyard control KDF, session,
+discovery, Takion, stream framing/FEC, input, and the portable half of `util/`. It is shared with every
+other Ripcord port and reached through the seam in
+[`libripcord/platform/rc_platform.h`](../../libripcord/platform/rc_platform.h). What is here is the 3DS
+side.
 
 ```
 source/platform/    the rc_platform.h seam, libctru side (clock, sleep, tick)
@@ -102,313 +64,86 @@ source/net/         SOC service lifecycle (rc_soc.c)
 source/media/       MVD hardware H.264 decode (rc_mvd.c) + NDSP audio (rc_audio.c)
 source/util/        rc_stack.c (the main-thread stack size), rc_random.c (CSPRNG), rc_profile.c
 source/app/         on-device crypto smoke test (ripcord-3ds.3dsx)
-source/linktest/    Phase 2 UDP link test (ripcord-3ds-linktest.3dsx)
-source/discovery/   Phase 3 on-device LAN discovery app (ripcord-3ds-discovery.3dsx)
-source/session/     Phase 4 on-device /sess app (ripcord-3ds-session.3dsx)
-source/takion/      Phase 5 on-device transport probe (ripcord-3ds-takion.3dsx)
-source/connect/     Phase 6b THE CONNECT FLOW - the only program that reaches the stream plane
+source/linktest/    UDP link test (ripcord-3ds-linktest.3dsx)
+source/discovery/   LAN discovery app (ripcord-3ds-discovery.3dsx)
+source/session/     /sess app (ripcord-3ds-session.3dsx)
+source/takion/      transport probe (ripcord-3ds-takion.3dsx)
+source/connect/     the connect flow, the only program that reaches the stream plane
                     (ripcord-3ds-connect.3dsx)
 source/mvdreplay/   decoder replay harness (ripcord-3ds-mvdreplay.3dsx)
 ```
 
 `source/util/rc_stack.c` is 3DS code despite including no libctru header: it overrides libctru's weak
-`__stacksize__` symbol, and its comment is the record of what 32 KB cost this port twice.
+`__stacksize__` symbol.
 
 ## Building
 
-### Host tests — no 3DS, no devkitPro, just a C compiler
+### Host tests
 
-This is the part that verifies the crypto, and it should be the part you run.
-
-The tests moved with the code they test — they are [`libripcord/tests`](../../libripcord/tests) now, and
-cover every port rather than this one.
+These need no 3DS and no devkitPro, only a C compiler. They verify the crypto. The tests are in
+[`libripcord/tests`](../../libripcord/tests) and cover every port.
 
 ```sh
 # 1. Generate the vectors from the .NET implementation (once, from the repo root)
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 
-# 2. Build and run the C against them (3,243 assertions)
+# 2. Build and run the C against them
 make -C libripcord/tests
 
 # 3. Compile every portable file, including the ones no runner links
 make -C libripcord/tests compile
 ```
 
-`make -C ports/ripcord-3ds test` still works and forwards to the same place.
+`make -C ports/ripcord-3ds test` forwards to the same place.
 
 ### The 3DS build
 
 Requires [devkitPro](https://devkitpro.org/wiki/Getting_Started) with devkitARM and libctru. On Windows,
-run it from the devkitPro MSYS2 shell — that is where `make` and the ARM toolchain live.
+run it from the devkitPro MSYS2 shell, which is where `make` and the ARM toolchain live. The connect flow
+also links mbedtls for ECDH (`dkp-pacman -S 3ds-mbedtls`) and Opus from the devkitPro portlibs.
+`ECDH_BACKEND=none` builds without mbedtls; the key agreement then fails cleanly.
 
 ```sh
 make -C ports/ripcord-3ds
 ```
 
-Produces five Homebrew Launcher binaries: `ripcord-3ds.3dsx`, the on-device smoke test in
-`source/app/main.c` (round-trips the ciphers on real hardware and reports how long a field encryption
-actually costs on an ARM11); `ripcord-3ds-linktest.3dsx`, the Phase 2 UDP link test in
-`source/linktest/main.c` (see [`SETUP.md`](SETUP.md) for how to run it against
-`tools/udp_link_test_sender.py`); `ripcord-3ds-discovery.3dsx`, the Phase 3 LAN discovery probe in
-`source/discovery/main.c` — broadcasts the SRCH probe for both console families and lists every distinct
-console that answers within a four-second window; `ripcord-3ds-session.3dsx`, the Phase 4 session probe
-in `source/session/main.c` — arms the console's control listener, runs `/sess/init` -> `/sess/ctrl`
-against a provisional `pairing.txt` on the SD card (see that file's own header comment for the format;
-this is not the real pairing-import feature, which remains unstarted), and answers heartbeats on the
-binary control channel that follows; and `ripcord-3ds-takion.3dsx`, the Phase 5 Takion transport probe in
-`source/takion/main.c` — drives the SCTP handshake against a `takion.txt`-configured host:port and
-exchanges a synthetic message over the reliable channel once established. `make -C ports/ripcord-3ds
-linktest`/`discovery`/`session`/`takion` builds just one of the five.
+This produces seven Homebrew Launcher binaries. `make -C ports/ripcord-3ds <target>` builds one.
 
-All five (`source/util/rc_log.c`) write everything they print to the top screen into a log file next to
-whichever copy of the `.3dsx` produced it — `smoke-test.log` / `linktest.log` / `discovery.log` /
-`session.log` / `takion.log` on the SD card — so a run's results can be copied off the card afterward
-instead of retyped from a photo of the screen.
+| Binary | Target | What it does |
+|---|---|---|
+| `ripcord-3ds.3dsx` | | Round-trips the ciphers on the device and times a control-field encryption. |
+| `ripcord-3ds-linktest.3dsx` | `linktest` | UDP link test against `tools/udp_link_test_sender.py`; see [`SETUP.md`](SETUP.md). |
+| `ripcord-3ds-discovery.3dsx` | `discovery` | Broadcasts the SRCH probe for both console families and lists each console that answers within four seconds. |
+| `ripcord-3ds-session.3dsx` | `session` | Arms the control listener, runs `/sess/init` → `/sess/ctrl` from `pairing.txt`, and answers heartbeats on the control channel. |
+| `ripcord-3ds-takion.3dsx` | `takion` | Drives the SCTP handshake against a `takion.txt`-configured host:port and exchanges a synthetic message. |
+| `ripcord-3ds-connect.3dsx` | `connect` | The connect flow through to video, audio and input. |
+| `ripcord-3ds-mvdreplay.3dsx` | `mvdreplay` | Feeds a captured elementary stream to MVD with no console and no network. |
 
-All five have been built against a real devkitPro installation and produce valid `.3dsx` files. The
-crypto smoke test and the link test have both been booted on real hardware (see "Where this stands"); the
-discovery, session and Takion probes have not yet.
+Other targets: `constants` regenerates the interop constants only, `crosscheck` compiles the modules that
+have no `.3dsx` of their own for ARM11, and `clean` removes the build output.
+
+Each program writes everything it prints on the top screen to a `.log` file next to its `.3dsx` on the SD
+card.
+
+The build enforces `-Wframe-larger-than=8192` under `-Werror`. libctru's default main-thread stack for a
+`.3dsx` is 32 KB, so large state belongs in `.bss` or on the heap.
 
 ### Not part of `Ripcord.slnx`, deliberately
 
-`dotnet build` cannot build this and never will. Sharing a repository with Ripcord buys shared specs,
-shared constants and shared test vectors; it does not mean sharing a build system with a cross-compiler
-targeting a different CPU and a different OS.
+`dotnet build` cannot build this. Sharing a repository with Ripcord gives shared specs, shared constants
+and shared test vectors. It does not mean sharing a build system with a cross-compiler targeting a
+different CPU and a different OS.
 
 ## The interop constants are generated, never copied
 
-`src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` is committed under a specific, narrow
-argument in the repository `NOTICE`. That reason is stated once, about one file.
+This port keeps no copy of `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json`, the dotnet
+client's bundled constants file. `libripcord/tools/gen_constants.py` reads that file at build time and
+generates a C translation unit into `build/`, which is gitignored.
 
-This port keeps **no copy**. `tools/gen_constants.py` reads that one committed file at build time and
-generates a C translation unit into `build/`, which is gitignored. A second checked-in copy of those bytes
-would quietly turn one bounded exception into two, and the second would have no stated reason at all.
+The vector files are handled the same way. Everything under `libripcord/tests/vectors/` is generated,
+gitignored, and regenerated with the `vectors` command above.
 
-The same reasoning applies to the vector files: everything under `tests/vectors/` (`control-crypto.kat`,
-`stream-crypto.kat`, `session-crypto.kat`, `control-proto.kat`) is generated, gitignored, and regenerated
-with one command.
+## Further reading
 
-## Verification, and its limits
-
-The vector file is the contract between the two implementations. The .NET side computes the answers, this
-side recomputes them, and a disagreement means one of the two misread `docs/protocol/ps5-remoteplay-v1-spec.md`.
-
-171 control-plane vectors currently pass, covering:
-
-- **KDF** — all 32 entries of both lookup tables swept, for both console families, plus cases where the two
-  table indices deliberately differ (a port that reuses one index for both agrees on most inputs otherwise)
-- **Context key selection** — including the high-band codec cases that win over the version selector
-- **Field IV** — counters spanning the 32-bit edge, because a little-endian or 32-bit counter write passes
-  every short session and then fails a long one
-- **CFB / OFB** — at lengths either side of the block boundary, where CFB's partial-final-block rule bites
-- **End-to-end** — nonce and companion in, base64 header value out
-
-The stream plane adds its own files on the same contract — `stream-crypto.kat` (GMAC, the stream KDF,
-per-packet nonce/tag) and, since Phase 6a, `session-crypto.kat` and `control-proto.kat`:
-
-- **ECDH** — fixed private scalar to public point, and to shared secret, on both P-256 and P-521. The
-  scalars are fixed rather than generated because a key agreement has no known-answer vector otherwise;
-  `rc_ecdh_keypair_from_private()` exists in the header for exactly this reason rather than as a
-  test-only back door. What is being checked is not mbedtls's curve arithmetic but the code around it —
-  curve selection, point layout, and whether the shared X is written at the curve's full width. P-521
-  makes that last one hard to get away with: its X is 521 bits in a 66-byte field, so a leading zero byte
-  lands about half the time.
-- **Protobuf** — `SESSION_REQUEST` encodings and `SESSION_REPLY` decodings against Google.Protobuf's own
-  output, including a payload long enough to need a two-byte length varint and a reply carrying a nested
-  field this port does not model.
-
-Plus the FIPS-197 AES vector and the FEC ground truth (the console's own dumped inverse table) — the only
-two checks here independent of Ripcord entirely. Everything else tests *agreement* between two
-implementations, and two implementations can agree and both be wrong.
-
-**What is verified now, and what still is not:** the host build compiles clean under `-Werror -Wconversion
--Wsign-conversion` and passes all 3,240 cases across ten runners, `make crosscheck` confirms the modules
-with no `.3dsx` of their own still compile for ARM11, and `source/app/main.c` has run the control-plane
-logic on a real New 3DS — see "Where this stands" below for the on-device numbers. What the vector files
-still cannot do is validate against anything *other* than agreement between the two implementations, short
-of the FIPS-197 and FEC-table checks; a shared misreading of the spec would pass both sides. **No part of
-the protocol above Phase 2 has yet been spoken to a real console**, which is a different and larger gap
-than the one this section is about.
-
-## Where this stands
-
-Done:
-
-- [x] AES-128, SHA-256, HMAC-SHA-256, CFB128, OFB, CTR
-- [x] Control-session KDF (PS5 and PS4 variants)
-- [x] Per-field IV derivation and context-key selection
-- [x] Field cipher and streaminfo cipher
-- [x] Constants generation from the committed bundle
-- [x] Host-side known-answer runner
-- [x] On-device smoke test, booted on real New 3DS hardware — all self-consistency checks passed
-- [x] First green build — host KAT runner (171/171) and the 3DS cross-compile both pass
-- [x] On-device ARM11 timing: ~25 µs per control-field encryption (1000 in 25 ms) — the control plane's
-      total crypto cost per connect is on the order of 125 µs; see SETUP.md Phase 1 for what this does and
-      does not settle
-- [x] SOC service lifecycle (`source/net/rc_soc.c`) — the 0x1000-aligned 0x100000 buffer, owned in one place
-- [x] UDP link test run over a real Wi-Fi link, idle and under simulated CPU load — idle reaches ~10.4
-      Mbps goodput at the top of a 1→12 Mbps ramp with modest loss at the bottom rung's 2–3 Mbps target
-      (2.16% / 4.33%); toggling the load roughly quadruples loss at the same rates (9.68% / 17.93%) and
-      flattens busy goodput around 3–3.4 Mbps above ~5 Mbps target — see SETUP.md Phase 2 for the full
-      numbers and the caveat on what the synthetic CPU load does and does not model
-- [x] Dual console/SD-card logging (`source/util/rc_log.c`) — all four on-device programs write
-      everything they print to a `.log` file next to their own `.3dsx`
-- [x] LAN discovery: the SRCH probe/parse (`source/discovery/halyard_discovery.c`) and an on-device app
-      (`ripcord-3ds-discovery.3dsx`) that broadcasts it for both console families and lists what answers.
-      Parser checked against 24 hand-transcribed cases from `docs/protocol/ps5-local-discovery.md` in
-      `tests/discovery_test.c`; compiles and links clean, not yet run against a real console
-- [x] The `/sess/init` -> `/sess/ctrl` exchange: the control-listener arm probe
-      (`source/session/halyard_control_arm.c`), the HTTP-like request/response builder and parser
-      (`halyard_sess_request.c`), the five encrypted field plaintexts (`halyard_sess_fields.c`), and the
-      persistent binary control-channel frame (`halyard_ctrl_message.c` — corrected against a stale "RPCS
-      magic" doc, see SETUP.md Phase 4). 53 cases in `tests/session_test.c`, including one end-to-end
-      chain through the already-verified control-field cipher. The on-device app
-      (`ripcord-3ds-session.3dsx`) compiles and links clean; not yet run against a real console
-- [x] Takion transport: the SCTP 4-way handshake, DATA/SACK chunks with fragmentation/reassembly, and a
-      minimal in-order-accept + fixed-interval-retransmit reliable channel (`source/takion/`). The pure
-      codecs are checked in `tests/takion_test.c` (61 cases) against known-answer packets lifted from the
-      .NET side's own captured-vector tests — including a real doc/implementation mismatch this phase
-      caught: `docs/protocol/ps5-session-transport.md`'s "RPCS" description does not apply to Takion at
-      all (it documents an unrelated, older transport), and Takion's own reliable channel
-      (`takion_reliable_channel.c`) has no host test, same as `rc_soc.c`/`rc_tcp.c` — the on-device app
-      (`ripcord-3ds-takion.3dsx`) compiles and links clean; not yet run against a real console. GMAC
-      sealing, FEC and the actual stream-key/SESSION_REQUEST exchange are deliberately out of scope here
-      — see SETUP.md Phase 5 for exactly where the line was drawn and why
-- [x] Stream framing, demux, FEC (`source/stream/`): the 18-byte A/V packet header
-      (`stream_header.c` — video's 11/11/10-bit unit packing vs. audio's byte-wide fields), GF(2^8) field
-      arithmetic and systematic Cauchy Reed-Solomon erasure coding (`fec_galois.c`/`fec_reed_solomon.c` —
-      checked against the console's own dumped inverse table, not just a self-consistency round-trip), the
-      stream-plane packet crypto (`rc_gcm.c`'s GMAC, `stream_key_schedule.c`'s KDF,
-      `stream_packet_crypto.c`'s per-packet nonce/key rotation — all cross-checked against the .NET
-      reference via a new `tools/Ripcord.ProtocolLab -- vectors` output, the same methodology Phase 0
-      established), and the demuxer (`stream_demux.c`) that ties it together: frame reassembly by
-      frame-index, FEC recovery of dropped source units, IDR/keyframe detection with SPS/PPS
-      re-prepending, HEVC vs. H.264 classification, and audio redundant-unit stripping. 2,808 cases across
-      four host test binaries (`stream_crypto_test` 65, `fec_test` 2,654 — the field-law sweep over all
-      256 GF values dominates that count, `stream_header_test` 58, `stream_demux_test` 31), the last of
-      which exercises the whole pipeline end to end (framing → crypto seam → FEC recovery → assembly)
-      against synthetic packets via the passthrough crypto stub. No on-device app yet — deliberately:
-      there is no real ECDH/SESSION_REQUEST exchange to derive actual stream keys from, so there is nothing
-      a real console would send that this could usefully decrypt yet; see SETUP.md for the exact scope line
-
-- [x] The stream key agreement (`source/crypto/rc_ecdh.*`, `source/takion/takion_control_proto.*`,
-      `source/takion/takion_session_negotiator.*`): ephemeral ECDH on P-256 and P-521, the
-      `SESSION_REQUEST`/`SESSION_REPLY` protobuf envelope, `ecdhSignature` verification, and the
-      derivation of all four per-direction key/IV values that `stream_packet_crypto` has been waiting on
-      since Phase 5.5. **This is the one primitive the port does not implement itself** — elliptic-curve
-      arithmetic is delegated to mbedtls (`dkp-pacman -S 3ds-mbedtls`) behind the `-DRC_CRYPTO_MBEDTLS`
-      seam `rc_crypto.h` always anticipated, matching the .NET side's own decision to delegate EC entirely
-      rather than hand-roll it; built without that define the seam fails cleanly instead of faking a key
-      agreement, so "builds on any machine with a C compiler" survives. 115 new host cases (`ecdh_test`
-      44, `control_proto_test` 71) — the ECDH ones cross-checked against a new
-      `tools/Ripcord.ProtocolLab -- vectors` output using **fixed** private scalars (a key agreement has no
-      known-answer vector otherwise), the protobuf ones against Google.Protobuf's own encoding of
-      `docs/protocol/stream_control.proto`. No on-device app yet, same as Phase 5.5
-
-- [x] **The media pipeline, decoding real console output on hardware** (`source/media/rc_mvd.c`,
-      `source/mvdreplay/`): GMAC-sealed control traffic, `STREAM_INFO` parsing and ack, and H.264 decode
-      through the New 3DS MVD block onto the top screen, scaled by the ARM11 into the 800x240 wide-mode
-      framebuffer. Measured over 60 seconds against a real PS5: 1,782 pictures, 0 process errors, 0 render
-      errors, 29.7 fps presented, 2 units lost in 5,397, 80% of each frame carrying detail.
-
-      Six decoder faults had to be found first, and none of them announced themselves — MVD reported
-      success throughout. In the order they mattered: a frame-detection sentinel that wrote into the very
-      buffer the next P-frame predicts from; rendering per NAL unit when the console sends one slice per
-      MTU (a 25 KB keyframe is ~20 units); `MVDSTD_SetConfig` called before the parameter sets rather than
-      after; a BUSY retry that did not re-apply the config the way 3dbrew documents; libctru's
-      `MVD_CHECKNALUPROC_SUCCESS` omitting `0x17005`, a status the hardware returns and which decodes as
-      Success; and a cold decoder needing the first access unit fed **twice** before it latches onto a
-      sequence. See SETUP.md Phase 6 for the full account, including two wrong turns of my own that cost
-      more than any of the real bugs.
-
-      `ripcord-3ds-mvdreplay.3dsx` is the tool that made this tractable: it feeds a captured elementary
-      stream to MVD with no console, no network and no session to time out, in about two seconds, with
-      identical bytes every run.
-
-Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
-toolchain steps:
-
-- [x] **Ran the probes against a real PS5 (2026-08-12)** — run sheet and triage in
-      [`HARDWARE-PROBES.md`](HARDWARE-PROBES.md). Discovery found the console **awake and resting**, with
-      every field parsing. The session probe reached **`/sess/init -> 200`, `/sess/ctrl -> 200`, session
-      ready (17-byte session id)** on the first attempt, and rest mode round-tripped — so the Phase 0
-      control-plane crypto (KDF, per-field IV, CFB field cipher, running counter, and the hardcoded codec
-      selector 2) is now confirmed against real hardware rather than only against our own .NET
-      implementation. Four control-channel message types arrived that neither implementation models
-      (`0x0016`/2B, `0x0017`/9B, `0x0003`/4B, plus a 1-byte `0x0005`); the framing skipped all of them
-      cleanly. **Two real bugs, both ours, both invisible to host vectors** — see SETUP.md Phases 3 and 5:
-      a `bind()` on port 0 that SOC rejects with `EINVAL`, and a 49.6 KB stack local that data-aborted in
-      its own prologue against libctru's 32 KB stack. The 3DS build now enforces
-      `-Wframe-larger-than=8192`, which immediately caught a second oversized frame in the FEC decoder
-
-- [x] **The combined connect flow** (`source/connect/`, `ripcord-3ds-connect.3dsx`) — the only program
-      that carries a real control session through to derived stream keys, and therefore the only way to
-      test Takion or the ECDH agreement against a console at all. Control plane -> sign-in gate ->
-      session-ready -> senkusha on 9297 -> Takion on 9296 -> SESSION_REQUEST/REPLY -> per-direction keys,
-      single-threaded with the control channel's heartbeats serviced throughout (including from inside
-      the Takion handshake's wait loops, via a new tick callback). Adds `rc_random` (libctru's CSPRNG),
-      the launch-spec builder — **verified byte-for-byte against .NET across 5 cases** — and a shared
-      `pairing.txt` loader. Built, not yet run
-
-- [x] **Ran the connect probe against a real PS5 (2026-08-12) — `STREAM KEYS DERIVED`.** Confirmed in one
-      run: the Takion transport (twice over, on two independent associations), senkusha bring-up, the
-      stream port being 9296, the fragmented SESSION_REQUEST encoding, the launch spec byte for byte, the
-      streaminfo cipher **at counter 0** (never pinned by any vector on either side until now — written
-      back into the .NET call site), that omitting `adaptiveStreamMode` is harmless, P-521 for client
-      version 17, and `rc_random` on device. The run before it found a real bug: continuation fragments
-      were going out on channel 0 — the console's own channel — because the module had documented the
-      channel field as "reserved, unconfirmed". First message this port had ever fragmented
-
-- [ ] Re-run the standalone Takion probe only against a peer we control — the transport was never actually exercised,
-      so the handshake remains the one implemented phase with no hardware evidence either way (and see the
-      standing caveat below on why a failure there would still prove little)
-- [ ] The launch-spec build (`launchSpecJson`) and wiring the negotiator into a real connect flow — the
-      key agreement above is complete as *logic* but has no socket attached, deliberately; what it still
-      needs is the session configuration that travels in the launch spec (and carries `handshakeKey` to
-      the console) plus an on-device app to drive it
-- [ ] MVD H.264 decode → Y2R → PICA200 present
-- [ ] Opus audio
-- [ ] Input mapping, including touchscreen → touchpad and gyro → gyro
-- [ ] Pairing-record import from a desktop Ripcord install
-- [ ] **For later discussion:** on-device PIN-based pairing — distinct from record-import above, this
-      would be *performing* pairing on this port rather than importing an existing record. The PIN route
-      (spec §2.0) rides the same plain-TCP 9295 connection Phase 4 already built `rc_tcp` for, and its KDF
-      is a 32-entry table XOR-folded with the on-screen PIN, sealed with the same AES-128-CFB/HMAC-SHA256
-      primitives already ported — nothing OAuth/TLS-shaped, unlike the account-based/no-PIN route. Two open
-      questions before this is buildable, not just researched: (a) the registration table isn't a bundled
-      constant yet (captures-folder only) — bundling it needs the same deliberate NOTICE amendment
-      already made twice, a project-owner call; (b) the spec's request-body plaintext includes
-      `Np-AccountId` even on the PIN route, meaning the client may need to already know its own PSN account
-      ID from somewhere — unresolved
-
-Both hardware questions Phases 1 and 2 existed to answer are now settled: the control plane's crypto costs
-~25 µs per field, and the link sustains the bottom rung's target with modest loss on an idle core (2.16%
-at 2 Mbps, 4.33% at 3 Mbps) — with the caveat that a simulated CPU load roughly quadruples that loss at
-the same rates, a real signal about contention even though the synthetic load itself isn't a stand-in for
-actual decode cost. Phases 3, 4 and 5 are all implemented and passing their own (hardware-free) parser
-tests — SRCH discovery, the `/sess/init` -> `/sess/ctrl` exchange (the first end-to-end use of the
-Phase 0 crypto against real console output), and now the Takion transport underneath where the A/V stream
-will eventually ride. Note the pairing record `ripcord-3ds-session.3dsx` reads is a provisional
-`pairing.txt` for exercising Phase 4, not the real "Pairing-record import from a desktop Ripcord install"
-item still sitting unstarted above — those are two different things with similar-sounding names, and only
-one of them is done. Stream framing, FEC and the demuxer are now also implemented and fully self-tested
-(2,808 host cases) against the passthrough crypto stub, and Phase 6a has since closed the gap that kept
-them stubbed: the ECDH key agreement and `SESSION_REQUEST`/`SESSION_REPLY` exchange now derive real
-per-direction stream keys, cross-checked against the .NET side on both curves. Neither of those two phases
-has an on-device app yet — 5.5 because it had nothing real to decrypt, 6a because the key agreement has no
-socket attached by design and still needs a launch spec and a connect flow around it.
-
-That hardware run has since happened, and so has the media pipeline. Everything from discovery to a
-decoded picture is now confirmed against a real console rather than against our own .NET implementation —
-which was the risk this port was carrying and the question it existed to answer. The spec produced a
-second working implementation, on hardware it was never written for.
-
-**What is left, in order:**
-
-- **Audio.** Opus decode and NDSP output. The demuxer already separates and strips redundant audio units;
-  nothing consumes them.
-- **Input.** Controller state to the console. Nothing is sent back at all, so the session is read-only.
-- **Senkusha's measurement legs.** RTT echo and MTU-in/MTU-out (spec §6.4). Not a quality blocker — see
-  the note in SETUP.md, because that was assumed for several rounds and measured to be false.
-- **Picture quality**, which is now a screen problem rather than a pipeline problem. 640x360 into 240 rows
-  discards 37.5% of them; `smoothing=1` averages the straddled pair and is on by default.
+- [`BRINGUP.md`](BRINGUP.md): the dated record of bringing the port up and what was measured on hardware.
+- [`HARDWARE-PROBES.md`](HARDWARE-PROBES.md): the run sheet and triage for the on-device probes.

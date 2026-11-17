@@ -40,7 +40,7 @@ AS     := $(PREFIX)as
 STRIP  := $(PREFIX)strip
 
 # THE SECOND COMPILER. The SPEs are a different architecture with a different instruction set and their
-# own toolchain - this is the thing README.md means when it says the PS3 costs strictly more toolchain
+# own toolchain - this is the thing BRINGUP.md means when it says the PS3 costs strictly more toolchain
 # surface than either port before it. spu/ is built by SPU_CC into an ELF, that ELF becomes a binary
 # blob, and the blob is assembled into the PPU binary by the PPU assembler. Three tools, one program.
 SPU_PREFIX := $(PS3DEV)/spu/bin/spu-
@@ -221,7 +221,7 @@ RC_NETLOG_PORT ?= 9000
 # the hardware had already found. The deepest live path either port measured was the audio loss-
 # concealment chain at ~12.4 KB across five frames, every individual frame under the limit - cumulative
 # call depth rather than one oversized local. That chain is libripcord code and Opus, so it will exist
-# here too. See "the main thread's stack" in README.md for the part of this that is still an open
+# here too. See "the main thread's stack" in BRINGUP.md for the part of this that is still an open
 # question on PS3.
 
 # -std=gnu99, NOT -std=c99, and this is not a style preference. PSL1GHT's syscall wrappers are built on
@@ -433,7 +433,7 @@ CORE_TEST_CFLAGS := $(ARCH) -std=gnu99 -O2 -g -Wall -I$(CORE) -I$(CORE_TEST_DIR)
                     -Isource/coretest -I$(PSL1GHT)/ppu/include $(ECDH_CFLAGS)
 
 # ---------------------------------------------------------------------------------------------------
-# The SPE program. Step 6 of README.md's order of work.
+# The SPE program. Step 6 of BRINGUP.md's order of work.
 #
 # spu_rules' MACHDEP for the SPU is -mdual-nops -fmodulo-sched -ffunction-sections -fdata-sections, and
 # it is taken from there rather than described from the hardware - the same rule the PPU's ARCH follows

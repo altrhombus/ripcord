@@ -17,7 +17,7 @@ Fix this file as you go; that is still what it is for.
 The 3DS could plausibly be built from devkitPro's MSYS2 shell on Windows. This port has less choice:
 
 - **Two cross-compilers, and the second one is the entire port.** Steps 6 and 7 of
-  [`README.md`](README.md)'s order of work are SPU code: `spu-gcc`, embedding SPU images in the PPU
+  [`BRINGUP.md`](BRINGUP.md)'s order of work are SPU code: `spu-gcc`, embedding SPU images in the PPU
   binary, and a job model. Strictly more toolchain surface than either port before it. The prebuilt
   archive ships both, so this is an argument about what you will be *using*, not about a build cost —
   see the correction below.
@@ -220,7 +220,7 @@ before it is that a toolchain unblocks more of this port than a console does.
 
 ## 5. The plan from here
 
-[`README.md`](README.md) holds the order of work and [`DECODE.md`](DECODE.md) the decoder decisions.
+[`BRINGUP.md`](BRINGUP.md) holds the order of work and [`DECODE.md`](DECODE.md) the decoder decisions.
 
 **Closed on hardware, 2026-09-11.** The time base is 79,800,986 Hz against 79,800,000 expected — 12 ppm,
 so the documented figure was right, and `rc_tick_hz()` now asks lv2 rather than depending on that having
@@ -268,7 +268,7 @@ cheaper than deriving what it must have meant.
 
 **Two SPU-specific traps, learned in step 6.** `sysSpuThreadInitialize` takes four `u64` arguments and
 lv2 delivers three: `arg3` arrives as zero, the SPE DMAs to address 0, and the thread dies before its
-next instruction. Pass a job block by effective address instead - README.md argues it in full, and
+next instruction. Pass a job block by effective address instead - BRINGUP.md argues it in full, and
 PSL1GHT's own samples never populate past `arg1`, which is why nothing in the SDK reveals the limit. And
 `sysSpuImage` as PSL1GHT declares it does not match what lv2 writes on a 64-bit process, so `entryPoint`
 and `segmentCount` read as garbage; an earlier revision of the bring-up program concluded from them that
