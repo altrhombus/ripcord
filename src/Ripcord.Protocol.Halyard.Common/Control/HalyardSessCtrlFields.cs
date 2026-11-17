@@ -75,18 +75,18 @@ public static class HalyardSessCtrlFields
     // be16 length is its caller's. cap22's RP-Did decrypts to the same shape [W], but with 0x41 as the third
     // word: the vendor client can be handed a prebuilt id (FUN_101dc480 -> FUN_101e1390), and the 0x40 here
     // is the binary's own default. The console accepts 0x40 in our sessions; what the word means is [X].
-    private static readonly byte[] DidPrefix = [0x00, 0x18, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x80];
-    private const int DidSuffixLength = 6;
+    private static readonly byte[] DeviceIdHeader = [0x00, 0x18, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x80];
+    private const int DeviceIdPadLength = 6;
 
-    /// <summary>RP-Did plaintext: the 32-byte device-id structure (prefix + device bytes + zero suffix).</summary>
+    /// <summary>RP-Did plaintext: the 32-byte device-id structure (header + device bytes + zero padding).</summary>
     public static byte[] BuildDidPlaintext(ReadOnlySpan<byte> deviceId)
     {
         var did = new byte[DidSize];
-        DidPrefix.CopyTo(did.AsSpan());
-        int middle = DidSize - DidPrefix.Length - DidSuffixLength; // 16
+        DeviceIdHeader.CopyTo(did.AsSpan());
+        int middle = DidSize - DeviceIdHeader.Length - DeviceIdPadLength; // 16
         int n = Math.Min(deviceId.Length, middle);
-        deviceId[..n].CopyTo(did.AsSpan(DidPrefix.Length));
-        return did; // trailing suffix bytes remain zero
+        deviceId[..n].CopyTo(did.AsSpan(DeviceIdHeader.Length));
+        return did; // the padding stays zero
     }
 
     /// <summary>RP-OSType plaintext: the ASCII string "Win{major}.{minor}" with a trailing NUL.</summary>
