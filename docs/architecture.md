@@ -13,7 +13,7 @@ references — and protocol and platform code sits above them and depends downwa
 Precisely what that claims: their `ConsolePlatform` enum uses this project's own codenames (`Halyard`,
 `Lanyard`) so the neutral layer never names a console, and some comments there cross-reference the layers
 above to explain why a primitive is shaped as it is. A comment is not a dependency; a `using` or a type
-would be, and `PresentationPortabilityTests` is what stops one appearing.
+would be, and neither project has a project reference that could supply one.
 
 ```
   FRONT ENDS      Ripcord.App            src/Ripcord.Mac          ports/ripcord-3ds  (C, devkitARM)
@@ -46,15 +46,15 @@ for derivations (key schedules, KDFs, field ciphers, codecs). `ProtocolLab vecto
 vectors the other two are tested against.
 
 The ports exist partly as completeness tests for the specification: a spec is only as good as its ability to
-produce a working implementation by someone who wasn't in the room when it was written. What a port contains
-is its platform (video, audio, input, storage, a shell) and nothing else.
+produce a working implementation by someone who wasn't in the room when it was written. A port contains its
+platform (video, audio, input, storage, a shell) and nothing else.
 
 Media (`Ripcord.Media*`), input (`Ripcord.Input*`) and diagnostics (`Ripcord.Diagnostics`) hang off the
 front end rather than the protocol stack, and reach native code through their `.Interop` halves.
 
 ## The projects
 
-Each project, and what it is responsible for:
+What each project is responsible for:
 
 - **`Ripcord.Core`** — platform-neutral session/input/settings contracts (`IStreamingSession`,
   `IControllerSource`, credential store abstractions), plus local persistence for settings and the paired-
@@ -85,7 +85,7 @@ Each project, and what it is responsible for:
   decides *what a surface says*. Plain `net10.0`, and **no UI framework type may cross into it** — no `Brush`,
   no `Visibility`, no `DispatcherQueue`. Presentation concerns are portable enums and bools that each front end
   maps to its own types (`AccentRole`, `StatusTone`, `ActionGlyph`). `PresentationPortabilityTests` enforces
-  the rule by reflecting over referenced assemblies, because prose alone has not held elsewhere in this repo.
+  the rule.
 - **`Ripcord.Presentation.Halyard`** — the PlayStation backend for that layer, and the one place a front end
   names Halyard at all: implementations of the discovery, registration, reachability and wake seams, plus
   `HalyardAppServices.Create`, which builds the whole graph. Same seam-and-stub shape as the crypto seam.
@@ -121,7 +121,7 @@ interfaces `Ripcord.Presentation` already defines.
 ## The C core and the ports
 
 `ports/` holds from-scratch C clients for consoles the .NET stack cannot run on. They share a protocol
-core, `libripcord/`, with each other, and nothing at all with `src/` at link time.
+core, `libripcord/`, with each other, and nothing with `src/` at link time.
 
 `libripcord` was the macOS client's core too until 2026-09-26, when the Mac moved to the Rust engine. It stays
 as the console ports' core, taking fixes and port-driven work.
@@ -148,26 +148,26 @@ the reverse, and `crypto/` knows nothing about PlayStation.
 
 **The independence rule does not apply between Ripcord's own front ends.** A port may read, port and
 directly adapt code from `src/` at will — that is this project's own reference implementation, not the
-external source the rule exists to keep out. [`CONTRIBUTING.md`](../CONTRIBUTING.md) states the exception too. Citing what
-a file was ported from is good practice, because it tells the next reader where to look when the two
-diverge, but it is a courtesy rather than an obligation.
+external source the rule exists to keep out. [`CONTRIBUTING.md`](../CONTRIBUTING.md) states the exception
+too. Citing what a file was ported from is good practice, because it tells the next reader where to look when
+the two diverge, but it is a courtesy rather than an obligation.
 
 A Vita port exists, built against an older core, and isn't in this tree;
 [`journal.md`](journal.md) records what it established.
 
 ## The crypto seam pattern
 
-The one genuinely unsolved-at-design-time piece (session crypto) is isolated behind an interface
-(`IHalyardSessionCrypto` in `Ripcord.Protocol.Halyard.Common`) with two implementations:
-`PassthroughHalyardSessionCrypto` (a no-op stub) lets the rest of the pipeline — transport, framing,
-demux, decode, input — be built and tested independently of the crypto research. `HalyardV1SessionCrypto`
-is the real implementation. Swapping stub → real is a DI change. If you're extending the protocol stack,
-prefer this seam-and-stub pattern over coupling new work to not-yet-solved crypto.
+The one piece unsolved at design time (session crypto) sits behind an interface (`IHalyardSessionCrypto` in
+`Ripcord.Protocol.Halyard.Common`) with two implementations. `PassthroughHalyardSessionCrypto` (a no-op
+stub) lets the rest of the pipeline — transport, framing, demux, decode, input — be built and tested
+independently of the crypto research; `HalyardV1SessionCrypto` is the real one. Swapping stub → real is a DI
+change. When extending the protocol stack, prefer this seam-and-stub pattern over coupling new work to
+not-yet-solved crypto.
 
 ## The app layer: four rules
 
-If you are touching a page, a view-model or anything in `Ripcord.Presentation`, these are the standing rules.
-The rationale for each lives in the file that implements it; what follows is what you have to obey.
+These are the standing rules for a page, a view-model or anything in `Ripcord.Presentation`. The rationale
+for each lives in the file that implements it; what follows is what you have to obey.
 
 1. **One immutable state record per view-model, recomposed whole.** Derive from `ObservableState<TState>` and
    override `Compose()`; mutate through `Mutate(...)`, which is the only place a change is applied and notified.
@@ -182,10 +182,9 @@ The rationale for each lives in the file that implements it; what follows is wha
    anything a posted closure reads is read *later*. Decide freshness questions synchronously and capture the
    answer; a guard evaluated inside a posted closure is a bug, and has been twice.
    *The one lock in the layer is at its boundary, not inside it:* `ScanSink` in `RipcordAppServices`
-   accumulates `IObserver` callbacks that genuinely arrive off the dispatcher thread, so the "one thread
-   only" premise does not hold for it and a lock is the correct answer. That is the exception and it is
-   named here so the rule stays literally true — if you want a lock on a *view-model* field, the answer is
-   the dispatcher, not the lock.
+   accumulates `IObserver` callbacks that arrive off the dispatcher thread, so the "one thread only" premise
+   does not hold for it and a lock is the correct answer. That exception is named here so the rule stays
+   literally true — if you want a lock on a *view-model* field, the answer is the dispatcher, not the lock.
    *Outside the layer,* where the UI thread meets a device or session thread (`SimpleObservable`,
    `CompositeControllerSource`, `MergedInputSource`, `Subject`), the guard is `SpinGate`, never `lock`. A
    contended `lock` on the WinUI UI thread waits in `CoWaitForMultipleHandles`, which pumps messages, and XAML
@@ -211,10 +210,11 @@ The rationale for each lives in the file that implements it; what follows is wha
 | Senkusha | **Vendor's own codename**, retained | The echo/MTU/bandwidth probe sub-protocol |
 
 `Halyard` replaces Sony's product name and is our invention. `Takion` and `Senkusha` are **Sony's own
-internal codenames**, recovered from strings in our own copy of the vendor binary — not names we coined. They are retained deliberately as protocol terminology: they are load-bearing
-in namespaces, ~10 class names, and assembly names, and renaming them buys little once their provenance is
-stated. **This is a stated exception to the "never the vendor's own symbol/string names" rule** in
-[`docs/protocol/README.md`](protocol/README.md) — the rule still governs everything else. Do not extend the exception without recording it here.
+internal codenames**, recovered from strings in our own copy of the vendor binary — not names we coined. They
+are retained deliberately as protocol terminology: they are load-bearing in namespaces, ~10 class names, and
+assembly names, and renaming them buys little once their provenance is stated. **This is a stated exception
+to the "never the vendor's own symbol/string names" rule** in [`docs/protocol/README.md`](protocol/README.md)
+— the rule still governs everything else. Do not extend the exception without recording it here.
 
 For protobuf **message and enum** names the rule is two-tier, and `docs/protocol/README.md` states it in
 full: the vendor's *coined or arbitrary* names are renamed (`BIG`/`BANG` → `SESSION_REQUEST`/
@@ -230,8 +230,8 @@ naming choices.
 
 ## Where the rules are enforced
 
-Prose has not held in this repo, so the load-bearing rules have tests behind them. If you are changing
-one of these, expect a failing build rather than a review comment:
+Prose has not held in this repo, so the load-bearing rules have tests behind them. Change one of these and
+expect a failing build rather than a review comment:
 
 | Rule | Enforced by |
 |---|---|

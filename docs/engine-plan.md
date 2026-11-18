@@ -3,11 +3,11 @@
 **The question this answers: what runs where on Ripcord's first-class platforms, what the shared engine
 is written in, and how the project gets there from the engines it has today?**
 
-Settled 2026-09-25. The decisions are recorded under "Decisions" at the end; two are deliberately left
-to the platform plans that need them, and the whole plan passes through one gate, the spike in Phase 1. This is a plan, and it is forward-looking.
-Work that lands moves to [`journal.md`](journal.md) and the open items stay in
-[`../ROADMAP.md`](../ROADMAP.md), the same way as everywhere else in the repository. Where this file and
-the roadmap disagree about what is still open, the roadmap wins.
+Settled 2026-09-25. The decisions are under "Decisions" at the end; two are deliberately left to the
+platform plans that need them, and the whole plan passes through one gate, the spike in Phase 1. This is a
+forward-looking plan. Work that lands moves to [`journal.md`](journal.md) and the open items stay in
+[`../ROADMAP.md`](../ROADMAP.md), as everywhere else in the repository. Where this file and the roadmap
+disagree about what is still open, the roadmap wins.
 
 [`macos-plan.md`](macos-plan.md) predates this plan and chose the C core for the Mac. This plan changes
 that choice *after* the Mac's first release work is underway, and says below how the Mac moves without
@@ -26,20 +26,20 @@ Two ideas, argued separately:
 **One engine, not one per platform.** What makes an app feel native is everything a user can see or
 feel: the UI, video decode and present, audio, controllers, where secrets live, and the system features.
 That is native per platform by construction. The wire protocol is the opposite: nobody experiences it,
-so a native implementation of it buys a user nothing, and it is where extra implementations cost most.
+so a native implementation buys a user nothing, and it is where extra implementations cost most.
 Every protocol change needs driving on a console once per engine, and the protocol is a reverse-
 engineered target that a firmware update can move. Writing a port is cheap now; proving it on hardware
-and keeping it in step is not, and that is the cost that multiplies.
+and keeping it in step is not, and that cost multiplies.
 
 **Rust, not C, for that engine.** Once one engine sits in front of the network on every first-class
 platform, its memory safety stops being a nice property and becomes the main one. The engine parses
 bytes from the LAN and from the open internet before anything is authenticated: SRCH replies from
 whatever answers a broadcast, STUN responses, the UDP 9303 prelude, the Takion handshake. In C, a length
 it trusts is a memory-safety bug; in Rust with no `unsafe`, it is at worst a failed session. Beyond
-safety, the fit is good on every first-class platform: each has a well-supported Rust target, and there
-are mature ways to reach a Rust library from Swift, C#, Kotlin and C++.
+safety, Rust fits every first-class platform: each has a well-supported Rust target, and there are mature
+ways to reach a Rust library from Swift, C#, Kotlin and C++.
 
-What the C core got right carries over rather than being lost: the threading contract (one host-owned
+What the C core got right carries over: the threading contract (one host-owned
 thread, no threads or locks inside), a hot path that does not allocate, caller-owned lifetimes, and the
 test vectors. The Rust engine is designed to present the same contract, so a host cannot tell which
 engine it is linked against.
@@ -79,11 +79,11 @@ A Cargo workspace at **`engine/`**, beside `libripcord/`:
 | `ripcord-kat` | Runs the `.kat` files `ProtocolLab vectors` generates, unchanged | forbidden |
 | `fuzz/` | `cargo-fuzz` targets, one per surface, mirroring `libripcord/tests/fuzz/` | — |
 
-**Why sans-IO**, when the ports no longer force it: it is the right design on its own merits. It is what
-lets the engine be tested deterministically (the scripted console, time controlled by the test), it keeps
-the "hosts own the threads" contract honest by construction, and it keeps all I/O in one small crate that
-is easy to review. It also happens to be what would let a port adopt the engine later without the engine
-changing, but that is a side effect, not the reason.
+**Why sans-IO**, when the ports no longer force it: it is the right design on its own merits. It lets the
+engine be tested deterministically (the scripted console, time controlled by the test), keeps the "hosts
+own the threads" contract honest by construction, and keeps all I/O in one small crate that is easy to
+review. It would also let a port adopt the engine later without the engine changing, but that is a side
+effect, not the reason.
 
 **`std` is allowed** everywhere. Nothing in this plan constrains the engine to `no_std`.
 
@@ -109,8 +109,8 @@ Few, and each one argued for. `cargo-deny` enforces the list and the licences.
   Every backend runs the same known-answer tests against the .NET vectors in CI, on its own platform,
   as `ecdh_test.c` does for CryptoKit today. A backend that has not passed them on its platform is not
   used there.
-- **No async runtime.** The engine does not use Tokio or any other executor; hosts own their threads, and
-  the host's own concurrency model is where async belongs.
+- **No async runtime.** The engine uses neither Tokio nor any other executor; hosts own their threads, and
+  async belongs in the host's own concurrency model.
 - **Nothing else by default.** `socket2` if `std::net` falls short on socket options.
 
 ### The interop constants
@@ -199,8 +199,7 @@ test-only reference for `ProtocolLab` and the vector generator, cut down to what
 
 ## The phases
 
-Each phase has an exit criterion. A phase is done when that criterion is met, not when its code is
-written.
+Each phase has an exit criterion, and is done when that is met, not when its code is written.
 
 ### Phase 0 — record the direction
 

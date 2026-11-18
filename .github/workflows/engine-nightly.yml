@@ -1,9 +1,8 @@
 name: Engine (nightly toolchain)
 
 # What the Rust engine needs a nightly toolchain for, kept out of ci.yml so a nightly regression never
-# blocks a pull request: Miri over the C ABI's own tests, and a coverage-guided cargo-fuzz run of every
-# target in engine/fuzz with a corpus kept between runs (docs/engine-plan.md, "Builds"; engine/README.md).
-# Daily, on demand, and on any push to main that touches the engine.
+# blocks a pull request: Miri over the C ABI's tests, and a coverage-guided cargo-fuzz run of every target
+# in engine/fuzz with a corpus kept between runs (docs/engine-plan.md, "Builds"; engine/README.md).
 
 on:
   schedule:
@@ -28,9 +27,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: rustup toolchain install nightly --profile minimal --component miri,rust-src && cargo +nightly miri setup
-      # The portable backends: Miri's aliasing model rejects the SHA and AES hardware intrinsics' pointer
-      # use inside the RustCrypto crates, which is theirs, not the engine's. What Miri is here for is the
-      # engine's own unsafe, which is all in ripcord-ffi.
+      # The portable backends, because Miri's aliasing model rejects the SHA and AES hardware intrinsics'
+      # pointer use inside the RustCrypto crates. Miri is here for the engine's own unsafe, all of it in
+      # ripcord-ffi.
       - name: The C ABI's unit tests under Miri
         working-directory: engine
         env:

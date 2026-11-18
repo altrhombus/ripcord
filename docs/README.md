@@ -1,7 +1,7 @@
 # Ripcord documentation
 
 Not sure which file you want? Start here. Ripcord's documents are split by *the question each one answers*,
-not by topic, so several cover the same subject from different angles. Pick by the question.
+not by topic, so several cover the same subject from different angles.
 
 ## Which document answers which question
 
@@ -33,21 +33,21 @@ not by topic, so several cover the same subject from different angles. Pick by t
 
 ### The three that are easily confused
 
-`ROADMAP.md`, `journal.md` and `protocol-research-log.md` all look like running logs. They are not
+`ROADMAP.md`, `journal.md` and `protocol-research-log.md` all look like running logs, but they are not
 interchangeable:
 
 - **`ROADMAP.md` is what's left to do:** the 1.0 path on one screen, then the backlog. Finished work leaves it
   for the journal, which is how it stays short enough to read in one sitting.
-- **`journal.md` is the dated engineering record.** What was tried, what broke, what the fix turned out to
-  be. It is a *record*, not a reference: where it states a protocol fact, [`protocol/`](protocol/) is
-  authoritative and the journal may be out of date.
+- **`journal.md` is the dated engineering record.** What was tried, what broke, what the fix was. It is a
+  *record*, not a reference: where it states a protocol fact, [`protocol/`](protocol/) is authoritative and
+  the journal may be out of date.
 - **`protocol-research-log.md` is the provenance record.** One row per capture, analysis or reference,
   what it informed, and which spec section it fed. It is evidence, not narrative.
 
 ### The console ports
 
-`ports/` is documented inside its own tree rather than here. A port's setup is inseparable from its
-toolchain, and a second copy of it under `docs/` would go stale the first time a devkit moved.
+`ports/` is documented in its own tree, not here: a port's setup is inseparable from its toolchain, and a
+second copy under `docs/` would go stale the first time a devkit moved.
 [`architecture.md`](architecture.md) has the layering and the rule about what may be shared with `src/`;
 these answer "what is it, and how do I build it".
 
@@ -72,8 +72,8 @@ provenance-audit findings. Documents in the published tree cite it by filename s
 by anyone who has their own captures, but its contents do not ship.
 
 **Don't cite commit hashes in these documents.** A hash that no longer resolves looks checkable and isn't,
-which is worse than no citation at all. Cite a date
-and a document section instead, and let `git log` find the change.
+which is worse than no citation. Cite a date and a document section instead, and let `git log` find the
+change.
 
 **`README.md` states no test counts.** They went stale twice, so the test run is the source:
 
@@ -84,16 +84,15 @@ dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
 
 The published documents are written to stand alone without it. Values tied to a particular console,
 account or session are redacted to stable placeholders; public IPv4 addresses are replaced with
-[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation addresses. Two conventions sit alongside
-that and are easy to miss. **Private addresses are never taken from a real network either:** where a test or
-an example needs one, it comes from a synthetic LAN (`10.0.0.0/24`, `172.31.0.0/24` or `192.168.1.0/24`),
-or from an allowlist entry that says why not. And the one IPv6 endpoint value is replaced with a synthetic
-ULA rather than an RFC 3849 documentation address, because what the socket hands you is a ULA and the form
-is the interoperability fact. `PublishedTreeSweepTests` enforces the address rule in every spelling the
-protocol uses (dotted, the Host header's padded columns, and byte arrays), and the leak guard below checks
-each commit against the real values themselves. If you find a value in the published tree that identifies real
-hardware or a real account, that is a bug — please report it as one,
-privately, per [`SECURITY.md`](../SECURITY.md).
+[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation addresses. Two conventions alongside that
+are easy to miss. **Private addresses are never taken from a real network either:** where a test or an
+example needs one, it comes from a synthetic LAN (`10.0.0.0/24`, `172.31.0.0/24` or `192.168.1.0/24`), or
+from an allowlist entry that says why not. And the one IPv6 endpoint value is replaced with a synthetic ULA
+rather than an RFC 3849 documentation address, because what the socket hands you is a ULA and the form is the
+interoperability fact. `PublishedTreeSweepTests` enforces the address rule in every spelling the protocol
+uses (dotted, the Host header's padded columns, and byte arrays), and the leak guard below checks each commit
+against the real values themselves. A value in the published tree that identifies real hardware or a real
+account is a bug — please report it as one, privately, per [`SECURITY.md`](../SECURITY.md).
 
 ## Redaction placeholders
 
@@ -113,7 +112,7 @@ of these that fits, so a reader can tell what was removed without seeing it:
 | `<base64>` | a base64 value whose content is per-account or per-session |
 
 `PublishedTreeSweepTests` enforces the absence of the values; this table is what to replace them with.
-`ripcord-lab` and `ProtocolLab` print these placeholders in place of the real values by default
+`ripcord-lab` and `ProtocolLab` print these placeholders instead of the real values by default
 (`IdentifierRedactor`), so a run's output can be copied into a record as it stands. `--show-identifiers` prints
 the raw values, for your own terminal only.
 
@@ -121,7 +120,7 @@ the raw values, for your own terminal only.
 
 `PublishedTreeSweepTests` recognises a value by its shape, so it runs anywhere, CI included, but it cannot
 know which values are real: the list of real ones is itself personal. The leak guard is the half that does
-know. It runs only where the captures folder exists, which is the owner's machine.
+know, and it runs only where the captures folder exists, which is the owner's machine.
 
 - **`tools/leak-guard/build-denylist.py`** reads the captures folder's own files and writes
   `docs/protocol/captures/leak-denylist.tsv`: the addresses, console names, account and online ids, SSIDs,
@@ -158,5 +157,5 @@ docs/
     captures/                  CAPTURES FOLDER — gitignored, never published
 ```
 
-Port documentation is **not** under `docs/` — it lives beside each port in `ports/*/`, for the reason
-given in [The console ports](#the-console-ports).
+Port documentation is **not** under `docs/` — it lives beside each port in `ports/*/`; see
+[The console ports](#the-console-ports) for why.

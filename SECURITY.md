@@ -4,9 +4,9 @@
 
 **Please report privately, not in a public issue.**
 
-Use GitHub's private vulnerability reporting: go to the **Security** tab of this repository and choose
-**Report a vulnerability**. That channel is private to the maintainers and is the preferred route — it needs
-no email address to be published and keeps the report attached to the repository.
+Use GitHub's private vulnerability reporting: on this repository's **Security** tab, choose
+**Report a vulnerability**. That channel is private to the maintainers and is the preferred route: it needs
+no published email address and keeps the report attached to the repository.
 
 Please include, as far as you can:
 
@@ -15,8 +15,8 @@ Please include, as far as you can:
 - what an attacker gains, and what access they need to start with;
 - the commit or release you tested.
 
-You will get an acknowledgement. Ripcord is a personal project maintained in spare time, so please do not
-expect a same-day response; if a report is urgent, say so explicitly in the title.
+You will get an acknowledgement. Ripcord is a personal project maintained in spare time, so please don't
+expect a same-day response; if a report is urgent, say so in the title.
 
 Please give a reasonable window to fix an issue before disclosing it publicly. There is no bug bounty.
 
@@ -28,5 +28,5 @@ Please give a reasonable window to fix an issue before disclosing it publicly. T
 | The latest `ps3-v*` release, the PS3 port | Yes, fixes land in a later `ps3-v*` release |
 
 The dotnet client has not had a release yet. When `v1.0` ships, the latest `v*` release is supported, and a
-fix lands in the next one. The console ports version separately, under their own tag names (`ps3-v*`
-for the PS3 port).
+fix lands in the next one. The console ports version separately, under their own tag names (`ps3-v*` for the
+PS3 port).
