@@ -17,32 +17,27 @@ namespace Ripcord.ProtocolLab;
 /// <para>
 /// This exists for <c>ports/ripcord-3ds</c>, the C client for modded 3DS hardware. That port re-derives the
 /// same primitives from the same spec in a different language, which is only a meaningful check on the spec
-/// if both sides are provably computing the same numbers. These vectors are that check: this command writes
-/// them, the port's host-side <c>vector_runner</c> reads them, and a disagreement is a spec defect rather
-/// than a porting detail.
+/// if both sides are provably computing the same numbers. This command writes the vectors, the port's
+/// host-side <c>vector_runner</c> reads them, and a disagreement is a spec defect rather than a porting detail.
 /// </para>
 ///
 /// <para>
 /// <b>The constants come from the bundle, deliberately</b> — <see cref="HalyardInteropConstants"/> directly,
 /// not <see cref="HalyardControlSecretsLoader"/>. The port generates its constants from the same committed
 /// <c>halyard-v1-constants.json</c>, so both sides must key off that one file or the comparison proves
-/// nothing. A developer with a local captures-folder fixture is intentionally NOT allowed to influence this
-/// output; if the fixture ever disagreed with the bundle, that is a finding about the bundle, and it should
-/// not be discovered as a mystery failure in a C test on a handheld.
+/// nothing. A local captures-folder fixture is intentionally NOT allowed to influence this output.
 /// </para>
 ///
 /// <para>
 /// <b>Inputs are derived, not random.</b> Every nonce, companion, key and plaintext comes from
-/// SHA-256("ripcord-3ds-vectors/v1" || counter), so the file is byte-identical across runs and machines. That
-/// keeps it diffable: a change in this file means a change in the crypto, which is exactly the signal
-/// wanted. Do not switch this to <see cref="RandomNumberGenerator"/>.
+/// SHA-256("ripcord-3ds-vectors/v1" || counter), so the file is byte-identical across runs and machines and a
+/// change in it means a change in the crypto. Do not switch this to <see cref="RandomNumberGenerator"/>.
 /// </para>
 ///
 /// <para>
 /// The output carries no live material. Its inputs are synthetic and its constants are the ones already
 /// committed under the <c>NOTICE</c> interoperability-constants exception, so the file is strictly less
-/// sensitive than the bundle it derives from. It is still gitignored as a build artifact — regenerating it
-/// is one command, and a committed copy would only invite the question of whether it is a second bundle.
+/// sensitive than the bundle it derives from. It is still gitignored as a build artifact.
 /// </para>
 /// </summary>
 internal static class LabVectors
@@ -606,11 +601,10 @@ internal static class LabVectors
     /// wrap in both directions, for both console families.
     ///
     /// <para>
-    /// These exist because the registration key exchange is the one part of pairing where a C port and this
-    /// implementation can disagree SILENTLY. A wrong transport key does not fail loudly - the console
-    /// answers 403 with a generic application reason, which reads identically to a mistyped PIN, a wrong
-    /// transport and a stale search probe. Checking the arithmetic on a host, against numbers this side
-    /// computed, is how that stops being a hardware mystery.
+    /// The registration key exchange is the one part of pairing where a C port and this implementation can
+    /// disagree SILENTLY. With a wrong transport key the console answers 403 with a generic application
+    /// reason, which reads identically to a mistyped PIN, a wrong transport and a stale search probe, so the
+    /// arithmetic is checked on a host against numbers this side computed.
     /// </para>
     ///
     /// <para>

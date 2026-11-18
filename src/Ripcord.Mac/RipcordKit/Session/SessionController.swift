@@ -1,15 +1,14 @@
 // A session's whole life: connect, watch, reconnect with backoff, give up honestly. Ported from the .NET
 // client's Ripcord.Client.SessionController and SessionLifecycle, which the Windows app ships. Every rule
-// here answers something observed on hardware, and each keeps the reason next to it:
+// here answers something observed on hardware:
 //
 //   - Only a session that LASTED resets the retry budget (MinimumHealthySession, 10 s). A console on its
-//     way into rest completes the handshake and drops it at once; counting that as success reset the
-//     budget every time, and the Windows app reconnected forever.
+//     way into rest completes the handshake and drops it at once; counting that as success would reset
+//     the budget every time and reconnect forever.
 //   - A stalled PICTURE is not a stalled SESSION. A paused game sends no frames while the console is fine,
-//     so the console's own activity decides: still talking means healthy, whatever the frames say. Only
-//     silence from the console lets the frame clock degrade the session (2 s) and then replace it (6 s).
-//   - A flap backs off too. Reconnecting instantly into a console that is shutting down made the loop
-//     tight rather than slow.
+//     so the console's own activity decides. Only silence from the console lets the frame clock degrade
+//     the session (2 s) and then replace it (6 s).
+//   - A flap backs off too, so the loop into a console that is shutting down is slow rather than tight.
 //   - An unretryable failure fails at once. C gives the end reason as a value, so the .NET string match
 //     ("rejected (403", "registkey", ...) becomes a switch.
 //

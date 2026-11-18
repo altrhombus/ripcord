@@ -44,15 +44,10 @@ public sealed partial class DefaultDeviceIdentity : IDeviceIdentity
     // Reading MachineGuid needs the registry, and this assembly is neutral net10.0 rather than
     // net10.0-windows, so Microsoft.Win32.Registry is not in its reference closure.
     //
-    // This USED to reflect for those types instead, and the reflection silently returned nothing in exactly
-    // the hosts that are also neutral net10.0 -- the console harness among them -- while working fine inside
-    // the WinUI app, which does reference the Windows assemblies. The result was a device id that was correct
-    // on one host and empty on another, presenting as "this machine did not supply a stable device id" from a
-    // tool that was running on a perfectly ordinary Windows machine.
-    //
-    // Calling the API directly is both simpler and host-independent: identical value in every host, no
-    // assembly-resolution guesswork, and it drops the IL2075 trim warning the reflection carried (the last
-    // non-JSON one in the tree).
+    // Call the API directly; do not reflect for those types. Reflection silently returned nothing in hosts
+    // that are also neutral net10.0 (the console harness among them) while working inside the WinUI app, so
+    // the device id was correct on one host and empty on another. The direct call gives the identical value
+    // in every host and carries no IL2075 trim warning.
 
     private const nint HkeyLocalMachine = unchecked((nint)(int)0x80000002);
 

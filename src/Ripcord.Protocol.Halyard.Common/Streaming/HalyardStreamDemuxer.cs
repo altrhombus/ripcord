@@ -159,9 +159,8 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     /// <para>
     /// <b>Lifetime:</b> <c>Payload</c> is a slice of a buffer this demuxer reuses for the NEXT frame. It is valid
     /// only for the duration of the callback — a subscriber that needs it afterwards must copy it. Publication is
-    /// synchronous, and the one consumer (the decode pipeline) copies into a pooled buffer immediately, which is
-    /// what makes this safe; a subscriber that retained the memory instead would see it overwritten mid-decode and
-    /// produce corruption that looks like a network fault. Copy, or do not keep it.
+    /// synchronous, and the one consumer (the decode pipeline) copies into a pooled buffer immediately; a
+    /// subscriber that retained the memory would see it overwritten mid-decode, which looks like a network fault.
     /// </para>
     /// </summary>
     public event Action<EncodedVideoFrame>? VideoFrameReady;
@@ -435,8 +434,8 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
         }
 
         // A slice of the reused buffer, not a copy. Valid only for the duration of this call — see the contract on
-        // VideoFrameReady. This removed one allocation AND one full copy of every frame: the only consumer already
-        // copies into its own pooled buffer, so the array handed out here was pure churn (~2.5 MB/s at 1080p60).
+        // VideoFrameReady. The only consumer copies into its own pooled buffer, so a copy here would be one more
+        // allocation and full copy of every frame (~2.5 MB/s at 1080p60).
         VideoFrameReady?.Invoke(
             new EncodedVideoFrame(
                 new ReadOnlyMemory<byte>(_assembly, 0, _assemblyLength), _frameTimestampTicks, isKey));
@@ -491,9 +490,9 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
 
                 // HEVC: nal_unit_type is the 6 bits after the forbidden_zero bit, and every IRAP picture — the
                 // ones a decoder can start from — is 16..21 (BLA_W_LP..CRA_NUT, including IDR_W_RADL 19 and
-                // IDR_N_LP 20). Testing H.264's type 5 against an HEVC stream matches essentially never, which
-                // meant the parameter sets below were never prepended and an HEVC decoder was handed slices it
-                // could not initialise from — it accepted every packet and emitted nothing, forever.
+                // IDR_N_LP 20). Testing H.264's type 5 against an HEVC stream matches essentially never: the
+                // parameter sets are then never prepended, and an HEVC decoder accepts every packet and emits
+                // nothing.
                 if (_videoIsHevc)
                 {
                     int hevcType = (nal >> 1) & 0x3F;
@@ -528,11 +527,10 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
         // Opus frame; the remaining units are redundant copies of the same 10 ms for loss concealment (each
         // decodes to the same audio). The frame index advances by one per packet, so there is exactly one
         // source frame per packet. unit_size is derived as payload / total_units; the header's low 16 bits
-        // are not decoded (spec §6). Feeding the whole payload to the decoder is the bug that made audio sound
-        // "underwater": Opus/CELT sizes its per-band bit budget from the packet length, so the two extra units
-        // are decoded as high-frequency coefficients, corrupting every band above ~5 kHz. Emitting just the
-        // first unit restores clean audio. (Using the redundant units to conceal packet loss is a later
-        // refinement.)
+        // are not decoded (spec §6). Only the first unit goes to the decoder: Opus/CELT sizes its per-band bit
+        // budget from the packet length, so fed the whole payload it decodes the extra units as high-frequency
+        // coefficients, corrupting every band above ~5 kHz (audio sounds "underwater"). (Using the redundant
+        // units to conceal packet loss is a later refinement.)
         int payloadLength = opened.Length - header.PayloadOffset;
         int units = Math.Max(1, header.TotalUnits);
         int unitSize = payloadLength / units;

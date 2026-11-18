@@ -18,11 +18,10 @@ public sealed record GamepadSetUpdate(
 /// Turns a poll of every connected gamepad into connection changes and one merged frame.
 ///
 /// <para>
-/// <b>Why one engine merges its own pads rather than publishing a frame per pad.</b> The composite above keeps
+/// <b>One engine merges its own pads rather than publishing a frame per pad.</b> The composite above keeps
 /// the latest frame per engine, not per device, so two pads publishing through one engine would overwrite each
-/// other: a button held on one would read as released every time the other reported. Merging here, with the
-/// same rule the composite uses between engines, keeps "several controllers act as one pad" true for pads on
-/// the same engine as well as pads on different ones.
+/// other: a button held on one would read as released every time the other reported. The merge rule here is
+/// the one the composite uses between engines.
 /// </para>
 ///
 /// <para>

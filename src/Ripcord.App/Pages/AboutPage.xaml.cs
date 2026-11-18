@@ -309,12 +309,11 @@ public sealed partial class AboutPage : Page
     ///
     /// <para>This button exists to be pasted into a public issue, and the "Settings folder" row is
     /// <c>%LocalAppData%\Ripcord</c> expanded — which on Windows contains the reader's Windows account name.
-    /// Nobody filing a bug report intends to publish that. The row on screen is collapsed too, since a screenshot
-    /// publishes it just as well; its Open button reads the real path, not the label.</para>
+    /// The row on screen is collapsed too, since a screenshot publishes it just as well; its Open button reads
+    /// the real path, not the label.</para>
     ///
-    /// <para>Applied to every row rather than to that one, deliberately: a later row carrying a path would
-    /// otherwise reintroduce this silently, and a copy button is exactly where nobody would think to look for
-    /// it. Longest prefix first, since LocalApplicationData sits underneath UserProfile.</para>
+    /// <para>Applied to every row rather than to that one, so a later row carrying a path is covered too.
+    /// Longest prefix first, since LocalApplicationData sits underneath UserProfile.</para>
     /// </summary>
     private static string WithoutUserProfile(string value)
     {

@@ -12,16 +12,13 @@ public sealed record ConsoleDetail(string Label, string Value);
 ///
 /// <para>
 /// <b>Why this is a type and not markup.</b> These surfaces are built in code — a <c>MenuFlyout</c> and three
-/// <c>ContentDialog</c>s assembled by hand — so they could carry no <c>x:Uid</c>, and the app's resource
-/// guard deliberately refuses entries that no markup references. The result was that the app's most
-/// important page held twenty-two English strings the catalogue had never heard of: the one page that could
-/// be neither translated nor tested.
+/// <c>ContentDialog</c>s — so they can carry no <c>x:Uid</c>, and the app's resource guard deliberately
+/// refuses entries that no markup references. Holding the strings here keeps them translatable and testable.
 /// </para>
 ///
 /// <para>
-/// Which rows appear is a decision, not a lookup — most of these facts are only known for consoles paired
-/// since discovery started carrying them, so each is shown only when there is something to show rather than
-/// as a row of blanks. That decision belongs with the rest of what a surface says.
+/// Which rows appear is decided here too: most of these facts are only known for consoles paired since
+/// discovery started carrying them, so each is shown only when there is something to show.
 /// </para>
 /// </summary>
 public static class ConsoleCardCopy

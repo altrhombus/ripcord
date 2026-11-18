@@ -30,9 +30,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     ///
     /// <para>
     /// The grid, not a specific container: focusing a <see cref="GridView"/> hands focus to its own first (or
-    /// last-focused) item, which survives the list being rebuilt underneath. That now covers the one-console
-    /// case too, which used to be a separate panel with a separate focus target — it is a hero-sized cell in
-    /// the same grid, so there is one answer here instead of two.
+    /// last-focused) item, which survives the list being rebuilt underneath. The one-console case is a
+    /// hero-sized cell in the same grid, so it is covered too.
     /// </para>
     ///
     /// <para>
@@ -152,10 +151,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Rebuild the page for whatever is actually paired.
     ///
     /// <para>
-    /// Two surfaces now, not three. Nothing paired → the first-run explanation. Anything else → the grid, at
-    /// whatever density <see cref="CardMetrics"/> returns for the viewport and the count. The one-console
-    /// "hero" is that grid holding a single hero-sized cell, which is what removed ~115 lines of code-behind
-    /// and, with them, the drift between two copies of the same card.
+    /// Two surfaces. Nothing paired → the first-run explanation. Anything else → the grid, at whatever density
+    /// <see cref="CardMetrics"/> returns for the viewport and the count. The one-console "hero" is that grid
+    /// holding a single hero-sized cell.
     /// </para>
     /// </summary>
     private void Refresh()
@@ -267,15 +265,12 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Size the grid's cells and cap its columns, from <see cref="CardMetrics"/>.
     ///
     /// <para>
-    /// The arithmetic is not here on purpose. Breakpoints, cell sizes and the column cap are a rule that can
-    /// be wrong on a display nobody in the room owns, and the previous version of it — three literals in a
-    /// switch — could only be checked by resizing a window and looking. <c>CardMetrics</c> is pure and has
-    /// tests; this method's whole job is to hand it a width and apply the answer.
+    /// Breakpoints, cell sizes and the column cap live in <c>CardMetrics</c>, which is pure and has tests; this
+    /// method hands it a width and applies the answer.
     /// </para>
     ///
     /// <para>
-    /// Returns the layout so the caller can also ask it about the add tile, rather than computing it twice
-    /// from the same two inputs and eventually disagreeing with itself.
+    /// Returns the layout so the caller can also ask it about the add tile, rather than computing it twice.
     /// </para>
     /// </summary>
     // Windows' text size, read once: the page is built fresh on each visit, and the rest of the app reads it at
@@ -314,11 +309,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Push the current cell size onto the wrapping panel, if it exists yet.
     ///
     /// <para>
-    /// <b>It usually does not, at the moment you would expect it to.</b> <c>ItemsPanelRoot</c> is null while
-    /// the page is loading and still null in the grid's own <c>Loaded</c> - it is materialised from the
-    /// <c>ItemsPanelTemplate</c> during the first measure pass. Setting the size before then goes nowhere and
-    /// leaves the markup's own <c>ItemWidth</c> standing, which put a hero-density CARD inside a
-    /// grid-density CELL and wrapped the console's name to one letter per line.
+    /// <c>ItemsPanelRoot</c> is null while the page is loading and still null in the grid's own <c>Loaded</c>:
+    /// it is materialised from the <c>ItemsPanelTemplate</c> during the first measure pass. Setting the size
+    /// before then goes nowhere and leaves the markup's own <c>ItemWidth</c> standing, which put a
+    /// hero-density CARD inside a grid-density CELL and wrapped the console's name to one letter per line.
     /// </para>
     ///
     /// <para>
@@ -647,17 +641,16 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Wire each realized container, which is where focus actually lands.
     ///
     /// <para>
-    /// <b>The container, not the card inside it.</b> The template's Border hooks GotFocus, but a
-    /// <see cref="GridView"/> focuses the <see cref="GridViewItem"/> that <em>wraps</em> the template — and
-    /// routed events bubble upward, so a descendant never learns that its own ancestor was focused. Everything
-    /// hung on the Border's focus therefore only ever fired for the mouse: the accent wash never lit for a pad,
-    /// and the context menu attached there was invisible to a search that walks up from the focused element.
-    /// The pad's North button found nothing to open, which is exactly how this was discovered.
+    /// <b>The container, not the card inside it.</b> A <see cref="GridView"/> focuses the
+    /// <see cref="GridViewItem"/> that <em>wraps</em> the template, and routed events bubble upward, so the
+    /// template's Border never learns that its ancestor was focused. Anything hung on the Border's focus fires
+    /// only for the mouse: the accent wash never lit for a pad, and a context menu attached there was
+    /// invisible to a search that walks up from the focused element, so the pad's North button found nothing.
     /// </para>
     ///
     /// <para>
     /// Containers are recycled, so both the flyout and the handlers are reassigned on every pass rather than
-    /// set once — a container that arrives carrying the previous item's menu is worse than one carrying none.
+    /// set once, or a container arrives carrying the previous item's menu.
     /// </para>
     /// </summary>
     private void OnPrepareConsoleContainer(ListViewBase sender, ContainerContentChangingEventArgs args)

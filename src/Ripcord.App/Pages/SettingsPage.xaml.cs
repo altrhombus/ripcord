@@ -21,8 +21,7 @@ using Ripcord_App.Services;
 namespace Ripcord_App.Pages;
 
 /// <summary>
-/// The tunables. Everything here was previously a compile-time constant scattered across the app, which is why
-/// this page used to read "This is the Settings page".
+/// The tunables.
 ///
 /// <para>
 /// Changes save immediately — there is no OK/Cancel, matching how Windows 11 settings behave. Video and GPU
@@ -38,9 +37,8 @@ namespace Ripcord_App.Pages;
 /// <para>
 /// <b>Handlers are attached in code, after the first render — not in markup.</b> XAML parsing raises change
 /// events on its own: <c>Slider.Minimum="2"</c> moves <c>Value</c> from 0 to 2 and fires <c>ValueChanged</c>
-/// during <c>InitializeComponent</c>. Markup-attached handlers therefore ran before the page had loaded
-/// anything, which is what the old <c>_loading</c> bool existed to paper over — a flag checked in fourteen
-/// places and one more to forget in the fifteenth. Attaching afterwards means the event cannot happen at all.
+/// during <c>InitializeComponent</c>, so markup-attached handlers run before the page has loaded anything.
+/// Attaching afterwards means the event cannot happen at all, and no loading flag is needed.
 /// </para>
 /// </summary>
 public sealed partial class SettingsPage : Page, IInitialFocusTarget
@@ -112,20 +110,17 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     /// <para>
     /// This has to be the shell's answer rather than a Focus() call of this page's own. The shell seeds focus
     /// from ChromeFrame.Navigated at Low dispatcher priority - which is AFTER Loaded - so anything focused
-    /// during load is overwritten a moment later by first-in-tree-order, and the button came up unfocused
-    /// with the resolution dropdown holding focus instead. Answering here is answering the question the shell
-    /// actually asks.
+    /// during load is overwritten a moment later by first-in-tree-order.
     /// </para>
     ///
     /// <para>
-    /// Returned unconditionally when that is where they were headed, because the button is COLLAPSED unless
-    /// the build can sign in at all - and the shell already treats a Focus() that does not land as a reason
-    /// to fall through to tree order. Second-guessing that here would be two guards for one question.
+    /// Returned unconditionally when that is where they were headed: the button is COLLAPSED unless the build
+    /// can sign in at all, and the shell already treats a Focus() that does not land as a reason to fall
+    /// through to tree order.
     /// </para>
     ///
     /// <para>
-    /// Null for an ordinary visit: tree order is the right default for a settings page, where no single
-    /// control is the reason you are there.
+    /// Null for an ordinary visit: tree order is the right default for a settings page.
     /// </para>
     /// </summary>
     public Control? InitialFocus
@@ -138,14 +133,8 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     }
 
     /// <summary>
-    /// Put the account section in front of somebody who asked for it.
-    ///
-    /// <para>
-    /// The pairing step's sign-in button used to open this page at the top, where the account is the last
-    /// card on a long scroll — so a button reading "Sign in to PlayStation Network" delivered them to a
-    /// resolution dropdown and left them hunting. Landing on the right page is only half of taking somebody
-    /// somewhere.
-    /// </para>
+    /// Put the account section in front of somebody who asked for it: the account is the last card on a long
+    /// scroll, and the pairing step's sign-in button would otherwise land them at the top.
     ///
     /// <para>
     /// After the load, because the account card's own contents decide its height and bringing it into view

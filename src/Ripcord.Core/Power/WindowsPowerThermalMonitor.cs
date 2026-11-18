@@ -8,13 +8,12 @@ namespace Ripcord.Core.Power;
 /// Windows power state via <c>GetSystemPowerStatus</c>, polled on a timer.
 ///
 /// <para>
-/// <b>On thermal state, deliberately honest:</b> Windows exposes no reliable public API for "am I thermally
-/// throttling". The tempting proxy — comparing current CPU MHz against maximum via
-/// <c>CallNtPowerInformation</c> — is not a throttling signal at all: modern CPUs sit far below their maximum
-/// clock whenever they are idle, so it would report throttling on a static menu screen and needlessly halve
-/// stream quality. This monitor therefore leaves <see cref="PowerState.ThermalThrottling"/> false and instead
-/// reports two signals that <em>are</em> precisely detectable and genuinely actionable: the OS energy saver
-/// (explicit user intent to conserve) and a critical battery level.
+/// <b>Thermal state is not reported:</b> Windows exposes no reliable public API for "am I thermally
+/// throttling". Comparing current CPU MHz against maximum via <c>CallNtPowerInformation</c> is not a throttling
+/// signal: modern CPUs sit far below their maximum clock whenever they are idle, so it would report throttling
+/// on a static menu screen and needlessly halve stream quality. This monitor leaves
+/// <see cref="PowerState.ThermalThrottling"/> false and reports two signals that <em>are</em> detectable and
+/// actionable: the OS energy saver (explicit user intent to conserve) and a critical battery level.
 /// </para>
 ///
 /// <para>

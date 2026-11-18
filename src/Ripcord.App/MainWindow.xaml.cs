@@ -54,9 +54,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// it; a dialog will push a Modal scope over that.
     ///
     /// <para>
-    /// Its activation edge re-seeds focus, which is what makes returning from a stream land somewhere. Before
-    /// the scope stack there was no edge to hang that on — the stream simply stopped claiming the pad and
-    /// whatever had focus before was long gone.
+    /// Its activation edge re-seeds focus, which is what makes returning from a stream land somewhere.
     /// </para>
     /// </summary>
     private readonly ShellInputScope _chromeScope;
@@ -343,15 +341,14 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Queue work for the UI thread, to be dropped if the window has closed by the time it runs.
     ///
     /// <para>
-    /// <b>Every callback this window queues goes through here,</b> because the dispatcher drains its queue while
-    /// the app shuts down, after the window has closed. Queued work that touched the window then threw - a focus
-    /// seed reading <c>ChromeFrame.Content</c> threw <c>E_UNEXPECTED</c> - and an exception out of a dispatcher
-    /// callback is a fail-fast. Caught in a dump on 2026-09-30, closing the app.
+    /// Every callback this window queues goes through here, because the dispatcher drains its queue while the
+    /// app shuts down, after the window has closed. Queued work that touches the window then throws (a focus
+    /// seed reading <c>ChromeFrame.Content</c> threw <c>E_UNEXPECTED</c>; dump of 2026-09-30, closing the app),
+    /// and an exception out of a dispatcher callback is a fail-fast.
     /// </para>
     ///
     /// <para>
-    /// The check is made when the work runs, not when it is queued, and deliberately so: whether the window has
-    /// closed in between is the whole question.
+    /// The check is made when the work runs, not when it is queued.
     /// </para>
     /// </summary>
     private bool Post(DispatcherQueueHandler work) => Post(DispatcherQueuePriority.Normal, work);
@@ -491,8 +488,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// <para>
     /// <b>Bounded, because a hang here is worse than an unclean exit.</b> The teardown's own cloud call carries
     /// a three-second timeout, so four is enough for the whole of it and still short enough that a user who
-    /// clicked the X is not left wondering. If it overruns we close anyway — the alternative is a window that
-    /// will not shut, which is the bug the fire-and-forget was introduced to fix.
+    /// clicked the X is not left wondering. If it overruns we close anyway, rather than leave a window that
+    /// will not shut.
     /// </para>
     /// </summary>
     private async Task CloseWhenSessionHasEndedAsync(SessionPage page)
@@ -574,11 +571,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Colour the minimise, maximise and close buttons for the theme the window is actually in.
     ///
     /// <para>
-    /// Left to the platform, they came back from High Contrast on a white block: turning High Contrast off
-    /// restored the page but not the caption buttons, which kept a light background in a dark window until
-    /// relaunch (visual audit, 2026-10-08). So they are painted here on every theme or contrast change. In
-    /// High Contrast every colour is cleared, which hands the buttons back to the system's contrast theme,
-    /// the only correct answer there.
+    /// Left to the platform, turning High Contrast off restored the page but not the caption buttons, which
+    /// kept a light background in a dark window until relaunch (visual audit, 2026-10-08). So they are painted
+    /// here on every theme or contrast change. In High Contrast every colour is cleared, which hands the
+    /// buttons back to the system's contrast theme.
     /// </para>
     ///
     /// <para>
@@ -699,15 +695,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Window-level keyboard shortcuts.
     ///
     /// <para>
-    /// In code rather than markup for one unavoidable reason and one consequence of it: <c>VirtualKey</c> has
-    /// no name for the comma, so <c>Ctrl+,</c> — the shortcut every Windows app uses for settings — can only be
-    /// written as its numeric code, and once one accelerator lives here the rest are easier to read beside it
-    /// than split across two files.
+    /// In code rather than markup because <c>VirtualKey</c> has no name for the comma, so <c>Ctrl+,</c> — the
+    /// shortcut every Windows app uses for settings — can only be written as its numeric code; the other
+    /// accelerators sit beside it rather than split across two files.
     /// </para>
     ///
     /// <para>
-    /// Deliberately no <c>TabIndex</c> anywhere in this app: tab order follows declaration order, so
-    /// rearranging markup cannot silently produce a wrong order that only a keyboard user discovers. Where the
+    /// Deliberately no <c>TabIndex</c> anywhere in this app: tab order follows declaration order. Where the
     /// order is wrong, the markup moves.
     /// </para>
     /// </summary>
@@ -716,12 +710,11 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// than WinUI's own arrow-key navigation.
     ///
     /// <para>
-    /// The root grid's <c>XYFocusKeyboardNavigation</c> was meant to give the keyboard the pad's directional
-    /// model by construction, and it did until the pad needed more than the engine: WinUI's search gives up on
-    /// "Add another console" once focus has come from the title bar, and the pad's straight-line fallback lives
-    /// in FocusPilot. On hardware (2026-10-01) the arrow keys then stuck exactly where the pad had. Routing them
-    /// here makes the two one path again. A key only arrives here unhandled, so text boxes, sliders and the
-    /// GridView's own item navigation keep their arrows; a dialog's keys never reach the window's root.
+    /// WinUI's search (the root grid's <c>XYFocusKeyboardNavigation</c>) gives up on "Add another console" once
+    /// focus has come from the title bar, and the pad's straight-line fallback lives in FocusPilot; on hardware
+    /// (2026-10-01) the arrow keys stuck exactly where the pad had. Routing them here makes the two one path.
+    /// A key only arrives here unhandled, so text boxes, sliders and the GridView's own item navigation keep
+    /// their arrows; a dialog's keys never reach the window's root.
     /// </para>
     /// </summary>
     private void OnRootKeyDown(object sender, KeyRoutedEventArgs e)
@@ -935,14 +928,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Open one of the two utilities.
     ///
     /// <para>
-    /// Navigation rather than a pane selection, which is the substantive difference from the NavigationView
-    /// this replaced: opening Settings now pushes onto the back stack, so the chevron and B both return you to
-    /// what you were doing. Under the pane there was no back — you had to notice which item to click.
+    /// Navigation rather than a pane selection: opening Settings pushes onto the back stack, so the chevron and
+    /// B both return you to what you were doing.
     /// </para>
     ///
     /// <para>
-    /// Re-entry is ignored so that pressing the same command twice does not stack duplicates behind you, which
-    /// would make back feel broken in exactly the way a repeated click invites.
+    /// Re-entry is ignored so that pressing the same command twice does not stack duplicates behind you.
     /// </para>
     /// </summary>
     /// <summary>
@@ -977,16 +968,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 // thread — and an intent is precisely the "deliberate activity" its contract asks for.
                 _input.ReportControllerActivity();
 
-                // Nothing focused: this press establishes the caret and goes no further. Directional movement
-                // is relative to whatever has focus, so without an anchor the press was simply lost — which is
-                // why the first one or two after launch or re-activation felt like they did nothing.
-                // Consuming it is the predictable behaviour: one press to show where you are, the next to move.
-                // Seeding no longer swallows the press outright.
+                // Nothing focused: directional movement is relative to whatever has focus, so this press first
+                // seeds the caret.
                 //
-                // It used to: "one press to show where you are, the next to move". That reads well on a cold
-                // start and badly everywhere else — a tooltip appearing under the mouse is enough to disturb
-                // focus, and the user then has to press twice to do one thing. Reported from hardware as "it
-                // still takes two controller actions to break out".
+                // Seeding does not swallow the press outright: anything that disturbs focus (a tooltip appearing
+                // under the mouse is enough) would then cost two presses for one action, as reported from
+                // hardware.
                 //
                 // A DIRECTION after seeding is safe and is what was asked for, so it runs. An ACTIVATION is
                 // not: pressing Select would act on whatever the seed happened to land on, which the user has
@@ -1072,33 +1059,24 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Seed focus inside the page content.
     ///
     /// <para>
-    /// <b>Content, not chrome</b>, and that is the point of the change rather than a side effect of it. The
-    /// first focus stop used to be the navigation pane, so a player opening the app with a pad in hand had to
-    /// travel out of the furniture before reaching a console. Now the first thing focused is the first thing
-    /// on the page — which on the console list is a console.
+    /// Content, not chrome: the first thing focused is the first thing on the page — which on the console list
+    /// is a console — so a player with a pad in hand does not have to travel out of the furniture first.
     /// </para>
     /// </summary>
     /// <summary>
     /// True while a modal owns focus, in which case the shell must keep its hands off.
     ///
     /// <para>
-    /// <b>The bug that named this.</b> The PSN sign-in dialog hosts a WebView2, which is a native child HWND.
-    /// Click into an HTML text box and Win32 focus goes there — but XAML focus goes NOWHERE, because the
-    /// focused thing is not in the XAML tree at all. <c>FocusManager.GetFocusedElement</c> returns null,
-    /// <see cref="FocusPilot.NeedsFocusSeed"/> reads that as "nothing has focus", and the shell put focus back
-    /// into the dialog. The password box deselected the instant it was clicked, every time.
+    /// The PSN sign-in dialog hosts a WebView2, which is a native child HWND. Click into an HTML text box and
+    /// Win32 focus goes there, but XAML focus goes nowhere: <c>FocusManager.GetFocusedElement</c> returns null,
+    /// <see cref="FocusPilot.NeedsFocusSeed"/> reads that as "nothing has focus", and the shell would put focus
+    /// back into the dialog, deselecting the password box the instant it was clicked.
     /// </para>
     ///
     /// <para>
-    /// XAML focus being nowhere is not the same as focus being nowhere.
-    /// </para>
-    ///
-    /// <para>
-    /// But the narrow reading is the wrong one, and fixing only the web view is how this took two attempts.
-    /// <see cref="FocusFirstContentElement"/> focuses the page inside <c>ChromeFrame</c> — which while a modal
-    /// is up is the content BEHIND it. Doing that is never right, whatever the modal contains and whatever
-    /// prompted it. So the guard belongs at the chokepoint rather than at the symptom, and a modal keeps focus
-    /// for as long as it is showing: <c>ContentDialog</c> seeds and traps its own.
+    /// The guard covers every modal, not only the web view: <see cref="FocusFirstContentElement"/> focuses the
+    /// page inside <c>ChromeFrame</c>, which while a modal is up is the content BEHIND it, and that is never
+    /// right. A modal keeps focus for as long as it is showing: <c>ContentDialog</c> seeds and traps its own.
     /// </para>
     /// </summary>
     private bool ModalOwnsFocus => _input.Scopes.Top?.Kind == InputScopeKind.Modal;

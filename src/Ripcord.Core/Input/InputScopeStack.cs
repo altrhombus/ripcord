@@ -28,18 +28,16 @@ public interface IInputScope
     /// What this surface offers the user right now, for the hint bar to draw.
     ///
     /// <para>
-    /// Declared here, on the claim itself, rather than pushed to the bar by each page — so the bar knows
-    /// nothing about pages, and a new surface gets correct prompts by declaring them where it already declares
-    /// its focus root. Two things that must agree ("who owns the pad", "what does the pad do") therefore
-    /// cannot drift apart, because they are one object.
+    /// Declared on the claim itself rather than pushed to the bar by each page, so "who owns the pad" and
+    /// "what does the pad do" are one object and cannot drift apart.
     /// </para>
     ///
     /// <para>
-    /// <b>The Enter/Escape contract, written down once because all three inputs share it.</b> The South button,
-    /// Enter, and a primary click all mean <em>activate what has focus</em>. The East button and Escape both
-    /// mean <em>undo the last thing that took over the screen</em> — dismiss a popup if one is up, else leave
-    /// the current page, else nothing. Neither ever means "commit a form", which is why no surface in this app
-    /// has a default button that a mis-timed press can fire.
+    /// <b>The Enter/Escape contract, shared by all three inputs.</b> The South button, Enter, and a primary
+    /// click all mean <em>activate what has focus</em>. The East button and Escape both mean <em>undo the
+    /// last thing that took over the screen</em> — dismiss a popup if one is up, else leave the current page,
+    /// else nothing. Neither ever means "commit a form", which is why no surface in this app has a default
+    /// button that a mis-timed press can fire.
     /// </para>
     /// </summary>
     IReadOnlyList<InputPrompt> Prompts => ButtonLabels.DefaultFor(Kind);
@@ -70,17 +68,10 @@ public interface IInputScope
 /// Decides who owns the controller, as a stack.
 ///
 /// <para>
-/// <b>What this replaces.</b> Ownership used to be a poll: the window asked, on every frame, whether the page
-/// currently in the stream layer had a bool set. That had three problems, and the third is the one people felt.
-/// It forced the window to know the page's type. It derived one object's state from a third object's status.
-/// And <em>it was true during modals</em> — so opening a dialog mid-stream left the session still claiming the
-/// pad, and a controller-only user could not reach the dialog they had just opened. On a handheld with no
-/// keyboard that is a dead end with no way out but killing the process.
-/// </para>
-///
-/// <para>
 /// Push and pop are <b>edges</b>, raised by whoever changed the state, rather than a condition re-evaluated by
-/// an observer. "Modal covers Session" stops being two objects agreeing and becomes the shape of the data.
+/// an observer. A modal pushed over a session therefore takes the pad from it: ownership polled from the
+/// stream page stayed true during modals, so a controller-only user could not reach a dialog opened
+/// mid-stream. The window also needs no knowledge of the page's type.
 /// </para>
 /// </summary>
 public sealed class InputScopeStack

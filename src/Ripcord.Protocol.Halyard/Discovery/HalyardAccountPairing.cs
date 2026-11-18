@@ -307,14 +307,12 @@ public sealed class HalyardAccountPairing(
                     }
 
                     // Answered exactly as the control leg was: our own OFFER, then an ACCEPT naming the
-                    // console's stream id. Our sid and reqId count on from the control connection's, which is
-                    // what the captured client does when it negotiates its second stream -- and the sid is the
-                    // half that matters, because the console takes our id for this leg from the OFFER, not the
-                    // ACCEPT. Offering it as stream 1 again made the console's second connection collide with
-                    // its first: preluded, then never served.
-                    // All three again, and for the same reason: the A/V leg is a connection of its own on a
-                    // port of its own, so it needs its own discovery. Offering only the local one left the
-                    // control plane working off-network while the media prelude went unanswered.
+                    // console's stream id. Our sid and reqId count on from the control connection's, as the
+                    // captured client's do for its second stream. The sid is the half that matters: the
+                    // console takes our id for this leg from the OFFER, not the ACCEPT, and offering stream 1
+                    // again made its second connection collide with its first (preluded, then never served).
+                    // All three candidates again: the A/V leg is a connection of its own on a port of its
+                    // own. Offering only the local one left the media prelude unanswered off-network.
                     await _signaling.SendOfferAsync(
                         outcome.SessionId, request.AccountId, request.ConsoleDuid,
                         OurCandidates((local.Address, localPort), mediaReflexive),
@@ -343,9 +341,8 @@ public sealed class HalyardAccountPairing(
     /// The account route's rendezvous, shared by pairing and connecting.
     ///
     /// <para>
-    /// Everything up to "the control association is open" is identical for both, and the sequence is
-    /// unforgiving enough -- who offers first, where our Init sits relative to our OFFER and ACCEPT, which
-    /// messages must be acknowledged -- that a second copy of it would drift. So the two differ only in
+    /// Everything up to "the control association is open" is identical for both: who offers first, where our
+    /// Init sits relative to our OFFER and ACCEPT, which messages must be acknowledged. The two differ only in
     /// <paramref name="openAssociation"/> (what to build the association with), <paramref name="finish"/>
     /// (what to do once it is open) and whether the registration seed is required.
     /// </para>
@@ -385,13 +382,9 @@ public sealed class HalyardAccountPairing(
         // ignored so a stray frame cannot resolve the wait with garbage.
         var seed = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Counted, because otherwise the two failures are indistinguishable and they are not the same fault.
-        // Ignoring a customData1 that will not decrypt is right — a stray frame must not resolve the wait with
-        // garbage — but reporting the timeout afterwards as "the console did not publish the seed" asserts
-        // something we do not know. A seed that arrived and did not open means our key material, our context
-        // key or our encoding is wrong; a seed that never arrived means the console never got as far as
-        // publishing one. They have nothing in common but the symptom, and the wrong one sends the next
-        // person looking in the wrong place.
+        // Counted so a timeout can tell two faults apart. A seed that arrived and did not open means our key
+        // material, our context key or our encoding is wrong; a seed that never arrived means the console
+        // never got as far as publishing one.
         int customDataSeen = 0;
         int customDataUnreadable = 0;
 
@@ -433,12 +426,10 @@ public sealed class HalyardAccountPairing(
 
         // Ask the session service who is in the session, independently of the push channel.
         //
-        // **This is the question a join timeout cannot answer on its own.** "The console never joined" is what
-        // our push channel failed to hear, which is not the same fact as the console not being there. If the
-        // service lists it as a member, the command worked and our subscription missed the announcement — our
-        // bug. If the service lists only us, the command was accepted by the cloud and the console never acted
-        // on it, which is a console or account problem and nothing in this process will fix it. The two send
-        // you to opposite ends of the stack, and the readback endpoint already exists for exactly this.
+        // "The console never joined" is only what our push channel failed to hear. If the service lists it as
+        // a member, the command worked and our subscription missed the announcement, which is our bug. If the
+        // service lists only us, the cloud accepted the command and the console never acted on it, which is
+        // a console or account problem.
         //
         // Diagnostic only: it never changes what the flow does, and it cannot fail the pairing.
         async Task LogMembershipAsync(string when)
@@ -464,13 +455,9 @@ public sealed class HalyardAccountPairing(
 
                 HalyardSessionMember[] members = mine.Members ?? [];
 
-                // Identified by the duid we commanded, which is the only unambiguous test.
-                //
-                // The first version of this guessed: "a console member is the one carrying a deviceUniqueId,
-                // we are the one that does not". That is wrong — we create the session with
-                // deviceUniqueId "me" and the service resolves it, so THIS CLIENT has one too. The readback
-                // duly reported one member with a deviceUniqueId and the note invited reading it as the
-                // console having joined, which is the opposite of what it meant.
+                // Identified by the duid we commanded, which is the only unambiguous test. Having a
+                // deviceUniqueId at all is not one: we create the session with deviceUniqueId "me" and the
+                // service resolves it, so this client has one too.
                 bool consoleIsAMember = members.Any(
                     m => string.Equals(m.DeviceUniqueId, request.ConsoleDuid, StringComparison.Ordinal));
 
@@ -494,15 +481,13 @@ public sealed class HalyardAccountPairing(
 
         // Answer every signaling message the console sends with a RESULT carrying its reqId.
         //
-        // **This is the thing that was missing.** Ripcord acked the console's OFFER and nothing else. Five
-        // mitmproxy captures of the vendor client (ps-rendezvous/cap71, cap72, cap96, cap99, cap107) show it
-        // acking the console's ACCEPT too, in every session, within ~1.5s. Ours never did — and in every live
-        // run the console sent its ACCEPT, waited, and then TERMINATE-d.
+        // Every one, not just the OFFER. Five mitmproxy captures of the vendor client (ps-rendezvous/cap71,
+        // cap72, cap96, cap99, cap107) show it acking the console's ACCEPT too, in every session, within
+        // ~1.5s. Without that ack the console sent its ACCEPT, waited, and then TERMINATE-d in every live run.
         //
-        // Fired from the handler rather than awaited at some later point in the flow, because by the time the
-        // ACCEPT arrives the flow has moved on to the transport, and the console gives up about a second
-        // later. Deduplicated on (action, reqId) because the push channel delivers duplicates routinely — we
-        // see each OFFER twice.
+        // Fired from the handler rather than awaited later in the flow: by the time the ACCEPT arrives the
+        // flow has moved on to the transport, and the console gives up about a second later. Deduplicated on
+        // (action, reqId) because the push channel delivers duplicates routinely (each OFFER arrives twice).
         void Ack(HalyardSignalingMessage message)
         {
             if (liveSessionId is not { } id)
@@ -649,10 +634,10 @@ public sealed class HalyardAccountPairing(
         }
 
         // Which session each push frame is about. Every frame names one (body.data.sessionId, in our captures of
-        // the vendor client), and nothing here checked it: a join or an OFFER from another of the account's
-        // sessions counted as ours. From a hotspot the console "joined" and offered, yet the service never listed
-        // it in our session and refused every message to it as not a member (2026-10-10). Diagnostic only: says
-        // whether the frame is ours, never the id itself.
+        // the vendor client), and a join or an OFFER from another of the account's sessions must not count as
+        // ours: from a hotspot the console "joined" and offered, yet the service never listed it in our session
+        // and refused every message to it as not a member (2026-10-10). Diagnostic only: says whether the frame
+        // is ours, never the id itself.
         void OnFrame(string frame)
         {
             if (_options.Log is null)
@@ -730,13 +715,12 @@ public sealed class HalyardAccountPairing(
             Log("connect command sent (data1/data2)");
 
             // The console joining is the first moment it can be messaged at all — a sessionMessage only
-            // reaches a member. It is NOT, however, the moment to offer: sending ours before the console's
-            // OFFER breaks the exchange, because on this route the console initiates the signaling (its OFFER
-            // arrives unprompted, with its own reqId) and we are the responder. Tried live; the console
-            // answered by TERMINATE-ing and never opened a control association at all.
+            // reaches a member. It is NOT the moment to offer: on this route the console initiates the
+            // signaling (its OFFER arrives unprompted, with its own reqId) and we are the responder. Offering
+            // first, tried live, got a TERMINATE and no control association at all.
             // Three states, not two: joined, waited-and-it-never-came, and never-waited. The join wait only
-            // runs on the route that needs it, and "false" would otherwise let a failure message downstream
-            // claim the console never turned up when nothing ever looked.
+            // runs on the route that needs it, so null keeps a failure message from claiming the console
+            // never turned up when nothing looked.
             bool? consoleJoined = null;
 
             if (!request.LocalHashedId.IsEmpty)
@@ -776,28 +760,20 @@ public sealed class HalyardAccountPairing(
 
                     await LogMembershipAsync("after the seed wait").ConfigureAwait(false);
 
-                    // Ordered by how far upstream the fault is, because the first true statement is the useful
-                    // one. A console that never joined cannot have published anything, so blaming the seed
-                    // there names a consequence and hides the cause — reported from hardware as a seed
-                    // timeout when the trace showed the console had never turned up at all.
+                    // Ordered by how far upstream the fault is: a console that never joined cannot have
+                    // published anything, so blaming the seed there would hide the cause.
                     //
-                    // Ordered by how far upstream the fault is, because the first true statement is the
-                    // useful one. A console that never joined cannot have published anything, so blaming the
-                    // seed there names a consequence and hides the cause — reported from hardware as a seed
-                    // timeout when the trace showed the console had never turned up at all.
-                    //
-                    // **Signed out of the account service is one of these, and it is the one that is
-                    // invisible.** Five runs (2026-09-24) against a console signed out of PSN after the
-                    // account's security options changed: it answered LAN discovery under its own name
-                    // throughout, the console list still reported remote play enabled and both standby wake
-                    // modes, and every command was accepted with a commandId in ~150 ms. Signing in on the
-                    // console fixed it from rest mode, first attempt, no restart.
+                    // A console signed out of the account service is one such cause, and an invisible one.
+                    // Five runs (2026-09-24) against a console signed out of PSN after the account's security
+                    // options changed: it answered LAN discovery under its own name throughout, the console
+                    // list still reported remote play enabled and both standby wake modes, and every command
+                    // was accepted with a commandId in ~150 ms. Signing in on the console fixed it from rest
+                    // mode, first attempt, no restart.
                     //
                     // Nothing in the console list reports it — the fields are name, language,
                     // wakeupEnabledPowerModes, enabledFeatures, updatedDateTime, duid, platform, with no
                     // presence or online flag — so a client cannot check for it and can only name it among
-                    // the things to look at. It is listed rather than ranked: one observation is not a base
-                    // rate, and the other causes here have been seen too.
+                    // the things to look at.
                     return fail(
                         consoleJoined == false && seen == 0
                             ? "The console never joined the session, so it never got as far as publishing a "
@@ -850,12 +826,11 @@ public sealed class HalyardAccountPairing(
                 // The negotiation is a real offer/accept, not two independent advertisements — the capture
                 // shows every message acknowledged by a RESULT carrying the sender's reqId, and the client
                 // answering the console's OFFER with an ACCEPT that names the console's stream id. Stopping
-                // after our own OFFER leaves the console waiting, and it never opens its side: observed live
-                // as five unanswered preludes with the console silent.
-                // The local one alone is enough only when the console is on this network. Anywhere else it
-                // is a private address on somebody else's network, and a console told nothing else has no way
-                // to send us anything -- which is what an off-network attempt looked like: our Init leaving
-                // every five seconds and complete silence back.
+                // after our own OFFER leaves the console waiting, and it never opens its side (observed live
+                // as five unanswered preludes).
+                // The local candidate alone is enough only when the console is on this network; anywhere
+                // else it is a private address the console cannot reach, observed as our Init leaving every
+                // five seconds with silence back.
                 IReadOnlyList<HalyardCandidate> ours =
                     OurCandidates(request.LocalEndpoint, request.ReflexiveEndpoint);
 
@@ -865,14 +840,13 @@ public sealed class HalyardAccountPairing(
 
                 // Our Init goes out HERE: after our OFFER, before our ACCEPT.
                 //
-                // The side that opens the association is the side that may open connections on it, so this
-                // race matters. Two orderings are now falsified against hardware. Sending it before the OFFER
-                // does not work: the console has not seen our localHashedId yet, discards the Init, and then
-                // opens an association of its own — proven by the tag pair, since a console that accepts an
-                // Init answers with the sender's own pair with its halves exchanged, and against an early Init
-                // it always announced a pair of its own invention. Sending it after the whole exchange is
-                // worse: our three signaling POSTs take about two seconds, and the console initiates within
-                // ~200ms of our OFFER, so it is already retrying by the time we speak.
+                // The side that opens the association is the side that may open connections on it. Both
+                // neighbouring orderings are falsified against hardware. Before the OFFER: the console has
+                // not seen our localHashedId yet, discards the Init, and opens an association of its own
+                // (shown by the tag pair: a console that accepts an Init answers with the sender's own pair
+                // with its halves exchanged, and against an early Init it always announced a pair of its own
+                // invention). After the whole exchange: our three signaling POSTs take about two seconds, and
+                // the console initiates within ~200ms of our OFFER, so it is already retrying.
                 //
                 // This position is where the captured vendor client's Init actually sits, measured from its
                 // TLS streams: one POST at t+18.85, its Init at t+20.33, two more POSTs at t+20.34. Its
@@ -954,10 +928,8 @@ public sealed class HalyardAccountPairing(
             // so the leave is announced on a live connection like the vendor's is (its last frame is a
             // members:deleted for itself).
             //
-            // This is not tidiness. Creating a session and walking away leaves the account holding a member in
-            // a session nobody is in, one per attempt, and pairing is a thing users retry. A console that finds
-            // the account already sitting in stale sessions is a plausible reason for it to refuse a new one —
-            // which is exactly the failure being chased when this was found missing.
+            // Not leaving would hold a member in an empty session, one per attempt, and pairing is retried. An
+            // account already sitting in stale sessions is a plausible reason for a console to refuse a new one.
             if (!handedOff)
             {
                 if (joinedSessionId is not null)
@@ -1031,7 +1003,7 @@ public sealed class HalyardAccountPairing(
     /// The candidates we offer for one connection, in the order and with the labels the captured client uses.
     ///
     /// <para>
-    /// Three, not two, and the distinction between the first two is the point:
+    /// Three, not two:
     /// </para>
     /// <list type="bullet">
     /// <item><c>STUN</c> — the public address <b>and the port the NAT actually assigned</b>, as a STUN server
@@ -1044,10 +1016,8 @@ public sealed class HalyardAccountPairing(
     /// </list>
     ///
     /// <para>
-    /// We used to send the STUN mapping <em>labelled</em> <c>STATIC</c> and omit the guess entirely. That
-    /// worked wherever the one mapping we offered happened to be reachable, and had nothing to fall back on
-    /// where it was not — which is exactly the case a NAT that maps per destination creates, since the mapping
-    /// a STUN server sees is then not the one the console would get.
+    /// The guess matters behind a NAT that maps per destination: the mapping a STUN server sees is then not
+    /// the one the console would get, and the STUN candidate alone leaves nothing to fall back on.
     /// </para>
     /// </summary>
     internal static IReadOnlyList<HalyardCandidate> OurCandidates(
@@ -1080,7 +1050,7 @@ public sealed class HalyardAccountPairing(
     /// <summary>
     /// Records why the route ended, then lets the exception go on unchanged (an exception filter that returns false).
     /// A first try from a hotspot ended half a second after the console's OFFER with nothing in the trace to say why
-    /// (2026-10-10); this is so the next one says.
+    /// (2026-10-10).
     /// </summary>
     private bool LogFailure(Exception ex)
     {

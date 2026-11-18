@@ -1,12 +1,12 @@
 // Keyboard play, button remapping, and several devices at once: ported from the .NET client's
 // Ripcord.Core.Input (KeyboardInputTranslator, InputBindings, ControllerInputMerger), which the Windows
-// app ships. The rules are theirs, kept exactly because each one answers a complaint:
+// app ships. The rules are theirs, kept exactly:
 //
 //   - Opposing keys ADD: left and right held together centre the stick, instead of whichever key a set
 //     happened to enumerate last winning and reading as a stuck stick.
 //   - Diagonals are scaled onto the unit circle, so two keys are no faster than one.
 //   - Merging two devices ORs their buttons, keeps whichever stick is further from centre on each axis,
-//     and the larger trigger, which is what lets a person swap pads mid-session without a dead moment.
+//     and the larger trigger, so a person can swap pads mid-session without a dead moment.
 //   - Escape, F3 and F11 cannot be bound: the app needs them, and a bound Escape would make a full-screen
 //     stream inescapable on a keyboard-only Mac (InputBindings.ReservedKeys).
 //

@@ -67,8 +67,7 @@ public sealed partial class RipcordMark : UserControl
     /// <summary>
     /// Build the mark in front of the player: the wedge first, then the trail streaming out behind it, one dash
     /// at a time. The full mark assembling is design.md's celebration ("the wedge, then the trail"), and Welcome
-    /// does it too, so the first time someone sees the mark it arrives the way it means: something launched,
-    /// and the trail follows.
+    /// does it too.
     ///
     /// <para>
     /// About 0.6 s from the motion tokens: each part enters in RipcordDurationStateChange on RipcordEaseEnter,

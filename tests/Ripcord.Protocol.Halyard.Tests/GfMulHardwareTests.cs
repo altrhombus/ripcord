@@ -10,18 +10,16 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// Differential tests for the hardware GF(2^128) multiplies against the portable bit-serial reference.
 ///
 /// <para>
-/// This matters more than a normal optimisation test. The carry-less multiply plus reflected-domain reduction
-/// is easy to get subtly wrong — a mis-ordered fold or a wrong polynomial constant produces output that is
-/// wrong only for *some* inputs. Since GHASH feeds a 4-byte truncated tag, a partially-wrong multiply would
-/// show up as sporadic authentication failures on real traffic and be nearly impossible to attribute. The
+/// The carry-less multiply plus reflected-domain reduction is easy to get subtly wrong: a mis-ordered fold or
+/// a wrong polynomial constant produces output that is wrong only for *some* inputs, and since GHASH feeds a
+/// 4-byte truncated tag that would show up as sporadic authentication failures on real traffic. The
 /// bit-serial form is the implementation the SP 800-38D vectors validate directly, so it is the oracle here.
 /// </para>
 ///
 /// <para>
 /// Every case runs against each hardware path (<see cref="HardwarePath"/>) and skips the ones this host cannot
 /// execute, so an x64 box validates PCLMULQDQ, an ARM64 box validates PMULL, and neither silently reports green
-/// for a path it never ran. That skip is the whole point: the ARM64 implementation existed only as a comment
-/// until the suite could actually be run on ARM64 hardware.
+/// for a path it never ran.
 /// </para>
 /// </summary>
 public class GfMulHardwareTests

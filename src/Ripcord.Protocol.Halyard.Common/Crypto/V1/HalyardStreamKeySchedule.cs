@@ -50,22 +50,17 @@ public static class HalyardStreamKeySchedule
     /// <summary>
     /// Map a negotiated protocol version to its ECDH curve.
     ///
-    /// <para><b>Throws for any version outside 0x0d–0x11, and that is the point.</b> This used to answer
-    /// P-256 for everything else, which read like a documented default and was not one. The spec retracts it
-    /// in as many words — <i>"the earlier 'v1 uses P-256, the default' was a guess; versions 0xd–0x11 use
-    /// P-521"</i> (ps5-remoteplay-v1-spec.md §5.2, the 2026-07-22 live-parse). The correction landed for the
-    /// range that was confirmed; the guess it replaced stayed behind as the fallback.</para>
+    /// <para><b>Throws for any version outside 0x0d–0x11 and <see cref="V2Version"/>, deliberately.</b> There
+    /// is no P-256 default: the spec retracts it — <i>"the earlier 'v1 uses P-256, the default' was a guess;
+    /// versions 0xd–0x11 use P-521"</i> (ps5-remoteplay-v1-spec.md §5.2, the 2026-07-22 live-parse).</para>
     ///
     /// <para>A wrong curve does not fail where it is chosen. The handshake completes, both sides derive
-    /// different secrets, and the console rejects the session with no reason attached — so the cost of
-    /// guessing is a debugging session against an opaque symptom on hardware nobody here owns. An exception
-    /// naming the version is a worse first run for someone on that firmware and a far better one for whoever
-    /// has to find out why.</para>
+    /// different secrets, and the console rejects the session with no reason attached; an exception naming
+    /// the version is the better failure.</para>
     ///
     /// <para>The P-256 machinery stays and is still correct: <see cref="CurveForPublicKeyLength"/> selects it
-    /// from a 65-byte peer key, which is evidence rather than inference. What has been removed is the claim
-    /// that a <i>version number</i> we have never seen implies that curve. To restore it, observe a session
-    /// on such a version and widen the range — not the fallback.</para>
+    /// from a 65-byte peer key, which is evidence rather than inference. To support another version, observe
+    /// a session on it and widen the range — do not add a fallback.</para>
     /// </summary>
     /// <exception cref="NotSupportedException">The version's curve has never been observed.</exception>
     public static HalyardStreamCurve CurveForVersion(int protocolVersion)

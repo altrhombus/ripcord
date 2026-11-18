@@ -5,14 +5,9 @@ namespace Ripcord.Presentation.Accounts;
 /// or a host that cannot supply a stable device id.
 ///
 /// <para>
-/// A null object rather than a null reference, so "this build cannot sign in" is a state every surface renders
-/// from <see cref="CanSignIn"/> rather than a null check each of them has to remember — and so
-/// <see cref="RipcordAppServices.Account"/> can be non-nullable.
-/// </para>
-///
-/// <para>
-/// Portable rather than living with the PlayStation backend, because nothing about it is PlayStation-specific:
-/// it is the answer for any front end, any backend, and every test that does not care about accounts.
+/// A null object rather than a null reference, so every surface renders "this build cannot sign in" from
+/// <see cref="CanSignIn"/> and <see cref="RipcordAppServices.Account"/> can be non-nullable. Portable because
+/// nothing about it is PlayStation-specific.
 /// </para>
 ///
 /// <para>

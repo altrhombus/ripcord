@@ -6,18 +6,12 @@ using System.Security.Cryptography;
 namespace Ripcord.Core.Net;
 
 /// <summary>
-/// Discovers this machine's reflexive (public) address for a given local UDP port, by asking a STUN server.
-///
-/// <para>
-/// A peer behind NAT cannot be reached at its own address: what the far side must be told is the address the
-/// NAT presents on its behalf, which only something outside the NAT can observe. That is all this does —
+/// Discovers this machine's reflexive (public) address for a given local UDP port, by asking a STUN server:
 /// one RFC 5389 Binding Request, one <c>XOR-MAPPED-ADDRESS</c> back.
-/// </para>
 ///
 /// <para>
-/// <b>The port matters more than the address.</b> A NAT maps per source port, so the answer is only useful
-/// for the port it was asked about — which is why this binds the caller's port rather than picking its own.
-/// The mapping is what the peer will send to, so the same port must then carry the real traffic.
+/// <b>The port matters more than the address.</b> A NAT maps per source port, so this binds the caller's
+/// port rather than picking its own, and the same port must then carry the real traffic.
 /// </para>
 ///
 /// <para>

@@ -6,13 +6,13 @@ namespace Ripcord.Cloud.Halyard;
 /// refresh token.
 ///
 /// <para><b>One refresh at a time.</b> The refresh token rotates: each refresh grant spends it and returns a new
-/// one. Two callers finding the access token expired together used to refresh with the same token, and the
-/// second grant spent a token the first had already spent. Concurrent callers now share the one refresh in
-/// flight, as the Mac port's <c>TokenProvider</c> does (found by that port, 2026-09-26).</para>
+/// one. Two callers refreshing with the same token would have the second grant spend a token already spent,
+/// so concurrent callers share the one refresh in flight, as the Mac port's <c>TokenProvider</c> does (found
+/// by that port, 2026-09-26).</para>
 ///
-/// <para><b>Cleared on sign-out.</b> <see cref="Clear"/> forgets the tokens. Sign-out used to clear only the
-/// stored session and leave this seeded, so the next cloud call went out as the signed-out account. A refresh
-/// that completes after a clear is discarded rather than signing the account back in.</para>
+/// <para><b>Cleared on sign-out.</b> <see cref="Clear"/> forgets the tokens, or the next cloud call would go
+/// out as the signed-out account. A refresh that completes after a clear is discarded rather than signing the
+/// account back in.</para>
 /// </summary>
 public sealed class HalyardTokenProvider(HalyardAuthClient auth)
 {

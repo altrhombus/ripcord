@@ -23,12 +23,11 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
     /// query parameter, which the caller passes to <see cref="ExchangeCodeAsync"/>.
     ///
     /// <para>
-    /// <b>No <c>state</c> parameter</b>, which is worth stating because its absence looks like an oversight.
-    /// The observed flow sends none, and sending an unrecognised parameter to someone else's authorize endpoint
-    /// is a good way to be rejected for no benefit. What <c>state</c> would defend against — an unsolicited code
-    /// arriving from somewhere else — does not arise here: the flow runs in a web view this process created for
-    /// this one sign-in, and the caller matches the redirect against
-    /// <see cref="HalyardClientConfig.RedirectUri"/> before reading anything out of it.
+    /// <b>No <c>state</c> parameter</b>, deliberately. The observed flow sends none, and an unrecognised
+    /// parameter risks rejection. What <c>state</c> would defend against — an unsolicited code arriving from
+    /// somewhere else — does not arise here: the flow runs in a web view this process created for this one
+    /// sign-in, and the caller matches the redirect against <see cref="HalyardClientConfig.RedirectUri"/>
+    /// before reading anything out of it.
     /// </para>
     /// </summary>
     /// <param name="clientDeviceId">This machine's id, from <see cref="HalyardClientDeviceId"/>.</param>

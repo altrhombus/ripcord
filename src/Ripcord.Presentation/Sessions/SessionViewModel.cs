@@ -10,14 +10,9 @@ using Ripcord.Presentation.Resources;
 namespace Ripcord.Presentation.Sessions;
 
 /// <summary>
-/// What the streaming surface says, as opposed to what it draws.
-///
-/// <para>
-/// Extracted from <c>SessionPage</c>, where the status overlay's wording and the diagnostics readout's ~150
-/// lines of formatting, arithmetic and threshold judgement were interleaved with D3D12 device creation, swap
-/// chain resizing and pointer handlers. Nothing in here needs a GPU, a console or a window, and several of the
-/// rules it encodes were previously only observable by connecting to real hardware and watching:
-/// </para>
+/// What the streaming surface says, as opposed to what it draws: the status overlay's wording and the
+/// diagnostics readout's formatting, arithmetic and threshold judgement. Nothing in here needs a GPU, a console
+/// or a window, so these rules are tested rather than watched for on real hardware:
 ///
 /// <list type="bullet">
 ///   <item>the sampling-interval floor that stops a delayed timer tick reporting an impossible frame rate;</item>
@@ -28,9 +23,8 @@ namespace Ripcord.Presentation.Sessions;
 ///
 /// <para>
 /// What deliberately stays behind: the device itself (via <see cref="IVideoPipelineStats"/>), the swap chain,
-/// the fullscreen presenter, keep-display-awake, input routing and the connected animation. The line is the one
-/// Stage A draws generally — anything producing a string, bool or enum comes up here; anything touching a
-/// device, a presenter or a native handle does not.
+/// the fullscreen presenter, keep-display-awake, input routing and the connected animation. Anything producing
+/// a string, bool or enum comes up here; anything touching a device, a presenter or a native handle does not.
 /// </para>
 /// </summary>
 public sealed class SessionViewModel : ObservableState<SessionViewState>
@@ -531,12 +525,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     }
 
     /// <summary>
-    /// A pad was attached or detached.
-    ///
-    /// <para>
-    /// Records the engine, the transport and the device id, not merely "connected" — the source event carries
-    /// all three and they were previously discarded, which made a hardware test inconclusive.
-    /// </para>
+    /// A pad was attached or detached. Records the engine, the transport and the device id, not merely
+    /// "connected": a hardware test is inconclusive without all three.
     ///
     /// <para>
     /// Takes the facts rather than the front end's connection event, because that type lives in the Windows-only

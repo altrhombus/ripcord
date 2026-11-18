@@ -7,17 +7,14 @@ namespace Ripcord.Presentation;
 /// and the fullscreen presenter.
 ///
 /// <para>
-/// This replaces three <c>App.MainWindow as MainWindow</c> casts. Each was a page reaching up through a static
-/// for a concrete window type, which had three costs: a page could not be exercised without a window; the cast
-/// silently produced null in any host that was not exactly that class, so the failure mode was a click that did
-/// nothing; and it pinned "the shell" to one WinUI type, which is precisely the coupling Stage A exists to
-/// remove. A front end implements this on whatever its shell happens to be.
+/// A seam so that no page casts to a concrete window type: a page can be exercised without a window, a host
+/// with a different shell does not get a silent null and a click that does nothing, and the shell is not
+/// pinned to one WinUI type. A front end implements this on whatever its shell happens to be.
 /// </para>
 ///
 /// <para>
 /// Deliberately small. The stream is a layer above the navigation chrome rather than a page inside it, so this
-/// covers that layer and nothing else — page-to-page navigation stays with the front end's own frame, which is
-/// the thing front ends differ on most and agree on least.
+/// covers that layer and nothing else — page-to-page navigation stays with the front end's own frame.
 /// </para>
 /// </summary>
 /// <summary>Where in settings a caller wants somebody to land.</summary>

@@ -80,9 +80,9 @@ public sealed record HalyardPairingRecord(
     ///
     /// <para><b>Rendered as a signed 32-bit decimal.</b> <c>docs/protocol/ps5-local-discovery.md</c> pins it
     /// from the PS4 captures (cap53–cap57), whose credential is negative; every PS5 sample is below 2^31,
-    /// where signed and unsigned read the same, which is why this was unsigned here until the engine
-    /// comparisons of 2026-09-26. A key at <c>0x80000000</c> or above, about half of them, got a credential the
-    /// console would not recognise. The C core and the Rust engine render it signed.</para>
+    /// where signed and unsigned read the same. Rendered unsigned, a key at <c>0x80000000</c> or above, about
+    /// half of them, gets a credential the console would not recognise. The C core and the Rust engine render
+    /// it signed.</para>
     ///
     /// <para>False for a key that is not hex or does not fit 32 bits: a corrupt record, not something to paper
     /// over with a guess.</para>

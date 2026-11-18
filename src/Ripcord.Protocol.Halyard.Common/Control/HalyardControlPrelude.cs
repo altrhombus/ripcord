@@ -11,8 +11,6 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 /// values</b>, the same ones each side published in its signaling OFFER. That is the join between the cloud
 /// rendezvous and the direct transport, and it is why this transport cannot be opened without having
 /// completed the candidate exchange first: the console's <c>localHashedId</c> arrives only in its OFFER.
-/// (An earlier reading called these "two ~20-byte high-entropy blobs" of unknown origin — they are the
-/// hashed ids.)
 /// </para>
 ///
 /// <para>
@@ -60,12 +58,8 @@ public readonly record struct HalyardControlPrelude
     /// (client and console each announce a different one); in the <see cref="CookieEcho"/> it is the
     /// <b>peer's</b>, returned verbatim. So the exchange is a mutual verification-tag handshake, not a one-way
     /// cookie — the console commits no state until it sees its own token come back, which is the same reason
-    /// Takion's handshake echoes a cookie.
-    ///
-    /// <para>
-    /// An earlier draft of this type had it as "zero in the client's Init, set by the console" — wrong, and
-    /// caught by <c>LiveAccountTransportVectorTests</c> against the captured bytes rather than by reading.
-    /// </para>
+    /// Takion's handshake echoes a cookie. <c>LiveAccountTransportVectorTests</c> checks this against the
+    /// captured bytes.
     /// </param>
     /// <param name="Tail">
     /// Eight trailing bytes: zero in an <see cref="Init"/>, and in a <see cref="CookieEcho"/> the sender's
@@ -146,10 +140,9 @@ public readonly record struct HalyardControlPrelude
     ///
     /// <para>
     /// <b>Confirmed against every echo in every capture we hold, in both directions</b> — eleven client echoes
-    /// and eleven console echoes, LAN and WAN, exact match on all six bytes. It had been carried as
-    /// <c>[X] unexplained</c> and sent as zeroes, which is very likely why a live console completed the
-    /// prelude with Ripcord and then ignored every chunk it sent: it never received a valid confirmation of
-    /// its own address, so the path never validated and no connection object was created for us.
+    /// and eleven console echoes, LAN and WAN, exact match on all six bytes. Sent as zeroes, a live console
+    /// completed the prelude and then ignored every chunk we sent, very likely because its path never
+    /// validated without a confirmation of its own address.
     /// </para>
     /// </summary>
     /// <param name="peerAddress">The peer's IPv4 address, 4 bytes in network order.</param>

@@ -55,12 +55,9 @@ public sealed record AddConsoleFlowState(
     /// What the note above means, as a tone rather than a colour.
     ///
     /// <para>
-    /// <b>It follows the note, not <see cref="CanPairWithAccount"/>,</b> which is the change worth explaining.
-    /// The front end used to derive severity from whether the route was available — Success when it was,
-    /// Informational when it was not — and that was fine while the note only ever said one of two things. It
-    /// stopped being fine when the route could be available <em>with a condition attached</em>: a green
-    /// Success bar reading "turn the console on first" tells the reader the opposite of what the sentence
-    /// says.
+    /// <b>It follows the note, not <see cref="CanPairWithAccount"/>.</b> The route can be available
+    /// <em>with a condition attached</em>, and a green Success bar reading "turn the console on first" tells
+    /// the reader the opposite of what the sentence says.
     /// </para>
     ///
     /// <para>

@@ -79,24 +79,20 @@ public readonly record struct CardGeometry(
 /// Decides how the console grid is laid out, from the viewport and the number of consoles.
 ///
 /// <para>
-/// <b>Why this is one function and not two layouts.</b> The one-console hero used to be a separate panel with
-/// its own markup and its own <c>RenderHero()</c>, and the two drifted: the hero could not show the "checking"
-/// spinner the grid card shows, its overflow button was under the touch minimum, and a change made to one was
-/// routinely not made to the other. Every fact the hero rendered was already on <see cref="ConsoleCardState"/>
-/// — the only reason it needed code at all was that it was not inside an items control. So it is now the same
-/// card at a third density, and divergence is unrepresentable rather than discouraged.
+/// <b>One function, not two layouts.</b> The one-console hero is the same card at a third density, not a
+/// separate panel: as its own markup it drifted from the grid card (no "checking" spinner, an overflow button
+/// under the touch minimum). Every fact it renders is on <see cref="ConsoleCardState"/>.
 /// </para>
 ///
 /// <para>
-/// <b>Windows owns text size; Ripcord owns the size of Ripcord's own cards.</b> That distinction is what makes
-/// <see cref="WideViewportWidth"/> legitimate where the deleted <c>AppScale</c> was not. The type ramp is the
-/// platform's and never moves here; what responds is this app's own furniture, and it responds to the viewport
-/// rather than to a preference, so there is nothing for anyone to find, choose or get wrong.
+/// <b>Windows owns text size; Ripcord owns the size of Ripcord's own cards.</b> The type ramp is the
+/// platform's and never moves here; the cards respond to the viewport (<see cref="WideViewportWidth"/>), not
+/// to a preference.
 /// </para>
 ///
 /// <para>
-/// Pure and unit-tested, for the same reason <see cref="Sessions.HudPlacement"/> is: the alternative is
-/// discovering on someone else's display that the rule was written for one window size.
+/// Pure and unit-tested, like <see cref="Sessions.HudPlacement"/>, so the rule is not written for one window
+/// size.
 /// </para>
 /// </summary>
 public static class CardMetrics

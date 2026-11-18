@@ -11,12 +11,10 @@ namespace Ripcord_App.Input;
 /// The app's single reader of the controller, and the arbiter of who gets it.
 ///
 /// <para>
-/// <b>What this replaces: two sources for one pad.</b> The window ran its own
-/// <c>GameInputControllerSource</c> for menu navigation while the session page ran a full
-/// <c>ControllerSourceFactory.Create()</c> composite for forwarding. Two consequences, one of them a plain
-/// bug. The composite includes the DualSense raw-HID path, so a DualSense worked in a stream and did not work
-/// in the menus — the pad most likely to be attached was the one the interface ignored. And the same physical
-/// device was being read through two APIs at once, which the factory's own comment warns against.
+/// <b>One source for one pad.</b> Menu navigation and session forwarding both read this router's
+/// <c>ControllerSourceFactory.Create()</c> composite. The composite includes the DualSense raw-HID path, so
+/// a DualSense works in the menus as well as in a stream, and the same physical device is never read
+/// through two APIs at once, which the factory's own comment warns against.
 /// </para>
 ///
 /// <para>
@@ -28,9 +26,8 @@ namespace Ripcord_App.Input;
 /// </para>
 ///
 /// <para>
-/// <b>Cost, stated honestly.</b> The DualSense HID source now polls for its device for the life of the app
-/// rather than only during a session — one idle thread at 2 Hz. That is what buys DualSense buttons on chrome
-/// pages, and it is the intended trade. If it ever shows up on a handheld battery trace the lever is
+/// <b>Cost.</b> The DualSense HID source polls for its device for the life of the app rather than only
+/// during a session — one idle thread at 2 Hz. If it ever shows up on a handheld battery trace the lever is
 /// <see cref="Stop"/>/<see cref="Start"/> on window activation, not going back to two sources.
 /// </para>
 /// </summary>
@@ -189,8 +186,7 @@ public sealed class InputRouter : IDisposable
     ///
     /// <para>
     /// Decided by which engine reported the connection, not by parsing a product name: our raw-HID engine only
-    /// ever binds pads it recognises, so its presence IS the answer, and a string match on a marketing name
-    /// would go stale the moment a revision shipped.
+    /// ever binds pads it recognises, so its presence IS the answer.
     /// </para>
     ///
     /// <para>

@@ -18,11 +18,10 @@ namespace Ripcord_App.Pages;
 /// One row of the rebinding list.
 ///
 /// <para>
-/// Notifying, and that is the point rather than an implementation detail: the row's keys change on every
-/// rebind, and the alternative — rebuilding the collection — destroys the item containers, which destroys
-/// focus. Focus at that moment is on the Change button of the row just edited, so a wholesale refresh would
-/// throw the user back to the top of the page after every single binding. This is the exception the app's
-/// state rule already carves out for collections, for exactly this reason.
+/// Notifying on purpose: the row's keys change on every rebind, and rebuilding the collection instead
+/// destroys the item containers, which destroys focus. Focus at that moment is on the Change button of the
+/// row just edited, so a wholesale refresh would throw the user back to the top of the page after every
+/// binding. This is the exception the app's state rule already carves out for collections.
 /// </para>
 /// </summary>
 public sealed class KeyBindingRow(InputAction action, string actionName, string keyNames) : INotifyPropertyChanged
@@ -63,21 +62,18 @@ public sealed class KeyBindingRow(InputAction action, string actionName, string 
 ///
 /// <para>
 /// Capture rather than a dropdown of key names: it is faster, needs no exhaustive key list, and binds keys
-/// nobody thought to offer — which is the point of having a remap at all.
+/// nobody thought to offer.
 /// </para>
 ///
 /// <para>
-/// <b>Why this is a page and was a dialog.</b> A <c>ContentDialog</c> reserves Escape (close) and Enter (the
+/// <b>Why this is a page and not a dialog.</b> A <c>ContentDialog</c> reserves Escape (close) and Enter (the
 /// default button), and capture-by-keypress wants every key. Enter is a <em>default binding here</em> — Start —
-/// so the conflict was not hypothetical, and the consequence was worse than awkward: the dialog's default
-/// button was "Reset to defaults", so a stray Enter while capture was not armed silently wiped every binding
-/// the user had. Capture worked only by swallowing keys before the host saw them, which is a workaround for
-/// being in the wrong container. A page reserves nothing.
+/// and as a dialog its default button was "Reset to defaults", so a stray Enter while capture was not armed
+/// silently wiped every binding the user had. A page reserves nothing.
 /// </para>
 ///
 /// <para>
-/// Changes save as they are made, as everywhere else in Settings. A page has no OK button, and giving it one
-/// would be a dialog's habit surviving the move.
+/// Changes save as they are made, as everywhere else in Settings; there is no OK button.
 /// </para>
 /// </summary>
 public sealed partial class KeyBindingsPage : Page
@@ -215,10 +211,8 @@ public sealed partial class KeyBindingsPage : Page
     /// Bring the displayed keys back in line with <see cref="_bindings"/>.
     ///
     /// <para>
-    /// Rows are built once and then UPDATED, never rebuilt. Clearing the collection destroys the item
-    /// containers, and focus at this moment is on the Change button of the row just edited — so a wholesale
-    /// refresh would throw the user to the top of the page after every rebind, which is the whole reason
-    /// KeyBindingRow notifies.
+    /// Rows are built once and then UPDATED, never rebuilt: clearing the collection destroys the item
+    /// containers and with them focus, which is why KeyBindingRow notifies.
     /// </para>
     /// </summary>
     private void Refresh()

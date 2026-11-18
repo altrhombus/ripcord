@@ -25,16 +25,15 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// How the client reached the console, as the console is told in <c>RP-ConPath</c> on <c>/sess/ctrl</c>.
 ///
 /// <para>
-/// It is not decoration: the console runs a different bring-up for each. On <see cref="Local"/> it hands the
-/// A/V leg straight to :9297 and expects Takion there immediately. On <see cref="Rendezvous"/> it instead
-/// offers a second connection through the cloud, which the client must answer and prelude before Takion means
-/// anything — and declaring <see cref="Local"/> while taking the rendezvous route makes the console wait for
-/// a leg the client will never open on those terms.
+/// The console runs a different bring-up for each. On <see cref="Local"/> it hands the A/V leg straight to
+/// :9297 and expects Takion there immediately. On <see cref="Rendezvous"/> it offers a second connection
+/// through the cloud, which the client must answer and prelude before Takion; declaring <see cref="Local"/>
+/// on the rendezvous route makes the console wait for a leg the client never opens.
 /// </para>
 ///
 /// <para>
 /// Only 1 and 3 have been seen on the wire ([W], LAN captures and cap63/cap64 respectively). 2 is unclaimed
-/// and deliberately unnamed rather than guessed at.
+/// and deliberately unnamed.
 /// </para>
 /// </summary>
 public enum HalyardConnectionPath
@@ -104,11 +103,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private HalyardTakionStream? _takionStream;
     private HalyardSessionInputSink? _inputSink;
 
-    // Input packets are handed to a single-writer/single-reader queue and sent by one drain loop, in order.
-    // Previously each packet was fire-and-forget (`_ = SendAsync(...)`), so N concurrent sends raced: the
-    // writer assigns sequence numbers synchronously but the datagrams could reach the wire out of order, and
-    // any send failure became an unobserved task exception. Bounded + DropOldest because stale controller
-    // input is worthless — under backpressure the newest state is the only one worth delivering.
+    // Input packets go through a single-writer/single-reader queue and one drain loop, so they reach the wire
+    // in sequence order and a send failure is observed (concurrent fire-and-forget sends raced). Bounded +
+    // DropOldest: under backpressure only the newest controller state is worth delivering.
     private Channel<byte[]>? _inputQueue;
     private Task? _inputSendLoop;
     private const int InputQueueCapacity = 256;
@@ -202,9 +199,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
         double lossRatio = total > 0 ? (double)lost / total : 0.0;
         double rttMs = _takionStream?.RoundTripTimeMs ?? 0;
 
-        // Feed the adaptive controller. This is the loop that was missing entirely: the samples were computed
-        // and reported to the UI, but nothing ever acted on them, so quality never responded to the link.
-        // total is passed so the controller can tell a real loss rate from one lost unit in a tiny startup window.
+        // Feed the adaptive controller. total is passed so the controller can tell a real loss rate from one
+        // lost unit in a tiny startup window.
         _bandwidth?.ReportNetworkSample(new NetworkSample(rttMs, lossRatio, JitterMs: 0, ObservedUnits: total));
 
         // Sending the decision as CONNECTION_QUALITY was meant to steer the console's encoder. It does not: the
@@ -224,14 +220,12 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
         _stats.OnNext(new SessionStatistics(
             RoundTripTimeMs: rttMs,
-            // The measured wire rate, not the rate we asked for. Echoing the request back looked like telemetry
-            // but told the user nothing they had not already chosen.
+            // The measured wire rate, not the rate we asked for.
             BitrateKbps: _takionStream?.MeasuredBitrateKbps ?? 0,
             Fps: 0,
             PacketLossRatio: lossRatio,
             DecodeTimeMs: 0,
-            // What the bring-up measured and the launchSpec declared, so the overlay can show measurements rather
-            // than leaving the reader to assume the old hardcoded 1454/0.
+            // What the bring-up measured and the launchSpec declared, so the overlay shows measurements.
             DeclaredMtu: _confirmedMtu ?? LinkMetrics.MtuToDeclare(_measuredMtu),
             DeclaredRttMs: _measuredRttMs,
             MtuConfirmed: _confirmedMtu is not null,
@@ -254,16 +248,15 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// failure.
     ///
     /// <para>
-    /// Scoped to the control plane deliberately. The senkusha and stream phases already bound themselves (8s and
-    /// 12s), so extending this deadline over them would mean a control plane that legitimately took 20s left the
-    /// stream phase 5s — turning a slow-but-working link into a failure, i.e. inventing a new problem while fixing
-    /// another. Only the /sess/init and /sess/ctrl response reads were unbounded, and only they are covered.
+    /// Scoped to the control plane deliberately. The senkusha and stream phases bound themselves (8s and 12s);
+    /// a deadline spanning them would let a slow control plane starve the stream phase and fail a working link.
+    /// Only the /sess/init and /sess/ctrl response reads are otherwise unbounded, and only they are covered.
     /// </para>
     /// </summary>
     /// <summary>
-    /// The default, which suits a directly-reached LAN console. The account route needs longer and says so:
-    /// its console gates the control plane on a cloud rendezvous completing, and one was measured taking about
-    /// twenty seconds to send its signaling ACCEPT -- long enough that a legitimately working link failed here.
+    /// The default, which suits a directly-reached LAN console. The account route needs longer: its console
+    /// gates the control plane on a cloud rendezvous completing, and one was measured taking about twenty
+    /// seconds to send its signaling ACCEPT.
     /// </summary>
     public static readonly TimeSpan DefaultControlPlaneDeadline = TimeSpan.FromSeconds(20);
 
@@ -280,10 +273,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
     {
         _bandwidth = new AdaptiveBandwidthController(config);
 
-        // A DEADLINE over the whole handshake. The senkusha and stream phases already bound themselves, but the
-        // control plane did not: /sess/init and /sess/ctrl awaited a response with only a cancellation token, so a
-        // console that accepts the TCP connection and then never answers left the app on "Connecting…" indefinitely
-        // with nothing to report. Observed on a fresh machine, where it is the least diagnosable outcome possible.
+        // A deadline over the control plane. /sess/init and /sess/ctrl otherwise await a response with only a
+        // cancellation token, so a console that accepts the TCP connection and never answers would leave the
+        // app on "Connecting…" indefinitely (observed on a fresh machine).
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(_controlPlaneDeadline);
         CancellationToken token = deadline.Token;
@@ -317,10 +309,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // hearing the UDP search probe (SRC3 for PS5, SRC2 for PS4); a cold TCP connect is refused with a
             // RST. (The same probe the registration path uses — wire-confirmed a single probe arms init + ctrl.)
             //
-            // LAN only. The probe is a broadcast-style UDP search that arms a TCP listener we do not use on the
-            // rendezvous route -- there the control plane rides the 9303 association, which is already open by
-            // the time we get here. Off-network it is worse than useless: it fires at an address that may not
-            // be routable from where we are, and waits for an answer that cannot come.
+            // LAN only. The probe arms a TCP listener the rendezvous route does not use: there the control plane
+            // rides the 9303 association, already open by now, and the probe would fire at an address that may
+            // not be routable and wait for an answer that cannot come.
             if (_parameters.ConnectionPath == HalyardConnectionPath.Local)
             {
                 _connectStep = "probing the console's control listener";
@@ -388,11 +379,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // it never answers the stream's SESSION exchange. Non-fatal (the vendor tolerates failures here).
             // Past the control plane: back to the caller's token so these phases keep their own budgets.
             //
-            // Skipped entirely on the rendezvous route, where it is not merely useless but actively harmful:
-            // the probe opens its own bare socket to :9297, and on that route :9297 answers nobody who has not
-            // completed a prelude there. So it can only ever time out — and it spends those eight seconds
-            // firing unanswerable Takion INITs at the very port the real A/V leg is about to negotiate, from a
-            // source port the console was never told about.
+            // Skipped on the rendezvous route: the probe opens its own bare socket to :9297, which on that route
+            // answers nobody who has not completed a prelude there. It could only time out, spending eight
+            // seconds firing Takion INITs at the port the real A/V leg is about to negotiate, from a source
+            // port the console was never told about.
             if (_parameters.ConnectionPath == HalyardConnectionPath.Local)
             {
                 _connectStep = "senkusha bring-up";
@@ -425,19 +415,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // Our own deadline fired, not the caller's cancellation. Name the step: "Connecting…" forever with no
-            // stated cause is the single least diagnosable failure this app can produce, and on a machine with no
-            // debugger it is the only information available.
+            // Our own deadline fired, not the caller's cancellation. Name the step: on a machine with no debugger
+            // it is the only information available.
             return Fail($"Control setup timed out after {_controlPlaneDeadline.TotalSeconds:F0}s at: {_connectStep}. "
                         + "The console did not answer. Check that no other device is streaming from it, and that "
                         + "inbound UDP is allowed for this app.");
         }
         catch (OperationCanceledException)
         {
-            // The caller's cancellation is the caller's to see. Caught below, it became an ordinary failure
-            // reading "sign-in: The operation was canceled.", so the controller's connect deadline firing under the
-            // passcode prompt was retried as though the console had failed, and never reported as the deadline
-            // it was (2026-10-02).
+            // The caller's cancellation is the caller's to see. Caught below it would become an ordinary failure,
+            // and the controller's connect deadline firing under the passcode prompt would be retried as though
+            // the console had failed (2026-10-02).
             State = SessionState.Closed;
             throw;
         }
@@ -596,9 +584,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// The status, plus the console's own <c>RP-Application-Reason</c> when it gives one.
     ///
     /// <para>
-    /// Without it every refusal reads identically, and they are not identical: on the registration path the
-    /// difference between "wrong transport" and "wrong key" was two distinct reason codes, and not surfacing
-    /// them cost a session of chasing the wrong one.
+    /// Without it every refusal reads identically: on the registration path "wrong transport" and "wrong key"
+    /// are two distinct reason codes.
     /// </para>
     /// </summary>
     private static string Describe(SessResponse response)
@@ -617,8 +604,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <para>
     /// A LAN console accepts the unpadded form, so this is not required there. It is one of only two things
     /// still differing from the captured request on the account route, which refuses <c>/sess/init</c> with
-    /// <c>403 / 80108b13</c> while the same pairing record is accepted over TCP minutes earlier -- so being
-    /// byte-faithful here costs nothing and removes a variable.
+    /// <c>403 / 80108b13</c> while the same pairing record is accepted over TCP minutes earlier, so it is
+    /// matched byte for byte.
     /// </para>
     /// </summary>
     private string HostHeader()
@@ -651,9 +638,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             .Header("Connection", "close")
 
             // NB: Content-Length is emitted by SessRequest.Serialize, which always writes one. Adding it here
-            // too sent the header TWICE -- a duplicate Content-Length is a request-smuggling shape that strict
-            // parsers reject outright, and the console answered 403. Found by diffing our bytes off the wire
-            // against the captured request rather than by reading the code, which is the lesson.
+            // too sends the header twice, and the console answers a duplicate Content-Length with 403.
             .Header(SessProtocol.HeaderRegistKey, registKey)
 
             // "Rp-Version" on init, not "RP-Version" -- which is what the captured client sends here, while
@@ -734,19 +719,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// On the LAN it arrives ~2.3 s after the submit (cap50). On the rendezvous route it takes far longer,
     /// because the console <b>renegotiates the connection first</b>: the login is answered almost at once and
     /// then a second candidate exchange runs over the cloud before the console declares the session ready.
-    /// Measured on hardware — login result at 0.2 s, session-ready at <b>5.0 s</b> — which is why six seconds
-    /// was flaky rather than simply wrong, and why this is comfortably past it.
+    /// Measured on hardware: login result at 0.2 s, session-ready at <b>5.0 s</b>; six seconds was flaky.
+    /// </para>
     ///
     /// <para>
-    /// <b>A correction worth keeping.</b> This was briefly recorded as "the console accepts the passcode and
-    /// then abandons the session", on runs that timed out before that five seconds elapsed. It does not: it is
-    /// slow, not indifferent. The wait is now two-stage — the login verdict first, then session-ready — so a
-    /// wrong passcode still re-prompts immediately and only a genuinely accepted one waits.
+    /// The console is slow here, not abandoning the session. The wait is two-stage (the login verdict first,
+    /// then session-ready), so a wrong passcode re-prompts immediately and only an accepted one waits.
     /// </para>
     ///
     /// <para>
     /// **[X]** One earlier run did sit for twenty-five seconds with no session-ready on a console that had
-    /// been locked by idling rather than woken from standby. Unexplained, and recorded rather than tidied away.
+    /// been locked by idling rather than woken from standby. Unexplained.
     /// </para>
     /// </summary>
     private static readonly TimeSpan SignInAttemptTimeout =
@@ -763,10 +746,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
     ///
     /// <para>
     /// Measured gaps between the A/V prelude finishing and that frame arriving were 2.3–2.9 s across three
-    /// captured rendezvous sessions, so this is roughly triple the longest. It deliberately does not fail the
-    /// session on expiry: session-ready gates the console's stream service on the rendezvous route, but a LAN
-    /// console reached the old way streams without ever sending one, and turning a missing frame into a hard
-    /// failure would trade a diagnosable timeout for an undiagnosable refusal.
+    /// captured rendezvous sessions, so this is roughly triple the longest. Expiry deliberately does not fail
+    /// the session: session-ready gates the console's stream service on the rendezvous route, but a LAN
+    /// console streams without ever sending one.
     /// </para>
     /// </summary>
     private static readonly TimeSpan SessionReadyWindow = TimeSpan.FromSeconds(8);
@@ -788,12 +770,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// another attempt on the same connection, so we re-prompt rather than fail the session.</para>
     ///
     /// <para>
-    /// <b>The login-result frame is not the signal, but the old reason for that was wrong.</b> It was recorded
-    /// as "opaque and different every time (cap51)" — which it is, as <em>ciphertext</em>, because a stream
-    /// cipher at a fresh counter produces different bytes for the same plaintext by construction. That was a
-    /// property of not being able to decrypt it, not of the frame. It decrypts cleanly now (a single byte,
-    /// <c>0x00</c> on both accepted logins we have watched), so <b>[X]</b> whether the byte is a status worth
-    /// reading is an open question rather than a settled "no" — two samples of one value prove nothing yet.
+    /// <b>The login-result frame is not the signal.</b> Its ciphertext differs every time (cap51) only because
+    /// each is encrypted at a fresh counter. It decrypts to a single byte, <c>0x00</c> on both accepted logins
+    /// we have watched, so <b>[X]</b> whether the byte is a status worth reading is an open question: two
+    /// samples of one value prove nothing yet.
     /// </para>
     /// </summary>
     private async Task<SessionHandshakeResult?> EnsureSignedInAsync(CancellationToken cancellationToken)
@@ -836,9 +816,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 new HalyardCtrlMessage(HalyardCtrlMessage.TypeLoginSubmit, ciphertext), cancellationToken).ConfigureAwait(false);
 
             // Whichever the console says first. Session-ready is the outright success; the login result is the
-            // console's verdict on the passcode, and being able to read it is what lets a wrong passcode
-            // re-prompt at once instead of after a timeout -- and, just as importantly, stops a *right* one
-            // being reported as wrong when the session does not follow.
+            // console's verdict on the passcode, which lets a wrong passcode re-prompt at once and stops a
+            // right one being reported as wrong when the session does not follow.
             Task<byte> answered = verdict.Task;
             Task ready = _sessionReady.Task;
             using (var window = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
@@ -1039,9 +1018,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
     {
         bool trace = Environment.GetEnvironmentVariable("RIPCORD_TRACE_CTRL") is not null;
 
-        // An empty payload spends no counter, but it is still worth naming: the login prompt and the
-        // stream-ready signal both carry nothing, and a frame that goes unlogged because it had no payload is
-        // exactly the one you end up guessing about.
+        // An empty payload spends no counter, but is still traced: the login prompt and the stream-ready
+        // signal both carry nothing.
         if (message.Payload.Length == 0 || !_crypto.IsControlEstablished)
         {
             if (trace)
@@ -1082,10 +1060,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// A round-trip probe that separates "our encryption is wrong" from "the console is not reading us".
     ///
     /// <para>
-    /// <c>0x0910</c> is a 4-byte client frame the console answers with <c>0x8910</c>, on both routes — it is
-    /// the one client frame with a guaranteed reply, which makes it an oracle. An answer means our
-    /// client→console crypto is being read, whatever the payload means; silence on one route and an answer on
-    /// the other localises the fault to the route rather than the cipher. Off unless
+    /// <c>0x0910</c> is a 4-byte client frame the console answers with <c>0x8910</c>, on both routes: the one
+    /// client frame with a guaranteed reply. An answer means our client→console crypto is being read; silence
+    /// on one route and an answer on the other puts the fault in the route, not the cipher. Off unless
     /// <c>RIPCORD_PROBE_ECHO</c> is set.
     /// </para>
     /// </summary>
@@ -1126,13 +1103,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <para>
     /// <b>[X] which measurement belongs in which slot</b> — and it does not appear to matter. Three live
     /// sessions sending our real measurements, then <c>500</c> in every slot, then <c>0</c> in every slot,
-    /// were indistinguishable: same frame rate, same bitrate. The console wants the frame, not its contents.
-    ///
-    /// <para>
-    /// Real values are sent regardless, because "not observably read today" is not "never read", and the cost
-    /// of being right here is nil. What this does buy is that a wrong guess about the ordering cannot be
-    /// silently breaking anything.
-    /// </para>
+    /// were indistinguishable: same frame rate, same bitrate. Real values are sent regardless, since "not
+    /// observably read today" is not "never read".
     /// </para>
     /// </summary>
     private async Task SendProbeReportAsync(CancellationToken cancellationToken)
@@ -1149,8 +1121,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         slots[3] = (uint)Math.Round(Math.Clamp(_measuredRttMs ?? 0, 0, 1000));
 
         // RIPCORD_PROBE_SLOTS=a,b,c,d overrides all four, for settling what the console actually reads here.
-        // The slot meanings are [X]; the way to find out is to send something a console could not ignore and
-        // watch whether the stream changes.
+        // The slot meanings are [X].
         if (Environment.GetEnvironmentVariable("RIPCORD_PROBE_SLOTS") is { Length: > 0 } spec)
         {
             string[] parts = spec.Split(',');
@@ -1242,8 +1213,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
     // Takion handshake retransmit, matched to the vendor on a lossy link (cap55, 2026-08-03): it retransmits
     // each handshake chunk — notably COOKIE_ECHO — on a fixed ~300 ms timer (NOT exponential backoff) and
-    // persists ~100 tries / ~30 s before giving up silently. Our old 2 s × 3 (~6 s) retransmitted ~7x slower
-    // and gave up ~5x sooner, so under packet loss it failed exactly where the vendor recovered.
+    // persists ~100 tries / ~30 s before giving up silently. A slower, shorter schedule (2 s × 3) failed
+    // under packet loss where the vendor recovered.
     private static readonly TimeSpan HandshakeRetransmitInterval = TimeSpan.FromMilliseconds(300);
 
     // The stream connection is the one whose handshake failure ends the attempt, so it gets the vendor's full
@@ -1275,7 +1246,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// go where the stream will. A LAN console is probed on a socket of its own; on the rendezvous route the
     /// only socket :9297 will answer is the negotiated A/V one, after its prelude — the captured client runs
     /// the probe as a first Takion association on exactly that socket, tears it down, and opens a second for
-    /// the stream. Probing a fresh socket there reaches nobody, which is why this took a parameter.
+    /// the stream.
     /// </para>
     /// </summary>
     private async Task RunSenkushaAsync(
@@ -1340,30 +1311,25 @@ public sealed class HalyardStreamingSession : IStreamingSession
             _streamSocket = prepared.Socket;
             streamEndpoint = prepared.Endpoint;
 
-            // …and then wait to be invited. On this route the console does not serve Takion on the A/V leg the
-            // moment the prelude finishes: in every captured rendezvous session it sits quiet for two to three
-            // seconds after the prelude, sends its session-ready frame on the control plane, and only then does
-            // the captured client send a single Takion INIT — which is answered immediately.
-            //
-            // We were sending that INIT six milliseconds after the prelude and then retransmitting it a hundred
-            // times over thirty seconds into a service that was not listening yet. Waiting costs nothing when
-            // the frame has already arrived (the gate is a latch), and a console that never sends it is a
-            // console that was never going to answer.
+            // Wait to be invited. On this route the console does not serve Takion on the A/V leg the moment the
+            // prelude finishes: in every captured rendezvous session it sits quiet for two to three seconds,
+            // sends its session-ready frame on the control plane, and only then does the captured client send
+            // a single Takion INIT, which is answered immediately. An INIT sent earlier goes unanswered. The
+            // gate is a latch, so a frame that already arrived costs no wait.
             _connectStep = "waiting for the console's session-ready";
             await CompletesWithin(_sessionReady.Task, SessionReadyWindow, cancellationToken).ConfigureAwait(false);
 
-            // …and only now can the probe run, because only now does a socket exist that :9297 will answer.
-            // Skipping it entirely got a SESSION_REPLY carrying no public key at all: the console answers the
-            // Takion handshake either way, and refuses the session that follows.
+            // Only now does a socket exist that :9297 will answer, so the probe runs here. Skipping it got a
+            // SESSION_REPLY carrying no public key at all: the console answers the Takion handshake either
+            // way, and refuses the session that follows.
             _connectStep = "senkusha bring-up";
             await RunSenkushaAsync(_streamSocket, streamEndpoint, cancellationToken).ConfigureAwait(false);
 
             await SendProbeReportAsync(cancellationToken).ConfigureAwait(false);
 
             // The captured client does not open the stream association until the console says the stream
-            // service is up, which it does a second or two after the probe. Not fatal on expiry: this is a
-            // wait, and a console that never sends it is better diagnosed by the SESSION_REPLY that follows
-            // than by a timeout here that hides it.
+            // service is up, which it does a second or two after the probe. Not fatal on expiry: a console
+            // that never sends it is better diagnosed by the SESSION_REPLY that follows.
             _connectStep = "waiting for the console's stream-ready";
             if (!await CompletesWithin(_streamReady.Task, StreamReadyWindow, cancellationToken).ConfigureAwait(false))
             {
@@ -1437,13 +1403,11 @@ public sealed class HalyardStreamingSession : IStreamingSession
         byte[] launchBytes = System.Text.Encoding.UTF8.GetBytes(launchSpecPlain);
         // out1-encrypt the launchSpec under the control key.
         //
-        // COUNTER 0 IS NOW WIRE-CONFIRMED, and was not before. It had only ever been exercised by a synthetic
-        // vector generator, which proves two implementations agree and nothing about what the console wants —
-        // and it is a suspicious value, because RP-Auth already uses counter 0 with the CFB field cipher, so
-        // the OFB keystream's first block is identical to that field's. On 2026-08-12 ports/ripcord-3ds sent a
-        // launchSpec encrypted exactly this way to a real PS5 and got a SESSION_REPLY whose ecdhSignature
-        // verified — which is only possible if the console decrypted this document and recovered the
-        // handshakeKey inside it. Do not "fix" the counter.
+        // Counter 0 is wire-confirmed. It looks suspicious, because RP-Auth already uses counter 0 with the CFB
+        // field cipher, so the OFB keystream's first block is identical to that field's. On 2026-08-12
+        // ports/ripcord-3ds sent a launchSpec encrypted exactly this way to a real PS5 and got a SESSION_REPLY
+        // whose ecdhSignature verified, which is only possible if the console decrypted this document and
+        // recovered the handshakeKey inside it. Do not "fix" the counter.
         //
         // Never in the clear: the handshakeKey is in this document. The connect fails before here when there is
         // no control key (ControlKeyMaterial), so this is the second guard, not the first.
@@ -1503,9 +1467,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
         int? declaredMtu = null,
         double? measuredRttMs = null)
     {
-        // Measured where possible, vendor defaults otherwise. Both were previously hardcoded — mtu 1454 and
-        // rtt 0 — which declared a measurement that had never been taken. The console reads these, and rtt 0 in
-        // particular told it the link was instantaneous.
+        // Measured where possible, vendor defaults otherwise. The console reads these; a hardcoded rtt 0 tells
+        // it the link is instantaneous.
         //
         // declaredMtu arrives ALREADY in declared form (senkusha-confirmed, or the interface estimate converted by
         // the caller). Converting again here would subtract the IP/UDP allowance twice.
@@ -1536,17 +1499,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <para>
     /// It is a fixed template rather than derived from our own audio settings, deliberately: every value here
     /// already matches what the decode path handles (48 kHz, stereo, 16-bit — <c>sampleSize</c> is bytes per
-    /// sample — and 480 samples per frame, so <c>maxFrameDataSize</c> 1920 = 480 x 2 x 2), and where the template
-    /// says something surprising the safe move is to match the vendor rather than to reason about it.
-    /// <c>isSigned: false</c> is the notable example: Opus decodes to signed PCM, so the field either means
-    /// something other than the obvious or is vestigial. Either way, deviating from a wire-confirmed template is
-    /// the risk, not matching it.
-    /// </para>
-    ///
-    /// <para>
-    /// This was the last vendor key we omitted. It was added separately from the video-side launchSpec fixes
-    /// because audio already worked on the console's defaults, so a regression here had to be attributable to this
-    /// change alone.
+    /// sample — and 480 samples per frame, so <c>maxFrameDataSize</c> 1920 = 480 x 2 x 2). Where the template
+    /// is surprising, match it: <c>isSigned: false</c> is the notable example, since Opus decodes to signed
+    /// PCM, so the field either means something other than the obvious or is vestigial.
     /// </para>
     /// </summary>
     internal const string AudioChannelsJson =
@@ -1595,11 +1550,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// ascending <c>score</c> so the requested resolution is the most preferred.
     ///
     /// <para>
-    /// We used to send exactly one entry at score 10. The vendor client sends the whole ladder, and the reason
-    /// matters: with a single entry the console has nothing to fall back to if it cannot or will not serve that
-    /// resolution, and the field is our only means of expressing an ordered preference. Scores ascend and the
-    /// requested resolution always holds the highest, which is the vendor's own arrangement (1080p at score 4) —
-    /// so offering the lower rungs adds fallbacks without inviting a downgrade.
+    /// The vendor client sends the whole ladder: with a single entry the console has nothing to fall back to if
+    /// it cannot or will not serve that resolution. Scores ascend and the requested resolution always holds the
+    /// highest, which is the vendor's own arrangement (1080p at score 4), so the lower rungs add fallbacks
+    /// without inviting a downgrade.
     /// </para>
     /// </summary>
     internal static string BuildStreamResolutions(int width, int height, int fps)
@@ -1649,10 +1603,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// The control key's inputs from /sess/init's RP-Nonce and the pairing's companion, or null with the reason
     /// the session cannot go on.
     ///
-    /// <para><b>No key, no session.</b> This used to skip key setup when either input was missing and carry
-    /// on to an unauthenticated /sess/ctrl, after which the launchSpec, and the handshakeKey inside it, would
-    /// have gone out unencrypted. The C core and the Rust engine fail the session here, and so does this now
-    /// (engine comparisons, 2026-09-26).</para>
+    /// <para><b>No key, no session.</b> Carrying on without one would send an unauthenticated /sess/ctrl and
+    /// then the launchSpec, and the handshakeKey inside it, unencrypted. The C core and the Rust engine fail
+    /// the session here too (engine comparisons, 2026-09-26).</para>
     /// </summary>
     internal static HalyardControlKeyMaterial? ControlKeyMaterial(
         string? nonceHeader, byte[]? companion, HalyardConsolePlatform platform, out string? problem)
@@ -1720,8 +1673,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             }
 
             // The graceful Takion DISCONNECT the vendor sends at session end (cap48/cap52). Both rest and
-            // no-rest disconnects send it, so it is the polite close, not the rest trigger. We previously just
-            // dropped the socket.
+            // no-rest disconnects send it, so it is the polite close, not the rest trigger.
             if (_takionStream is not null)
             {
                 try

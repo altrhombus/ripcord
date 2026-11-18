@@ -1,22 +1,20 @@
 // The account web sign-in on the Mac: a web view that catches the authorization code out of the redirect.
 // The counterpart of Ripcord.App's AccountSignInDialog (a WebView2 in a ContentDialog).
 //
-// WHY NOT ASWebAuthenticationSession. It is the Mac's own tool for this, and it cannot be used here. It
-// completes by recognising a callback URL, and it accepts two kinds: a custom scheme the app registers, or
-// (macOS 14.4 and later) an https host and path, which it matches only for a domain the app is associated
-// with (an Associated Domains entitlement, confirmed by an apple-app-site-association file the domain itself
-// serves). The flow's redirect is fixed by the client registration to
+// WHY NOT ASWebAuthenticationSession. It completes by recognising a callback URL of two kinds: a custom
+// scheme the app registers, or (macOS 14.4 and later) an https host and path, matched only for a domain the
+// app is associated with (an Associated Domains entitlement, confirmed by an apple-app-site-association file
+// the domain serves). The flow's redirect is fixed by the client registration to
 // https://remoteplay.dl.playstation.net/remoteplay/redirect: a custom scheme would be a different
 // redirect_uri, which the authorize endpoint is expected to refuse for this client ([X]: not tried), and the
-// https host is not ours to associate with. The system session would therefore sign the user in and then sit
-// on Sony's redirect page with nothing to deliver the code to us.
+// https host is not ours to associate with. The system session would sign the user in and then have nothing
+// to deliver the code to us.
 //
-// SO THE CLOSEST NATIVE EQUIVALENT: a WKWebView this process owns, watching each navigation for the
-// redirect, exactly as the Windows dialog watches its WebView2. It is also better placed than that dialog in
-// one respect: its website data store is non-persistent, so every sign-in starts with no cookies (the
-// Windows one cannot get a throwaway profile per control and leans on `prompt=always` alone; this sends that
-// too). The navigation to the redirect is cancelled once matched, so the user never sees the page it lands
-// on and no request is made to it.
+// SO: a WKWebView this process owns, watching each navigation for the redirect, as the Windows dialog
+// watches its WebView2. Its website data store is non-persistent, so every sign-in starts with no cookies
+// (the Windows one cannot get a throwaway profile per control and leans on `prompt=always` alone; this sends
+// that too). The navigation to the redirect is cancelled once matched, so the user never sees the page it
+// lands on and no request is made to it.
 //
 // UNVERIFIED against the live flow: that every hop reaches decidePolicyFor (server redirects included, which
 // is why didReceiveServerRedirect is watched as well), and that the account pages work in a WKWebView

@@ -17,8 +17,7 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 /// seconds and disconnects the whole session if the client does not answer with
 /// <see cref="TypeHeartbeatRep"/> (both empty-payload). Heartbeats carry no payload, so they need no
 /// crypto; only message types that carry a payload are control-plane-encrypted (a later refinement for the
-/// feature/keyboard/login messages). The earlier "RPCS"-magic framing was a documentation error — no such
-/// magic appears on the wire.
+/// feature/keyboard/login messages). No "RPCS" magic appears on the wire.
 /// </summary>
 public readonly struct HalyardCtrlMessage
 {
@@ -51,10 +50,8 @@ public readonly struct HalyardCtrlMessage
     /// <para>
     /// **[C]** by controlled experiment against hardware (2026-09-05): one console, one variable changed, two
     /// outcomes — the right passcode drew <c>0x00</c> and a deliberately wrong one drew
-    /// <see cref="LoginRejected"/>. This byte was previously recorded as opaque and different every time,
-    /// which it is as <em>ciphertext</em>: a stream cipher at a fresh counter gives different bytes for the
-    /// same plaintext by construction, so that was a fact about not being able to decrypt it. Values other
-    /// than these two remain unseen.
+    /// <see cref="LoginRejected"/>. As <em>ciphertext</em> the byte differs every time (a stream cipher at a
+    /// fresh counter), so compare it only after decryption. Values other than these two remain unseen.
     /// </para>
     /// </summary>
     public const byte LoginAccepted = 0x00;

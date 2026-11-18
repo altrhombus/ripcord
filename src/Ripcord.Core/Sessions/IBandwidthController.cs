@@ -6,11 +6,10 @@ namespace Ripcord.Core.Sessions;
 /// One report-window observation of the link.
 ///
 /// <para>
-/// <paramref name="ObservedUnits"/> is deliberately NOT defaulted. A loss <em>ratio</em> without the count it was
-/// computed from is not actionable, and the omission had a visible cost: at connect the first window held about
-/// eight units, so a single lost one read as 12% loss and dropped a perfectly healthy 1080p60 stream a rung before
-/// it had settled. A caller that forgets to supply the count should fail to compile rather than silently
-/// reintroduce that.
+/// <paramref name="ObservedUnits"/> is deliberately NOT defaulted: a loss <em>ratio</em> is not actionable
+/// without the count it was computed from. At connect the first window held about eight units, so a single
+/// lost one read as 12% loss and dropped a healthy 1080p60 stream a rung before it had settled. A caller that
+/// omits the count should fail to compile.
 /// </para>
 /// </summary>
 public sealed record NetworkSample(

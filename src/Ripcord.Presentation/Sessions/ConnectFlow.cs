@@ -55,23 +55,20 @@ public sealed record ConnectPlan(SessionConfig Config, StreamingRoute Route, str
 /// <see langword="null"/> when it cannot — in which case the last stage reported was terminal and says why.
 ///
 /// <para>
-/// <b>Why this is not in the page.</b> It lived in <c>SessionPage.xaml.cs</c> with its stage strings inline
-/// in English, which made the longest-running, most-watched surface in the app the one piece of the session
-/// lifecycle that could not be tested off-device or translated. Nothing here touches a GPU or a native
-/// handle: the one part that does is behind <see cref="IVideoPipelinePreparer"/>.
+/// Portable and testable off-device: nothing here touches a GPU or a native handle, and the one part that
+/// does is behind <see cref="IVideoPipelinePreparer"/>.
 /// </para>
 ///
 /// <para>
 /// <b>Each phase announces itself BEFORE it runs</b>, so when one hangs, the last message on screen names it.
-/// Video device creation especially — it is a plausible place to stall on unfamiliar hardware, and it used to
-/// be indistinguishable from a network problem because the overlay said "Connecting…" throughout.
+/// Video device creation especially: it is a plausible place to stall on unfamiliar hardware, and must not
+/// be indistinguishable from a network problem.
 /// </para>
 ///
 /// <para>
 /// <b>What this deliberately does not do:</b> build the session controller, own the power monitor, or start
 /// the stream. Those need the pipeline, the input stack and a platform power source — devices, all of them —
-/// so the caller does that with the plan this returns. The split is the same one the architecture rules draw:
-/// a device gets a seam, data is passed as a value.
+/// so the caller does that with the plan this returns.
 /// </para>
 /// </summary>
 public sealed class ConnectFlow

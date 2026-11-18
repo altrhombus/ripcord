@@ -22,10 +22,9 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 /// </para>
 ///
 /// <para>
-/// Every combination this protocol has been observed to use is named below, so nothing on the wire is
-/// misread today — but a combination we have not seen would fall through as an unknown type. Modelling the
-/// bits properly is the correct fix; it is deliberately not done here yet, because the flag meanings above
-/// come from one mask test and one branch rather than from a full reading of the codec.
+/// Every combination observed on the wire is named below; one we have not seen falls through as an unknown
+/// type. The bits are deliberately not modelled yet, because the flag meanings above come from one mask test
+/// and one branch rather than from a full reading of the codec.
 /// </para>
 /// </summary>
 public enum HalyardControlChunkType : byte
@@ -86,10 +85,10 @@ public enum HalyardControlChunkType : byte
 /// no wire meaning.
 /// </param>
 /// <param name="Body">
-/// Everything after the header, its port words, and the type and flags bytes. Deliberately not decomposed
-/// further: the layout past that point is type-specific (some chunks carry a sequence, some a sequence and an
-/// acknowledgement, the console's cookie and close carry neither), and pretending otherwise would put a union
-/// in the codec. The channel that speaks the handshake is where that knowledge belongs.
+/// Everything after the header, its port words, and the type and flags bytes. Not decomposed further: the
+/// layout past that point is type-specific (some chunks carry a sequence, some a sequence and an
+/// acknowledgement, the console's cookie and close carry neither) and belongs to the channel that speaks the
+/// handshake.
 /// </param>
 public readonly record struct HalyardControlChunk(
     HalyardControlChunkType Type,
@@ -122,8 +121,8 @@ public readonly record struct HalyardControlChunk(
 /// </code>
 /// <para>
 /// So the two <c>0x244F</c> words that every chunk of this protocol carries are not fixed structure — they are
-/// what a word count of 3 means. A count of 2 carries one port word and a count of 1 none, and both shapes are
-/// well-formed traffic this codec must not choke on even though we have never had to send them.
+/// what a word count of 3 means. A count of 2 carries one port word and a count of 1 none; both are
+/// well-formed traffic this codec must read even though we have never had to send them.
 /// </para>
 ///
 /// <para>
@@ -131,14 +130,12 @@ public readonly record struct HalyardControlChunk(
 /// that value as an immediate is a TCP connect in the registration path. So these are service ports and the
 /// 9303 datagram layer is a tunnel carrying a logical 9295 control stream — which is why the pair is identical
 /// across sessions and directions, and why <c>rgst</c>/<c>init</c>/<c>ctrl</c> are byte-identical on both
-/// transports. Earlier readings had the pair as a per-session connection id and then as a fixed magic; both
-/// are superseded.
+/// transports.
 /// </para>
 ///
 /// <para>
-/// Several chunks may be concatenated in one datagram with no padding, which is not a theoretical case: the
-/// registration POST arrives as a 12-byte acknowledgement followed immediately by a 744-byte data chunk in one
-/// datagram.
+/// Several chunks may be concatenated in one datagram with no padding: the registration POST arrives as a
+/// 12-byte acknowledgement followed immediately by a 744-byte data chunk in one datagram.
 /// </para>
 /// </summary>
 public static class HalyardControlChunkCodec
@@ -160,9 +157,8 @@ public static class HalyardControlChunkCodec
     public const int TypeAndFlagsLength = 2;
 
     /// <summary>
-    /// The largest total chunk length the receiver can express: the length field is <b>11 bits</b>, not the 14
-    /// an earlier reading assumed. A sender must therefore fragment above this; the 744-byte registration POST
-    /// fits comfortably.
+    /// The largest total chunk length the receiver can express: the length field is <b>11 bits</b>. A sender
+    /// must fragment above this; the 744-byte registration POST fits.
     /// </summary>
     public const int MaxChunkLength = 0x7FF;
 
@@ -182,10 +178,8 @@ public static class HalyardControlChunkCodec
     /// Write one chunk. Returns the number of bytes written.
     ///
     /// <para>
-    /// <paramref name="wordCount"/> selects the shape, and this codec can write all three because it can read
-    /// all three — an encoder that only emitted the shape we happen to have captured would make the shorter
-    /// ones untestable against a real console. Every chunk in every capture we hold is
-    /// <see cref="PairedWordCount"/>.
+    /// <paramref name="wordCount"/> selects the shape. All three are writable so the shorter ones can be
+    /// tested against a real console; every chunk in every capture we hold is <see cref="PairedWordCount"/>.
     /// </para>
     /// </summary>
     public static int Write(
@@ -317,9 +311,8 @@ public static class HalyardControlChunkCodec
     /// Read every chunk in one datagram, in order.
     ///
     /// <para>
-    /// Stops at the first malformed chunk and keeps what came before it, because that is the honest reading:
-    /// the chunks already parsed were complete and self-describing, and a caller that discarded them because
-    /// of trailing rubbish would drop a response it had in hand. A datagram whose <em>first</em> chunk is
+    /// Stops at the first malformed chunk and keeps what came before it: those chunks were complete, and
+    /// discarding them would drop a response already in hand. A datagram whose <em>first</em> chunk is
     /// malformed yields nothing. It is also what the vendor's loop does — it breaks out and accounts for what
     /// it managed to read.
     /// </para>

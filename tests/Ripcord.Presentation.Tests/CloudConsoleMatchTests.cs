@@ -24,21 +24,14 @@ public class CloudConsoleMatchTests
     ];
 
     /// <summary>
-    /// A stored console. The host is derived from <paramref name="id"/> rather than fixed, because
-    /// <c>PairedConsoleStore.IsSameConsole</c> treats a shared host as the same physical box — so records
-    /// sharing one would collapse into a single entry on upsert, which is correct behaviour and makes a
-    /// multi-console fixture silently a one-console fixture.
-    /// </summary>
-    /// <summary>
-    /// One host octet per distinct id, assigned in first-seen order.
+    /// One host octet per distinct id, assigned in first-seen order: deterministic and injective.
     ///
     /// <para>
-    /// This used to be <c>id.GetHashCode() &amp; 0x7f</c>, which flaked about one run in forty: .NET randomizes
-    /// string hashing per process, and 0x7f leaves 128 buckets, so two of a test's ids would occasionally land
-    /// on the same host. The store treats a shared host as the same physical console
-    /// (<c>PairedConsoleStore.IsSameConsole</c> matches on <c>Id</c> <em>or</em> <c>Host</c>, so a re-pair after
-    /// a DHCP change still finds its record), and an Upsert would then quietly replace a record the test still
-    /// expected to be there. Deterministic and injective, so it cannot.
+    /// A hash of the id is neither. .NET randomizes string hashing per process, so
+    /// <c>id.GetHashCode() &amp; 0x7f</c> put two of a test's ids on the same host about one run in forty.
+    /// The store treats a shared host as the same physical console (<c>PairedConsoleStore.IsSameConsole</c>
+    /// matches on <c>Id</c> <em>or</em> <c>Host</c>, so a re-pair after a DHCP change still finds its record),
+    /// and an Upsert would then quietly replace a record the test still expected to be there.
     /// </para>
     /// </summary>
     private static readonly Dictionary<string, int> HostOctets = new(StringComparer.Ordinal);
@@ -57,6 +50,12 @@ public class CloudConsoleMatchTests
         }
     }
 
+    /// <summary>
+    /// A stored console. The host is derived from <paramref name="id"/> rather than fixed, because
+    /// <c>PairedConsoleStore.IsSameConsole</c> treats a shared host as the same physical box — so records
+    /// sharing one would collapse into a single entry on upsert, which is correct behaviour and makes a
+    /// multi-console fixture silently a one-console fixture.
+    /// </summary>
     private static PairedConsole Stored(
         string id, string? reportedName, string? cloudDeviceId = null, string? nickname = null)
         => new(id, "PlayStation 5", $"10.0.0.{HostOctetFor(id)}", "PS5", "blob")

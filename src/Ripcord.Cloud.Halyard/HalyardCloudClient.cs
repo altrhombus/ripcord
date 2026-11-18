@@ -94,20 +94,16 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     {
         // initialParams is itself a JSON *string* inside the command body. Fields and order match a captured
         // vendor command exactly (cap64, re-confirmed against cap96/cap97/cap107): accountId, roomId,
-        // sessionId, clientType, data1, data2 — and nothing else. An earlier version also sent
-        // supportCmd/protocolVer/data3, which no capture shows here; those belong to the direct handshake, and
-        // the three later captures settle it. seeds.Data3 is unused (the command carries only two).
+        // sessionId, clientType, data1, data2 — and nothing else. No capture shows supportCmd/protocolVer/data3
+        // here; those belong to the direct handshake. seeds.Data3 is unused (the command carries only two).
         //
         // Composed by hand rather than serialized from an anonymous type, for one reason that is wire-visible:
         // **accountId is a JSON number, not a string.** Every capture shows a bare 19-digit integer, and a C#
-        // `string accountId` serializes as a quoted one — a console that numerically parses this field sees a
-        // type it did not expect, which is a candidate for the console accepting the command's wake and then
-        // not joining the session. The comma spacing matches the captures too; that part is cosmetic, but it
-        // costs nothing to be byte-faithful where we can be.
+        // `string accountId` serializes as a quoted one — a candidate for the console accepting the command's
+        // wake and then not joining the session. The comma spacing matches the captures too (cosmetic).
         //
         // Each string is escaped through the serializer rather than interpolated raw, so a value containing a
-        // quote cannot break the document. accountId falls back to a quoted form if it is somehow not numeric,
-        // because a malformed number would be worse than the string we sent before.
+        // quote cannot break the document. accountId falls back to a quoted form if it is not numeric.
         string accountIdJson = ulong.TryParse(accountId, out ulong numericAccountId)
             ? numericAccountId.ToString(CultureInfo.InvariantCulture)
             : JsonSerializer.Serialize(accountId, HalyardCloudJsonContext.Default.String);
@@ -188,10 +184,9 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     ///
     /// <para>
     /// <paramref name="sid"/> and <paramref name="reqId"/> are the caller's because a session offers more than
-    /// one connection and each needs its own identity. They were fixed at 1 while only the control connection
-    /// existed, which was invisible until the A/V leg was added: both offers then claimed stream 1, the console
-    /// took our id for that leg from this message, and the second connection collided with the first. It
-    /// preludes fine and is never served. The captured client numbers them 1 and 2, with reqIds 1 and 3.
+    /// one connection and each needs its own identity. The console takes our id for a leg from this message, so
+    /// two offers both claiming stream 1 collide: the second connection preludes fine and is never served. The
+    /// captured client numbers them 1 and 2, with reqIds 1 and 3.
     /// </para>
     /// </summary>
     public async Task SendOfferAsync(
@@ -224,11 +219,10 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
                 DefaultRouteMacAddr: string.Empty,
                 LocalPeerAddr: new PeerAddress(accountId, "REMOTE_PLAY"),
 
-                // Sent when the caller supplies one, empty otherwise — which is how this shipped while the
-                // field had no job. It has one now: the 9303 control prelude names both peers by the ids they
-                // published here, so a client that omits it announces a transport peer the console never heard
-                // of. The vendor's own derivation is still [X] (see HalyardLocalHashedId); what matters on the
-                // wire is that this value and the prelude's agree.
+                // Sent when the caller supplies one, empty otherwise. The 9303 control prelude names both peers
+                // by the ids they published here, so a client that omits it announces a transport peer the
+                // console never heard of. The vendor's own derivation is still [X] (see HalyardLocalHashedId);
+                // what matters on the wire is that this value and the prelude's agree.
                 LocalHashedId: localHashedId.IsEmpty ? string.Empty : Convert.ToBase64String(localHashedId.Span)));
         string offerBody = JsonSerializer.Serialize(offer, HalyardCloudJsonContext.Default.OfferBody);
 

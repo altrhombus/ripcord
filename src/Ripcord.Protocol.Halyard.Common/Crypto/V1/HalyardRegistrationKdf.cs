@@ -123,7 +123,7 @@ public sealed class HalyardRegistrationKdf
     /// <c>0x2b</c> rather than <c>0x2d</c>. Those are not interchangeable — applying the PIN transform here
     /// produces a material the console will not agree with, which corrupts the field IV, which corrupts
     /// exactly the first 16 bytes of the encrypted field, which is where <c>Client-Type: </c> sits. The
-    /// console then answers <c>403 / 80108b09</c>. That was the account route's last blocker.
+    /// console then answers <c>403 / 80108b09</c>.
     /// </para>
     ///
     /// <para>

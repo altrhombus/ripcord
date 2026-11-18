@@ -10,27 +10,23 @@ namespace Ripcord_App.Services;
 /// The one place that decides how much visual effect the app is allowed.
 ///
 /// <para>
-/// Sibling to <see cref="AppMotion"/>, and it exists for the same reason: Windows already knows what this user
-/// wants, and nothing in Ripcord was asking. Two settings went unread entirely — transparency effects
-/// (Settings → Personalisation → Colours) and high contrast — which meant the app looked the same to someone
-/// who had explicitly asked Windows for less.
+/// Sibling to <see cref="AppMotion"/>: it reads the two Windows settings that say a user wants less —
+/// transparency effects (Settings → Personalisation → Colours) and high contrast.
 /// </para>
 ///
 /// <para>
-/// <b>These are not preferences to weigh against a design.</b> High contrast in particular is not a theme: it
-/// is a contract that no colour outside the system palette will appear, because a user may have chosen it to
-/// make the screen legible at all. Ripcord's vendor accents are decorative by their own definition — the marks
-/// and washes carry no meaning colour is the sole bearer of — so in high contrast they go to zero rather than
-/// being adjusted.
+/// <b>These are not preferences to weigh against a design.</b> High contrast is not a theme: it is a contract
+/// that no colour outside the system palette will appear, because a user may have chosen it to make the
+/// screen legible at all. Ripcord's vendor accents are decorative — the marks and washes carry no meaning
+/// colour is the sole bearer of — so in high contrast they go to zero rather than being adjusted.
 /// </para>
 ///
 /// <para>
-/// <b>High contrast is read through Win32, not <c>AccessibilitySettings</c>.</b> That WinRT type is the
-/// documented answer and it is the wrong one here: subscribing to its <c>HighContrastChanged</c> throws
-/// <c>0x80070490</c> in a WinUI 3 desktop app, because the event needs a <c>CoreWindow</c> and a desktop app
-/// has none. It took the process down on launch. <c>SystemParametersInfo</c> has no such dependency, and
-/// <see cref="UISettings.ColorValuesChanged"/> — which does work here — fires when high contrast is toggled,
-/// so the notification still arrives.
+/// <b>High contrast is read through Win32, not <c>AccessibilitySettings</c>.</b> Subscribing to that WinRT
+/// type's <c>HighContrastChanged</c> throws <c>0x80070490</c> in a WinUI 3 desktop app, because the event
+/// needs a <c>CoreWindow</c> and a desktop app has none; it took the process down on launch.
+/// <c>SystemParametersInfo</c> has no such dependency, and <see cref="UISettings.ColorValuesChanged"/> —
+/// which does work here — fires when high contrast is toggled, so the notification still arrives.
 /// </para>
 /// </summary>
 internal static class AppEffects

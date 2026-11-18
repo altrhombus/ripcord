@@ -4,11 +4,10 @@ namespace Ripcord.Presentation.Sessions;
 /// Read-only access to whatever is decoding and presenting video.
 ///
 /// <para>
-/// The seam exists because the decode pipeline is the one thing in the session surface that is irreducibly a
-/// device: D3D12, a native swap chain, an adapter LUID. None of that can cross into the portable layer, but
-/// almost everything the diagnostics overlay <em>says</em> about it is arithmetic and string formatting over
-/// numbers — including the sampling-interval rule that stops a delayed timer tick reporting 1610 fps, which is
-/// exactly the sort of thing that should be tested rather than observed in the wild.
+/// The decode pipeline is a device: D3D12, a native swap chain, an adapter LUID, none of which can cross into
+/// the portable layer. What the diagnostics overlay <em>says</em> about it is arithmetic and string formatting
+/// over numbers, and is tested here — including the sampling-interval rule that stops a delayed timer tick
+/// reporting 1610 fps.
 /// </para>
 ///
 /// <para>

@@ -12,19 +12,16 @@ namespace Ripcord_App.Input;
 /// position.
 ///
 /// <para>
-/// <b>The specific failure this exists for.</b> The discovery list inserts sorted: consoles of the family the
-/// user picked go above the rest. Consoles answer a broadcast whenever they feel like it, so one can arrive
-/// seconds in and insert <em>above</em> whatever the user is currently sitting on. A list keeps focus on the
-/// realized container, and the container at that position is now showing a different console — so the caret
-/// silently slid onto a neighbour. Pressing Select then pairs with a console the user was not looking at,
-/// which is about the worst outcome available on this page.
+/// The discovery list inserts sorted: consoles of the family the user picked go above the rest. A console can
+/// answer a broadcast seconds in and insert <em>above</em> whatever the user is sitting on. A list keeps focus
+/// on the realized container, and the container at that position is now showing a different console, so
+/// pressing Select would pair with a console the user was not looking at.
 /// </para>
 ///
 /// <para>
-/// <b>The rule, in two halves, and the second half matters as much as the first.</b> Re-focus the container of
-/// the item that had focus — never the index. And <b>never move focus onto a newly arrived item</b>: a result
-/// landing under the user's thumb must not steal the press. Together they mean an arrival can change the list
-/// around the user without ever changing what they are pointing at.
+/// <b>The rule has two halves.</b> Re-focus the container of the item that had focus — never the index. And
+/// <b>never move focus onto a newly arrived item</b>: a result landing under the user's thumb must not steal
+/// the press.
 /// </para>
 ///
 /// <para>

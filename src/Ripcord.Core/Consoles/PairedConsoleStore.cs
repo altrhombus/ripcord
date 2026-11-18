@@ -10,17 +10,14 @@ namespace Ripcord.Core.Consoles;
 /// blob encrypted at rest via <see cref="ICredentialProtector"/> (DPAPI on Windows).
 ///
 /// <para>
-/// Two things changed here beyond encryption. Writes are atomic (temp file + move) so a crash or a full disk
-/// cannot leave a truncated file that loses every pairing; and the location comes from
-/// <see cref="IPlatformPaths"/> rather than a hardcoded <c>%LocalAppData%</c>.
+/// Writes are atomic (temp file + move) so a crash or a full disk cannot leave a truncated file that loses
+/// every pairing. The location comes from <see cref="IPlatformPaths"/>, never a hardcoded path.
 /// </para>
 ///
 /// <para>
-/// Lives in Ripcord.Core rather than in the app, and is public rather than internal, because three unrelated
-/// callers need it: the WinUI app, a future native front end for another OS, and <c>Ripcord.ProtocolLab</c> —
-/// which is a plain net10.0 console tool and should not have to reference a presentation assembly just to read
-/// the console list. It is the structural twin of <see cref="Settings.SettingsStore"/> next door, down to the
-/// temp-file write and the fall-back-rather-than-throw read.
+/// In Ripcord.Core and public because the WinUI app, any other front end and <c>Ripcord.ProtocolLab</c> (a
+/// plain net10.0 console tool) all need it without referencing a presentation assembly. The structural twin
+/// of <see cref="Settings.SettingsStore"/>: temp-file write, and a read that falls back rather than throws.
 /// </para>
 /// </summary>
 public sealed partial class PairedConsoleStore : IPairedConsoleStore

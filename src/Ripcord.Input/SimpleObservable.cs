@@ -10,9 +10,8 @@ namespace Ripcord.Input;
 ///
 /// <para>
 /// Needed for STATE streams, as opposed to event streams. Controller connection events are edge-triggered and the
-/// sources begin polling in their constructors, so a pad already attached at start-up was announced before anything
-/// had subscribed — and never announced again. The visible result was a working controller reported as "none
-/// attached", which only reproduced on a machine whose pad is present from boot rather than plugged in afterwards.
+/// sources begin polling in their constructors, so a pad already attached at start-up is announced before
+/// anything has subscribed, and never again; without replay a working controller was reported as "none attached".
 /// Frame streams deliberately do NOT replay: a stale input frame is worse than no frame.
 /// </para>
 /// </param>

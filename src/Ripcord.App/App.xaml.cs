@@ -63,12 +63,9 @@ public partial class App : Application
     /// What the command line asked for, parsed once at startup.
     ///
     /// <para>
-    /// The point of it is that the fastest path to a game stops being "launch, home, press A" and becomes no
-    /// presses at all. The audience for this app does not launch things from a Start menu - they launch from
-    /// a handheld's game launcher, from Steam Big Picture, from a pinned icon, from a controller - and none
-    /// of those could express "play on the living room PS5" while the executable took no argument saying so.
-    /// One argument unlocks every one of those entry points at once, including the ones nobody has thought
-    /// of, and it works from the zip as well as from a package.
+    /// One argument lets a handheld's game launcher, Steam Big Picture, a pinned icon or a controller express
+    /// "play on the living room PS5" with no presses in the app, and it works from the zip as well as from a
+    /// package.
     /// </para>
     /// </summary>
     public static LaunchIntent Launch { get; private set; } = LaunchIntent.Shell;
@@ -130,10 +127,10 @@ public partial class App : Application
 
     /// <summary>
     /// A settings row puts its control beside its text until the row is narrower than a threshold, then stacks
-    /// it underneath. The threshold is a width, and Windows' text size is not part of it: at 225% text the row is
-    /// as wide as ever, so it never stacked, and the long drop-downs crushed their row's text into a column one
-    /// word wide ("Optio / ns", visual audit 2026-10-08). Scaling the threshold with the text makes a row stack
-    /// once its words stop fitting, whatever made them stop.
+    /// it underneath. The threshold is a width, and Windows' text size is not part of it: at 225% text the row
+    /// never stacked, and the long drop-downs crushed their row's text into a column one word wide ("Optio /
+    /// ns", visual audit 2026-10-08). Scaling the threshold with the text makes a row stack once its words stop
+    /// fitting.
     ///
     /// <para>
     /// The base widths are ours, set where a row at 100% text stops fitting. Read once at start-up, so a text-size

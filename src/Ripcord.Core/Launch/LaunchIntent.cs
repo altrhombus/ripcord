@@ -30,17 +30,14 @@ public readonly record struct LaunchIntent(LaunchAction Action, string? Target)
     /// Parse the arguments the shell handed us.
     ///
     /// <para>
-    /// <b>Why this is in Core and not in the app.</b> It is pure string work, and the alternative is a rule
-    /// about how people launch the app that can only be exercised by launching the app — which is how a
-    /// feature whose entire purpose is unattended startup ends up untested. Everything here is decided
-    /// without a window, a console, or a network.
+    /// In Core rather than the app because it is pure string work: everything here is decided without a
+    /// window, a console, or a network, so unattended startup can be tested without launching the app.
     /// </para>
     ///
     /// <para>
-    /// <b>An unrecognised argument opens the shell rather than failing.</b> These arrive from shortcuts,
-    /// launchers and jump lists that the app did not write and cannot fix, often long after whatever wrote
-    /// them was configured. A typo in a Steam shortcut should cost a player one extra press, not an error
-    /// dialog in front of a game they were trying to start.
+    /// <b>An unrecognised argument opens the shell rather than failing.</b> Arguments arrive from shortcuts,
+    /// launchers and jump lists that the app did not write and cannot fix; a typo in one should cost a
+    /// player one extra press, not an error dialog.
     /// </para>
     /// </summary>
     /// <param name="args">The arguments, excluding the executable path.</param>

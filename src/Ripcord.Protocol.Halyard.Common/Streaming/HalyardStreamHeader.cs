@@ -30,9 +30,8 @@ public readonly struct HalyardStreamHeader
 
     // There is deliberately no TypeFec. A raw byte-0 of 0x12 is often described as "the FEC type", but 0x12 is
     // low-nibble 2 (video) with bit 4 (extended header) set — and since Type is masked to the low nibble, a
-    // `Type == 0x12` comparison is unconditionally false. A `TypeFec = 0x12` constant did sit here unused,
-    // which is a silently-always-false check waiting to be written. Parity units are not a packet type at all:
-    // they are video packets whose unit index falls at or above SourceUnits. Use IsParityUnit.
+    // `Type == 0x12` comparison is unconditionally false. Parity units are not a packet type at all: they are
+    // video packets whose unit index falls at or above SourceUnits. Use IsParityUnit.
 
     public const int TagOffset = 10;
     public const int KeystreamOffsetAt = 14;
@@ -98,8 +97,7 @@ public readonly struct HalyardStreamHeader
         ushort frameIndex = BinaryPrimitives.ReadUInt16BigEndian(packet[3..]);
         // The bytes-5..8 packed field is laid out differently for video and audio. Video packs three
         // 11/11/10-bit fields; audio packs byte-wide fields (unit_index in the top byte, total_units-1 in the
-        // next). Parsing audio with the video layout yields nonsense unit counts (e.g. 137), which is why the
-        // audio unit structure went unnoticed until now.
+        // next). Parsing audio with the video layout yields nonsense unit counts (e.g. 137).
         uint packed = BinaryPrimitives.ReadUInt32BigEndian(packet[5..]);
         int unitIndex, totalUnits, parityUnits;
         if (type == TypeVideo)

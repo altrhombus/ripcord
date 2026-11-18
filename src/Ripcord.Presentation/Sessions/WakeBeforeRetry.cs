@@ -8,12 +8,10 @@ using Ripcord.Presentation.Resources;
 /// The session factory a reconnect uses: every open after the first asks the console to wake first.
 ///
 /// <para>
-/// <b>Why.</b> <see cref="ConnectFlow"/> checks the console's power state once, before the first attempt, and the
-/// controller's retries only ever reopened the session. A console going into rest as the connect began (the one
-/// the last session asked to rest, still on its way down) answered discovery as awake, dropped the first attempt,
-/// and refused every retry after it: six "connection refused" in a row, then "Couldn't connect", while backing
-/// out and connecting again found it resting and woke it (2026-10-02). Asking before each retry is what the second
-/// connect did, inside the first one.
+/// <b>Why.</b> <see cref="ConnectFlow"/> checks the console's power state once, before the first attempt. A
+/// console going into rest as the connect began answered discovery as awake, dropped the first attempt, and
+/// refused every retry after it: six "connection refused" in a row, then "Couldn't connect" (2026-10-02).
+/// Asking before each retry finds it resting and wakes it.
 /// </para>
 ///
 /// <para>

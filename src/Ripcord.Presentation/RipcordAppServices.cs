@@ -16,29 +16,25 @@ namespace Ripcord.Presentation;
 /// The application's object graph, built once at startup.
 ///
 /// <para>
-/// Before this existed, each surface constructed what it needed: three separate <c>SettingsStore</c>s, three
-/// separate <c>PairedConsoleStore</c>s, and a scattering of <c>DefaultPlatformPaths</c>. That is not merely
-/// duplication — two stores over one file is a coherence question nobody had answered, and a page could not be
-/// pointed at a substitute for testing because it named its collaborator directly.
+/// One graph so there is one <c>SettingsStore</c> and one <c>PairedConsoleStore</c> over each file, and so a
+/// surface can be pointed at a substitute for testing instead of naming its collaborator directly.
 /// </para>
 ///
 /// <para>
 /// <b>Hand-rolled, and no container.</b> The graph is a handful of singletons and a handful of factories,
-/// eagerly built, with no scopes and no lifetimes. <c>Microsoft.Extensions.DependencyInjection</c> would buy
-/// reflection activation — which works against this repo's committed source-gen-JSON/trimming direction, and is
-/// the first thing that has to come out of a NativeAOT shared library for a future non-.NET front end — and,
-/// more expensively, an <c>IServiceProvider</c> within reach, which becomes service location at the first
-/// awkward call site. What is here instead is a typed record of seams: there is no <c>Resolve&lt;T&gt;()</c>,
-/// so nothing can ask for something the graph does not declare.
+/// eagerly built, with no scopes and no lifetimes. <c>Microsoft.Extensions.DependencyInjection</c> would bring
+/// reflection activation, which works against this repo's source-gen-JSON/trimming direction and a NativeAOT
+/// shared library, and an <c>IServiceProvider</c> within reach, which becomes service location. This is a typed
+/// record of seams: there is no <c>Resolve&lt;T&gt;()</c>, so nothing can ask for something the graph does not
+/// declare.
 /// </para>
 ///
 /// <para>
 /// <b>Why it is reachable statically from a front end.</b> A page navigated to by type must have a parameterless
-/// constructor, so a surface has to be able to find the graph rather than be handed it. The property that keeps
-/// this from being a service locator is that the graph is a fixed set of named, typed members — a surface takes
-/// what it needs in its constructor and holds that, rather than keeping the graph around to query later.
-/// <see cref="Shell"/> is the one thing read at its point of use instead, because it is attached after the graph
-/// is built and so cannot be captured in a constructor that may run first.
+/// constructor, so a surface has to find the graph rather than be handed it. It is not a service locator
+/// because a surface takes what it needs in its constructor and holds that, rather than keeping the graph
+/// around to query later. <see cref="Shell"/> is the one thing read at its point of use instead, because it is
+/// attached after the graph is built and so cannot be captured in a constructor that may run first.
 /// </para>
 /// </summary>
 public sealed class RipcordAppServices

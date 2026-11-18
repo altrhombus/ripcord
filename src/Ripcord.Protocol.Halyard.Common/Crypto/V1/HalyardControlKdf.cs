@@ -20,10 +20,9 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 ///
 /// <para>
 /// <b>Role note:</b> the AES key is the companion-derived value and the IV material is the nonce-derived
-/// value — not the other way round. An earlier revision had these two swapped; it passed the
-/// primitive-level field-cipher tests (which feed key/material in directly) but produced garbage on a
-/// real session, where the key/material come from this derivation. The <see cref="LiveControlVectorTests"/>
-/// end-to-end vector guards against regressing that.
+/// value — not the other way round. Swapped, it still passes the primitive-level field-cipher tests (which
+/// feed key/material in directly) but produces garbage on a real session, where the key/material come from
+/// this derivation. The <see cref="LiveControlVectorTests"/> end-to-end vector guards against that.
 /// </para>
 ///
 /// The console negotiates among several KDF variants: the dispatcher branches first on a protocol/version

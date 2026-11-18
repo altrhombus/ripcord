@@ -7,10 +7,9 @@ using Ripcord.Core.Sessions;
 ///
 /// <para>
 /// <b>Why a gate and not just the verdict.</b> <see cref="StreamHealthAssessor"/> answers "how is the stream
-/// right now", twice a second, and it is right to be that twitchy — the diagnostics panel wants the live
-/// value. But rung 1 of the HUD is the opposite thing: a single line that appears over the game unbidden. A
-/// banner driven straight from the verdict would flash on every two-second wobble, and a notice that cries
-/// wolf is worse than no notice, because the one time it matters the player has already learned to ignore it.
+/// right now", twice a second, which is what the diagnostics panel wants. Rung 1 of the HUD is a single line
+/// that appears over the game unbidden; driven straight from the verdict it would flash on every two-second
+/// wobble, and a player learns to ignore a notice that does.
 /// </para>
 ///
 /// <para>
@@ -19,10 +18,9 @@ using Ripcord.Core.Sessions;
 /// <list type="bullet">
 ///   <item><b>Critical rises faster than Warning.</b> "The stream has stopped" should not sit behind a
 ///   five-second wait — and the assessor has already applied its own two-second stall grace before it says
-///   so, so any delay here is additive to one the player has already spent staring at a frozen picture.</item>
+///   so, so any delay here is additive to that.</item>
 ///   <item><b>Clearing is slower than either rise.</b> That relationship is the anti-strobe invariant: if it
-///   cleared faster than it raised, a stream flapping across a threshold would blink the banner on and off.
-///   Settling into "shown" is the correct failure, because the stream genuinely is unwell.</item>
+///   cleared faster than it raised, a stream flapping across a threshold would blink the banner on and off.</item>
 /// </list>
 ///
 /// <para>

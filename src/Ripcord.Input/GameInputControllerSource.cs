@@ -8,17 +8,17 @@ namespace Ripcord.Input;
 /// them as one neutral ControllerStateFrame per poll, standard gamepad button layout.
 ///
 /// <para>
-/// <b>Every pad is read from its own device.</b> The reader used to call
-/// <c>GetCurrentReading(GameInputKindGamepad, nullptr, …)</c>, and <c>nullptr</c> asks for the most recent reading
-/// from ANY gamepad. With a DualSense attached — which GameInput also enumerates, and which reports continuously
-/// over Bluetooth — an Xbox pad was starved completely: not one of its presses arrived (measured 2026-08-06), and
-/// it had to be re-plugged before readings resumed even after the DualSense went. The reader now tracks devices as
-/// they connect and reads each one by name, and <see cref="GamepadSet"/> merges them.
+/// <b>Every pad is read from its own device.</b> <c>GetCurrentReading(GameInputKindGamepad, nullptr, …)</c>
+/// asks for the most recent reading from ANY gamepad. With a DualSense attached — which GameInput also
+/// enumerates, and which reports continuously over Bluetooth — that starved an Xbox pad completely: not one of
+/// its presses arrived (measured 2026-08-06), and it had to be re-plugged before readings resumed even after the
+/// DualSense went. The reader tracks devices as they connect and reads each one by name, and
+/// <see cref="GamepadSet"/> merges them.
 /// </para>
 ///
 /// <para>
-/// A DualSense therefore reaches the composite twice, through this engine and through raw HID. That was already
-/// true of the old read whenever the DualSense won it, and the composite's merge makes it a no-op.
+/// A DualSense therefore reaches the composite twice, through this engine and through raw HID; the composite's
+/// merge makes that a no-op.
 /// </para>
 /// </summary>
 public sealed class GameInputControllerSource : IControllerSource, IDisposable

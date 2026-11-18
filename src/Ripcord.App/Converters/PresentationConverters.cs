@@ -12,17 +12,14 @@ namespace Ripcord_App.Converters;
 /// Visibility, glyph → which icon.
 ///
 /// <para>
-/// This is the price of the portable layer holding no UI types, and it is a price worth paying: the decision
-/// about what a state <em>means</em> now lives somewhere a test can reach, while the decision about what it
-/// <em>looks like</em> stays in the front end where a designer would look for it. Before, both lived in one
-/// property and neither could be changed without the other.
+/// The portable layer holds no UI types: what a state <em>means</em> is decided there, where a test can reach
+/// it, and what it <em>looks like</em> is decided here.
 /// </para>
 ///
 /// <para>
 /// Every brush here is resolved by <c>ThemeResource</c> key rather than as a literal, and resolved defensively:
 /// a missing key returns a transparent brush rather than throwing, because a card is far better rendered with
-/// one wrong colour than not rendered at all. That is the same lesson the diagnostics overlay's health dot
-/// already learned.
+/// one wrong colour than not rendered at all.
 /// </para>
 /// </summary>
 internal static class ThemeBrush
@@ -138,10 +135,9 @@ public sealed partial class ActionGlyphIsConverter : IValueConverter
 /// Inverts a bool, for the bindings whose natural reading is the negative of the state's.
 ///
 /// <para>
-/// This exists where a <em>wash</em> converter used to: one accent tint at 0.10 and 0.22 opacity served as
-/// both the hover and the focus appearance of a console card. It was deleted rather than retuned, because a
-/// tint delta on a gradient that fades out at 90% is not legible on a real screen, high contrast suppressed
-/// it to zero, and one shared visual left a pad user unable to tell where focus was. Hover and focus are now
+/// A <em>wash</em> converter used to sit here: one accent tint at 0.10 and 0.22 opacity served as both the
+/// hover and the focus appearance of a console card. The tint delta was not legible on a real screen, high
+/// contrast suppressed it to zero, and a pad user could not tell where focus was. Hover and focus are now
 /// different kinds of mark - a wash, and a ring drawn outside the card. Do not reintroduce a single
 /// "highlighted" appearance shared by both.
 /// </para>
@@ -185,16 +181,14 @@ public sealed partial class ReachableOpacityConverter : IValueConverter
 ///
 /// <para>
 /// One converter with a <c>ConverterParameter</c> rather than five converters, because these are five answers
-/// to one question and splitting them invites the fifth being added in only four places. The parameter names
-/// which answer is wanted: <c>Wedge</c>, <c>Margin</c>, <c>NameStyle</c>, <c>ActionLabel</c>, <c>OneLine</c>.
+/// to one question. The parameter names which answer is wanted: <c>Wedge</c>, <c>Margin</c>,
+/// <c>NameStyle</c>, <c>ActionLabel</c>, <c>OneLine</c>.
 /// </para>
 ///
 /// <para>
-/// <b>This is the mechanism that replaced a second copy of the card.</b> The hero was its own markup and its
-/// own <c>RenderHero()</c>, and the two drifted three ways in one release — the hero could not show the
-/// "checking" spinner, its overflow button was under the touch minimum, and a change made to one was
-/// routinely not made to the other. One template whose parts vary is the shape that cannot drift; three
-/// <c>DataTemplate</c>s chosen by a selector would be the old problem with a new spelling.
+/// This is what lets the hero and the grid card be one template whose parts vary. As separate markup the two
+/// drifted (the hero could not show the "checking" spinner, and its overflow button was under the touch
+/// minimum); three <c>DataTemplate</c>s chosen by a selector would drift the same way.
 /// </para>
 /// </summary>
 /// <summary>

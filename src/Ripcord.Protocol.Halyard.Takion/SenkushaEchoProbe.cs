@@ -30,24 +30,21 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// </list>
 ///
 /// <para>
-/// That timestamp is the reason this is implementable at all. Because the console returns the packet unchanged, the
-/// field can only be the CLIENT's own send time, read back to compute a round trip — it is not a checksum over the
-/// payload. Had it been a checksum, generating a valid ping would have required reversing it; as a client-local
-/// timestamp we are free to write our own. RTT is still measured with a monotonic stopwatch rather than by reading
-/// the echoed field, because the wall clock can step and the stopwatch cannot.
+/// Because the console returns the packet unchanged, the timestamp can only be the CLIENT's own send time, read
+/// back to compute a round trip — it is not a checksum over the payload, so we are free to write our own. RTT is
+/// still measured with a monotonic stopwatch rather than by reading the echoed field, because the wall clock can
+/// step and the stopwatch cannot.
 /// </para>
 /// </summary>
 internal static class SenkushaEchoProbe
 {
     /// <summary>
-    /// Payload size the vendor uses for the RTT pings. Three different numbers describe the same packet and
-    /// it is worth keeping them straight, because an earlier version of this comment attached the wrong label
-    /// to the wrong one: <b>548</b> payload, <b>556</b> UDP datagram (548 + 8), <b>576</b> IP datagram
+    /// Payload size the vendor uses for the RTT pings. Three numbers describe the same packet: <b>548</b>
+    /// payload, <b>556</b> UDP datagram (548 + 8), <b>576</b> IP datagram
     /// (548 + <see cref="IpAndUdpOverhead"/>).
     ///
     /// <para><b>576</b> is the classic figure — RFC 791's minimum reassembly buffer, and the reason a probe
-    /// that must survive any path picks this size. It denotes the whole IP datagram, so it is 576 that carries
-    /// the meaning, not the 556 previously labelled with it. Consistent with
+    /// that must survive any path picks this size. It denotes the whole IP datagram (not 556). Consistent with
     /// <c>LinkMetrics.MinimumMtu</c> and with this file's own rule that an <c>mtuReq</c> denotes the whole IP
     /// datagram: 548 + 28 = 576, i.e. these pings are an <c>mtuReq</c> of exactly the classic minimum.</para>
     /// </summary>
@@ -73,9 +70,8 @@ internal static class SenkushaEchoProbe
     /// <para>
     /// Observed identically in two independent captures (session8 frame 187 and cap47), and it is NOT zero — unlike
     /// the RTT ping, whose tail is all zero in both. That asymmetry looks deliberate: a zero-filled payload is
-    /// trivially compressible, so any link performing compression could carry it in fewer bytes than requested and
-    /// an MTU test measured that way would pass at a size the path cannot actually deliver. Incompressible padding
-    /// makes the datagram genuinely the size it claims.
+    /// compressible, so a link performing compression could pass an MTU test at a size the path cannot actually
+    /// deliver.
     /// </para>
     /// </summary>
     public const byte MtuPaddingByte = 0x47;

@@ -71,11 +71,8 @@ public enum ActionGlyph
 /// Everything a console card shows, as one immutable value.
 ///
 /// <para>
-/// Recomposed whole rather than patched property by property. The hand-rolled view-model this replaces raised
-/// eleven property names from a single setter, with a comment warning that "missing one of these leaves a card
-/// reading 'Offline' above a 'Connect' button", plus a second cascade of seven for a record swap. A record
-/// cannot be half-updated, so that entire failure mode is gone by construction rather than by remembering to
-/// extend a list.
+/// Recomposed whole rather than patched property by property: a record cannot be half-updated, so a card
+/// cannot read "Offline" above a "Connect" button because one notification was missed.
 /// </para>
 ///
 /// <para>

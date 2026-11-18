@@ -6,10 +6,8 @@ namespace Ripcord_App;
 /// A page's opinion about what should hold focus when it opens.
 ///
 /// <para>
-/// Retiring the navigation pane was partly about the first press: with a pad in hand, the first focus stop
-/// used to be a column of app furniture, so reaching a console meant travelling out of the chrome first.
-/// Removing the pane only moves that stop to whatever happens to be first in tree order — which on the console
-/// list is the "Add console" button in the header. Better, but still not the thing the player came for.
+/// Without one, the first focus stop is whatever happens to be first in tree order — which on the console
+/// list is the "Add console" button in the header, not the console the player came for.
 /// </para>
 ///
 /// <para>

@@ -12,23 +12,21 @@ namespace Ripcord_App.Input;
 ///
 /// <para>
 /// The portable arbiter only needs <see cref="IInputScope.Kind"/> and the two edges. What a WinUI surface adds
-/// is what to do on them — a stream stops forwarding and releases held buttons, a page re-seeds focus. Passing
-/// those as callbacks rather than subclassing keeps the claim a value the surface owns, so pushing and popping
-/// stay ordinary lifecycle statements next to the rest of its set-up.
+/// is what to do on them — a stream stops forwarding and releases held buttons, a page re-seeds focus. They
+/// are callbacks rather than subclass overrides, so the claim stays a value the surface owns.
 /// </para>
 ///
 /// <para>
 /// <b>Focus is remembered across a covering scope</b>, which is why <paramref name="focusRoot"/> exists. Open a
-/// dialog over a page and close it again and WinUI restores nothing — the caret came back at the top of the
-/// page, or nowhere, and the user had to walk back to where they were. Since the stack already knows the exact
-/// moments a surface stops and starts owning the pad, those are the right edges to save and restore on, and
-/// doing it here means every surface gets it without writing any of it.
+/// dialog over a page and close it again and WinUI restores nothing: the caret comes back at the top of the
+/// page, or nowhere. The stack knows the exact moments a surface stops and starts owning the pad, so focus is
+/// saved and restored on those edges, for every surface.
 /// </para>
 ///
 /// <para>
 /// Restoring takes precedence over <paramref name="onActivated"/>, and that ordering is the contract: a scope's
 /// activation callback is what to do when there is <em>nothing to come back to</em>. Otherwise the two would
-/// race on every dialog dismissal, with the seed usually winning and the restore looking like it never worked.
+/// race on every dialog dismissal, with the seed usually winning.
 /// </para>
 /// </summary>
 public sealed class ShellInputScope(

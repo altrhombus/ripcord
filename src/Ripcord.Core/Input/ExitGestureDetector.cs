@@ -6,17 +6,16 @@ namespace Ripcord.Core.Input;
 /// Recognises the "leave the stream" controller gesture.
 ///
 /// <para>
-/// This exists because a running stream had no controller exit at all: app-chrome navigation is deliberately
-/// suppressed while input is being forwarded (otherwise B would navigate back instead of reaching the console),
-/// so on a handheld with no keyboard or mouse the only ways out were the navigation pane — which needs
-/// touch — or killing the process.
+/// App-chrome navigation is deliberately suppressed while input is being forwarded (otherwise B would navigate
+/// back instead of reaching the console), so without this a handheld with no keyboard or mouse could leave a
+/// stream only through the navigation pane, which needs touch, or by killing the process.
 /// </para>
 ///
 /// <para>
 /// The default gesture is Start + Select + L1 + R1 held together, following the convention other streaming
-/// clients use. Two properties make it the right choice: it is effectively impossible to hit accidentally
-/// mid-game, and it avoids the PS/Guide button, which <em>must</em> keep reaching the console so the player can
-/// open the console's own menu. A hold requirement guards against a fluke simultaneous press.
+/// clients use. It is effectively impossible to hit accidentally mid-game, and it avoids the PS/Guide button,
+/// which <em>must</em> keep reaching the console so the player can open the console's own menu. A hold
+/// requirement guards against a fluke simultaneous press.
 /// </para>
 ///
 /// <para>Pure and clock-injected, so the timing is unit-testable rather than something to try on a real pad.</para>

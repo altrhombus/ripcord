@@ -1284,22 +1284,19 @@ namespace winrt::Ripcord::Media::Interop::implementation
     /// media type.
     ///
     /// Split out of ConfigureDecoderOutput so it can also be applied to the decoder's CURRENT output type after
-    /// a frame has been produced. That matters because not every decoder announces its real geometry the same
-    /// way: the in-box H.264 MFT raises MF_E_TRANSFORM_STREAM_CHANGE once it reads the SPS, which drives a
-    /// re-negotiation, whereas the HEVC Video Extension was observed to publish no usable MF_MT_FRAME_SIZE up
-    /// front and never raise a stream change — leaving the cached size at zero, so every decoded frame was
-    /// discarded by the "do we know the geometry" gate and the screen stayed black while the decode and present
-    /// counters both ticked at full rate.
+    /// a frame has been produced. Decoders announce their real geometry differently: the in-box H.264 MFT raises
+    /// MF_E_TRANSFORM_STREAM_CHANGE once it reads the SPS, which drives a re-negotiation, whereas the HEVC Video
+    /// Extension was observed to publish no usable MF_MT_FRAME_SIZE up front and never raise a stream change,
+    /// leaving the cached size at zero, every decoded frame discarded by the geometry gate and a black screen.
     /// Last-resort geometry: measure the decoded frame itself.
     ///
     /// Used when a decoder produces frames without ever publishing a usable MF_MT_FRAME_SIZE (observed with the
-    /// HEVC Video Extension). A DXVA sample is backed by a D3D11 texture whose descriptor is the real coded size,
-    /// which cannot be wrong; a system-memory NV12 buffer can be measured from its pitch and length instead,
-    /// since NV12 occupies exactly stride * height * 3/2 bytes.
+    /// HEVC Video Extension). A DXVA sample is backed by a D3D11 texture whose descriptor is the real coded size;
+    /// a system-memory NV12 buffer is measured from its pitch and length instead, since NV12 occupies exactly
+    /// stride * height * 3/2 bytes.
     ///
-    /// Sets the display extent equal to the coded extent because no aperture is available here. That is the same
-    /// assumption the pipeline made before aperture handling existed, so at worst it shows a few padding rows —
-    /// visibly imperfect, but a picture rather than a black screen.
+    /// Sets the display extent equal to the coded extent because no aperture is available here, so at worst it
+    /// shows a few padding rows.
     bool VideoRenderer::TryGeometryFromSample(IMFSample* produced)
     {
         m_geomStage = 3;
@@ -1545,10 +1542,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
     /// Identify the codec of an Annex B access unit from its NAL headers.
     ///
-    /// Ground truth beats configuration here. The console has already been observed to ignore a launchSpec field
-    /// it does not care for (yuvCoefficient), so "we asked for HEVC" is not evidence that HEVC is arriving — and
-    /// feeding H.264 to an HEVC decoder produces exactly the failure seen in the wild: every packet accepted,
-    /// MF_E_TRANSFORM_NEED_MORE_INPUT forever, no frame, no error.
+    /// The bitstream decides, not the configuration: the console has been observed to ignore a launchSpec field
+    /// it does not care for (yuvCoefficient), so "we asked for HEVC" is not evidence that HEVC is arriving, and
+    /// H.264 fed to an HEVC decoder fails silently: every packet accepted, MF_E_TRANSFORM_NEED_MORE_INPUT
+    /// forever, no frame, no error.
     ///
     /// The two codecs differ in their NAL header, which makes a parameter set unambiguous:
     ///   H.264 — 1 byte,  nal_unit_type = b0 & 0x1F        -> 7 = SPS, 8 = PPS
@@ -1558,9 +1555,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // Is HDR static metadata present in the BITSTREAM, as opposed to on the decoder's output media type?
     //
     // Media Foundation decoders do not reliably surface ST 2086 / CTA-861.3 metadata as media-type
-    // attributes, so "the output type carries none" cannot distinguish a stream that genuinely has none from
-    // a decoder that simply did not forward it. Reading the SEI ourselves separates those two, and the
-    // demuxer already hands us the decrypted Annex-B before it reaches the decoder.
+    // attributes, so "the output type carries none" cannot distinguish a stream that has none from a decoder
+    // that did not forward it. The demuxer already hands us the decrypted Annex-B, so the SEI is read here.
     //
     // HEVC NAL header is 2 bytes; type = (byte0 >> 1) & 0x3F. 39 = PREFIX_SEI, 40 = SUFFIX_SEI. Within an SEI
     // RBSP the messages are (type, size, payload) triplets, each of type and size being a run of 0xFF bytes
@@ -1637,24 +1633,22 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
     /// Whether a two-byte NAL header is an HEVC VPS, SPS or PPS.
     ///
-    /// The type alone is NOT sufficient, and assuming it was is what put an H.264 stream through an HEVC
-    /// decoder and produced a black screen with healthy audio. HEVC's header is two bytes —
+    /// The type alone is NOT sufficient: testing only the type put an H.264 stream through an HEVC decoder (a
+    /// black screen with healthy audio). HEVC's header is two bytes —
     ///
     ///     b0 = forbidden_zero(1) | nal_unit_type(6) | nuh_layer_id high bit(1)
     ///     b1 = nuh_layer_id low bits(5) | nuh_temporal_id_plus1(3)
     ///
-    /// — and an H.264 slice header is ONE byte, forbidden_zero(1) | nal_ref_idc(2) | nal_unit_type(5). A
-    /// perfectly ordinary H.264 slice with nal_ref_idc = 2 is 0x41 for a non-IDR slice and 0x45 for an IDR, and
-    /// (0x41 >> 1) & 0x3F is 32 — exactly VPS_NUT. Every H.264 stream is full of those bytes, so the type test
-    /// on its own does not distinguish the codecs at all; it merely happened to be reached first.
+    /// — and an H.264 slice header is ONE byte, forbidden_zero(1) | nal_ref_idc(2) | nal_unit_type(5). An
+    /// ordinary H.264 slice with nal_ref_idc = 2 is 0x41 for a non-IDR slice and 0x45 for an IDR, and
+    /// (0x41 >> 1) & 0x3F is 32 — exactly VPS_NUT.
     ///
-    /// What does distinguish them is the rest of the header, which H.264 was never writing. Parameter sets are
-    /// base layer and TemporalId 0, so nuh_layer_id must be 0 and nuh_temporal_id_plus1 must be 1 — and
-    /// nuh_temporal_id_plus1 = 0 is forbidden outright by the spec. The 0x41,0x00 from the report decodes as
-    /// layer_id 32 and temporal_id_plus1 0: two independent violations, and now two independent rejections.
+    /// What distinguishes them is the rest of the header. Parameter sets are base layer and TemporalId 0, so
+    /// nuh_layer_id must be 0 and nuh_temporal_id_plus1 must be 1 (0 is forbidden outright by the spec). The
+    /// 0x41,0x00 from the report decodes as layer_id 32 and temporal_id_plus1 0, and is rejected on both counts.
     ///
-    /// (H.264 and HEVC parameter-set encodings are disjoint, so order no longer matters either: no HEVC
-    /// VPS/SPS/PPS first byte — 0x40, 0x42, 0x44 — reads as an H.264 SPS or PPS, whose types are 7 and 8.)
+    /// (H.264 and HEVC parameter-set encodings are disjoint, so order does not matter: no HEVC VPS/SPS/PPS first
+    /// byte — 0x40, 0x42, 0x44 — reads as an H.264 SPS or PPS, whose types are 7 and 8.)
     static bool IsHevcParameterSet(uint8_t b0, uint8_t b1)
     {
         if ((b0 & 0x80) != 0)

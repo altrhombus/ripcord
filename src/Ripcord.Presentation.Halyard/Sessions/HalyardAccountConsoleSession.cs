@@ -410,17 +410,15 @@ public sealed class HalyardAccountConsoleSession
     ///
     /// <para>
     /// The console offers a <c>LOCAL</c> address and a <c>STATIC</c> (reflexive) one for every connection, and
-    /// which is usable depends on where <em>we</em> are — so this asks the interface table rather than
-    /// assuming. On the same network the local address wins, and traffic stays on the LAN instead of going out
-    /// to the reflexive address and back. Anywhere else the local address is somebody else's private range and
-    /// the reflexive one is the only way in.
+    /// which is usable depends on where <em>we</em> are, so this asks the interface table. On the same
+    /// network the local address wins, and traffic stays on the LAN. Anywhere else the local address is
+    /// somebody else's private range and the reflexive one is the only way in.
     /// </para>
     ///
     /// <para>
-    /// This used to require the local candidate to equal the host the caller passed in, and to fall back to
-    /// that host otherwise — which quietly made the whole route LAN-only: off-network the caller has no
-    /// reachable address to pass, and the one it does have (the address the console was paired on) routes
-    /// nowhere.
+    /// Do not require the local candidate to equal the host the caller passed in: off-network the caller has
+    /// no reachable address to pass (the address the console was paired on routes nowhere), so that would
+    /// make the whole route LAN-only.
     /// </para>
     /// </summary>
     private static IPEndPoint ConsoleEndpoint(HalyardAccountTransportContext context)

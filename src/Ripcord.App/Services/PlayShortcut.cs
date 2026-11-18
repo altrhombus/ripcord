@@ -9,17 +9,15 @@ namespace Ripcord_App.Services;
 ///
 /// <para>
 /// <b>Why a .lnk and not a jump-list entry.</b> A jump list needs package identity, so it exists in the MSIX
-/// and silently does not in the zip — and the zip is how most people will run this. A shortcut file works in
-/// both, and it is also the artefact a Steam or handheld-launcher user actually needs: "add a non-Steam game"
-/// wants a path and an argument, which is exactly what this produces.
+/// and silently does not in the zip. A shortcut file works in both, and it is what a Steam or
+/// handheld-launcher user needs: "add a non-Steam game" wants a path and an argument.
 /// </para>
 ///
 /// <para>
-/// <b>Why late binding and not IShellLink.</b> The direct route is a hand-declared <c>IShellLinkW</c>, which
-/// means writing an eighteen-entry vtable by hand and getting every slot in the right order — a mistake there
-/// does not fail to compile, it calls the wrong function through a COM pointer. This is a feature that cannot
-/// be exercised by a unit test and is reached by one menu item, so the version with no vtable to get wrong is
-/// the right trade. <c>WScript.Shell</c> has shipped in Windows since 1998 and does the same job.
+/// <b>Why late binding and not IShellLink.</b> A hand-declared <c>IShellLinkW</c> means an eighteen-entry
+/// vtable written by hand, where a slot out of order does not fail to compile but calls the wrong function
+/// through a COM pointer, in a feature no unit test can exercise. <c>WScript.Shell</c> has shipped in Windows
+/// since 1998 and does the same job.
 /// </para>
 /// </summary>
 internal static class PlayShortcut

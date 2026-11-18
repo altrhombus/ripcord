@@ -11,26 +11,22 @@ namespace Ripcord.Presentation.Halyard;
 /// Writes the account-pairing rendezvous down, stage by stage, so a failure says where it stopped.
 ///
 /// <para>
-/// <b>Why.</b> The rendezvous already narrates itself — the pairing layer takes a <c>Log</c> sink and reports
-/// push connected, session created, connect command sent, console joined, seed recovered, OFFER received. The
-/// console harness wires it and prints the lines; the app passed null, so an account pairing that failed in
-/// the app produced one sentence about the last thing it was waiting for and nothing about how far it got.
-/// That is not enough to tell "the console never joined" from "it joined and published nothing" from "it
-/// published something we could not read", and those three have nothing in common but the symptom.
+/// The pairing layer reports each stage to a <c>Log</c> sink: push connected, session created, connect
+/// command sent, console joined, seed recovered, OFFER received. This is that sink for the app, so a failed
+/// pairing can tell "the console never joined" from "it joined and published nothing" from "it published
+/// something we could not read".
 /// </para>
 ///
 /// <para>
-/// <b>Off unless asked for:</b> <c>RIPCORD_TRACE_PAIRING=1</c>. Not because it is expensive — it is a handful
-/// of lines — but because it is a record of one account reaching one console, and that is not something to
-/// leave accumulating on disk without being told to.
+/// <b>Off unless asked for:</b> <c>RIPCORD_TRACE_PAIRING=1</c>. It is a record of one account reaching one
+/// console, and that is not something to leave accumulating on disk without being told to.
 /// </para>
 ///
 /// <para>
 /// <b>Identifiers are replaced by their shape.</b> Session ids, device ids and hashed ids go through as
-/// <c>&lt;id:32&gt;</c> — the length and nothing else. A trace exists to be handed to somebody, very possibly
-/// pasted into a chat, and this project's rule is that nothing tied to a specific console or account leaves
-/// the captures folder. The length is kept because a wrong-length id is a real fault and the shape is what tells
-/// you so.
+/// <c>&lt;id:32&gt;</c> — the length and nothing else. A trace exists to be handed to somebody, and this
+/// project's rule is that nothing tied to a specific console or account leaves the captures folder. The
+/// length is kept because a wrong-length id is a real fault.
 /// </para>
 /// </summary>
 public sealed class HalyardPairingTrace
@@ -96,16 +92,10 @@ public sealed class HalyardPairingTrace
     /// Wall clock, plus the gap since the previous line.
     ///
     /// <para>
-    /// <b>Not elapsed-since-start, and the first trace this produced is why.</b> The sink is built with the
-    /// service graph, at app start, so an elapsed clock counted from launch — and the first line of a pairing
-    /// read "44690 ms", which looks exactly like a 44-second stall connecting the push channel and was in fact
-    /// the user walking through the UI to reach the Pair button. It cost a wrong hypothesis before the
-    /// arithmetic gave it away.
-    /// </para>
-    ///
-    /// <para>
-    /// A gap between two lines is the number that means something here — every wait in the rendezvous is one —
-    /// so that is what each line carries, next to the time it happened.
+    /// <b>Not elapsed-since-start.</b> The sink is built with the service graph, at app start, so an elapsed
+    /// clock counts from launch: the first line of a pairing read "44690 ms", which looks like a 44-second
+    /// stall connecting the push channel and was the user walking through the UI to the Pair button. Every
+    /// wait in the rendezvous is a gap between two lines, so each line carries that gap.
     /// </para>
     /// </summary>
     private void Write(string line)

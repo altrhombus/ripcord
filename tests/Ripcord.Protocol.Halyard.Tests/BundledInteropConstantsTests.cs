@@ -212,15 +212,11 @@ public class BundledInteropConstantsTests
     /// <c>libripcord/session/halyard_regist_message.h</c>, the C core building a registration request
     /// without linking against any of this.</para>
     ///
-    /// <para><b>Nothing made those equal except somebody typing the same thing twice.</b> The published
-    /// sweep's pinned-constant exemption is keyed on the value rather than the location, so both copies
-    /// are covered while they agree, and a drifted copy loses the exemption and fails — correctly, but
-    /// reporting an unexplained hex literal in product code. That is the wrong sentence to be reading at
-    /// the time. This value is the first thing inside the encrypted registration field, so a wrong one
-    /// corrupts exactly its first 16 bytes and the console answers 403 / 80108b09 without saying why;
-    /// <c>libripcord/halyard/halyard_registration.c</c> carries the same warning about the field IV for
-    /// the same reason. This test exists to put the right sentence in front of whoever edits one of the
-    /// two.</para>
+    /// <para>The published sweep's pinned-constant exemption is keyed on the value rather than the
+    /// location, so a drifted copy fails there too, but as an unexplained hex literal in product code;
+    /// this test names the actual fault. The value is the first thing inside the encrypted registration
+    /// field, so a wrong one corrupts exactly its first 16 bytes and the console answers 403 / 80108b09
+    /// without saying why.</para>
     ///
     /// <para>It compares the two literals and asserts nothing about what they contain, which keeps this
     /// file's rule — shape, never values — intact.</para>

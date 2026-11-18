@@ -10,18 +10,15 @@ namespace Ripcord_App.Input;
 /// <para>
 /// <b>Why this is a standing watch rather than a fix at each site.</b> Focus disappears for reasons a page
 /// cannot enumerate: the focused element is collapsed by a step change, its container is recycled out of a
-/// list, a popup closes and restores nothing, the user clicks the empty space beside the content. Each of
-/// those was found and patched individually at some point, and the next one was always found by a person
-/// holding a pad rather than by the person who wrote the code. So the invariant is enforced in one place
-/// instead — <em>something is always focused</em> — and new surfaces inherit it without knowing it exists.
+/// list, a popup closes and restores nothing, the user clicks the empty space beside the content. So the
+/// invariant — <em>something is always focused</em> — is enforced in one place, and new surfaces inherit it.
 /// </para>
 ///
 /// <para>
 /// <b>Why the re-check is deferred rather than done in the handler.</b> <c>LostFocus</c> fires on every
 /// ordinary move, and it fires <em>before</em> the new element reports focus — so at handler time nothing has
 /// focus even in the completely healthy case. Re-seeding there would fight every navigation the user makes.
-/// Enqueuing the question at low priority asks it after the move has settled, at which point "still nothing
-/// focused" means what it says.
+/// Enqueuing the question at low priority asks it after the move has settled.
 /// </para>
 ///
 /// <para>

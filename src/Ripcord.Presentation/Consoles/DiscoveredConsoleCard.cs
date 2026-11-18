@@ -4,20 +4,14 @@ using Ripcord.Presentation.Resources;
 namespace Ripcord.Presentation.Consoles;
 
 /// <summary>
-/// One console found on the network, as the add flow shows it.
-///
-/// <para>
-/// Everything here comes off the discovery reply, and until this existed nearly all of it was thrown away: the
-/// discovery service parsed host-id, host-name, host-type and system version, kept four of them, and the pairing
-/// UI then used only the IP address — so a screen whose entire job was "which of these is yours?" answered it
-/// with an unlabelled address.
-/// </para>
+/// One console found on the network, as the add flow shows it. Everything here comes off the discovery reply
+/// (host-id, host-name, host-type, system version), so the list answers "which of these is yours?" with more
+/// than an address.
 ///
 /// <para>
 /// A plain record rather than an <see cref="ObservableState{T}"/> view-model, because it has no mutable state:
-/// a discovery result is a fact about a moment, and a console that changes is a new result rather than an
-/// edit to this one. Built through <see cref="From"/> so the derived strings are computed once instead of on
-/// every binding read.
+/// a console that changes is a new result rather than an edit to this one. Built through <see cref="From"/> so
+/// the derived strings are computed once instead of on every binding read.
 /// </para>
 /// </summary>
 public sealed record DiscoveredConsoleCard(
