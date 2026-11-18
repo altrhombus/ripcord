@@ -60,8 +60,8 @@ SSID_FIELDS = re.compile(r'(?:AP-Ssid|AP-Name)\s*[:=]\s*"?([^"\r\n,]{3,40})|"ssi
 HOST_ID = re.compile(r"(?:host-id|PS[45]-Mac|AP-Bssid|macAddr\w*)\"?\s*[:=]\s*\"?([0-9a-fA-F:.-]{12,17})",
                      re.IGNORECASE)
 MAC = re.compile(r"(?<![0-9a-fA-F:-])([0-9a-fA-F]{2}(?:[:-][0-9a-fA-F]{2}){5})(?![0-9a-fA-F:-])")
-# The local part must hold at least one letter, but the earlier form `[..]*[A-Za-z][..]*@` backtracked
-# catastrophically (ReDoS) on long letter/digit runs with no '@' — a 15 MB hexdump/base64 capture hung the
+# The local part must hold at least one letter, but the plain form `[..]*[A-Za-z][..]*@` backtracks
+# catastrophically (ReDoS) on long letter/digit runs with no '@' — a 15 MB hexdump/base64 capture hangs the
 # whole build for an hour-plus. This form is match-for-match identical (verified on an email/non-email battery)
 # but linear: only start at a run boundary, assert a letter within the (bounded) local part via lookahead, then
 # consume it possessively so a missing '@' fails the attempt instead of backtracking.

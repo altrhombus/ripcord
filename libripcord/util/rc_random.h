@@ -1,7 +1,7 @@
 /*
- * ripcord-3ds - the random-bytes seam.
+ * libripcord - the random-bytes seam.
  *
- * Two callers need real entropy, and neither failure produces a symptom:
+ * Every caller needs real entropy, and a weak source produces no symptom. Two of them:
  *
  *   - `handshakeKey`, the 16 bytes that authenticate the ECDH exchange (takion_session_negotiator.h).
  *     A predictable one lets anything that can inject on the stream channel substitute its own public
@@ -11,15 +11,17 @@
  *
  * Hence a named seam with a hard-failing contract rather than a convenience wrapper.
  *
- * ON DEVICE this is libctru's PS_GenerateRandomBytes (the `ps:ps` service - the system's own CSPRNG,
- * which is what the console's own software uses). mbedtls's built-in entropy sources are not an option:
- * they assume a hosted OS with /dev/urandom or a platform hook, neither of which the 3DS provides, which
- * is also why rc_ecdh takes its RNG as a caller-supplied callback instead of opening its own.
+ * ON DEVICE each port implements these four functions over its platform's own generator
+ * (ports/ripcord-3ds/source/util/rc_random.c, ports/ripcord-ps3/source/platform/rc_random_ps3.c); the
+ * 3DS one is libctru's PS_GenerateRandomBytes (the `ps:ps` service - the system's own CSPRNG, which is
+ * what the console's own software uses). mbedtls's built-in entropy sources are not an option: they
+ * assume a hosted OS with /dev/urandom or a platform hook, which the consoles do not provide, which is
+ * also why rc_ecdh takes its RNG as a caller-supplied callback instead of opening its own.
  *
- * OFF DEVICE (the host test builds) there is deliberately NO implementation. This file compiles to
- * nothing outside __3DS__, so a host program that tries to generate a real key fails to link rather than
- * silently getting a weak one. The host tests pass their own deterministic callback directly to rc_ecdh
- * instead, which is correct for known-answer vectors only.
+ * OFF DEVICE (the host test builds) the core deliberately has NO implementation, so a host program that
+ * tries to generate a real key fails to link rather than silently getting a weak one. A host test
+ * that reaches these functions defines its own deterministic ones, or passes a deterministic callback
+ * directly to rc_ecdh, which is correct for known-answer vectors only.
  */
 #ifndef RC_RANDOM_H
 #define RC_RANDOM_H

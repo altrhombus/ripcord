@@ -3,9 +3,8 @@
  *
  * *** THE SEQUENCE HERE IS THE SDK'S, NOT AN INVENTION. *** It follows PSL1GHT's own
  * samples/spu/spudma: initialize, import, create group, initialize thread, start, wait, join, close.
- * That mattering is a lesson this port paid for - the packaging rules were written from ppu_rules "in
- * spirit" and dropped a step, and the result was four hardware runs that produced nothing at all. When
- * an SDK ships a worked example of the exact thing you are doing, the example is the specification.
+ * When an SDK ships a worked example of the exact thing you are doing, the example is the
+ * specification.
  */
 #include "rc_spu.h"
 
@@ -73,8 +72,7 @@ int rc_spu_init(void)
      * [X] The argument is the number of RAW SPUs to reserve, and 6 is what the SDK's own sample passes.
      * A PS3 has 8 SPEs: one is fused off for yield and one is reserved by the hypervisor, leaving 6 to
      * the application. Taking the sample's number rather than reasoning to it is deliberate - what
-     * matters for a probe is that it works, and what the split actually is can be measured later by the
-     * thing that needs more than one.
+     * matters for a probe is that it works.
      */
     if (sysSpuInitialize(6, 0) != 0)
         return 0;
@@ -201,9 +199,9 @@ int rc_spu_run(const void *src, void *dst, size_t size, uint64_t *ticks,
     /*
      * THE MEASUREMENT. From here to the flag being observed is what a caller handing out a unit of work
      * actually pays: thread group start, the SPE's own startup, the DMA, and the completion write. It
-     * deliberately does NOT exclude thread start - a decoder that starts a thread per macroblock row
-     * would pay exactly this, and pretending otherwise would produce a number that flatters the design
-     * it is meant to inform.
+     * deliberately does NOT exclude thread start - a caller that starts a thread per job would pay
+     * exactly this, and pretending otherwise would produce a number that flatters the design it is
+     * meant to inform.
      */
     started = rc_tick();
 

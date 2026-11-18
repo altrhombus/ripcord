@@ -86,8 +86,8 @@
  * not delivered is unknown and does not matter here.
  *
  * So a single effective address is passed, pointing at this structure in main memory, which the SPE
- * fetches by DMA before doing anything else. The decoder will need this shape regardless: a decode job
- * has far more than four parameters.
+ * fetches by DMA before doing anything else. A job with more than four parameters needs this shape
+ * regardless.
  *
  * 32 BYTES. The MFC rejects any transfer whose size is not 0, 1, 2, 4, 8 or a multiple of 16 - IBM's
  * Cell Broadband Engine Programmers Guide has a worked example of a 24-byte control block that fails

@@ -1,4 +1,4 @@
-# ripcord ports - host-side known-answer tests for the portable protocol core.
+# libripcord - host-side tests for the portable protocol core.
 #
 # Builds for THIS machine, not for any console: plain C99, no devkitPro, no vitasdk, no libctru, no
 # handheld. The core in ../ is portable C and there is no reason to need hardware to find out it is
@@ -10,7 +10,7 @@
 #     make compile    compile EVERY portable .c on the host, including the ones no runner links
 #     make clean
 #
-# The vector file itself comes from the .NET side and is not checked in:
+# The vector files come from the .NET side and are not checked in:
 #
 #     dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 #
@@ -33,14 +33,14 @@ STREAM_VECTORS := vectors/stream-crypto.kat
 SESSION_VECTORS := vectors/session-crypto.kat
 PROTO_VECTORS := vectors/control-proto.kat
 
-# Phase 6a: the ECDH backend. Unlike everything else here, this one is NOT self-contained - see
+# The ECDH backend. Unlike everything else here, this one is NOT self-contained - see
 # rc_ecdh.h for why the core delegates elliptic-curve arithmetic instead of implementing it.
 # The local build is the default so the suite runs on "any machine with a C compiler and nothing else
 # installed": without it ecdh_test skips on any box without libmbedtls-dev, and the P-256/P-521
 # agreement and the derived stream keys go unchecked there.
 #
 #   ECDH_BACKEND=local   (default) build the ECP/MPI layer from a pinned, hash-verified release into
-#                        build/mbedtls, using the same script and the same 2.28.8 pin as the Vita port
+#                        build/mbedtls, using the same script and the same 2.28.8 pin as the ports
 #   ECDH_BACKEND=mbedtls link the system libmbedcrypto instead (faster if you already have it)
 #   ECDH_BACKEND=none    skip the ECDH cases entirely; ecdh_test reports a skip and exits 0
 # The mbedtls rule below is the first explicit target in this file, and make takes the first target as
@@ -98,9 +98,9 @@ REGISTRATION_VECTORS := vectors/registration-crypto.kat
 ACCOUNT_PAIRING_TARGET := $(BUILD)/account_pairing_test
 ACCOUNT_PAIRING_VECTORS := vectors/account-pairing.kat
 
-# A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
-# without the registration tables - that is the shape ripcord-3ds links - and checking the registration
-# arithmetic needs them, so the two coexist rather than one being turned on for everybody.
+# A SECOND generated constants file, with --registration. The runners that register nothing deliberately
+# build without the registration tables - that is the shape ripcord-3ds links - and checking the
+# registration arithmetic needs them, so the two coexist rather than one being turned on for everybody.
 REGISTRATION_GENERATED := $(BUILD)/halyard_v1_constants_reg.g.c
 
 INCLUDES  := -I$(CORE)/crypto -I$(CORE)/halyard -I$(CORE)/platform
@@ -112,7 +112,7 @@ SOURCES := \
 	$(CORE)/halyard/halyard_control_crypto.c \
 	vector_runner.c
 
-# Phase 3: the SRCH discovery parser. No vector file and no .NET codegen step - the wire format is plain
+# The SRCH discovery parser. No vector file and no .NET codegen step - the wire format is plain
 # ASCII transcribed straight from docs/protocol/ps5-local-discovery.md, so discovery_test.c's own literal
 # strings ARE the vectors. See its header for why that is a legitimate substitute here and would not be
 # for the crypto above.
@@ -122,7 +122,7 @@ DISCOVERY_SOURCES := \
 	$(CORE)/discovery/halyard_wake.c \
 	discovery_test.c
 
-# Phase 4: the /sess/init -> /sess/ctrl exchange, minus the crypto itself (already checked above via
+# The /sess/init -> /sess/ctrl exchange, minus the crypto itself (already checked above via
 # vector_runner) - see session_test.c's header for exactly what this does and does not re-verify.
 SESSION_SOURCES := \
 	$(CORE)/crypto/rc_aes.c \
@@ -137,11 +137,11 @@ SESSION_SOURCES := \
 	$(CORE)/session/halyard_sess_request.c \
 	session_test.c
 
-# Phase 5: the Takion transport (handshake, DATA/SACK, reassembly). No vector file and no .NET codegen
+# The Takion transport (handshake, DATA/SACK, reassembly). No vector file and no .NET codegen
 # step - the known-answer vectors are full captured packets lifted from the .NET side's own test suite,
 # transcribed as literal hex strings in takion_test.c itself. Deliberately has no dependency on
-# source/crypto or source/halyard: Phase 5 is pure transport, with GMAC sealing (which does need the
-# stream crypto, a separate cipher from the control-plane one above) deferred to a later phase.
+# crypto/ or halyard/: this runner is pure transport. GMAC sealing (which needs the stream crypto, a
+# separate cipher from the control-plane one above) is checked by stream_crypto_test below.
 TAKION_SOURCES := \
 	$(CORE)/takion/takion_message.c \
 	$(CORE)/takion/takion_handshake.c \
@@ -150,8 +150,8 @@ TAKION_SOURCES := \
 	$(CORE)/takion/takion_reassembler.c \
 	takion_test.c
 
-# Stream-plane crypto (GMAC via GCM, the stream KDF, per-packet nonce/tag): the crypto layer beneath the
-# "stream framing, demux, FEC" backlog item. Cross-checked against tests/vectors/stream-crypto.kat
+# Stream-plane crypto (GMAC via GCM, the stream KDF, per-packet nonce/tag, the control sealer): the crypto
+# layer beneath the stream framing, demux and FEC. Cross-checked against tests/vectors/stream-crypto.kat
 # (generated by the same `vectors` command as above, via AesGcmCore/HalyardStreamKeySchedule/
 # HalyardPacketCrypto directly) rather than transcribed NIST vectors - see stream_crypto_test.c's header.
 STREAM_CRYPTO_SOURCES := \
@@ -167,7 +167,7 @@ STREAM_CRYPTO_SOURCES := \
 # Video FEC (GF(2^8) field + systematic Cauchy Reed-Solomon). No .NET-generated vector file - the ground
 # truth here is the console's own dumped inverse table, transcribed as a literal in fec_test.c itself (see
 # its header for why that is legitimate ground truth and not a self-consistency shortcut). No dependency on
-# source/crypto or source/stream's crypto files: FEC is pure GF(2^8) linear algebra, independent of the
+# crypto/ or stream/'s crypto files: FEC is pure GF(2^8) linear algebra, independent of the
 # packet crypto layered around it on the wire.
 FEC_SOURCES := \
 	$(CORE)/stream/fec_galois.c \
@@ -198,7 +198,7 @@ STREAM_DEMUX_SOURCES := \
 	$(CORE)/stream/stream_demux.c \
 	stream_demux_test.c
 
-# Phase 6a: the stream key agreement (ECDH -> shared X -> per-direction keys). The only test target that
+# The stream key agreement (ECDH -> shared X -> per-direction keys). The only test target that
 # links a third-party library; see ECDH_BACKEND above and rc_ecdh.h for the argument. rc_sha256.c comes
 # along for the ecdhsig vectors (HMAC over the public key) and the stream KDF, neither of which involves
 # elliptic curves at all.
@@ -210,7 +210,7 @@ ECDH_SOURCES := \
 	$(CORE)/takion/takion_session_negotiator.c \
 	ecdh_test.c
 
-# Phase 6a: the SESSION_REQUEST/SESSION_REPLY protobuf envelope. No crypto and no EC backend - the
+# The SESSION_REQUEST/SESSION_REPLY protobuf envelope. No crypto and no EC backend - the
 # vectors carry public keys and signatures as literal bytes, because what is under test here is the
 # encoding, not what the values mean.
 CONTROL_PROTO_SOURCES := \
@@ -220,7 +220,7 @@ CONTROL_PROTO_SOURCES := \
 	$(CORE)/takion/senkusha_echo.c \
 	control_proto_test.c
 
-# Phase 6g: the input packet writer. No crypto - what is under test is the byte map from spec 6.3.
+# The input packet writer. No crypto - what is under test is the byte map from spec 6.3.
 INPUT_SOURCES := \
 	$(CORE)/input/halyard_input.c \
 	input_test.c
@@ -270,14 +270,11 @@ build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM
 constants: $(GENERATED)
 
 # Each recipe below creates its own output directory directly rather than depending on a separate
-# directory target: with two build products both sitting under build/, an order-only prerequisite on a
-# shared "build" target makes GNU Make's dependency graph see a cycle (a real one hit while adding the
-# second target here) and it silently drops the mkdir side effect instead of erroring, so the link step
-# fails with "No such file or directory" for a directory that was never created. `@mkdir -p $(@D)` has no
-# such graph to get confused about.
+# directory target: with every build product sitting under build/, an order-only prerequisite on a
+# shared "build" target makes GNU Make's dependency graph see a cycle, and it silently drops the mkdir
+# side effect instead of erroring, so the link step fails with "No such file or directory" for a
+# directory that was never created. `@mkdir -p $(@D)` has no such graph to get confused about.
 
-# The interop constants are generated from the one committed JSON bundle rather than copied into this
-# port - see tools/gen_constants.py for why that distinction matters.
 # Built here rather than taken from the system so the suite needs no package installed - see the
 # ECDH_BACKEND block above. Must appear AFTER `BUILD :=`: make expands a rule's TARGET as it reads the
 # rule, so stating it earlier silently declares /mbedtls/lib/libmbedcrypto.a at the filesystem root
@@ -285,6 +282,8 @@ constants: $(GENERATED)
 $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a: $(CORE)/tools/build-mbedtls.sh $(CORE)/tools/ripcord-mbedtls-config.h
 	PREFIX=$(abspath $(MBEDTLS_PREFIX)) CROSS= sh $(CORE)/tools/build-mbedtls.sh
 
+# The interop constants are generated from the one committed JSON bundle rather than copied into this
+# tree - see tools/gen_constants.py for why that distinction matters.
 $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
 	$(PYTHON) $(CORE)/tools/gen_constants.py --for 'libripcord/tests' $(BUNDLE) $@
@@ -622,14 +621,12 @@ clean:
 
 # Compile every portable translation unit on the host, including the ones no test runner links.
 #
-# The runners stop at the socket boundary, so without this target a handful of files - net/rc_tcp.c,
-# session/halyard_control_session.c, takion/takion_reliable_channel.c, and the plumbing in util/ - are
-# compiled by the cross-compiler only, and that is the set where a platform assumption hides.
+# A file no runner links is otherwise compiled by the cross-compilers only, and that is where a platform
+# assumption hides.
 #
 # _DEFAULT_SOURCE is needed for inet_aton(), which is a BSD extension rather than C99 and is NOT
-# guaranteed to exist on every target - vitasdk's documented address helper is sceNetInetPton. Two call
-# sites use it (rc_tcp.c, halyard_control_session.c) and they are a known portability question, not a
-# settled one.
+# guaranteed to exist on every target - vitasdk's documented address helper is sceNetInetPton. Three call
+# sites use it (rc_tcp.c, rc_udp.c, halyard_control_probe.c).
 COMPILE_ALL := $(shell find $(CORE) -name '*.c' -not -path '*/tests/*' | sort)
 
 .PHONY: compile
@@ -646,7 +643,7 @@ compile:
 # WHY THIS EXISTS. The core parses bytes from the LAN and from a console, much of it before anything is
 # authenticated: discovery replies from whatever answers a broadcast, the Takion handshake, SACK, DATA
 # and reassembly, and stream headers. It is C, so a length it trusts is a memory-safety bug rather than
-# an exception. The macOS client links this core directly, and the console ports get the same guard.
+# an exception. Every console port links this core, so every port gets the same guard.
 #
 # TWO MODES, because Apple's clang ships the sanitizers but not libFuzzer:
 #

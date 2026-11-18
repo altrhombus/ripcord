@@ -120,8 +120,8 @@ public sealed class ConnectFlow
         // Before the decoder is built for it: HEVC is a choice in Settings, and not every PC can decode it.
         //
         // Awaited on the caller's context, unlike the awaits below. The video pipeline is prepared next, and that
-        // builds XAML, which only the UI thread may touch; the check answers on a worker, and resuming there failed
-        // every connect with RPC_E_WRONG_THREAD (2026-10-05).
+        // builds XAML, which only the UI thread may touch; the check answers on a worker, and resuming there fails
+        // every connect with RPC_E_WRONG_THREAD.
         string? codecNote = null;
         if (config.CodecPreference == VideoCodec.Hevc)
         {
@@ -160,9 +160,9 @@ public sealed class ConnectFlow
         }
 
         // HDR is asked of the console when it will reach the panel, or when Ripcord can tone-map it for an SDR one.
-        // Asking for SDR instead was the answer while only the GPU driver could tone-map (every vendor's differed,
-        // 2026-10-01), but the console's own SDR stream clips its highlights when its HDR is on (2026-10-02), so the
-        // HDR stream, tone-mapped by Ripcord, is the better picture. SDR only where neither is possible.
+        // The GPU driver's own tone-map differs by vendor (2026-10-01), and the console's own SDR stream clips its
+        // highlights when its HDR is on (2026-10-02), so the HDR stream, tone-mapped by Ripcord, is the better
+        // picture. SDR only where neither is possible.
         if (config.RequestedDynamicRange == DynamicRange.Hdr && !prepared.CanPresentHdr && !prepared.CanToneMapHdr)
         {
             config = config with { RequestedDynamicRange = DynamicRange.Sdr };
@@ -171,8 +171,8 @@ public sealed class ConnectFlow
         Report(stages, Strings.Connect_CheckingCredentialsHeadline, Strings.Connect_CheckingCredentialsDetail, terminal: false, ConnectPhase.Preparing);
 
         // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
-        // the handshake can never complete. This used to be noted in the diagnostics panel and the connect was
-        // attempted anyway, leaving "Connecting…" on screen indefinitely with no stated cause.
+        // the handshake can never complete. Attempting the connect anyway would leave "Connecting…" on screen
+        // indefinitely with no stated cause.
         StreamingAvailability streaming = _sessions.Availability;
         if (!streaming.Available)
         {
@@ -199,8 +199,8 @@ public sealed class ConnectFlow
         }
         catch (Exception ex)
         {
-            // Said, not thrown: this runs fire-and-forget from the page, so an escape left "Connecting" on screen
-            // with nothing to say why (review, 2026-10-05).
+            // Said, not thrown: this runs fire-and-forget from the page, so an escape would leave "Connecting" on
+            // screen with nothing to say why.
             ReportFailure(stages, Strings.Session_CouldNotConnect, ex, ConnectPhase.Connecting);
             return null;
         }

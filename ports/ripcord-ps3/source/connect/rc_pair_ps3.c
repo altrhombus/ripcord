@@ -281,8 +281,7 @@ int rc_pair_run(const char *host, const char *name, const char *console_id, cons
 
     /*
      * THE FAMILY, from discovery when it found one and from the console itself when it did not. Never
-     * assumed: this line used to read `params.is_ps5 = 1;` and that single assumption is the whole
-     * reason a PS4 could be paired with, prompted for a PIN, and refused.
+     * assumed: a PS4 taken for a PS5 can be paired with, prompted for a PIN, and is then refused.
      */
     if (host_type != NULL && host_type[0] != '\0') {
         params.is_ps5 = (strcmp(host_type, "PS4") != 0);
@@ -368,8 +367,8 @@ int rc_pair_run(const char *host, const char *name, const char *console_id, cons
     /*
      * SAVED WITHOUT LOSING THE OTHERS. halyard_pairing_file_save reads the file, adds or replaces the
      * entry at this address, selects it and writes the whole set back - so pairing a second console
-     * keeps the first. The version that wrote this record straight out destroyed the first console's
-     * keys and said nothing about it.
+     * keeps the first. Writing this one record straight out would destroy the first console's keys
+     * and say nothing about it.
      */
     if (!halyard_pairing_file_save(RC_PAIR_DIR, &record)) {
         show(RC_PHASE_FAILED, "Paired, but could not save it",

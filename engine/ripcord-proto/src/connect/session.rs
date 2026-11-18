@@ -1394,7 +1394,7 @@ impl Session {
                     self.senkusha_session_asked = now;
                     // A keyless SESSION exchange whose whole purpose is to have happened. `encryptedKey` is present
                     // and empty, as the vendor sends it: `22 00` in every keyless senkusha request in cap53 and
-                    // cap54. It was four zero bytes, the stream request's value, until 2026-09-26.
+                    // cap54. The stream request's four zero bytes are not sent here.
                     let request = SessionRequest {
                         client_version: 9,
                         session_key: b"",

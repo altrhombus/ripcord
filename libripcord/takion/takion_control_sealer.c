@@ -28,8 +28,8 @@ static void seal_at(takion_control_sealer *sealer, uint8_t *packet, size_t lengt
 
     /*
      * ONE COUNTER FOR EVERY OUTGOING SEALED PACKET, whatever its shape. See the header: control DATA,
-     * SACKs and the loss report share this sequence precisely so that no position - and therefore no
-     * GMAC nonce - is ever spent twice.
+     * SACKs, the loss report and (in seal_input below) controller input share this sequence precisely
+     * so that no position - and therefore no GMAC nonce - is ever spent twice.
      */
     keystream_offset = sealer->keystream_offset;
     remainder = length % 16u;

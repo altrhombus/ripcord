@@ -7,25 +7,25 @@ namespace Ripcord.Core.Consoles;
 /// </summary>
 /// <param name="CredentialBlob">
 /// The serialized pairing record as stored on disk. Encrypted at rest (see <see cref="PairedConsoleBlob"/>), so
-/// this is ciphertext rather than the bare hex it used to be — never log or display it.
+/// this is ciphertext rather than bare hex — never log or display it.
 /// </param>
 public sealed record PairedConsole(string Id, string Name, string Host, string Platform, string CredentialBlob)
 {
     /// <summary>
-    /// The property this field was called before it held ciphertext. Kept purely so an existing
-    /// <c>consoles.json</c> still deserializes: without it, every previously paired console would come back with
-    /// a null blob and the user would silently have to re-pair. Never written back out.
+    /// The JSON name a plaintext-hex credential is stored under in a <c>consoles.json</c> written before
+    /// credentials were encrypted at rest. Read so that such a file still deserializes: without it, every console
+    /// in it would come back with a null blob and the user would silently have to re-pair. Never written back out.
     /// </summary>
     [JsonPropertyName("CredentialBlobHex")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LegacyCredentialBlobHex { get; init; }
 
     // ------------------------------------------------------------------------------------------------
-    // Everything below was added when the console list learned to show consoles apart from one another.
+    // Everything below lets the console list show consoles apart from one another.
     //
-    // All of it is optional, and added as init properties rather than positional parameters on purpose:
-    // the primary constructor keeps its five arguments, so no existing call site changes, and an existing
-    // consoles.json deserializes with these simply absent. That is the same back-compat discipline
+    // All of it is optional, and declared as init properties rather than positional parameters on purpose:
+    // the primary constructor keeps its five arguments, and a consoles.json written without these
+    // deserializes with them simply absent. That is the same back-compat discipline
     // LegacyCredentialBlobHex above demonstrates, and it is what makes the upgrade path structural rather
     // than something anyone has to remember to test. Keep it that way — a required field here means every
     // already-paired console silently disappears from the list on upgrade.

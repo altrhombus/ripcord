@@ -1,7 +1,7 @@
 /*
- * ripcord-3ds - the /sess/ctrl encrypted field plaintexts (spec sec 2.1).
+ * libripcord - the /sess/ctrl encrypted field plaintexts (spec sec 2.1).
  *
- * Each field's plaintext is built here, then sealed by the already-ported control-field cipher
+ * Each field's plaintext is built here, then sealed by the control-field cipher
  * (halyard_control_field_encrypt in ../halyard/halyard_v1.h) with the field's own counter, and
  * base64-encoded (rc_base64_encode) for the HTTP header. Field order fixes each counter:
  * RP-Auth=0, RP-Did=1, RP-OSType=2, RP-StartBitrate=3, RP-StreamingType=4.
@@ -15,8 +15,8 @@
  *
  * CONFIDENCE LEVELS carry over unchanged: the registkey zero-padding, the RP-Did fixed-structure shape
  * and the "WinX.Y" string are wire-confirmed [V]. RP-StartBitrate/RP-StreamingType's little-endian 4-byte
- * encoding is tentative [X] - it does not appear in any verified vector on either side of this port,
- * only in shipped (but unverified) behaviour; only a live capture would resolve it.
+ * encoding is tentative [X] - it does not appear in any verified vector on either the C or the .NET
+ * side, only in what both send; only a live capture would resolve it.
  */
 #ifndef HALYARD_SESS_FIELDS_H
 #define HALYARD_SESS_FIELDS_H
@@ -70,7 +70,7 @@ void halyard_sess_field_auth_plaintext(const uint8_t *registration_key, size_t r
 /*
  * RP-Did plaintext: a fixed 32-byte structure, NOT length-prefixed - a 10-byte marker prefix (read from
  * the vendor wire), then up to 16 identifying bytes (a device id - the .NET side uses the Windows
- * MachineGuid; this port has no equivalent stable id yet, so the caller supplies whatever bytes it has),
+ * MachineGuid; this core has no equivalent stable id, so the caller supplies whatever bytes it has),
  * then 6 zero bytes. The console treats the middle as an opaque client id.
  */
 void halyard_sess_field_did_plaintext(const uint8_t *device_id, size_t device_id_length,
@@ -83,8 +83,8 @@ void halyard_sess_field_did_plaintext(const uint8_t *device_id, size_t device_id
  *
  * THE "Win" IS NOT OURS TO CHANGE. **[V]** The console VALIDATES both this field and the plaintext
  * `User-Agent: remoteplay Windows` header: a value it does not recognise is rejected and the session
- * does not open. (Both were made settable to find out which one names the session as a PC in the
- * console's remote-play list; that code was reverted.)
+ * does not open. (Found on hardware by setting each to another value, to see which one names the
+ * session as a PC in the console's remote-play list.)
  *
  * So the device name the console shows is selected from a set it already knows; showing anything other
  * than a PC would mean finding a value in that set, not inventing one.
@@ -95,10 +95,10 @@ size_t halyard_sess_field_os_type_plaintext(int major, int minor, char *buf, siz
 void halyard_sess_field_int32le_plaintext(int32_t value, uint8_t out[4]);
 
 /*
- * A BOUND THIS PORT SET, NOT ONE THE PROTOCOL STATES. The plaintext is simply the digits, so nothing in
+ * A BOUND THIS CORE SET, NOT ONE THE PROTOCOL STATES. The plaintext is simply the digits, so nothing in
  * the wire format caps their number, and no capture we hold shows the console refusing a length. C
  * callers need a buffer size, though, and the alternative - every caller inventing one - is how a
- * truncated passcode ends up being reported as a wrong passcode. Generous on purpose: if a console ever
+ * truncated passcode ends up being reported as a wrong passcode. Generous on purpose: if a console
  * asks for more than this, raise it here rather than at a call site.
  */
 #define HALYARD_SESS_LOGIN_PIN_MAX 32u

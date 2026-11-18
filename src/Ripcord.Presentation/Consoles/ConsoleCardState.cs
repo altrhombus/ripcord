@@ -21,8 +21,8 @@ public enum ConsoleReachability
     ///
     /// <para>
     /// Distinct from <see cref="Offline"/> because the difference is the whole point: both look identical to a
-    /// discovery probe, and treating them the same is what made a console anywhere but the user's own network
-    /// unconnectable from the app while the account route could reach it perfectly well.
+    /// discovery probe, and treating them the same would make a console anywhere but the user's own network
+    /// unconnectable from the app while the account route can reach it perfectly well.
     /// </para>
     /// </summary>
     Away,

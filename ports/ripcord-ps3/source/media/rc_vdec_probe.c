@@ -186,8 +186,8 @@ static void step(rc_vdec_decode_result *out, int which, const char *what)
 /*
  * The library calls this on its own PPU thread. The picture is collected here rather than by signalling
  * another thread, because vdecGetPicture is the way to collect a picture the decoder is announcing and
- * it is announcing it now - handing the job elsewhere would only add a buffer whose lifetime nobody
- * has established yet.
+ * it is announcing it now - handing the job elsewhere would only add a buffer with a lifetime of its
+ * own to manage.
  */
 static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
 {
@@ -501,10 +501,6 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
     return 0;
 }
 
-/*
- * An access unit is a contiguous run of the file, so its start is the start code in front of its first
- * NAL. rc_h264_nal.start points at the header byte, which is just after that code.
- */
 /* Prints whatever the callback has stored since the last call. Runs on the feeding thread. */
 static void drain_hashes(rc_vdec_decode_result *out, int *printed)
 {
@@ -515,6 +511,10 @@ static void drain_hashes(rc_vdec_decode_result *out, int *printed)
     }
 }
 
+/*
+ * An access unit is a contiguous run of the file, so its start is the start code in front of its first
+ * NAL. rc_h264_nal.start points at the header byte, which is just after that code.
+ */
 static const uint8_t *start_code_of(const uint8_t *file, const uint8_t *nal_start)
 {
     if ((size_t)(nal_start - file) >= 4u
@@ -780,8 +780,8 @@ close_out:
      * with EndSequence called immediately before it - and EndSequence completes on the SEQDONE callback
      * rather than on return, so Close was being asked to tear down a sequence still running.
      *
-     * When SEQDONE has not arrived, Close is skipped rather than attempted. That follows the decision
-     * already recorded at the foot of rc_spu_yuv.c for the same hardware and the same class of problem:
+     * When SEQDONE has not arrived, Close is skipped rather than attempted. That is the decision
+     * rc_spu_yuv_exit makes in source/spu/rc_spu_yuv.c, for the same hardware and the same reason:
      * this runs as the process exits, lv2 reclaims a process's resources when it does, and cleanup that
      * cannot hang is worth more here than cleanup that is complete. A hang costs a reboot and the rest
      * of the log.

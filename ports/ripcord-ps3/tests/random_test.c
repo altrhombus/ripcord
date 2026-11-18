@@ -57,9 +57,9 @@ static int g_saw_odd_addr;
 /*
  * A running byte that NEVER TAKES THE VALUE ZERO, which is load-bearing rather than decorative: the
  * chunking test proves the whole buffer was filled by looking for a remaining zero, and a plain
- * uint8_t counter wraps through 0 every 256 bytes. The first version of this file did exactly that and
- * the oversized-draw test failed against a correct implementation - a fake that is wrong in a way that
- * accuses the code is the worst kind, so this is written out rather than left as an increment.
+ * uint8_t counter wraps through 0 every 256 bytes. With a plain counter the oversized-draw test fails
+ * against a correct implementation - a fake that is wrong in a way that accuses the code is the worst
+ * kind, so this is written out rather than left as an increment.
  */
 static uint8_t g_counter;
 

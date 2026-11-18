@@ -130,9 +130,9 @@ public sealed class SessionController : IAsyncDisposable
 
     /// <summary>
     /// Set by <see cref="StopAsync"/>, the one disconnect a person asks for. Only that teardown may rest the
-    /// console: the others replace a stalled or dropped session, and until 2026-09-26 they rested it too, so a
-    /// flapping connection with the setting on could put the console to sleep between reconnect attempts
-    /// (engine comparisons). The C core and the Rust engine rest only on a disconnect a person asked for.
+    /// console: the others replace a stalled or dropped session, and resting on those would let a flapping
+    /// connection with the setting on put the console to sleep between reconnect attempts. The C core and the
+    /// Rust engine rest only on a disconnect a person asked for.
     /// </summary>
     private volatile bool _stopRequested;
 
@@ -182,16 +182,6 @@ public sealed class SessionController : IAsyncDisposable
     private long _statsSampleCount;
 
     /// <summary>
-    /// What the adaptive controller currently thinks the quality should be, or null with no live session.
-    ///
-    /// <para>
-    /// This is a <em>recommendation</em>, and only partly actionable mid-session: the bitrate does reach the
-    /// console via CONNECTION_QUALITY, but that message has no resolution or frame-rate field — those are fixed
-    /// by the launchSpec at session start and can only change on a reconnect. So a recommended resolution below
-    /// what is being received is expected, not a failure to apply it.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// Why the controller last changed or capped quality, or empty with no live session. Paired with
     /// <see cref="RecommendedQuality"/>, so a target that differs from the request is attributed.
     /// </summary>
@@ -216,6 +206,16 @@ public sealed class SessionController : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// What the adaptive controller thinks the quality should be, or null with no live session.
+    ///
+    /// <para>
+    /// This is a <em>recommendation</em>, and only partly actionable mid-session: the bitrate does reach the
+    /// console via CONNECTION_QUALITY, but that message has no resolution or frame-rate field — those are fixed
+    /// by the launchSpec at session start and can only change on a reconnect. So a recommended resolution below
+    /// what is being received is expected, not a failure to apply it.
+    /// </para>
+    /// </summary>
     public BitrateDecision? RecommendedQuality
     {
         get
@@ -312,14 +312,9 @@ public sealed class SessionController : IAsyncDisposable
     {
         int attempt = 0;
 
-        // Why the last attempt stopped, carried into the next one.
-        //
-        // **Because "Reconnecting to your console…" under a heading that says the same thing is not a
-        // sentence.** The useful message — what failed, and how long until the next try — was reported just
-        // before the backoff, so it held the screen for the backoff and was then replaced by that tautology
-        // for the whole of the attempt. Reported from hardware as a connect that flashed between two
-        // unhelpful lines: with early backoffs of a second or two, the informative one is the one that
-        // flickers.
+        // Why the last attempt stopped, carried into the next one, so a reconnect attempt's status says what
+        // failed for the whole of the attempt and not only during the backoff before it. With early backoffs
+        // of a second or two, a reason shown only then would flicker past.
         string? lastReason = null;
 
         // Whether this controller has streamed at all. Until it has, a retry is still the first connect: it says
@@ -373,7 +368,7 @@ public sealed class SessionController : IAsyncDisposable
 
                     // The console ended it on purpose: no reconnect, and above all no wake. Every reconnect wakes the
                     // console first (WakeBeforeRetry), so a console rested from its own menu, or by its own timer,
-                    // was woken straight back up (2026-10-05).
+                    // would be woken straight back up.
                     if (endKind == SessionEndKind.EndedByConsole
                         || (endKind == SessionEndKind.Unknown && IsEndedByConsole(endReason)))
                     {
@@ -383,11 +378,11 @@ public sealed class SessionController : IAsyncDisposable
 
                     // Only a session that LASTED resets the budget.
                     //
-                    // This used to reset on connect, which made MaxReconnectAttempts unreachable in the one
-                    // case that needs it. A console on its way into rest mode completes the handshake and
-                    // drops it immediately, so every attempt counted as a success, the budget reset every
-                    // time, and the loop ran forever. Observed on hardware: the console went back to sleep and
-                    // the app reconnected indefinitely, with no way out but killing it.
+                    // Resetting on connect would make MaxReconnectAttempts unreachable in the one case that
+                    // needs it. A console on its way into rest mode completes the handshake and drops it
+                    // immediately, so every attempt would count as a success, the budget would reset every
+                    // time, and the loop would run forever (observed on hardware: the console went back to
+                    // sleep and the client reconnected indefinitely).
                     if (_clock() - streamingSince >= _options.MinimumHealthySession)
                     {
                         attempt = 1;
@@ -405,8 +400,8 @@ public sealed class SessionController : IAsyncDisposable
                         return;
                     }
 
-                    // Backoff on a flap too. Reconnecting instantly into a console that is shutting down is
-                    // what turned this into a tight loop rather than a slow one.
+                    // Backoff on a flap too. Reconnecting instantly into a console that is shutting down
+                    // makes a tight loop rather than a slow one.
                     lastReason = endReason ?? "The stream dropped as soon as it started.";
 
                     TimeSpan flapBackoff = BackoffFor(attempt);
@@ -442,7 +437,7 @@ public sealed class SessionController : IAsyncDisposable
                 int budget = everStreamed ? _options.MaxReconnectAttempts : _options.MaxFirstConnectAttempts;
                 if (attempt > budget)
                 {
-                    // A first connect's failure is its own cause; "couldn't reconnect" was never true of it.
+                    // A first connect's failure is its own cause; "couldn't reconnect" is not true of it.
                     Transition(
                         SessionLifecycle.Failed,
                         everStreamed
@@ -516,7 +511,7 @@ public sealed class SessionController : IAsyncDisposable
     /// <para>
     /// <b>Why the deadline exists.</b> <see cref="SessionControllerOptions.MaxReconnectAttempts"/> bounds how
     /// many attempts there are and says nothing about one that never returns, which is a window reading
-    /// "Connecting…" indefinitely (reported from hardware).
+    /// "Connecting…" indefinitely.
     /// </para>
     ///
     /// <para>
@@ -604,8 +599,8 @@ public sealed class SessionController : IAsyncDisposable
 
     /// <summary>
     /// Stop the connect attempt's deadline while a person is answering it, the login passcode prompt being the
-    /// case. The time spent on the prompt is theirs, not the console's, and counting it ended an attempt under a
-    /// prompt left open: the deadline cancelled it and the controller reconnected (2026-10-02). Disposing the
+    /// case. The time spent on the prompt is theirs, not the console's, and counting it would end an attempt under
+    /// a prompt left open: the deadline would cancel it and the controller would reconnect. Disposing the
     /// returned hold restarts the deadline with what was left, and never less than a short floor. A no-op when
     /// no attempt is armed. Safe from any thread.
     /// </summary>
@@ -710,13 +705,12 @@ public sealed class SessionController : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            // Retryable: opening a session now reaches the network, so this covers a rendezvous that timed out
-            // or a console that was busy -- transient things worth another attempt, where before it could only
-            // be a construction error.
+            // Retryable: opening a session reaches the network, so this covers a rendezvous that timed out or a
+            // console that was busy -- transient things worth another attempt.
             //
             // Except an explicit refusal. The account route registers its session here, and a console that answers
-            // 401 or 403 has said no; retrying it twice, with a wake through PlayStation Network before each, spent
-            // over a minute before the same answer was shown (visual audit, 2026-10-08). Only those two codes:
+            // 401 or 403 has said no; retrying it twice, with a wake through PlayStation Network before each, spends
+            // over a minute before the same answer is shown. Only those two codes:
             // the rest of this path's failures, a rendezvous that never completed among them, do clear on a retry.
             bool refused = ex.Message.Contains("(HTTP 403", StringComparison.OrdinalIgnoreCase)
                 || ex.Message.Contains("(HTTP 401", StringComparison.OrdinalIgnoreCase);
@@ -788,18 +782,18 @@ public sealed class SessionController : IAsyncDisposable
             "not paired", "registration", "registkey", "credential", "unauthor",
             "rejected (403", "rejected (401", "control secrets",
 
-            // The session's own wording is "/sess/init rejected (HTTP 403, …)", which the two above never matched,
-            // so a console refusing the session was retried six times with a wake before each (review,
-            // 2026-10-05). [X]: whether a console still waking can answer 403 is unchecked; the 1.0 pass covers it.
+            // The session's own wording is "/sess/init rejected (HTTP 403, …)", which the two above do not match;
+            // without these a console refusing the session is retried with a wake before each.
+            // [X]: whether a console still waking can answer 403 is unchecked.
             "rejected (http 403", "rejected (http 401",
 
             // A pairing with no companion key can't derive the control key however often it is tried.
             "pair the console again",
 
             // The login passcode: cancelled, impossible to enter here, or wrong too many times. Asking again just
-            // asks the person the same question, and a cancel retried was a prompt that came straight back
-            // (2026-10-02). "Accepted the passcode but didn't start a session" is deliberately not here: that one
-            // does clear on a reconnect.
+            // asks the person the same question, and a cancel retried is a prompt that comes straight back.
+            // "Accepted the passcode but didn't start a session" is deliberately not here: that one does clear
+            // on a reconnect.
             "sign-in cancelled", "no passcode entry is available", "rejected the passcode",
         ];
 
@@ -853,8 +847,8 @@ public sealed class SessionController : IAsyncDisposable
             }));
         }
 
-        // Hand the session's rate controller the device's power/thermal state, and keep it current. Nothing
-        // supplied this before, so quality was identical on mains power and on a throttling handheld.
+        // Hand the session's rate controller the device's power/thermal state, and keep it current, so quality
+        // differs between mains power and a throttling handheld.
         session.BandwidthController.ReportThermalPowerState(_power.Current);
         _power.Changed += OnPowerChanged;
 
@@ -1017,9 +1011,9 @@ public sealed class SessionController : IAsyncDisposable
                 // Healthy but idle. Recover the lifecycle if a previous dip had degraded it, then keep watching.
                 //
                 // CONTINUE, not return: returning exits this watchdog loop, which is precisely how the outer
-                // session loop is told to replace the session — so an early `return` here caused the reconnect it
-                // was written to prevent. The tests caught it; the two exits differ by one keyword and mean
-                // opposite things.
+                // session loop is told to replace the session — so an early `return` here would cause the
+                // reconnect it is written to prevent. The two exits differ by one keyword and mean opposite
+                // things.
                 if (Lifecycle == SessionLifecycle.Degraded)
                 {
                     Transition(SessionLifecycle.Streaming, "Connected.");
@@ -1104,7 +1098,7 @@ public sealed class SessionController : IAsyncDisposable
         CurrentStatus = status;
 
         // Trace every transition. A reconnect storm or a stall/recover cycle is invisible in an instantaneous UI
-        // but obvious in a capture timeline. The reason goes in the trace as it always did; only the screen
+        // but obvious in a capture timeline. The reason goes in the trace beside the detail; only the screen
         // shows it apart from the sentence.
         string traced = reason is null ? detail : $"{detail} ({reason})";
         RipcordEventSource.Log.SessionStateChanged(lifecycle.ToString(), traced);

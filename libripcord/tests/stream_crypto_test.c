@@ -1,18 +1,20 @@
 /*
- * ripcord-3ds - stream-plane crypto known-answer runner.
+ * libripcord - stream-plane crypto known-answer runner.
  *
  * Reads tests/vectors/stream-crypto.kat, produced by
  *
  *     dotnet run --project tools/Ripcord.ProtocolLab -- vectors
  *
- * and checks this port's GMAC (rc_gmac), stream key schedule (stream_key_schedule_derive_direction) and
- * per-packet nonce/tag derivation (stream_packet_crypto) against it. Every answer in the file was
- * computed by the .NET implementation (AesGcmCore.Mac / HalyardStreamKeySchedule / HalyardPacketCrypto);
- * every answer here is computed by the C one - the same cross-language check tests/vector_runner.c
- * already established for the control-plane crypto, extended to the stream plane because a memorized
- * NIST GCM test vector risked being subtly wrong in a way this cross-check does not.
+ * and checks the core's GMAC (rc_gmac_with_key), stream key schedule
+ * (stream_key_schedule_derive_direction) and per-packet nonce/tag derivation (stream_packet_crypto)
+ * against it. Every answer in the file was computed by the .NET implementation (AesGcmCore.Mac /
+ * HalyardStreamKeySchedule / HalyardPacketCrypto); every answer here is computed by the C one - the
+ * same cross-language check tests/vector_runner.c makes for the control-plane crypto, used for the
+ * stream plane because a memorized NIST GCM test vector risks being subtly wrong in a way this
+ * cross-check does not. The control sealer and the loss report are checked here by hand, with no
+ * vector file.
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile. The file format matches
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE - see tests/Makefile. The file format matches
  * vector_runner.c's: flat text, one vector per line, hex fields split on spaces.
  */
 #include "../crypto/rc_gcm.h"

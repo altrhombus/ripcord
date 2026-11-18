@@ -159,8 +159,7 @@ public sealed partial class PlayWedge : UserControl
     /// True when the console did not answer. The wedge goes quiet rather than disappearing.
     ///
     /// <para>
-    /// This is the one place the implementation departs from <c>docs/design.md</c>, deliberately and with the
-    /// design doc amended to match — the full argument is in the XAML. In short: "cannot be reached" is one
+    /// <c>docs/design.md</c> asks for this, and the full argument is in the XAML. In short: "cannot be reached" is one
     /// lost UDP datagram away from being wrong, so it may change how the affordance LOOKS and must not remove
     /// it. Muted keeps the doc's reasoning (a console that is off is a normal state, so nothing red and no
     /// error glyph) without rebuilding the dead end in paint.
@@ -301,7 +300,7 @@ public sealed partial class PlayWedge : UserControl
         //
         // AccentResources.Brush already resolves the accent to a system brush in high contrast, so the RIM is
         // correct on its own. The bleed takes the accent as a bare Color instead, and that path has no such
-        // suppression: on hardware it kept painting a vendor blue at 14% over a high-contrast card.
+        // suppression: unchecked, it paints a vendor blue at 14% over a high-contrast card.
         //
         // AccentWashOpacity is the existing answer to "how strongly may a decorative accent show", and it
         // returns zero here.
@@ -341,7 +340,7 @@ public sealed partial class PlayWedge : UserControl
     /// <para>
     /// Press outranks hover because a press implies the pointer is there anyway, and because the moment
     /// worth marking is the one the player caused. Focus gets nothing from this: the ring owns focus, and a
-    /// second focus mark on the wedge would rebuild exactly the confusion the 2026-09-20 split removed.
+    /// second focus mark on the wedge would make hover and focus look alike.
     /// </para>
     /// </summary>
     private byte Alpha() => IsDown ? BleedAlphaDown : IsHot ? BleedAlphaHot : BleedAlphaRest;

@@ -8,8 +8,8 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming;
 /// Splits the multiplexed stream into video/audio/other by the packet type (low nibble of byte 0),
 /// authenticates + decrypts each media packet through the crypto seam, and reassembles video fragments
 /// into whole encoded frames. With <see cref="PassthroughHalyardSessionCrypto"/> the open step is identity
-/// (payloads are already plaintext), so this runs end to end against captures/synthetic data; the real
-/// crypto slots in unchanged.
+/// (payloads are already plaintext), so this runs end to end against captures/synthetic data.
+/// Every packet is opened with the v1 A/V layout (<see cref="HalyardPacketLayout.Av"/>).
 ///
 /// Per-packet crypto is keyed by the header's keystream offset and covers the whole packet (spec §5.5), so the
 /// demuxer hands the crypto the full packet and reads the decrypted payload back from
@@ -69,13 +69,13 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     private int[] _arrivedLength = []; // each unit's payload length as it arrived (or as recovered)
     private bool _frameOpen;
 
-    // The SPS/PPS parameter sets from STREAM_INFO (not carried in the video stream); prepended ahead of every
-    // emitted IDR so the decoder can (re)initialise.
+    // The parameter sets from STREAM_INFO (H.264 SPS/PPS or HEVC VPS/SPS/PPS; not carried in the video
+    // stream); prepended ahead of every emitted keyframe so the decoder can (re)initialise.
     private byte[]? _videoHeader;
 
     /// <summary>
-    /// Which codec the stream carries, inferred from the out-of-band parameter sets. Needed because "is this an
-    /// IDR" is asked of the NAL header, and the two codecs encode that differently.
+    /// Which codec the stream carries, inferred from the out-of-band parameter sets. Needed because "is this a
+    /// keyframe" is asked of the NAL header, and the two codecs encode that differently.
     /// </summary>
     private bool _videoIsHevc;
 
@@ -174,7 +174,7 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     /// </summary>
     public event Action<int, int>? VideoLossDetected;
 
-    /// <summary>Non-media packets (control, loss-report, FEC) surfaced for diagnostics.</summary>
+    /// <summary>Packets whose type is neither video nor audio, surfaced with the bytes past the header.</summary>
     public event Action<HalyardStreamHeader, ReadOnlyMemory<byte>>? ControlPacketReceived;
 
     /// <summary>Number of media packets that failed GMAC verification (diagnostics).</summary>
@@ -389,13 +389,15 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
             }
         }
 
-        // A frame is a keyframe iff its slices are IDR NAL units (type 5). This drives both the IsKeyFrame flag
-        // and the SPS/PPS re-send below — more reliable than guessing from the slice count.
+        // A frame is a keyframe iff its first present slice is an H.264 IDR NAL unit (type 5) or an HEVC IRAP
+        // (types 16..21). This drives both the IsKeyFrame flag and the parameter-set prepend below — more
+        // reliable than guessing from the slice count.
         bool isKey = FirstSourceSliceIsIdr();
 
-        // Assemble clean Annex-B: prepend SPS/PPS ahead of every IDR (the sets arrive out-of-band in
-        // STREAM_INFO, and a hardware decoder needs them to (re)initialise — resending on each IDR lets the
-        // picture resync cleanly after loss). Then append each source unit's slice (payload past the prefix).
+        // Assemble clean Annex-B: prepend the parameter sets ahead of every keyframe (the sets arrive
+        // out-of-band in STREAM_INFO, and a hardware decoder needs them to (re)initialise — resending on each
+        // keyframe lets the picture resync cleanly after loss). Then append each source unit's slice (payload
+        // past the prefix).
         _assemblyLength = 0;
         if (isKey && _videoHeader is not null)
         {
@@ -463,8 +465,9 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     }
 
     /// <summary>
-    /// Whether the first present source unit's slice is an IDR (H.264 NAL type 5). Scans past the 2-byte unit
-    /// prefix and the Annex-B start code (3- or 4-byte) to the NAL header byte.
+    /// Whether the first present source unit's slice starts a keyframe: H.264 NAL type 5 (IDR), or on an HEVC
+    /// stream any IRAP type, 16..21. Scans past the 2-byte unit prefix and the Annex-B start code (3- or
+    /// 4-byte) to the NAL header byte. False when that unit has no start code.
     /// </summary>
     private bool FirstSourceSliceIsIdr()
     {
@@ -529,8 +532,8 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
         // source frame per packet. unit_size is derived as payload / total_units; the header's low 16 bits
         // are not decoded (spec §6). Only the first unit goes to the decoder: Opus/CELT sizes its per-band bit
         // budget from the packet length, so fed the whole payload it decodes the extra units as high-frequency
-        // coefficients, corrupting every band above ~5 kHz (audio sounds "underwater"). (Using the redundant
-        // units to conceal packet loss is a later refinement.)
+        // coefficients, corrupting every band above ~5 kHz (audio sounds "underwater"). The redundant units
+        // are not used to conceal packet loss.
         int payloadLength = opened.Length - header.PayloadOffset;
         int units = Math.Max(1, header.TotalUnits);
         int unitSize = payloadLength / units;

@@ -1,10 +1,10 @@
 /*
- * ripcord ports - a minimal Mbed TLS configuration: elliptic curves and bignums, nothing else.
+ * libripcord - a minimal Mbed TLS configuration: elliptic curves and bignums, nothing else.
  *
  * libripcord/crypto/rc_ecdh.c delegates exactly one primitive to this library - ECDH over P-256 and
  * P-521 - and uses only its mbedtls_ecp_* and mbedtls_mpi_* entry points. There is no TLS here, no
- * X.509, no cipher suites, no entropy source, no filesystem and no clock: this port supplies its own
- * randomness through the platform seam's rc_random_bytes (platform/rc_platform.h) and speaks a protocol
+ * X.509, no cipher suites, no entropy source, no filesystem and no clock: the core's callers supply
+ * randomness through the platform seam's rc_random_bytes (platform/rc_platform.h) and speak a protocol
  * that is not TLS.
  *
  * Everything below is therefore an ALLOW-list rather than the usual mbedtls config, which is a
@@ -25,8 +25,7 @@
  * The two curves the protocol actually selects, and no others.
  *
  * HalyardStreamKeySchedule picks the curve from the negotiated protocol version (0x0d-0x11 -> P-521,
- * otherwise P-256), and client version 17 is what a real session negotiates today. No code path can
- * reach any other curve.
+ * otherwise P-256), so client version 17 negotiates P-521. No code path can reach any other curve.
  */
 #define MBEDTLS_ECP_DP_SECP256R1_ENABLED
 #define MBEDTLS_ECP_DP_SECP521R1_ENABLED

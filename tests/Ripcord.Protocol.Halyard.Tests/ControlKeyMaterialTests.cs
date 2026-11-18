@@ -6,9 +6,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
 /// No control key, no session. /sess/init's RP-Nonce and the pairing's companion are the control key's
-/// inputs; without either, the session used to carry on to an unauthenticated /sess/ctrl and would then have
-/// sent the launchSpec, handshakeKey and all, in the clear. It now stops with a reason, as the C core and the
-/// Rust engine do (engine comparisons, 2026-09-26).
+/// inputs; without either, the session stops with a reason rather than carrying on to an unauthenticated
+/// /sess/ctrl and sending the launchSpec, handshakeKey and all, in the clear. The C core and the Rust engine
+/// stop there too.
 /// </summary>
 public class ControlKeyMaterialTests
 {

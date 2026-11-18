@@ -16,7 +16,7 @@
 /*
  * sin_len is set on every sockaddr here. The PS3's sockaddr_in carries a leading length byte in the
  * original BSD style that Linux and the 3DS both dropped, so code written against either compiles
- * unchanged and leaves it zero - source/net/rc_netlog.c found that the hard way and says so at length.
+ * unchanged and leaves it zero - source/net/rc_netlog.c records whether the field is required.
  */
 static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port)
 {
@@ -30,14 +30,6 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
         (void)inet_pton(AF_INET, ip, &a->sin_addr);
 }
 
-/*
- * OPEN, PUMP, CLOSE - so a caller with a screen to keep drawing can ask without stopping.
- *
- * rc_discover blocks for its whole window, which is right for a bring-up probe and would freeze the
- * shell for a second and a half on every refresh. The receive loop is non-blocking - MSG_DONTWAIT and
- * a sleep - so the split only moves the socket's lifetime into the caller's hands. rc_discover is these
- * three in a loop, so the bring-up path exercises them on every run.
- */
 /*
  * BOTH FAMILIES. The two differ in the port they listen on and in the protocol version they expect
  * echoed back - 9302 and 00030010 for a PS5, 987 and 00020020 for a PS4 - so a PS5 probe never reaches
@@ -54,6 +46,14 @@ static const halyard_discovery_profile *const kProfiles[] = {
 };
 #define RC_DISCOVER_PROFILES ((int)(sizeof(kProfiles) / sizeof(kProfiles[0])))
 
+/*
+ * OPEN, PUMP, CLOSE - so a caller with a screen to keep drawing can ask without stopping.
+ *
+ * rc_discover blocks for its whole window, which is right for a bring-up probe and would freeze the
+ * shell for a second and a half on every refresh. The receive loop is non-blocking - MSG_DONTWAIT and
+ * a sleep - so the split only moves the socket's lifetime into the caller's hands. rc_discover is these
+ * three in a loop, so the bring-up path exercises them on every run.
+ */
 int rc_discover_open(rc_discover_result *out)
 {
     const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
@@ -82,7 +82,7 @@ int rc_discover_open(rc_discover_result *out)
     out->socket_ok = 1;
 
     /*
-     * THE QUESTION rc_platform.h LEFT OPEN. Port 0 means "any free port", which is what a client that
+     * THE QUESTION rc_platform.h RAISES. Port 0 means "any free port", which is what a client that
      * only needs to receive replies to its own request should ask for - and it is the exact idiom the
      * 3DS rejects outright. Asked here, recorded, and not treated as fatal: if this platform refuses
      * it, discovery can still work from a fixed port, and knowing which of those is true is worth more
@@ -147,8 +147,7 @@ int rc_discover_open(rc_discover_result *out)
     /*
      * Poll rather than block. rc_time_ms is the seam's monotonic clock - the one rc_platform_ps3.c
      * derives from the time base precisely so a deadline cannot be moved by the console's wall clock -
-     * and a non-blocking recvfrom in a timed loop needs nothing from the platform that has not already
-     * been confirmed on this hardware.
+     * and a non-blocking recvfrom in a timed loop needs nothing more from the platform.
      */
     return sock;
 }
@@ -186,10 +185,9 @@ int rc_discover_pump(int sock, rc_discover_result *out, int found)
 
                 /*
                  * DEDUPE BY host-id. Two probes go out - see the sin_len experiment above - so one
-                 * console answers twice and the first version of this counted it as two consoles.
-                 * That was cosmetic here and would not be in a client: a console can reply more than
-                 * once to a single broadcast, and a list that grows an entry per datagram is a list
-                 * that shows the same machine repeatedly.
+                 * console answers twice. A console can also reply more than once to a single
+                 * broadcast, and a list that grows an entry per datagram is a list that shows the same
+                 * machine repeatedly.
                  */
                 for (j = 0; j < found; j++)
                     if (strcmp(out->console[j].host_id, out->console[found].host_id) == 0) {
@@ -213,7 +211,7 @@ void rc_discover_close(int sock)
 }
 
 /*
- * The blocking form, now built from the three above - which is what keeps them honest, since every
+ * The blocking form, built from the three above - which is what keeps them honest, since every
  * bring-up run drives this path.
  */
 int rc_discover(unsigned timeout_ms, rc_discover_result *out)

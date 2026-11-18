@@ -1,29 +1,33 @@
 /*
- * ripcord-3ds - the combined connect-flow probe: control plane -> senkusha -> Takion -> stream keys.
+ * ripcord-3ds - the connect flow: control plane -> senkusha -> Takion -> stream keys -> A/V and input.
  *
- * WHY THIS EXISTS. Nothing below the control plane can be tested in isolation: source/takion/main.c
+ * Nothing below the control plane can be tested in isolation: source/takion/main.c
  * drove an INIT at a console standalone on 2026-08-12 and got silence, because a console opens its
  * stream UDP ports ONLY inside a live session. Validating Takion, the ECDH key agreement, or anything
- * above them means carrying a real control session all the way there. This program does that.
+ * above them means carrying a real control session all the way there. This program does that, then
+ * decodes the video (rc_mvd), plays the audio (rc_audio) and sends the 3DS pad as controller input.
  *
  * THE SEQUENCE, and every step's reason (HalyardStreamingSession.ConnectAsync):
  *   1. arm -> /sess/init -> /sess/ctrl                     (halyard_control_session, hardware-confirmed)
  *   2. the binary control channel, answering HEARTBEAT_REQ  - from here to the end, continuously
  *   3. the sign-in gate: wait 1 s for LOGIN_PROMPT (0x0004). A LOCKED CONSOLE SILENTLY DROPS EVERY
- *      TAKION INIT, so this is a hard gate. This build cannot answer a PIN prompt (no on-screen entry
- *      yet), so it reports and stops.
+ *      TAKION INIT, so this is a hard gate. This program does not answer a PIN prompt (it has no
+ *      on-screen entry); it reports and stops.
  *   4. wait for session-ready (SESSION_ID, 0x0033)
  *   5. senkusha bring-up on UDP 9297 - the console requires this to have happened before it will answer
  *      the stream's SESSION exchange. Keyless: full Takion framing with the GMAC and keystream-offset
- *      fields left zero.
+ *      fields left zero. Includes the RTT echo probe and both MTU legs.
  *   6. Takion handshake on UDP 9296 (NOT 9297 - that is senkusha's port)
  *   7. SESSION_REQUEST -> SESSION_REPLY -> per-direction stream keys (takion_session_negotiator)
  *   8. run_media: sealing on, STREAM_INFO acked, then the A/V, input and loss-report loop
  *
+ * With probe_resolutions set in the pairing record, run_resolution_probe runs this once per candidate
+ * resolution instead, and each connect stops after acking STREAM_INFO.
+ *
  * THE CONTROL CHANNEL HAS NO THREAD OF ITS OWN, AND THAT IS THE HARD PART. The console resets the
  * session ~15-30 s after heartbeat replies stop. Steps 5-7 involve UDP waits far longer than that, so
- * every blocking wait here either polls the control channel itself or hands takion_channel_connect a
- * tick callback that does. A blocking UDP call anywhere in this file is a bug that presents as the
+ * every blocking wait here either polls the control channel itself or hands takion_channel_connect_ticked
+ * a tick callback that does. A blocking UDP call anywhere in this file is a bug that presents as the
  * console hanging up mid-bring-up.
  *
  * See HARDWARE-PROBES.md.
@@ -76,10 +80,7 @@
 #define STREAM_ATTEMPT_MS        300u
 #define NEGOTIATE_TIMEOUT_MS     10000u
 #define STREAM_INFO_TIMEOUT_MS   15000u
-/*
- * NO FIXED MEDIA WINDOW. The session ends when the user ends it, so every rate in the report is computed
- * against MEASURED elapsed time, never against a nominal window the run may not have filled.
- */
+/* CANDIDATE_DWELL_MS is not referenced in this file. */
 #define CANDIDATE_DWELL_MS        8000u
 #define LOSS_REPORT_INTERVAL_MS   200u
 /* 60 Hz. Integer milliseconds: 16 rather than 16.67, which paces slightly fast and so never starves the
@@ -119,12 +120,6 @@ static u64 g_last_heartbeat_ms;
 static long g_heartbeats_answered, g_control_messages_other;
 static uint32_t g_last_control_type = 0xffffffffu;
 
-/*
- * The stream-plane sender state. One advancing keystream offset is shared by every outgoing sealed packet -
- * control DATA, SACKs and loss reports alike - and it advances by the packet's 16-byte-aligned
- * length, not by 1. Reusing a position across two packets reuses a GMAC nonce, which is a real forgery
- * problem and produces no visible symptom.
- */
 /* 513 KB - file scope is mandatory, not a preference (stream_demux.h). */
 static stream_demux g_demux;
 static long g_frames;
@@ -133,9 +128,10 @@ static long g_audio_frames;
 static long g_loss_events;
 
 /*
- * The decoder. It runs on the same thread as the receive loop, so if it costs more than the inter-packet
- * gap it starves the socket and the symptom (packet loss) looks like a network problem rather than a CPU
- * one. Phase 2 measured that CPU contention on this core costs real UDP throughput.
+ * The decoder. rc_mvd_decode_frame runs on the same thread as the receive loop, so if it costs more than
+ * the inter-packet gap it starves the socket and the symptom (packet loss) looks like a network problem
+ * rather than a CPU one. The link test (source/linktest) measured that CPU contention on this core costs
+ * real UDP throughput.
  */
 static rc_mvd g_mvd;
 static rc_audio g_audio;
@@ -228,25 +224,23 @@ static int16_t scale_stick(int v)
 static int g_decode_enabled = 1;
 static rc_profile g_profile;
 
-/* Set by the video callback (which runs deep inside stream_demux_ingest) and consumed by the media loop,
- * because the swap belongs to the loop that owns the frame timing, not to a demux callback. */
+/* argv[0], kept so the video dump can be written beside the .3dsx. */
+static const char *g_argv0;
 /*
- * RAW BITSTREAM DUMP. Writes the Annex-B elementary stream to the SD card so a PC decoder can say
- * whether the console sends a picture, whether our demuxer assembles it intact, and whether MVD
- * mishandles a good stream:
+ * RAW BITSTREAM DUMP (dumpvideo in the pairing file). Writes the Annex-B elementary stream to the SD card
+ * so a PC decoder can say whether the console sends a picture, whether our demuxer assembles it intact,
+ * and whether MVD mishandles a good stream:
  *
  *   ffprobe -show_frames video.264      # frame types, resolution, whether it parses at all
  *   ffmpeg -i video.264 frame%03d.png   # look at the pictures
  *
  * Capped at 2 MB (~700 frames at the ~2.8 KB/frame this stream runs at). A diagnostic switch, not
  * something to leave on.
- */
-static const char *g_argv0;
-/*
+ *
  * BUFFERED IN RAM, WRITTEN AT THE END - because writing during the session damages what it captures.
- * fwrite()ing each frame as it arrived put SD writes on the receive thread and stalled the drain: that
- * run lost 2168 units, and the captured stream had 332 frame_num discontinuities across 941 pictures.
- * ffmpeg conceals such gaps silently, so the capture looked fine on a PC.
+ * fwrite()ing each frame as it arrives puts SD writes on the receive thread and stalls the drain: a run
+ * that did so lost 2168 units, and the captured stream had 332 frame_num discontinuities across 941
+ * pictures. ffmpeg conceals such gaps silently, so the capture looked fine on a PC.
  */
 static uint8_t g_video_dump_buf[2u * 1024u * 1024u];
 static unsigned long g_video_dump_bytes;
@@ -263,6 +257,8 @@ static int g_measured_mtu;      /* 0 until both MTU directions confirm; the decl
 static int g_stream_bitrate_kbps;
 static int g_stream_width = 640;
 static int g_stream_height = 360;
+/* Set by the video callback when a picture decodes and cleared by maybe_present after a swap. Nothing
+ * reads it: maybe_present asks rc_mvd_scale_begin whether there is a picture to show. */
 static int g_picture_pending;
 /* Set from the pairing record before the media window; run_media has no record of its own. */
 static int g_video_rgb565;
@@ -277,8 +273,7 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
         g_keyframes++;
     /* The first frame is the one worth describing: if the demuxer assembled it and it starts with an
      * Annex-B start code, then framing, reassembly, the crypto seam and the parameter-set prepend all
-     * worked on real traffic - which is the entire Phase 5.5 layer, previously exercised only against
-     * synthetic packets. */
+     * worked on real traffic. */
     if (g_frames == 1) {
         rc_log("\x1b[32mFIRST VIDEO FRAME\x1b[0m %u bytes, %s, starts %02x%02x%02x%02x\n",
             (unsigned)length, is_keyframe ? "KEYFRAME" : "inter",
@@ -316,15 +311,13 @@ static long g_idr_requests;
 
 /*
  * Ask for a fresh keyframe when a frame is lost. WITHOUT THIS THE PICTURE NEVER RECOVERS: H.264 only
- * resynchronises at an IDR, and the console does not send one unprompted. The first hardware runs showed
+ * resynchronises at an IDR, and the console does not send one unprompted. Hardware runs without it showed
  * one keyframe per session and then 15-181 loss events.
  *
  * Rate-limited because asking for a keyframe per loss event is wasteful on a link with hundreds of them.
- * The requests were not what amplified burst loss: a decode-on/decode-off A/B showed identical loss, and
- * the cause was the receive loop draining one packet per tick.
  *
  * IDR_REQUEST is the blunt instrument; CORRUPT_FRAME (type 5) carries the actual damaged frame range and
- * lets the console decide, which is what the .NET reference sends. Not implemented here yet.
+ * lets the console decide, which is what the .NET reference sends. This file sends IDR_REQUEST only.
  */
 #define IDR_REQUEST_MIN_INTERVAL_MS 500u
 
@@ -337,7 +330,8 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
     g_loss_events++;
     if (g_loss_events <= 3)
         rc_log("  video loss: frames %d..%d\n", first_frame_index, last_frame_index);
-    /* Stop feeding the decoder until the IDR we are about to ask for arrives. */
+    /* With skip-until-keyframe on, this stops feeding the decoder until the next keyframe. Otherwise it
+     * does nothing. */
     rc_mvd_signal_loss(&g_mvd);
 
     if (now_ms - g_last_idr_request_ms >= (u64)IDR_REQUEST_MIN_INTERVAL_MS) {
@@ -352,6 +346,12 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
     }
 }
 
+/*
+ * The stream-plane sender state. One advancing keystream offset is shared by every outgoing sealed packet -
+ * control DATA, SACKs, loss reports and input alike - and it advances by the packet's 16-byte-aligned
+ * length, not by 1. Reusing a position across two packets reuses a GMAC nonce, which is a real forgery
+ * problem and produces no visible symptom.
+ */
 static stream_packet_crypto g_send_crypto;
 static stream_packet_crypto g_recv_crypto;
 static uint64_t g_send_keystream_offset;
@@ -387,15 +387,8 @@ static void seal_control_packet(void *ctx, uint8_t *packet, size_t length)
                                     CONTROL_TAG_OFFSET, 1 /* zero_keystream_offset */);
 }
 
-/*
- * The heartbeat pump. Called from the main loop AND from inside takion_channel_connect's wait loops, so
- * that a 6-second UDP handshake does not cost us the control connection.
- *
- * Drains the control channel up to a bound rather than one message per call. One per call fell behind
- * under a real game: a session that looked healthy in every other respect (5% loss, 1.75 Mbps, 25 fps)
- * still ended with "control channel closed by console" at 70 seconds. Bounded so a flood cannot starve
- * the A/V drain - the same reasoning that caps the packet drain at 64.
- */
+/* How many control messages service_control drains per call. Bounded so a flood cannot starve the A/V
+ * drain - the same reasoning that caps the packet drain at 64. */
 #define CONTROL_DRAIN_LIMIT 8
 
 /* The console starts every stream HEARTBEAT exchange and the client answers it (cap48). */
@@ -412,6 +405,14 @@ static void answer_stream_heartbeat(const uint8_t *message, size_t message_lengt
         (void)takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len);
 }
 
+/*
+ * The heartbeat pump. Called from the main loop AND from inside takion_channel_connect_ticked's wait
+ * loops, so that a 6-second UDP handshake does not cost us the control connection.
+ *
+ * Drains the control channel up to CONTROL_DRAIN_LIMIT rather than one message per call. One per call
+ * falls behind under a real game: such a session, healthy in every other respect (5% loss, 1.75 Mbps,
+ * 25 fps), ended with "control channel closed by console" at 70 seconds.
+ */
 static void service_control(void *ctx)
 {
     halyard_control_event event;
@@ -519,7 +520,7 @@ static void service_control(void *ctx)
 }
 
 
-/* Waits for a condition while keeping the control channel serviced. Returns 1 if it became true. */
+/* Waits for session-ready while keeping the control channel serviced. Returns 1 if it arrived. */
 static int wait_for_session_ready(unsigned timeout_ms)
 {
     u64 start_ms = osGetTime();
@@ -595,7 +596,7 @@ static int open_udp(const char *host, unsigned port, struct sockaddr_in *out_pee
 }
 
 /*
- * Waits for a reliable message of `want_type` on `channel`, servicing the control channel meanwhile.
+ * Waits for a reliable message of `want_type` on `ch`, servicing the control channel meanwhile.
  * Returns 1 if it arrived.
  */
 static int await_control_message(takion_reliable_channel *ch, uint32_t want_type, unsigned timeout_ms)
@@ -721,8 +722,8 @@ static int run_senkusha(const char *host)
      * a sample can only be inflated by delay, never deflated, so the smallest is the closest to the
      * true path time.
      *
-     * Best-effort throughout. A failed probe leaves rtt at 0 and the launch spec falls back to its
-     * declared default.
+     * Best-effort throughout. A failed probe leaves g_measured_rtt_ms at 0, and the launch spec then
+     * declares rtt 0.
      */
     if (ok) {
         uint8_t ping[SENKUSHA_ECHO_PAYLOAD];
@@ -902,7 +903,7 @@ static int g_probe_width, g_probe_height;
 static int g_probe_reported_width, g_probe_reported_height;
 static int g_probe_got_stream_info;
 
-/* The stream half: Takion on 9296, then SESSION_REQUEST/REPLY and the key derivation. */
+/* The stream half: Takion on 9296, SESSION_REQUEST/REPLY and the key derivation, then run_media. */
 static int run_stream(const halyard_pairing_record *rec)
 {
     struct sockaddr_in peer;
@@ -939,14 +940,8 @@ static int run_stream(const halyard_pairing_record *rec)
 
     memset(&params, 0, sizeof(params));
     /*
-     * 640x360, the bottom standard rung. NOT the screen's 400x240: asking for that produced two
-     * DISCONNECT messages within a second of sealing and a closed control channel, twice, reproducibly.
-     * So the mismatch between a 640x360 stream and a 400x240 screen is resolved on this side - see
-     * rc_mvd.c.
-     */
-    /*
      * THE PAIRING RECORD IS COPIED OUT BEFORE ANYTHING READS IT. Copied after the params assignment, the
-     * launch spec was built from g_stream_width's static initialiser while the throughput report saw the
+     * launch spec is built from g_stream_width's static initialiser while the throughput report sees the
      * record's value: 640x360 requested, bits/pixel reported against 960x540.
      */
     g_video_rgb565 = rec->video_rgb565;
@@ -962,20 +957,25 @@ static int run_stream(const halyard_pairing_record *rec)
         rc_log("video dump: buffering up to %u KB in RAM, written to video.264 on exit\n",
             (unsigned)(VIDEO_DUMP_LIMIT / 1024u));
 
+    /*
+     * The pairing record's stream size, or the probe candidate. NOT the screen's 400x240: asking for that
+     * produced two DISCONNECT messages within a second of sealing and a closed control channel, twice,
+     * reproducibly. So the mismatch between the stream and a 400x240 screen is resolved on this side -
+     * see rc_mvd.c.
+     */
     params.width = g_probing ? g_probe_width : g_stream_width;
     params.height = g_probing ? g_probe_height : g_stream_height;
     params.fps = (rec->fps == 60) ? 60 : 30;
-    /* What we ask the console to actually SEND - not RP-StartBitrate. Defaults to 2000 kbps because
-     * Phase 2 measured this hardware's link at 2.16% loss at 2 Mbps and much worse above ~5, while the
-     * vendor default of 10000 asks for five times what the link was shown to carry. At 10000 the first
-     * runs lost a third of all units, which kept the decoder permanently waiting for a keyframe. */
+    /* What we ask the console to actually SEND - not RP-StartBitrate. Taken from the pairing record
+     * (streambitrate). The link test measured this hardware's link at 2.16% loss at 2 Mbps and much
+     * worse above ~5, while the vendor default of 10000 asks for five times what the link was shown to
+     * carry. At 10000, hardware runs lost a third of all units, which kept the decoder permanently
+     * waiting for a keyframe. */
     params.bitrate_kbps = rec->stream_bitrate_kbps;
-    /* Confirmed in both directions by senkusha's MTU legs, or the declared default when they could not
-     * verify it. Declaring a figure the probe just showed to be too large would be worse than not
-     * probing at all; declaring an unverified one is merely the status quo. */
+    /* DEFAULT_DECLARED_MTU either way: g_measured_mtu is set only when senkusha's MTU legs confirmed
+     * that same value in both directions. */
     params.mtu = g_measured_mtu > 0 ? g_measured_mtu : DEFAULT_DECLARED_MTU;
-    /* Measured by senkusha's echo probe when it got a majority of echoes; 0 otherwise, which is what
-     * the launch spec has always declared. */
+    /* Measured by senkusha's echo probe when it got at least half of its echoes; 0 otherwise. */
     params.rtt_ms = g_measured_rtt_ms;
     params.is_hevc = 0;   /* MVD decodes H.264 only; HEVC must never be requested from this hardware */
     params.is_hdr = 0;
@@ -1113,26 +1113,13 @@ static int run_stream(const halyard_pairing_record *rec)
 }
 
 /*
- * run_media, below, is everything after the key agreement: sealing on, STREAM_INFO acked, keepalives
- * running, and the demuxer fed real packets.
- *
- * ORDER MATTERS AND IS NOT NEGOTIABLE. Sealing must be enabled before anything else goes out, because
- * from the console's point of view the session became authenticated the moment it sent SESSION_REPLY.
- * The STREAM_INFO_ACK in particular is sealed - and its SACK is too; leaving the SACK unsealed is the
- * documented way to get dropped with "streaminfoack fail" while believing you acked correctly.
- *
- * The client does not REQUEST STREAM_INFO; the console sends it unprompted once the session is sealed,
- * carrying the SPS/PPS parameter sets in resolution[0].videoHeader. Those are NOT in the video stream,
- * so stream_demux is given them and prepends them to the first IDR.
- */
-/*
  * Scale-and-swap, rate-limited to the display. CALLED FROM INSIDE THE DRAIN LOOP as well as after it: a
- * 64-packet drain costs tens of milliseconds on this CPU, so presenting once per outer iteration capped
- * presentation at the drain batch - 6.5 swaps a second against a 60 Hz throttle and a decoder producing
- * 53 pictures a second.
+ * 64-packet drain costs tens of milliseconds on this CPU, so presenting once per outer iteration caps
+ * presentation at the drain batch - measured at 6.5 swaps a second against a 60 Hz throttle and a
+ * decoder producing 53 pictures a second.
  *
  * It stays cheap to call: the timer check gates it, and rc_mvd_scale_begin returns immediately unless a
- * new picture has decoded. Nothing here blocks - gspWaitForVBlank is deliberately absent, because
+ * picture is ready. Nothing here blocks - gspWaitForVBlank is deliberately absent, because
  * stalling the drain is what caused this port's largest loss regression.
  */
 static int g_scale_inflight;
@@ -1142,8 +1129,8 @@ static void maybe_present(u64 now_ms)
     /*
      * A scale handed to the worker core is collected here rather than waited on: the receive loop must
      * never block, which is the same rule that keeps gspWaitForVBlank out of this path. When the scale
-     * runs inline (no spare core) rc_mvd_scale_complete returns 1 straight away and this collapses to
-     * the old behaviour.
+     * runs inline (no worker) rc_mvd_scale_complete returns 1 straight away, so the swap happens below
+     * in the same call that began it.
      */
     if (g_scale_inflight) {
         if (!rc_mvd_scale_complete())
@@ -1171,6 +1158,19 @@ static void maybe_present(u64 now_ms)
     }
 }
 
+/*
+ * run_media is everything after the key agreement: sealing on, STREAM_INFO acked, heartbeats answered,
+ * and the demuxer fed real packets.
+ *
+ * ORDER MATTERS AND IS NOT NEGOTIABLE. Sealing must be enabled before anything else goes out, because
+ * from the console's point of view the session became authenticated the moment it sent SESSION_REPLY.
+ * The STREAM_INFO_ACK in particular is sealed - and its SACK is too; leaving the SACK unsealed is the
+ * documented way to get dropped with "streaminfoack fail" while believing you acked correctly.
+ *
+ * The client does not REQUEST STREAM_INFO; the console sends it unprompted once the session is sealed,
+ * carrying the SPS/PPS parameter sets in resolution[0].videoHeader. Those are NOT in the video stream,
+ * so stream_demux is given them and prepends them to the first IDR.
+ */
 static int run_media(int sock)
 {
     uint8_t ack[16];
@@ -1191,8 +1191,7 @@ static int run_media(int sock)
     g_send_keystream_offset = 0;
     g_sealing = 1;
 
-    /* The demuxer, wired to the REAL crypto for the first time - every host test of this layer so far
-     * has used the passthrough stub, because there were no keys to give it. */
+    /* The demuxer, opened on the receive-direction packet crypto (stream_demux_packet_crypto). */
     {
         stream_demux_sink sink;
 
@@ -1204,12 +1203,6 @@ static int run_media(int sock)
     }
     takion_channel_enable_sealing(&g_stream_channel, seal_control_packet, NULL);
     rc_log("stream: GMAC sealing enabled\n");
-
-    /*
-     * When probing resolutions, all we need is STREAM_INFO's answer - the console has already told us
-     * what it chose by then. Ack it so the session ends cleanly, and skip the media window entirely so a
-     * sweep of six resolutions takes under a minute rather than six.
-     */
 
     /* 2. Wait for STREAM_INFO, then ack it on channel 0x0009. */
     start_ms = osGetTime();
@@ -1294,6 +1287,11 @@ static int run_media(int sock)
         return 0;
     }
 
+    /*
+     * When probing resolutions, STREAM_INFO's answer is all that is needed - the console has told us
+     * what it chose. Ack it so the session ends cleanly, and skip the media loop so a sweep of six
+     * resolutions takes under a minute rather than six.
+     */
     if (g_probing) {
         ack_len = takion_control_build_bare(TAKION_CONTROL_STREAM_INFO_ACK, ack, sizeof(ack));
         if (ack_len > 0)
@@ -1341,16 +1339,13 @@ static int run_media(int sock)
             long window_received = 0, window_lost = 0;
 
             /*
-             * REPORT THE LOSS, not only `received`. With `lost` left at zero the console was told every
-             * 200 ms that the link was perfect and had no reason to back off: under a real game (roughly
-             * 2.5 Mbps) 60,066 units were lost against 39,177 received, and each of the 314 IDR requests
-             * our own loss detection fired added another 30 KB keyframe burst.
+             * REPORT THE LOSS, not only `received`. With `lost` left at zero the console is told every
+             * 200 ms that the link is perfect and has no reason to back off: a run that did so under a
+             * real game (roughly 2.5 Mbps) lost 60,066 units against 39,177 received, and each of the
+             * 314 IDR requests our own loss detection fired added another 30 KB keyframe burst.
              *
              * take_packet_stats RESETS the counters as it reads, so this is the periodic drain and the
              * end-of-run report adds the running totals.
-             *
-             * Worth checking the .NET side for the same gap: x64 and ARM64 fail this benchmark the same
-             * way, and three clients failing identically points at something shared.
              */
             stream_demux_take_packet_stats(&g_demux, &window_received, &window_lost);
             g_total_received += window_received;
@@ -1376,8 +1371,11 @@ static int run_media(int sock)
         /*
          * CONTROLLER INPUT, up the same socket.
          *
-         * Two packets, both sealed exactly like the loss report: the shared up-direction keystream
-         * offset, written into the header before sealing, and a GMAC that zeroes ONLY the tag. A history
+         * Two packets. Each takes its keystream offset from the shared send counter
+         * (reserve_keystream_offset), writes it at offset 4 of the header, AES-CTR encrypts the payload,
+         * then calls stream_packet_crypto_seal with the tag at offset 8 and zero_keystream_offset = 0,
+         * so the GMAC's AAD zeroes ONLY the tag. The loss report above passes tag offset 7 and
+         * zero_keystream_offset = 1, which zeroes the tag and the keystream-offset field. A history
          * packet goes whenever a button transitioned and again every 200 ms; a state packet every 15 ms
          * (cap48).
          *
@@ -1422,8 +1420,8 @@ static int run_media(int sock)
                 /*
                  * ENCRYPT, THEN SEAL. stream_packet_crypto_seal only computes the GMAC tag; it does not
                  * touch the payload. Loss reports need nothing more, but spec 6.3 is explicit that input
-                 * payloads ARE AES-CTR encrypted. Sent in plaintext, the console decrypted our button
-                 * events into noise that had passed authentication the whole way.
+                 * payloads ARE AES-CTR encrypted. Sent in plaintext, the console decrypts our button
+                 * events into noise that has passed authentication the whole way.
                  *
                  * Order matters: the tag is computed over the packet AS IT GOES ON THE WIRE, i.e. over
                  * ciphertext.
@@ -1503,10 +1501,10 @@ static int run_media(int sock)
                     /*
                      * SAMPLED, one packet in sixteen. stream_demux_ingest below already verifies every
                      * packet through its crypto seam (packet_crypto_open_packet) and drops what fails,
-                     * so verifying every packet here too computed GMAC TWICE - about 10,000 redundant
-                     * times a minute at ~1,100 bytes each. The sampled check is kept because it is the
-                     * only thing that distinguishes link corruption from a crypto fault; a systematic
-                     * failure would hit every packet.
+                     * so verifying every packet here too would compute GMAC TWICE - about 10,000
+                     * redundant times a minute at ~1,100 bytes each. The sampled check is kept because
+                     * it is the only thing that distinguishes link corruption from a crypto fault; a
+                     * systematic failure would hit every packet.
                      */
                     int verified = 1;
 
@@ -1584,11 +1582,12 @@ static int run_media(int sock)
         }
         /*
          * Present, on the display's clock rather than the decoder's. rc_mvd scales the decoded frame
-         * into the framebuffer with the CPU, and libctru documents a flush as required for exactly that
-         * software-rendering case: without it the pixels sit in the data cache and the display
-         * controller never sees them (16 pictures decoded, zero render errors, blank screen). Swap only
-         * when a picture actually landed: swapping at loop rate would flicker the last frame against
-         * whatever is in the other buffer.
+         * into the framebuffer with the CPU and flushes it (rc_mvd_scale_begin inline, the worker when
+         * threaded). libctru documents that flush as required for exactly this software-rendering
+         * case: without it the pixels sit in the data cache and the display controller never sees them
+         * (16 pictures decoded, zero render errors, blank screen). maybe_present swaps only when rc_mvd
+         * reports a picture: swapping at loop rate would flicker the last frame against whatever is in
+         * the other buffer.
          *
          * gspWaitForVBlank is deliberately NOT used: it would block the receive loop for up to 16.7 ms,
          * and a stalled drain is exactly what caused this port's largest packet-loss regression. Instead
@@ -1600,9 +1599,7 @@ static int run_media(int sock)
     }
 
     if (g_mvd.ready) {
-        /* Per-candidate, not a session total: rc_mvd_next_candidate resets this so each geometry is
-         * judged on its own. Earlier logs reported "0 picture(s) rendered" under a log full of
-         * FIRST DECODED PICTURE lines purely because the last candidate had just been reset. */
+        /* frames_rendered counts pictures since rc_mvd_init, which run_media calls once per session. */
         rc_log("\nMVD (decode was %s): %ld picture(s) rendered\n",
             g_decode_enabled ? "ON" : "off", g_mvd.frames_rendered);
         rc_log("     %ld NAL unit(s) fed, %ld accepted non-picture unit(s)\n",
@@ -1632,9 +1629,8 @@ static int run_media(int sock)
     rc_profile_report(&g_profile, (unsigned)elapsed_ms);
     {
         /*
-         * The RUNNING totals, not another drain. take_packet_stats resets as it reads, and the loss
-         * reporter now drains it every 200 ms - so reading it again here would show only the residual
-         * since the last report rather than the session.
+         * The running totals plus the tail. take_packet_stats resets as it reads and the loss reporter
+         * drains it every 200 ms, so the read here returns only what arrived since the last report.
          */
         long received, lost, tail_received = 0, tail_lost = 0;
 
@@ -1665,7 +1661,7 @@ static int run_media(int sock)
                 mbps, g_stream_bitrate_kbps);
             /*
              * THE RESOLUTION HERE IS THE ONE THAT ARRIVED, not the one requested: the console declines
-             * silently, and dividing by 960x540 while 640x360 was on the wire understated bits/pixel
+             * silently, and dividing by 960x540 while 640x360 is on the wire understates bits/pixel
              * by 2.25x.
              */
             rc_log("       %.1f KB per frame at %dx%d = \x1b[36m%.3f bits/pixel\x1b[0m%s\n",
@@ -1777,7 +1773,7 @@ done:
 
 /*
  * Ask the console for each candidate resolution in turn, one full connect per candidate, and report what
- * it actually chose. See the probe-state comment at the top for why this question matters.
+ * it actually chose. See the RESOLUTION PROBE STATE comment above run_stream for why this matters.
  */
 static void run_resolution_probe(const halyard_pairing_record *rec)
 {
@@ -1853,8 +1849,8 @@ int main(int argc, char **argv)
     /*
      * TOP SCREEN IS RGB565 AND BELONGS TO MVD; the console goes on the bottom. MVD emits 16-bit BGR565,
      * and gfxInitDefault() gives the top screen a 24-bit BGR8 framebuffer - a format mismatch.
-     * consoleInit(GFX_TOP) would also hand that same framebuffer to the text console. On the first
-     * hardware runs this produced 0 pictures with 15 render failures per session and ZERO process
+     * consoleInit(GFX_TOP) would also hand that same framebuffer to the text console. With that setup,
+     * hardware runs produced 0 pictures with 15 render failures per session and ZERO process
      * errors. Matches the devkitPro MVD example.
      */
     gfxInit(GSP_RGB565_OES, GSP_BGR8_OES, false);

@@ -10,7 +10,7 @@ namespace Ripcord_App.Controls;
 
 /// <summary>
 /// The Ripcord mark used as a connect indicator: the wedge lit throughout, and one dash lighting per phase
-/// reached. See the XAML for why this replaced three dashes in a row.
+/// reached. See the XAML for why it is the mark and not three dashes in a row.
 /// </summary>
 public sealed partial class ConnectMark : UserControl
 {
@@ -74,9 +74,8 @@ public sealed partial class ConnectMark : UserControl
 
     /// <summary>
     /// The dash for the phase in progress breathes: a slow fade down and back, so a wait that runs to twenty
-    /// seconds visibly hasn't stalled. A still mark across a long wake read as a frozen screen (visual audit,
-    /// 2026-10-08, C2). Off when the wait is over, and never with Windows' animation effects off, where the dash
-    /// is simply lit.
+    /// seconds visibly hasn't stalled. A still mark across a long wake reads as a frozen screen. Off when the
+    /// wait is over, and never with Windows' animation effects off, where the dash is simply lit.
     /// </summary>
     public bool Breathing
     {

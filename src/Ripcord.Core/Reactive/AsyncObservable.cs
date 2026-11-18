@@ -20,11 +20,11 @@ public static class AsyncObservable
             CancellationToken token = cts.Token;
             _ = Task.Run(async () =>
             {
-                // Exactly one terminal signal, and none after the subscription is disposed. Until 2026-09-27 an
-                // OperationCanceledException always ended the sequence silently, whoever raised it, so a producer
-                // that cancelled itself (an internal timeout, say) left an observer waiting for an end that never
-                // came. And a producer that returned normally after a dispose was still told OnCompleted. Now only
-                // our own cancellation, meaning a dispose, is silent; any other end is signalled.
+                // Exactly one terminal signal, and none after the subscription is disposed. Only our own
+                // cancellation, meaning a dispose, is silent. A producer that cancels itself (an internal timeout,
+                // say) raises an OperationCanceledException that is not ours, and it reaches OnError: ending it
+                // silently would leave an observer waiting for an end that never comes. A producer that returns
+                // normally after a dispose is not told OnCompleted.
                 try
                 {
                     await producer(observer, token).ConfigureAwait(false);

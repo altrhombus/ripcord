@@ -117,7 +117,7 @@ public readonly record struct HalyardControlPrelude
     /// <summary>The <see cref="TagPair"/> with its two halves exchanged — the form the peer answers with.</summary>
     public uint SwappedTagPair => (TagPair >> 16) | (TagPair << 16);
 
-    /// <summary>The <see cref="Tail"/> length, and the six bytes of it that carry anything.</summary>
+    /// <summary>The <see cref="Tail"/> length. Its first six bytes carry the reflected endpoint; the last two are zero.</summary>
     public const int TailLength = 8;
 
     /// <summary>
@@ -188,8 +188,9 @@ public readonly record struct HalyardControlPrelude
 
     /// <summary>
     /// Parse an 88-byte prelude datagram. False for anything of the wrong length or an unknown type — the
-    /// chunk layer and this one share a port, so a reader has to be able to tell them apart, and a chunk
-    /// always begins with its two high length bits set where this has a small little-endian type.
+    /// chunk layer and this one share a port, so a reader has to be able to tell them apart. A chunk's first
+    /// byte carries a non-zero word count in its top two bits; a prelude begins with a small little-endian
+    /// type (<c>06 00</c> or <c>07 00</c>), which the chunk codec reads as a word count of zero and rejects.
     /// </summary>
     public static bool TryParse(ReadOnlySpan<byte> datagram, out HalyardControlPrelude prelude)
     {

@@ -30,9 +30,10 @@ public sealed record HalyardAccount(string AccountId, string OnlineId, string Re
 /// </list>
 ///
 /// <para>
-/// <b>Not thread-safe, and not marshalled.</b> It holds mutable session state and takes no locks, matching the
-/// app layer's rule that one dispatcher owns everything: callers in the app reach it through the presentation
-/// seam, which is dispatcher-confined. The console harness is single-threaded and calls it directly.
+/// <b>Not marshalled.</b> It holds mutable session state. One gate (<c>_restoreGate</c>) and a sign-in
+/// generation make a restore, a sign-in and a sign-out commit consistently when they overlap; nothing else is
+/// synchronized. Callers in the app reach it through the presentation seam, which is dispatcher-confined. The
+/// console harness is single-threaded and calls it directly.
 /// </para>
 /// </summary>
 public sealed class HalyardAccountGateway
@@ -75,14 +76,16 @@ public sealed class HalyardAccountGateway
     /// <summary>The signed-in account, or null. Populated by a successful sign-in or restore.</summary>
     public HalyardAccount? Account => _account;
 
-    /// <summary>True once there is a usable session <em>in memory</em>.</summary>
+    /// <summary>
+    /// True once there is a usable session <em>in memory</em>.
     ///
     /// <para>
     /// <b>Not the same question as "is this user signed in".</b> A stored refresh token is a signed-in user
-    /// whose session has not been restored yet, and this reports false for them. Anything deciding whether a
+    /// whose session has not been restored, and this reports false for them. Anything deciding whether a
     /// feature is <em>available</em> wants <see cref="EnsureSignedInAsync"/>; this is for surfaces that are
     /// already showing state and want to know what is loaded.
     /// </para>
+    /// </summary>
     public bool IsSignedIn => _account is not null;
 
     /// <summary>
@@ -154,8 +157,7 @@ public sealed class HalyardAccountGateway
 
     // Bumped by SignOut, under _restoreGate. A sign-in or restore captures it when it starts and commits its
     // result (the stored session, the account) only while it is unchanged, also under _restoreGate. So a sign-out
-    // landing mid-restore is final: the restore's later save used to put the account straight back (the second
-    // 2026-10-01 review).
+    // landing mid-restore is final: without this the restore's later save would put the account straight back.
     private int _signInGeneration;
 
     /// <summary>Run <paramref name="commit"/> only if no sign-out has happened since <paramref name="generation"/>.</summary>
@@ -227,8 +229,8 @@ public sealed class HalyardAccountGateway
         }
         catch (Exception)
         {
-            // The sign-in failed, so it must not half-succeed: the provider stayed seeded with the new tokens, and
-            // every cloud call after a "sign-in failed" message went out as that account anyway.
+            // The sign-in failed, so it must not half-succeed: left seeded with the new tokens, the provider
+            // would send every cloud call after a "sign-in failed" message as that account anyway.
             _tokens.Clear();
             _account = null;
             throw;
@@ -247,15 +249,14 @@ public sealed class HalyardAccountGateway
     ///
     /// <para>
     /// <b>Only a rejected one.</b> A failure that says nothing about the credential (a 503 at launch, say)
-    /// returns null and keeps the store, and the next attempt tries again (the 2026-09-30 review).
+    /// returns null and keeps the store, and the next attempt tries again.
     /// </para>
     ///
     /// <para>
     /// <b>One restore at a time, from every caller.</b> A connect and a console-list refresh racing each other
     /// would both spend the refresh token, the second would find it rotated, and its rejection would clear the
-    /// winner's freshly stored sign-in (the second 2026-10-01 review). The guard is here, an account already
-    /// signed in is returned without touching the network, and <see cref="EnsureSignedInAsync"/> goes through
-    /// it too.
+    /// winner's freshly stored sign-in. The guard is here, an account already signed in is returned without
+    /// touching the network, and <see cref="EnsureSignedInAsync"/> goes through it too.
     /// </para>
     /// </summary>
     public async Task<HalyardAccount?> RestoreAsync(CancellationToken cancellationToken)
@@ -326,8 +327,7 @@ public sealed class HalyardAccountGateway
             ?? throw new HalyardCloudException("The refresh succeeded but produced no tokens.");
 
         // Stored now, before anything else can fail. The refresh spent the stored token, so from here on the store
-        // must hold the new one whatever happens next, including a network drop during the account lookup (the
-        // second 2026-10-01 review).
+        // must hold the new one whatever happens next, including a network drop during the account lookup.
         if (!CommitIfCurrent(generation, () =>
                 _store.Save(stored with { RefreshToken = current.RefreshToken, SavedAt = DateTimeOffset.UtcNow })))
         {
@@ -398,7 +398,7 @@ public sealed class HalyardAccountGateway
 
     /// <summary>
     /// Store the refresh token a background refresh just received, keeping the stored identity. Without this the
-    /// store held the token from sign-in or restore, which the first refresh spent.
+    /// store would hold the token from sign-in or restore, which the first refresh spends.
     /// </summary>
     private void PersistRefreshed(HalyardTokens fresh)
     {

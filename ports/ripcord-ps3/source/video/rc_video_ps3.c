@@ -68,7 +68,7 @@ static int s_open;
 static int s_gcm_module;
 /*
  * b105 dropped 890 of 891 pictures on "the display was busy" after the first frame flipped. The raw
- * status the check is reading is recorded so the next run says whether the flip never completes or the
+ * status the check is reading is recorded so a run says whether the flip never completes or the
  * question is being asked wrongly - two very different faults behind one symptom.
  */
 static unsigned s_ready_calls;
@@ -122,7 +122,7 @@ int rc_video_open(rc_video_info *out)
     out->gcm_module = s_gcm_module;
     out->sysutil_module = s_sysutil_module;
 
-    /* 1 MB alignment AND a whole number of megabytes - see RC_VIDEO_IO_SIZE. */
+    /* 1 MB alignment AND a whole number of megabytes - see RC_VIDEO_MB. */
     s_host_addr = memalign(RC_VIDEO_MB, RC_VIDEO_IO_MAX);
     if (s_host_addr == NULL)
         return fail(out, "memalign for the RSX IO region", 0);
@@ -131,13 +131,13 @@ int rc_video_open(rc_video_info *out)
      * TRY SEVERAL SIZES RATHER THAN BELIEVING ONE, as the log-directory probe in main.c does: a sweep
      * costs one console round trip where a guess costs one each.
      *
-     * The leading suspect is the relationship between the two sizes. The command buffer is carved OUT of
-     * the IO region - rsxInit is documented to build a heap in what remains - and every attempt so far
-     * asked for a 1 MB command buffer inside a 1 MB region, leaving nothing for that heap. PSL1GHT's own
-     * convention is a small command buffer inside a much larger IO region.
+     * What matters is the relationship between the two sizes. The command buffer is carved OUT of the
+     * IO region - rsxInit is documented to build a heap in what remains - so a 1 MB command buffer
+     * inside a 1 MB region leaves nothing for that heap. PSL1GHT's own convention is a small command
+     * buffer inside a much larger IO region.
      *
      * Ordered smallest-command-buffer first, so the most likely pair is also the first tried, and the
-     * one that works is reported so the next build can stop sweeping.
+     * one that works is reported.
      */
     {
         static const struct { u32 cmd; u32 io; } kAttempts[] = {
@@ -229,20 +229,19 @@ int rc_video_open(rc_video_info *out)
     /*
      * WHAT THE TELEVISION ACTUALLY NEGOTIATED, recorded rather than inferred from how it looks.
      *
-     * The whole port has only ever run at 1080p60 progressive with square pixels, and three of this
-     * file's assumptions are invisible until it does not:
+     * Three things depend on it:
      *
      *   INTERLACE. The buffer is a progressive frame and the RSX scans out fields from it. Nothing here
      *   filters, so motion combs.
      *
-     *   PIXEL ASPECT. The fit below scales by PIXEL COUNT, which is right only when pixels are square.
-     *   At 720x480 they are not - that buffer is displayed as 4:3 or as 16:9 - so a 1280x720 source
-     *   fitted by count comes out geometrically wrong in either.
+     *   PIXEL ASPECT. A fit by PIXEL COUNT is right only when pixels are square. At 720x480 they are
+     *   not - that buffer is displayed as 4:3 or as 16:9 - so fit_into_display reads the aspect
+     *   recorded here.
      *
      *   REFRESH. 50 Hz means a 60 fps stream has no whole-number relationship with the display and
      *   nothing here converts one to the other.
      *
-     * libRESC exists to solve all three and has not been built.
+     * libRESC is not used.
      */
     s_info.aspect = (int)state.displayMode.aspect;
     s_info.scan_mode = (int)state.displayMode.scanMode;
@@ -466,16 +465,6 @@ static inline uint32_t clamp255(int32_t v)
 }
 
 /*
- * The same placement and scaling as rc_video_blit_yuv420, for a picture the decoder has already turned
- * into packed 32-bit RGB. Only the conversion is absent: b185 measured the SPE spending 16,444 us a
- * frame converting and scaling against 1,667 us waiting for the MFC.
- *
- * NO PPE FALLBACK HERE, deliberately. The YUV path keeps one because the PPE converter is the
- * implementation that is known to work. There is no PPE scaler to fall back TO - so if the SPEs cannot
- * do it, the caller is told (0) and the decoder seam can go back to asking for YUV, which is a decision
- * for the caller.
- */
-/*
  * THE RSX DOES THE SCALING.
  *
  * rsxSetTransferScaleSurface is the 2D engine's scaled blit: arbitrary source and destination
@@ -557,6 +546,16 @@ static unsigned blit_argb32_on_rsx_from(u32 src_offset, int width, int height,
     }
 }
 
+/*
+ * The same placement and scaling as rc_video_blit_yuv420, for a picture the decoder has already turned
+ * into packed 32-bit RGB. Only the conversion is absent: b185 measured the SPE spending 16,444 us a
+ * frame converting and scaling against 1,667 us waiting for the MFC.
+ *
+ * NO PPE FALLBACK HERE, deliberately. The YUV path keeps one because the PPE converter is the
+ * implementation that is known to work. There is no PPE scaler to fall back TO - so if the SPEs cannot
+ * do it, the caller is told (0) and the decoder seam can go back to asking for YUV, which is a decision
+ * for the caller.
+ */
 unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, int height)
 {
     uint32_t *back = rc_video_back_buffer();
@@ -617,8 +616,7 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
  * aspect, and the pixel aspect is the display's shape over the buffer's shape. In integers to avoid a
  * float unit for something exact, and in 64 bits because the products reach 2.4e10 at 1080p.
  *
- * VIDEO_ASPECT_AUTO is treated as square, which is what the port already assumed. It is the one case
- * where the console has not said.
+ * VIDEO_ASPECT_AUTO is treated as square. It is the one case where the console has not said.
  */
 static void fit_into_display(int src_width, int src_height,
                              int *dst_w, int *dst_h, int *ox, int *oy)
@@ -706,7 +704,7 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
      * Not a preference between two implementations - the PPE path is the one that is known to work, and
      * it stays because a conversion that silently produces nothing is far worse than a slow one. If the
      * SPEs are not up, or a frame does not finish inside its deadline, this falls through and converts
-     * here exactly as before. The caller cannot tell, which is the point; the statistics can, which is
+     * here. The caller cannot tell, which is the point; the statistics can, which is
      * how the choice is measured rather than assumed.
      */
     {
@@ -799,9 +797,9 @@ void rc_video_scale_info(int *scaled_w, int *scaled_h, int *display_w, int *disp
 /*
  * THE AGREEMENT CHECK, OFF THE STREAMING PATH.
  *
- * On the first frame of the session at 1920x1080 it was an SPE conversion, two hashes of two million
+ * Run on the first frame of a session at 1920x1080 it is an SPE conversion, two hashes of two million
  * pixels, and a full PPE conversion of the same - well over a tenth of a second stalled inside the
- * receive loop while the console is establishing its cadence. b112 lost the Takion channel to it and
+ * receive loop while the console is establishing its cadence. b112 lost the Takion channel to that and
  * received 58 packets where the run before received 6287.
  *
  * The check is about two implementations agreeing, and a synthetic input tests that better: the
@@ -819,7 +817,7 @@ void rc_video_scale_info(int *scaled_w, int *scaled_h, int *display_w, int *disp
 /*
  * SEVERAL SCALE FACTORS, not one, and specifically not only the integer one.
  *
- * The first version checked 64x32 into 128x64 - exactly 2x, which is the forgiving case: source column
+ * 64x32 into 128x64 on its own is exactly 2x, which is the forgiving case: source column
  * x maps to output columns 2x and 2x+1 and any reasonable mapping gets it right. A 1280x720 source on a
  * 1920x1080 display is 1.5x, where the 16.16 stepping and the PPE's reference have to agree about which
  * source pixel each output pixel takes, and an off-by-one in either would show only here.
@@ -944,18 +942,6 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
 }
 
 /*
- * Queue an unscaled copy of the overlay bitmap over the picture.
- *
- * SEPARATE FROM DRAWING IT. Drawn by the PPE straight into the back buffer immediately after the
- * picture blit had been QUEUED (b225), the text was painted over by the picture every frame. Issuing
- * the copy as a command puts it behind the picture in the same buffer, where the ordering is the
- * hardware's to keep.
- *
- * rsxSetTransferImage rather than the scaled blit: the bitmap is already the size it will be drawn at,
- * and an unscaled rectangular copy is both cheaper and free of the interpolator's edge behaviour on a
- * box with hard edges.
- */
-/*
  * MAP MAIN MEMORY SO THE RSX CAN READ IT, which is what makes the overlay's copy go away.
  *
  * The overlay has to be drawn in main memory - blending reads the destination, and a PPE read from the
@@ -966,8 +952,8 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
  * transfer then reads it with GCM_TRANSFER_MAIN_TO_LOCAL instead of LOCAL_TO_LOCAL.
  *
  * NOT THE b232 HAZARD. b232 asked the 2D engine to BLEND, which it will not do and which stopped the
- * command processor. This asks it to copy, which is what it has been doing since b228; only where it
- * reads from changes.
+ * command processor. This asks it to copy, which it has done on hardware since b228; only where it
+ * reads from differs.
  *
  * The address must be megabyte-aligned and the length a whole number of megabytes - the same rule
  * rsxInit's IO region follows. Refusal is reported and is not fatal: the caller keeps its copy.
@@ -986,6 +972,18 @@ int rc_video_map_main(const void *addr, size_t bytes, uint32_t *offset)
     return 1;
 }
 
+/*
+ * Queue an unscaled copy of the overlay bitmap over the picture.
+ *
+ * SEPARATE FROM DRAWING IT. Drawn by the PPE straight into the back buffer immediately after the
+ * picture blit had been QUEUED (b225), the text was painted over by the picture every frame. Issuing
+ * the copy as a command puts it behind the picture in the same buffer, where the ordering is the
+ * hardware's to keep.
+ *
+ * rsxSetTransferImage rather than the scaled blit: the bitmap is already the size it will be drawn at,
+ * and an unscaled rectangular copy is both cheaper and free of the interpolator's edge behaviour on a
+ * box with hard edges.
+ */
 void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y,
                            int from_main)
 {
@@ -1019,9 +1017,8 @@ void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int
      * where the rest of the machine can see it. It is issued once a frame, against a transfer of eight
      * megabytes.
      *
-     * The smearing that prompted this was NOT this - it was a drawing bug in rc_shell.c. See the note
-     * beside flush_for_rsx in rc_overlay.c for what is and is not known about whether it was ever
-     * needed.
+     * Nothing has shown this to be needed. See the note beside flush_for_rsx in rc_overlay.c for what
+     * is and is not known.
      */
     if (from_main)
         __asm__ __volatile__("sync" : : : "memory");
@@ -1035,8 +1032,7 @@ void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int
 
 /*
  * Selects the RSX scaler and its filter. Separate from rc_video_open because the choice comes from the
- * pairing record, which is read after the display is up, and because leaving it off by default means a
- * build that cannot do this still behaves exactly as the one before it.
+ * pairing record, which is read after the display is up. Off until called.
  */
 void rc_video_set_rsx_scale(int on, int linear)
 {

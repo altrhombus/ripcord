@@ -12,8 +12,8 @@ namespace Ripcord.Input;
 /// real analog triggers — parsed by the platform-neutral <see cref="DualSenseReportParser"/>. A background
 /// thread finds the device, reads reports until it disconnects, then polls for it to return (hotplug).
 ///
-/// <para>Phase A is input only; haptics / adaptive triggers / lightbar (output) come later and need a
-/// console→client haptics path that doesn't exist yet — hence <see cref="GetExtendedFeatures"/> returns null.
+/// <para>Input only: <see cref="GetExtendedFeatures"/> returns null, so haptics, adaptive triggers and the
+/// lightbar (output) are not driven.
 /// Frames are stamped with <see cref="DateTime.UtcNow"/> ticks so the input sender's keepalive timing is in
 /// the units it expects.</para>
 /// </summary>
@@ -50,7 +50,7 @@ public sealed class DualSenseHidControllerSource : IControllerSource, IDisposabl
 
     public IHapticsAndExtendedFeatures? GetExtendedFeatures(string controllerId) => null;
 
-    /// <summary>Whether a DualSense is currently connected — used by the source selector to prefer this path.</summary>
+    /// <summary>Whether a DualSense is connected. The source factory does not consult it.</summary>
     public static bool IsPresent() => HidInterop.FindFirst(SonyVendorId, DualSensePids) is not null;
 
     public void Dispose()

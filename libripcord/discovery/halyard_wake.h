@@ -1,14 +1,12 @@
 /*
- * ripcord ports - the LAN wake datagram (rest mode -> awake).
+ * libripcord - the LAN wake datagram (rest mode -> awake).
  *
  * The companion to halyard_discovery.h: the SRCH parser reports `is_awake == 0` on a console answering
  * "HTTP/1.1 620 Server Standby", and this wakes it. Rest mode is the ordinary state, not an edge case.
  *
  * Derived from docs/protocol/ps5-local-discovery.md, "LAN wake (rest mode -> awake)", marked [V] from
  * cap49 - a capture taken with the console's internet blocked at the router, which is what establishes
- * that the wake is purely local and needs no cloud, no OAuth and no TLS. That is also why this belongs in
- * libripcord at all, while registration does not (see ports/ripcord-3ds/README.md, "Pairing happens on
- * a PC, not here").
+ * that the wake is purely local and needs no cloud, no OAuth and no TLS.
  *
  * THE SEQUENCE, all on the discovery port - 9302 for PS5, 987 for PS4, never the `host-request-port:997`
  * the standby reply advertises, which the spec calls a red herring for wake:
@@ -58,7 +56,7 @@
  * ps5-local-discovery.md pins it in the PS4 section, [W] from cap53-cap57: "the PS4's credential is
  * negative, which pins the field as a signed 32-bit decimal (a detail the positive PS5 sample left
  * ambiguous)". Every PS5 sample we hold is below 2^31, where signed and unsigned render identically.
- * The .NET side agrees since 2026-09-26 (HalyardPairingRecord.TryGetWakeCredential).
+ * The .NET side renders it signed too (HalyardPairingRecord.TryGetWakeCredential).
  *
  * A key whose ASCII hex is >= 0x80000000 - roughly half of them - rendered unsigned gets a credential
  * the console does not recognise, and the only symptom is a console that does not wake.

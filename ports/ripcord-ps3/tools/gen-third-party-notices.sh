@@ -2,10 +2,11 @@
 #
 # Assemble THIRD-PARTY-NOTICES.txt for the .pkg, from the licences the build already fetched.
 #
-# WHY GENERATE RATHER THAN COMMIT ONE. Same argument as tools/gen_constants.py: a checked-in copy of
-# somebody else's licence is a second copy that drifts. These texts arrive with the tarballs this port
-# fetches and hash-verifies, so the generated file is the licence of the exact version linked into the
-# binary being packaged, not the licence of whatever version was current when a human last pasted it.
+# WHY GENERATE RATHER THAN COMMIT ONE. Same argument as libripcord/tools/gen_constants.py: a checked-in
+# copy of somebody else's licence is a second copy that drifts. These texts arrive with the tarballs
+# this port fetches and hash-verifies, so the generated file is the licence of the exact version linked
+# into the binary being packaged, not the licence of whatever version was current when a human last
+# pasted it.
 #
 # WHY IT GOES IN THE PACKAGE AND NOT ONLY IN THE REPOSITORY. openh264 (BSD-2), Opus (BSD-3) and
 # Mbed TLS (Apache-2.0) each require their notice to travel with a BINARY distribution - BSD's "in the
@@ -34,7 +35,7 @@ require() {
     # $1 = display name, $2 = the fetch directory (empty if the fetch never ran), $3 = licence file
     # inside it, $4 = what to do about it. The directory is checked separately from the file so the
     # error says "never fetched" rather than pointing at a nonsensical path like /LICENSE, which is
-    # what an unset directory variable produces and what the first version of this reported.
+    # what an unset directory variable produces.
     if [ -z "$2" ]; then
         echo "gen-third-party-notices: $1 has not been fetched - no directory under $TP" >&2
         echo "  $4" >&2
@@ -92,8 +93,8 @@ HEADER
     cat "$OPUS_DIR/COPYING"
 
     # MBED TLS IS DUAL-LICENSED, and upstream's file carries both arms in full - 553 lines, of which
-    # about 250 are the GNU General Public License. Under a bare "Apache-2.0" heading that read as GPL
-    # code in the package. Reproducing upstream's file verbatim stays - it is the text that ships with
+    # about 250 are the GNU General Public License. Under a bare "Apache-2.0" heading that reads as GPL
+    # code in the package. Upstream's file is reproduced verbatim - it is the text that ships with
     # the version actually linked - and the sentence below names the arm chosen, in the same shape the
     # FreeType election below uses.
     section "Mbed TLS $(basename "$MBEDTLS_DIR" | sed 's/^mbedtls-//') - Apache-2.0 (elected)"
@@ -145,10 +146,10 @@ FREETYPE
     #
     # EMITTED UNCONDITIONALLY, FROM TEXT HELD HERE. The ps3dev prebuilt archive ships no licence file
     # for anything - a find across the whole 577 MB unpacked tree returns exactly one, belonging to a
-    # PolarSSL this port does not link - so reading it from candidate paths under $PS3DEV could never
-    # have succeeded, and failed silently.
+    # PolarSSL this port does not link - so reading it from candidate paths under $PS3DEV cannot
+    # succeed, and fails silently.
     #
-    # This is the same decision #7 made for FreeType's mandatory disclaimer and for the same reason: an
+    # This is the same decision made for FreeType's mandatory disclaimer above and for the same reason: an
     # obligation that only ships when an optional file happens to be present is an obligation that does
     # not ship. It is a checked-in copy of somebody else's licence, which this project otherwise avoids -
     # but the argument against that is drift from the version actually linked, and there is no local copy

@@ -6,11 +6,10 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The v2 session-crypto seam-and-stub: it is constructible, reports nothing established, and — the design
-/// decision worth pinning — the v1 per-field control methods are a deliberate <see cref="NotSupportedException"/>
-/// (v2 uses the GCM envelope on <see cref="IHalyardV2ControlCrypto"/>), while the not-yet-built transforms are
-/// <see cref="NotImplementedException"/>. When a phase lands, its assertion here flips from "throws" to a real
-/// check.
+/// The v2 session crypto as constructed: it reports nothing established, and — the design decision worth
+/// pinning — the v1 per-field control methods are a deliberate <see cref="NotSupportedException"/> (v2 uses
+/// the GCM envelope on <see cref="IHalyardV2ControlCrypto"/>). The stream key agreement establishes, and the
+/// c2s seals leave a packet untouched before it has.
 /// </summary>
 public class V2SessionCryptoStubTests
 {
@@ -38,8 +37,8 @@ public class V2SessionCryptoStubTests
     public void StreamKeyAgreementAndAvPackets_AreBuilt()
     {
         using var crypto = New();
-        // Phase 2: the stream key agreement + s2c A/V per-packet crypto are implemented (KATs in
-        // V2StreamPacketVectorTests). They no longer throw; X arrives as the handshakeKey argument.
+        // The stream key agreement (its s2c A/V per-packet crypto has KATs in V2StreamPacketVectorTests) does
+        // not throw; X arrives as the handshakeKey argument.
         byte[] pub = crypto.GenerateEphemeralPublicKey(0x11);
         Assert.Equal(HalyardStreamKeySchedule.PublicKeyLengthP521, pub.Length);
         Assert.True(crypto.TryEstablishStream(
@@ -51,9 +50,9 @@ public class V2SessionCryptoStubTests
     public void C2sSendAuth_IsImplemented_AndNoOpsBeforeStreamEstablished()
     {
         using var crypto = New();
-        // The c2s send-authentication path is implemented (byte-level round-trip in V2C2sSendAuthTests). Before
-        // the stream key agreement it has no key, so each Seal is a safe no-op — not a throw — leaving the packet
-        // untouched (nothing is ever sent before keys exist anyway).
+        // The c2s send-authentication path (byte-level round-trip in V2C2sSendAuthTests) has no key before the
+        // stream key agreement, so each Seal is a safe no-op — not a throw — leaving the packet untouched
+        // (nothing is ever sent before keys exist anyway).
         byte[] control = new byte[32];
         crypto.SealControlMessage(control);
         Assert.All(control, b => Assert.Equal(0, b));

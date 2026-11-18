@@ -1,6 +1,5 @@
-// Pairing with the code the console shows. Sign-in pairing, which the Mac leads with, comes later: on iPhone
-// and iPad it is the same web view in UIKit's presentation, and Apple TV has no WebKit, so it will need another
-// route (docs/ios-plan.md).
+// Pairing with the code the console shows, and only that: the sign-in pairing the Mac leads with is not
+// here. WebSignIn's window is AppKit's, and Apple TV has no WebKit (docs/ios-plan.md).
 
 import SwiftUI
 import RipcordKit

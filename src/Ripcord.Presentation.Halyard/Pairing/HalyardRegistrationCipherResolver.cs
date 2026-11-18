@@ -122,9 +122,9 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
         }
         catch (Exception ex)
         {
-            // Names the file, like the other three reasons do. It previously did not, which made the one branch
-            // reachable by arbitrary I/O and parse failures — the least self-explanatory of the four — also the
-            // only one that did not say which file to go and look at.
+            // Names the file, like the other three reasons do. This branch is reachable by arbitrary I/O and
+            // parse failures — the least self-explanatory of the four — so it most needs to say which file to
+            // go and look at.
             reason = $"fixture load failed ({path}): {ex.Message}";
             return null;
         }
@@ -132,8 +132,7 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
 
     /// <summary>
     /// Explicit override, then the platform config directory (the location an installed build can use), then a
-    /// walk up to the dev tree. The last of those was previously the only option, which is why a shipped app
-    /// could never locate these constants.
+    /// walk up to the dev tree. Null when none of them holds a fixture.
     /// </summary>
     private string? Locate()
     {

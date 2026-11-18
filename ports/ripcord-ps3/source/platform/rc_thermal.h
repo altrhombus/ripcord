@@ -4,9 +4,9 @@
  * WHY THIS EXISTS. Moving the colour conversion and scaling off the SPEs and on to the RSX is an
  * argument about power before it is an argument about speed: the claim is that a fixed-function blit
  * unit doing what three SIMD cores were doing in software draws less, and that cutting the Cell-to-RSX
- * transfer from 8.3 MB a frame to 3.7 lowers interconnect power on top of it. Neither has been weighed
- * on this hardware. One fan serves both chips, so "moved the heat to the RSX" is not by itself a win.
- * The baseline has to be taken before the change: the SPE path cannot be measured once it is gone.
+ * transfer from 8.3 MB a frame to 3.7 lowers interconnect power on top of it. One fan serves both
+ * chips, so "moved the heat to the RSX" is not by itself a win. These readings are what that claim is
+ * weighed with; DECODE.md ("Heat and fan noise") records the result.
  *
  * THE DECODING, SETTLED BY b202. Syscall 383 takes a device selector and the address of a word. That
  * word came back 0x3FC30000 for the Cell and 0x40400000 for the RSX on an idle-warm console, which is
@@ -17,7 +17,7 @@
  * IT COSTS ABOUT 14 ms A READ, also settled by b202: a hypervisor round trip to a hardware sensor, not
  * a register read. Sampling both sensors once a second from the session loop stalled the drain for 4.4
  * seconds, lost 3,896 units of 4,175 and put 4 fps on the screen. NOTHING HERE MAY BE CALLED FROM THE
- * A/V PATH, at any interval. The two callers are on either side of the hold, where the cost lands
+ * A/V PATH, at any interval. A session samples on either side of the hold, where the cost lands
  * outside everything being measured.
  *
  * The syscall is not part of the retail application ABI, so it can simply fail. Everything here answers

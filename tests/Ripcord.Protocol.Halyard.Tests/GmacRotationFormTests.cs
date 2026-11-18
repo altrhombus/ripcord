@@ -13,10 +13,10 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// is a regression guard on one specific mistake.</para>
 ///
 /// <para><b>The mistake.</b> Window ≥ 1 re-folds <c>key0</c> — the already-folded window-0 GMAC key — with an
-/// incrementing IV. An earlier implementation folded <c>aes_key</c> instead. Both produce a correct-looking
+/// incrementing IV. The mistake is to fold <c>aes_key</c> instead. Both produce a correct-looking
 /// 16-byte key, and both pass every test that only asks "does the key change at the boundary and stay put
-/// inside a window", which is what the existing boundary tests ask. The wrong one authenticated window 0 and
-/// rejected every packet after roughly the first half second of stream.</para>
+/// inside a window", which is what the boundary tests ask. The wrong one authenticates window 0 and
+/// rejects every packet after roughly the first half second of stream.</para>
 ///
 /// <para>So this recomputes the spec's formula from its own words — fold, IV addition, the <c>0xAF6E</c>
 /// stride — and compares. Two implementations of one written rule, which is the only thing a test without a

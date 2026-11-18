@@ -6,9 +6,9 @@ namespace Ripcord.Presentation.Sessions;
 public static class DiagnosticFiles
 {
     /// <summary>
-    /// How many session traces to keep. Every stream writes one, unconditionally, and nothing deleted them: the
-    /// machine the visual audit ran on held ninety (2026-10-08). Enough to compare an evening's sessions, which
-    /// is what they are read for.
+    /// How many session traces to keep. Every stream writes one, unconditionally, so without a cap they
+    /// accumulate (ninety on one machine, 2026-10-08). Enough to compare an evening's sessions, which is what
+    /// they are read for.
     /// </summary>
     public const int SessionTracesKept = 20;
 
@@ -17,9 +17,9 @@ public static class DiagnosticFiles
     /// <c>%LOCALAPPDATA%</c>, so the Windows user name is not in it.
     ///
     /// <para>
-    /// The HUD printed the full path, so every screenshot of the diagnostics somebody posted to a bug report or a
-    /// forum carried their Windows user name (visual audit, 2026-10-08). The variable form still pastes straight
-    /// into Explorer's address bar, which is all the line is for.
+    /// With the full path on the HUD, every screenshot of the diagnostics somebody posts to a bug report or a
+    /// forum would carry their Windows user name. The variable form still pastes straight into Explorer's
+    /// address bar, which is all the line is for.
     /// </para>
     /// </summary>
     public static string ForScreen(string path, string localAppData)

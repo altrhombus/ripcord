@@ -1,20 +1,19 @@
 /*
- * ripcord-3ds - Phase 6a: the stream key agreement (spec sec4.2/sec5.1-5.3).
+ * libripcord - the stream key agreement (spec sec4.2/sec5.1-5.3).
  *
  * Ported from Ripcord.Protocol.Halyard.Takion.TakionSessionNegotiator. This is the exchange that turns a
  * connected Takion transport into an encrypted one: each side sends an ephemeral ECDH public key
  * authenticated by an HMAC over it, and the agreed secret becomes the per-direction AES-128 keys and
- * base IVs that stream_packet_crypto has been waiting for since Phase 5.5.
+ * base IVs that stream/stream_packet_crypto.h is initialised with.
  *
  * NO SOCKET, DELIBERATELY - the same split halyard_discovery.h and the Takion codecs already use. This
  * module produces the bytes to send and consumes the bytes received; whoever owns the reliable channel
  * moves them. That keeps the whole key agreement host-testable.
  *
  * WHERE THIS SITS in the connect sequence (HalyardTakionStream.StartAsync):
- *   1. /sess/ctrl control plane is up (Phase 4) - it is what carries handshakeKey to the console, see
- *      below.
- *   2. Takion SCTP handshake completes (Phase 5).
- *   3. The reliable channel is running, NOT yet sealed.
+ *   1. /sess/ctrl control plane is up - it is what carries handshakeKey to the console, see below.
+ *   2. Takion SCTP handshake completes.
+ *   3. The reliable channel is running, unsealed.
  *   4. >>> this module: SESSION_REQUEST out, SESSION_REPLY in, per-direction keys out <<<
  *   5. GMAC sealing is switched on with those keys; everything after this point is authenticated.
  * Both messages ride TAKION_CHANNEL_SESSION (0x0001) as reliable DATA.
@@ -43,7 +42,7 @@
 #include <stdint.h>
 
 /*
- * The negotiated client version. 17 (0x11) is what the shipped client sends and what this port claims;
+ * The negotiated client version. 17 (0x11) is what the vendor client sends and what this core claims;
  * it also selects P-521 over P-256, since the curve is chosen by version (0x0d-0x11 -> P-521).
  */
 #define TAKION_CLIENT_VERSION 17u
@@ -78,8 +77,8 @@ typedef struct {
     uint8_t receive_base_iv[16];
     int established;
     /*
-     * Set by accept_reply on every call - TAKION_SESSION_REJECT_* above. Diagnostic only: nothing in the
-     * protocol depends on it, and a caller that ignores it behaves exactly as before.
+     * Set by accept_reply on every call - TAKION_SESSION_REJECT_* below. Diagnostic only: nothing in the
+     * protocol depends on it, and a caller may ignore it.
      */
     int last_reject_reason;
 
@@ -96,8 +95,8 @@ typedef struct {
 
     /*
      * The peer's point itself, copied here rather than left as a pointer into a buffer the caller may
-     * have moved on from. A caller that tried to re-read it later got zeros - the pointer was into the
-     * channel's own storage - which produced a dump that contradicted the prefix recorded beside it.
+     * have moved on from: the reply points into the channel's own storage, and re-reading it after the
+     * next poll gives other bytes, a dump that contradicts the prefix recorded beside it.
      *
      * A public key for one session. Sized for the largest curve this code knows.
      */
@@ -108,14 +107,14 @@ typedef struct {
     int last_ecdh_step;
     int last_ecdh_code;
 
-    /* What the derivation was handed, recorded inside it. Compare last_derive_fingerprint against a
-     * fingerprint of last_peer_key: equal means the same bytes reached both, and the difference is the
-     * environment rather than the data. */
     /* The same on-curve check, run from here immediately before the derivation - see the .c. */
     int last_precheck_ok;
     int last_precheck_step;
     int last_precheck_code;
 
+    /* What the derivation was handed, recorded inside it. Compare last_derive_fingerprint against a
+     * fingerprint of last_peer_key: equal means the same bytes reached both, and the difference is the
+     * environment rather than the data. */
     unsigned long last_derive_fingerprint;
     size_t last_derive_private_length;
     unsigned last_derive_curve;
@@ -142,19 +141,10 @@ size_t takion_session_negotiator_begin(takion_session_negotiator *ctx,
                                        uint8_t *out_request, size_t out_request_size);
 
 /*
- * Consumes a SESSION_REPLY and, if it checks out, derives all four key/IV values into `ctx`.
+ * WHY accept_reply SAID NO, recorded in the context (last_reject_reason) rather than returned.
  *
- * Returns 1 on success. Returns 0 - leaving ctx->established clear - if the message is not a well-formed
- * SESSION_REPLY, if the console rejected our version, if it carried no ECDH key, if the peer key is not
- * on our curve or not on the curve at all, or if its ecdhSignature does not verify under handshakeKey.
- * That last check is the one that matters: without it, anything able to inject a DATA chunk on this
- * channel could substitute its own public key and read the whole session.
- */
-/*
- * WHY accept_reply SAID NO, recorded in the context rather than returned.
- *
- * accept_reply returns a single 0 for every refusal; this says which. A field rather than a new
- * parameter so that existing callers keep compiling unchanged.
+ * accept_reply returns a single 0 for every refusal; this says which. A field rather than a parameter,
+ * so a caller that does not want the reason passes nothing for it.
  *
  * The distinction that matters most is SIGNATURE vs the rest: a signature that does not verify means the
  * console computed it under a different handshakeKey than the one we embedded, which points at the launch
@@ -170,6 +160,15 @@ size_t takion_session_negotiator_begin(takion_session_negotiator *ctx,
 #define TAKION_SESSION_REJECT_CURVE       7  /* the point's LENGTH names a different curve than ours   */
 #define TAKION_SESSION_REJECT_DERIVE      8  /* the length agreed and the derivation still failed      */
 
+/*
+ * Consumes a SESSION_REPLY and, if it checks out, derives all four key/IV values into `ctx`.
+ *
+ * Returns 1 on success. Returns 0 - leaving ctx->established clear - if the message is not a well-formed
+ * SESSION_REPLY, if the console rejected our version, if it carried no ECDH key, if the peer key is not
+ * on our curve or not on the curve at all, or if its ecdhSignature does not verify under handshakeKey.
+ * That last check is the one that matters: without it, anything able to inject a DATA chunk on this
+ * channel could substitute its own public key and read the whole session.
+ */
 int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
                                            const uint8_t *reply, size_t reply_length,
                                            rc_rng_fn rng, void *rng_ctx);

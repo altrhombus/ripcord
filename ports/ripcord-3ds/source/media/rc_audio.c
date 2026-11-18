@@ -26,8 +26,8 @@
  *
  * So decode into a ring and refill a handful of large wave buffers from it. Arrival is not steady -
  * audio packets come in alongside video, and a keyframe burst delivers several frames at once - and the
- * ring absorbs that. The rate loop stays, steering ring occupancy, because long-run drift between the
- * console's clock and the DSP's is real even though it was never the thing causing the clicks.
+ * ring absorbs that. The rate loop steers ring occupancy, because long-run drift between the
+ * console's clock and the DSP's is real; it is not what causes the clicks.
  *
  * RC_AUDIO_WAVE_SAMPLES and the ring target live in the header - the target is derived from the buffer
  * size on purpose, see there.
@@ -37,7 +37,7 @@
  *
  * 20 ms each. The same page gives "160 samples per audio frame" as the mixer's granularity, i.e. ~4.9 ms
  * at the DSP's native 32728 Hz - so a 20 ms buffer is about four mixer frames, comfortably above the unit
- * NDSP schedules in. 10 ms buffers were barely two. 33 ms worked, but buys latency for no benefit.
+ * NDSP schedules in. 10 ms buffers are barely two. 33 ms works, but buys latency for no benefit.
  */
 #define RC_AUDIO_WAVE_BUFFERS 3
 #define RC_AUDIO_WAVE_BYTES (RC_AUDIO_WAVE_SAMPLES * RC_AUDIO_CHANNELS * (int)sizeof(int16_t))

@@ -113,8 +113,8 @@ static size_t bw_bytes(const bitwriter *w)
 /*
  * rbsp_trailing_bits (sec 7.3.2.11): a one bit, then zeros to the byte boundary.
  *
- * Real NAL units carry it and these fixtures did not, which was harmless while they were handed straight
- * to a parser. It stops being harmless once they go through the Annex-B splitter, because the splitter
+ * Real NAL units carry it, and these fixtures need it too. Handed straight to a parser its absence is
+ * harmless. It is not harmless once they go through the Annex-B splitter, because the splitter
  * trims trailing zero bytes - so a header whose last byte happened to hold only zero bits would lose that
  * byte and the parse would run off the end. The stop bit guarantees the final byte is non-zero, which is
  * exactly the property the real syntax exists to provide.
@@ -286,7 +286,7 @@ static void test_real_sps(void)
  *
  * The colour signalling (video_full_range_flag, matrix_coefficients) decides whether cellVdec's fixed
  * limited-range assumption is right, and a stream that says "full range" and is expanded as limited
- * blows its highlights - the sand-dune symptom that sent us to read this field at all. The parser walks
+ * blows its highlights. The parser walks
  * the VUI exactly as far as those fields; nothing captured exercises that walk, so it is built here.
  *
  * profile_idc 66 (Baseline) has no chroma block, which keeps the builder short: the parser skips
@@ -494,9 +494,8 @@ static void test_slice_headers(void)
 
     /* The POC comparison in rc_h264_slice_begins_new_picture is INERT for this console: it sends
      * pic_order_cnt_type 2, so no pic_order_cnt_lsb is coded and picture order is decode order. It is
-     * kept because a stream we have not measured may use type 0 or 1. (An earlier version of this test
-     * asserted a POC-driven boundary here and failed for exactly that reason - the assertion was wrong,
-     * not the code, and the SPS is what said so.)
+     * kept because a stream we have not measured may use type 0 or 1. A POC-driven boundary cannot be
+     * asserted against this SPS for that reason.
      *
      * The sec 7.4.1.2.4 condition that IS exercisable here is the reference/non-reference transition:
      * a disposable slice cannot belong to the same picture as a reference one. */

@@ -329,7 +329,7 @@ int takion_control_parse_protocol_version_ack(const uint8_t *data, size_t length
         field = (uint32_t)(tag >> 3);
         wire = (unsigned)(tag & 7u);
         /* Field 0 is not a valid tag: every other parser here refuses it, and so does Google.Protobuf on the
-         * .NET side. This one accepted it until engine/ripcord-diff put the two engines side by side. */
+         * .NET side. engine/ripcord-diff compares the two engines on it. */
         if (field == 0u)
             return 0;
 

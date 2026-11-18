@@ -6,8 +6,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// <summary>
 /// Several gamepads read through one engine. The failure these guard against was measured on hardware on
 /// 2026-08-06: with a DualSense and an Xbox pad attached, GameInput was asked for "the latest reading from any
-/// gamepad" and the Xbox pad never produced a single button press. Reading each device is the native half of the
-/// fix; this is the half that decides what the per-device readings add up to.
+/// gamepad" and the Xbox pad never produced a single button press. Reading each device is the native half;
+/// this is the half that decides what the per-device readings add up to.
 /// </summary>
 public class GamepadSetTests
 {

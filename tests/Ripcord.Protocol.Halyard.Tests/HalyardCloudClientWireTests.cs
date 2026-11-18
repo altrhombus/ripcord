@@ -9,9 +9,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// The cloud client's request bodies, byte for byte, and its reading of each response.
 ///
 /// <para>These bodies go to PSN and on to the console, and several details in them were matched against our own
-/// captures on purpose (a numeric accountId, empty-but-present fields, field order). The strings below were
-/// taken from the client as it stood on 2026-09-27, before its JSON moved to source generation, so that the
-/// move could be shown to change nothing on the wire.</para>
+/// captures on purpose (a numeric accountId, empty-but-present fields, field order). The expected strings
+/// below are literals, not built by the serializer under test, so a change in how the client produces its
+/// JSON shows up here as a difference on the wire.</para>
 /// </summary>
 public class HalyardCloudClientWireTests
 {

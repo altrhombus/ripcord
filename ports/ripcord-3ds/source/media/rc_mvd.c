@@ -46,7 +46,7 @@
  * counted and dropped rather than overrunning. */
 #define MVD_INPUT_STAGING 0x40000
 
-/* Stamped into the output buffer to detect that MVD has written a picture. See the block at its use. */
+/* The value stamp_sentinel writes. blit_to_screen's probe skips it. See the note above stamp_sentinel. */
 #define MVD_SENTINEL 0x1111u
 
 /*
@@ -60,8 +60,8 @@
 #define SCREEN_HEIGHT 240
 
 /*
- * Widescreen. The console only sends 640x360 (Phase 6d), and the 400-wide mode point-samples that down
- * 1.6:1, which destroys thin vertical strokes: on-screen text was the first thing to become unreadable.
+ * Widescreen. The 400-wide mode point-samples a 640-wide stream down 1.6:1, dropping 37.5% of its
+ * columns, which destroys thin vertical strokes: on-screen text is the first thing to become unreadable.
  * The panel is physically 800 subpixels across; gfxSetWide gives all 800 to one 2D image, so 640 -> 800
  * is an upscale and no column is discarded. The only cost is that the blit writes twice as many pixels.
  *
@@ -90,8 +90,7 @@ void rc_mvd_set_smoothing(int enabled)
     s_smooth = enabled;
 }
 
-/* Output buffers are page-aligned: the only render target MVD was ever observed to write is a
- * framebuffer, which is page-aligned, so this removes alignment as a variable. */
+/* Output buffers are page-aligned, as a framebuffer is, which removes alignment as a variable. */
 #define MVD_OUTPUT_ALIGN 0x1000
 
 /*
@@ -132,9 +131,10 @@ static struct {
     unsigned detail;
     uint16_t lo, hi, corner[4];
 } s_probe;
+/* Set by rc_mvd_init. While set, the first keyframe's access unit is fed twice - see
+ * rc_mvd_decode_frame. */
 static int s_first_sequence;
 static unsigned s_last_detail;
-/* The first unit after init is fed twice - see rc_mvd_decode_frame. */
 static int s_reported_setconfig;
 static long s_setconfig_failures;
 static int s_units_logged;
@@ -172,9 +172,6 @@ int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565)
     s_output_buf[0] = (u8 *)linearMemAlign(s_output_size, MVD_OUTPUT_ALIGN);
     s_output_buf[1] = (u8 *)linearMemAlign(s_output_size, MVD_OUTPUT_ALIGN);
     s_decode_index = 0;
-    /* outdata0 and outdata1 alias one buffer. A separate outdata1 buffer was tried, on the theory that
-     * the two are a ping-pong pair and aliasing them corrupted the reference picture; it tested negative
-     * (the picture degraded identically) and cost 460 KB of linear memory. */
     if (s_staging == NULL || s_output_buf[0] == NULL || s_output_buf[1] == NULL) {
         rc_log("\x1b[31mFAIL\x1b[0m could not allocate aligned MVD buffers\n");
         rc_mvd_exit(out);
@@ -226,8 +223,8 @@ int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565)
          * the process down with a data abort. The browser default is the proven number and covers up to
          * 720p.
          *
-         * Do not clamp down to either figure. A grey picture at 640x360 was once blamed on the larger
-         * buffer; it turned out to be six faults in the decode sequence, none of them this.
+         * Do not clamp down to either figure. The larger buffer is not what causes a grey picture at
+         * 640x360.
          */
         s_workbuf_size = MVD_DEFAULT_WORKBUF_SIZE;
         if (R_SUCCEEDED(mvdstdCalculateBufferSize(&calc, &needed))
@@ -262,6 +259,8 @@ int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565)
         u32 aligned_w = (u32)((input_width + 15) & ~15);
         u32 aligned_h = (u32)((input_height + 15) & ~15);
 
+        /* outdata0 and outdata1 alias one buffer. A separate outdata1 buffer tested negative (the
+         * picture degraded identically) and cost 460 KB of linear memory. */
         mvdstdGenerateDefaultConfig(&s_config, aligned_w, aligned_h, aligned_w, aligned_h, NULL,
                                    (u32 *)s_output, (u32 *)s_output);
         rc_log("MVD config dims: %ux%u (source %dx%d, macroblock-aligned)\n",
@@ -314,8 +313,9 @@ static size_t next_start_code(const uint8_t *data, size_t length, size_t from, s
 /*
  * Per-frame scale tables. Rebuilt only when the geometry changes, which in practice means once.
  *
- * map_x[x] is the source column for output column x. map_y[y] is the source row's BYTE-INDEX OFFSET
- * (sy * src_w), not the row number, so the inner loop needs neither a multiply nor a division.
+ * map_x[x] is the source column for output column x. map_y[y] is the source row's offset in 16-bit
+ * pixels (sy * src_w), not the row number, so the inner loop needs neither a multiply nor a division.
+ * map_y2[y] is the same for the next source row, which the vertical average reads.
  */
 static uint16_t s_map_x[SCREEN_WIDTH_MAX];
 static uint32_t s_map_y[SCREEN_HEIGHT];
@@ -351,6 +351,9 @@ static void build_scale_maps(int src_w, int src_h, int draw_h, int y_offset, int
     s_map_y_offset = y_offset;
 }
 
+/* Set by rc_mvd_decode_frame when a picture renders; taken by the inline path of rc_mvd_scale_begin. */
+static int s_picture_ready;
+
 /*
  * blit_to_screen is a nearest-neighbour scale of the decoded frame into the top framebuffer, with the
  * transpose the hardware layout requires: the screen is 400x240 to look at but stored column-major, so
@@ -364,14 +367,11 @@ static void build_scale_maps(int src_w, int src_h, int draw_h, int y_offset, int
  * y is innermost so the WRITE walks the column-major framebuffer sequentially; the reads are the strided
  * side. Aspect is preserved by letterboxing - 640x360 is 16:9 against a 5:3 screen - and the bands are
  * written as their own runs rather than tested for inside the pixel loop.
- */
-static int s_picture_ready;
-
-/*
- * NO GFX OR GSP CALL HAPPENS IN HERE, and that is a hard requirement. This runs on the scale worker
- * while the receive core calls gfxSwapBuffers, and libctru's gfx API is not thread-safe: calling
- * gfxGetFramebuffer and gfxFlushBuffers from here took the whole console down hard enough to need the
- * power button held.
+ *
+ * NO GFX OR GSP CALL HAPPENS IN HERE, and that is a hard requirement. With a scale worker this runs on
+ * the worker while the receive core calls gfxSwapBuffers, and libctru's gfx API is not thread-safe:
+ * calling gfxGetFramebuffer and gfxFlushBuffers from here took the whole console down hard enough to
+ * need the power button held.
  *
  * So the caller, on the receive core, resolves the framebuffer and passes it in, and cache maintenance
  * uses the kernel syscalls (svcFlush/InvalidateProcessDataCache) rather than the GSP service. Those act
@@ -454,8 +454,8 @@ static void blit_to_screen(const rc_mvd *mvd, const u8 *source, u8 *framebuffer)
             uint16_t v = src[i];
             int j, known = 0;
 
-            /* Skip our own sentinel: it is darker than any decoded grey, so leaving it in the range
-             * inflated the spread by ~20 and turned two red verdicts green. */
+            /* Skip the sentinel value (see stamp_sentinel): it is darker than any decoded grey and
+             * would widen the range. */
             if (v == MVD_SENTINEL)
                 continue;
             if (v < lo) lo = v;
@@ -558,19 +558,19 @@ static void blit_to_screen(const rc_mvd *mvd, const u8 *source, u8 *framebuffer)
 }
 
 /*
- * THE SENTINEL IS RETIRED. stamp_sentinel and sentinel_changed are kept below, uncalled, only so the
- * diagnostic probe can still recognise the value if an old buffer is ever inspected.
+ * stamp_sentinel AND sentinel_changed ARE NOT CALLED. They stay so that MVD_SENTINEL, which the probe
+ * in blit_to_screen skips, has its meaning next to it.
  *
- * It wrote 0x1111 into four corners of the output buffer before every access unit, to detect that MVD
- * had written a picture. The stream has refs=1, so that buffer is exactly what the next P-frame predicts
- * from: intra prediction and motion compensation spread the four wrong pixels outward every frame,
- * resetting only at an IDR. On hardware that is a clean picture after each keyframe decaying into
- * streaks and then a flat field. It also flushed the whole 460 KB buffer from the CPU cache on every
+ * Stamping writes 0x1111 into four corners of the output buffer before an access unit, to detect that
+ * MVD has written a picture. The stream has refs=1, so that buffer is exactly what the next P-frame
+ * predicts from: intra prediction and motion compensation spread the four wrong pixels outward every
+ * frame, resetting only at an IDR. On hardware that is a clean picture after each keyframe decaying into
+ * streaks and then a flat field. It also flushes the whole 460 KB buffer from the CPU cache on every
  * frame, writing back stale lines over memory the hardware owns.
  *
  * MVD's status codes are reliable: the block correctly returned OutOfResource for an undersized work
  * buffer and Internal for slices fed without parameter sets. mvdstdRenderVideoFrame returning success is
- * the picture-ready signal. Do not reintroduce writes into a buffer the decoder is predicting from.
+ * the picture-ready signal. Do not write into a buffer the decoder is predicting from.
  */
 static void stamp_sentinel(const rc_mvd *mvd) __attribute__((unused));
 
@@ -637,7 +637,7 @@ static void apply_output_config(void)
 
 /*
  * Feeds one NAL unit behind a three-byte 00 00 01 start-code prefix. The prefix is deliberate: a working
- * player passes the unit with it, and this port got no pictures while it stripped it.
+ * player passes the unit with it, and MVD produced no pictures with it stripped.
  *
  * The output address is set through MVDSTD_SetConfig BEFORE the unit is processed, not merely at render
  * time: if MVD writes the decoded picture during processing rather than during render, an output address
@@ -792,11 +792,6 @@ void rc_mvd_set_profile(rc_profile *profile)
 }
 
 /*
- * Measured at 60 fps with one scale per decoded picture: 3,176 scales against 390 swaps, so seven out of
- * every eight scaled frames were overwritten in the back buffer before anything presented them. The
- * decoder outruns a 60 Hz display whenever it is keeping up at all.
- */
-/*
  * THE SCALE CAN RUN ON ANOTHER CORE (rc_mvd_start_scale_thread). On core 0, sharing with the receive
  * loop at 960x540, the profile came to 77% of one core with the scale alone at 13.1 ms a frame, and 22%
  * of A/V units were lost to socket-buffer overflow.
@@ -808,6 +803,11 @@ void rc_mvd_set_profile(rc_profile *profile)
  * THE FLUSH HAPPENS ON THE WORKER, DELIBERATELY: it is the core that DIRTIED the framebuffer's cache
  * lines whose cache has to be flushed. The worker flushes before it signals and the main thread only
  * swaps.
+ *
+ * rc_mvd_decode_frame scales every decoded picture. Measured at 60 fps with one scale per decoded
+ * picture: 3,176 scales against 390 swaps, so seven out of every eight scaled frames were overwritten
+ * in the back buffer before anything presented them. The decoder outruns a 60 Hz display whenever it is
+ * keeping up at all.
  */
 static Thread s_scale_thread;
 static LightEvent s_scale_req, s_scale_done;
@@ -917,7 +917,7 @@ int rc_mvd_scale_begin(rc_mvd *mvd)
     if (s_scale_thread != NULL) {
         /*
          * Threaded: the blit is already running, or has finished, on the worker. Report a frame ready to
-         * swap only when one has actually been drawn - either collected by decode_frame above, or
+         * swap only when one has actually been drawn - either collected by rc_mvd_decode_frame, or
          * completing now. Never blocks the receive loop.
          */
         if (s_scale_swap_pending) {
@@ -954,7 +954,7 @@ int rc_mvd_scale_complete(void)
  * core.
  *
  * Decoding through the damage instead gives a moving picture with occasional corruption that the next
- * IDR clears. The skipping behaviour is still available via skipuntilkeyframe=1.
+ * IDR clears. skipuntilkeyframe=1 in the pairing file selects the skipping behaviour.
  */
 static int s_skip_until_keyframe;
 
@@ -1025,8 +1025,8 @@ int rc_mvd_decode_frame(rc_mvd *mvd, const uint8_t *annexb, size_t length, int i
         /*
          * CONFIGURE AFTER THE PARAMETER SETS, NOT BEFORE THEM. 3dbrew's H.264 procedure is explicit
          * about the order: process the NAL units for the Sequence and Picture Parameter Sets, and THEN
-         * begin the main video processing. With SetConfig called before anything was fed, the
-         * configuration was applied while a fresh decoder still knew nothing about the sequence.
+         * begin the main video processing. With SetConfig called before anything is fed, the
+         * configuration is applied while a fresh decoder still knows nothing about the sequence.
          */
         if (!applied_config && (nal_type == 1u || nal_type == 5u)) {
             apply_output_config();
@@ -1036,9 +1036,9 @@ int rc_mvd_decode_frame(rc_mvd *mvd, const uint8_t *annexb, size_t length, int i
 
         (void)feed_nal_unit(mvd, annexb + unit_start, unit_length);
 
-        /* A permanent failure clears ready. Stop NOW rather than finishing the access unit: the log
-         * shows "fed #3" arriving after "MVD DISABLED", i.e. this loop kept handing slices to a decoder
-         * that had already given up, and the run ended in a data abort. */
+        /* A permanent failure clears ready. Stop NOW rather than finishing the access unit: continuing
+         * hands slices to a decoder that has already given up, and a run that did so ended in a data
+         * abort. */
         if (!mvd->ready)
             return rendered;
 
@@ -1052,13 +1052,13 @@ int rc_mvd_decode_frame(rc_mvd *mvd, const uint8_t *annexb, size_t length, int i
     /*
      * ONE ACCESS UNIT IS ONE PICTURE: render once, after all of its units. The console emits ONE SLICE
      * PER MTU - a 25 KB keyframe arrives as ~20 IDR NAL units of ~1250 bytes, at 640x360 as much as at
-     * 960x540 - so checking for a picture after every unit blitted ~20 partial frames per keyframe and
-     * the IDR never completed.
+     * 960x540 - so checking for a picture after every unit blits ~20 partial frames per keyframe and
+     * the IDR never completes.
      *
      * RENDER UNCONDITIONALLY. MVD clears the output buffer during ProcessVideoFrame, and a buffer that
      * is cleared and never rendered reads as EXACTLY neutral grey (R==B, G==2R) in every sample.
      *
-     * THE RENDER RESULT IS THE PICTURE-READY SIGNAL. The sentinel is gone - see stamp_sentinel's note.
+     * THE RENDER RESULT IS THE PICTURE-READY SIGNAL - see stamp_sentinel's note.
      */
     if (render_until_frame(mvd)) {
         if (s_scale_thread != NULL) {

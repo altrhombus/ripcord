@@ -6,9 +6,9 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// The client's device identity for the RP-Did control field (spec §2.1): a stable 16-byte machine id.
 ///
 /// <para>
-/// This used to read the Windows registry directly, which put a <c>Microsoft.Win32.Registry</c> dependency and
-/// a Windows-only code path into an otherwise platform-neutral protocol assembly. The host detail now lives
-/// behind <see cref="IDeviceIdentity"/> in Core, so this is a thin protocol-facing wrapper.
+/// A thin protocol-facing wrapper. The host detail lives behind <see cref="IDeviceIdentity"/> in Core, which
+/// keeps the <c>Microsoft.Win32.Registry</c> dependency and its Windows-only code path out of this
+/// platform-neutral protocol assembly.
 /// </para>
 /// </summary>
 public static class HalyardDeviceIdentity

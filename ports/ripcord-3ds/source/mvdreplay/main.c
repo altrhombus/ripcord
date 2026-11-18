@@ -1,12 +1,10 @@
 /*
  * ripcord-3ds - offline MVD replay: feed a known-good H.264 file to the decoder, with no console.
  *
- * WHY THIS EXISTS. `dumpvideo=1` wrote the console's elementary stream to SD and ffmpeg decoded it on a
- * PC as the PS5 home screen in full colour with legible text, while this port's MVD path showed a flat
- * grey field: the console's stream and the demuxer were good, and the fault was in decode. This program
- * reads that same video.264 off the SD card and drives rc_mvd with it directly. No network, no keys, no
- * session that times out, no packet loss, and EVERY RUN IS IDENTICAL, so a change in the picture is a
- * change we made rather than a change in what the console happened to be showing.
+ * Reads video.264 off the SD card - the elementary stream the connect flow writes with `dumpvideo=1` -
+ * and drives rc_mvd with it directly. No network, no keys, no session that times out, no packet loss,
+ * and EVERY RUN IS IDENTICAL, so a change in the picture is a change in the code rather than a change
+ * in what the console happened to be showing.
  *
  *     ffmpeg -i video.264 frame%03d.png     # what the decoder is SUPPOSED to produce
  *
@@ -30,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The capture the dump produces is 2 MB; give the reader room for a larger one without a realloc. */
+/* The connect flow's dump is at most 2 MB; this leaves room for a larger file without a realloc. */
 #define REPLAY_CAPACITY (4u * 1024u * 1024u)
 
 /* Static, not a local: the main thread's stack is 32 KB. */
@@ -67,10 +65,9 @@ static int starts_picture(const uint8_t *nal, size_t length)
  * Does this access unit contain an IDR slice (NAL type 5)?
  *
  * rc_mvd_init arms s_awaiting_keyframe, and rc_mvd_decode_frame drops every access unit until one
- * arrives marked as a keyframe. The first cut of this program passed 0 unconditionally, so every unit
- * was skipped and the screen stayed blank - no picture and no grey, which reads as "the replay is
- * broken" rather than "the replay is working and told you nothing". The connect flow gets this flag from
- * the demuxer; here it has to be read out of the bitstream.
+ * arrives marked as a keyframe. Passing 0 unconditionally skips every unit and leaves the screen
+ * blank - no picture and no grey. The connect flow gets this flag from the demuxer; here it has to be
+ * read out of the bitstream.
  */
 static int unit_is_keyframe(const uint8_t *unit, size_t length)
 {
@@ -110,9 +107,9 @@ static const char *s_argv0;
 
 /*
  * INTEGRITY CHECK ON LOAD. frame_num increments by one per reference picture; a jump means a picture is
- * missing. The first capture this tool was fed had 332 frame_num discontinuities across 941 pictures,
- * because the dump was written to SD on the receive thread and the resulting stall cost 2168 packets.
- * ffmpeg conceals gaps silently, so that capture decoded and looked perfect on a PC.
+ * missing. A capture written to SD on the receive thread had 332 frame_num discontinuities across 941
+ * pictures, because the resulting stall cost 2168 packets. ffmpeg conceals gaps silently, so that
+ * capture decoded and looked perfect on a PC.
  */
 typedef struct { const uint8_t *b; size_t len; size_t pos; } bitreader;
 
@@ -252,10 +249,10 @@ static size_t load_stream(const char *argv0)
 /*
  * ONE ACCESS UNIT PER CALL, driven from the main loop at vblank rate.
  *
- * The first cut decoded all 941 pictures in one batch and swapped buffers once at the end. A pass takes
- * 18.8 seconds, so every blit landed in the back buffer and the screen sat unchanged throughout - which
- * looked like "the decoder produced nothing" when in fact it had produced 940 pictures. Stepping one
- * unit per frame makes this a player: what is on screen is the unit just decoded.
+ * Decoding all 941 pictures in one batch and swapping buffers once at the end takes 18.8 seconds with
+ * every blit landing in the back buffer, so the screen sits unchanged throughout - which looks like
+ * "the decoder produced nothing" when it has produced 940 pictures. Stepping one unit per frame makes
+ * this a player: what is on screen is the unit just decoded.
  */
 static size_t s_cursor;
 static long s_units, s_pictures;
@@ -384,9 +381,8 @@ int main(int argc, char **argv)
     report_stream_integrity();
 
     /*
-     * The dump is 640x360 because that is what the connect flow negotiated when it was written. If a
-     * capture at another resolution is ever replayed this needs to read the SPS instead; for now it is
-     * stated rather than guessed, so a mismatch is obvious rather than mysterious.
+     * The decoder is opened at a fixed 640x360 and the SPS is not read. A capture at any other
+     * resolution does not match what MVD is configured for.
      */
     rc_mvd_set_profile(&s_profile);
     rc_mvd_set_widescreen(1);

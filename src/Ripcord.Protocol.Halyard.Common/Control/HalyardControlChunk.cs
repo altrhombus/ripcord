@@ -23,7 +23,7 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 ///
 /// <para>
 /// Every combination observed on the wire is named below; one we have not seen falls through as an unknown
-/// type. The bits are deliberately not modelled yet, because the flag meanings above come from one mask test
+/// type. The bits are deliberately not modelled, because the flag meanings above come from one mask test
 /// and one branch rather than from a full reading of the codec.
 /// </para>
 /// </summary>

@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport: the SACK chunk.
+ * libripcord - Takion transport: the SACK chunk.
  *
  * Ported from Ripcord.Protocol.Halyard.Takion.TakionSackChunk - real SCTP's SACK chunk (RFC 4960),
  * unmodified. This port only ever builds the cumulative-only form (no gap-ack or duplicate-TSN blocks),

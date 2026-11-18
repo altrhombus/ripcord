@@ -1,91 +1,97 @@
 /*
- * ripcord-3ds - the provisional pairing-record file.
+ * libripcord - the pairing-record file: the paired consoles and the stream settings.
  *
- * Reads "pairing.txt" from next to the running .3dsx. This is NOT the "import a pairing record from a
- * desktop Ripcord install" backlog item - that is a separate, still-unstarted piece of work with a
- * similar name. This is a plain key=value text file for exercising the on-device probes, and the values
- * are transcribed by hand from `ProtocolLab -- register`'s output:
+ * Reads and writes "pairing.txt" beside the running program (rc_program_dir of argv0). A plain
+ * key=value text file, written by registration (halyard_pairing_file_save) or by hand from
+ * `ProtocolLab -- register`'s output. Shared settings come first; each console is a `[console]` line
+ * followed by its own keys. Console keys met before any `[console]` line open an implicit first
+ * console. Per console:
  *
  *   host=192.168.1.42          (required - the console's LAN address)
- *   platform=ps5               (optional, "ps5" or "ps4"; default ps5)
  *   registkey=1a2b3c4d5e6f0011 (required - hex, at most 8 bytes)
  *   companion=...32 hex chars  (required - hex, exactly 16 bytes)
+ *   platform=ps5               (optional, "ps5" or "ps4"; default ps5)
  *   deviceid=...hex            (optional - up to 16 bytes; defaults to all-zero)
- *   osmajor=10, osminor=0, bitrate=10000, streamingtype=0   (all optional, shown defaults)
- *   streambitrate=8000         (optional - the launch spec's bwKbpsSent, in kbps)
- *   skipuntilkeyframe=0        (optional - 1 restores the old drop-everything-after-loss behaviour)
- *   fps=30                     (optional - 30 or 60)
- *   holdseconds=30             (optional - how long to hold the stream; 0 keeps the port default.
+ *   name=...                   (optional - what discovery called it, for a menu)
+ *   consoleid=...              (optional - the console's own id; see halyard_pairing_file_readdress)
+ *   pin=...                    (optional - the sign-in passcode; see login_pin below)
+ *
+ * Shared by every console, with the defaults shown:
+ *
+ *   selected=0                 (index of the console a session uses)
+ *   osmajor=10, osminor=0, bitrate=10000, streamingtype=0
+ *   streambitrate=10000        (the launch spec's bwKbpsSent, in kbps)
+ *   skipuntilkeyframe=0        (1 drops every frame after a loss until the next IDR)
+ *   fps=30                     (30 or 60)
+ *   holdseconds=0              (how long to hold the stream; 0 keeps the port default.
  *                               Minutes are what a thermal comparison needs; seconds do for frame rate)
- *   hardwarescale=0            (optional - 1 scales on the GPU instead of the CPU, where the port has
+ *   hardwarescale=0            (1 scales on the GPU instead of the CPU, where the port has
  *                               one; `bilinear` then costs nothing, since the filter is wired)
- *   diagnostics=0              (optional - 1 draws the diagnostics overlay over the stream)
- *   systemfont=0               (optional - 1 tries the platform's own font for the overlay)
- *   accountid=...              (optional - the PSN account id, remembered from pairing so that a
+ *   bilinear=0                 (0 nearest, 1 along the row, 2 both directions; see bilinear_upscale)
+ *   decoderrgb=1               (ask the decoder for packed RGB where it can; see decoder_rgb)
+ *   connquality=0              (1 sends CONNECTION_QUALITY reports; see connection_quality)
+ *   restondisconnect=0         (0 ask, 1 rest the console, 2 leave it awake)
+ *   diagnostics=0              (1 draws the diagnostics overlay over the stream)
+ *   systemfont=0               (1 tries the platform's own font for the overlay)
+ *   accountid=...              (the PSN account id, remembered from pairing so that a
  *                               nineteen-digit number need only be typed once)
- *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
- *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
- *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
- *   scalethread=0              (optional - DO NOT ENABLE; hard-locks the console, see below)
- *   dumpvideo=1                (optional - write the H.264 elementary stream to video.264, 2 MB cap,
- *                               then decode it on a PC with ffmpeg; diagnostic only, costs SD writes
+ *   videoformat=bgr565         ("bgr565" or "rgb565"; see below)
+ *   widescreen=1               (800x240 top screen; see below)
+ *   smoothing=1                (average the two source rows the vertical squeeze straddles)
+ *   scalethread=0              (DO NOT ENABLE on the 3DS; see below)
+ *   dumpvideo=0                (1 writes the H.264 elementary stream to video.264, 2 MB cap,
+ *                               to decode on a PC with ffmpeg; diagnostic only, costs SD writes
  *                               on the receive thread)
- *   streamwidth=960            (optional - what to ASK the console to encode; ladder values only:
+ *   streamwidth=960            (what to ASK the console to encode; ladder values only:
  *   streamheight=540            640x360, 960x540, 1280x720, 1920x1080)
- *   proberesolutions=1         (optional - ask the console for a series of resolutions and report
- *                               what it accepts, instead of streaming; see source/connect/main.c)
+ *   proberesolutions=0         (1 asks the console for a series of resolutions and reports what it
+ *                               accepts, instead of streaming; see
+ *                               ports/ripcord-3ds/source/connect/main.c)
  *
- * `bitrate` and `streambitrate` are NOT the same field and default differently on purpose. `bitrate` is
- * the /sess/ctrl RP-StartBitrate header; `streambitrate` is what the launch spec asks the console to
- * actually send.
+ * This loader stores the values and applies no range check; the port that reads a field decides what
+ * it does with it. Several keys (videoformat, widescreen, smoothing, scalethread, dumpvideo) are read
+ * by the 3DS port only.
  *
- * `streambitrate` HAS NEVER BEEN TESTED AGAINST A CLEAN LINK, which is why the default is high. The
- * earlier comparison is void:
+ * `bitrate` and `streambitrate` are NOT the same field. `bitrate` is the /sess/ctrl RP-StartBitrate
+ * header; `streambitrate` is what the launch spec asks the console to actually send.
  *
- *     2000 kbps ->  0.57% unit loss,   5 loss events, 27.5 fps
- *     6000 kbps ->  7.24% unit loss, 113 loss events,  0.8 fps
+ * [X] WHETHER `streambitrate` MOVES THE ENCODER is unconfirmed on the 3DS: measured throughput sat near
+ * 0.9 Mbps whether 2000, 3500 or 6000 was asked for. (Loss figures taken there before the stream socket
+ * set SO_RCVBUF measure the port's own buffer overrun, not the link: with SO_RCVBUF set the same link
+ * loses one unit in 5,489.) The connect probe prints what arrived, in Mbps and bits/pixel; run it once
+ * high and once low and compare those.
  *
- * The loss was this port's own: the stream socket had no SO_RCVBUF, so keyframe bursts overran the
- * default buffer. With SO_RCVBUF set the same link loses one unit in 5,489. The open question is whether
- * this field moves the encoder at all: measured throughput has sat near 0.9 Mbps whether 2000, 3500 or
- * 6000 was asked for. The connect probe prints what arrived, in Mbps and bits/pixel; run it once high
- * and once low and compare those. If they match, the request is not what governs the encoder, and the
- * senkusha measurement legs (spec 6.4, not implemented here) become the suspect.
- *
- * `widescreen` and `smoothing` cost nothing on the wire. The console only ever sends 640x360, so a
- * 400-wide screen point-samples away 61% of the columns, which makes on-screen text unreadable; 800x240
- * mode turns that into an upscale. `smoothing` addresses the vertical axis, at real CPU cost; watch the
- * profile and the loss figure together, because this port shares one core with the receive loop.
+ * `widescreen` and `smoothing` cost nothing on the wire. Every ladder rung is wider than a 400-column
+ * screen (640 columns at the smallest), so 400x240 mode point-samples columns away, which makes
+ * on-screen text unreadable; 800x240 mode keeps every column of a 640-wide stream. `smoothing` addresses
+ * the vertical axis, at real CPU cost; watch the profile and the loss figure together, because the 3DS
+ * port shares one core with the receive loop.
  *
  * `scalethread` IS OFF BECAUSE IT RACES THE DECODER. Moving the frame scale to core 2 took core 0 from
  * 77% to 27%, but the scale reads MVD's output buffer while core 0 keeps feeding MVD, which decodes the
  * NEXT picture into that same buffer. A buffer read mid-decode shows as a uniform mid-grey field with
- * only the macroblocks written so far carrying real content. The proper fix is a second output buffer
- * so decode and scale never touch the same one (MVD's config takes outdata0 and outdata1, which is
- * likely what they are for) - until then, inline.
+ * only the macroblocks written so far carrying real content.
  *
- * `streamwidth`/`streamheight` are 960x540. The console's UI is authored at 1080p, so a 360p encode
- * destroys small text before it reaches the wire. 540p once produced a flat grey field; the causes were
- * decoder-side and are fixed (the sentinel writing into the reference picture, rendering per-NAL when
- * the console sends one slice per MTU, MVDSTD_SetConfig before the parameter sets rather than after,
- * the BUSY retry not re-applying config, and a cold decoder needing the first access unit fed twice) -
- * 540p exercises the multi-slice path harder than 360p, it is not a resolution problem.
+ * `streamwidth`/`streamheight` default to 960x540. The console's UI is authored at 1080p, so a 360p
+ * encode destroys small text before it reaches the wire. 540p exercises a decoder's multi-slice path
+ * harder than 360p: the console sends one slice per MTU.
  *
- * It costs roughly 2.25x the decode and scale. At 640x360 and 60 fps the receive core runs at 84%, so
- * 540p is a 30 fps proposition unless the scale gets cheaper. Drop fps to 30 if loss appears. Halving
- * bits/pixel is not the limit: a PC decode of a real capture shows the PS5 home screen fully legible at
- * 0.10 bits/pixel. What limits text is the 240-row screen, and more source rows is the only lever.
+ * On the 3DS it costs roughly 2.25x the decode and scale. At 640x360 and 60 fps the receive core runs at
+ * 84%, so 540p is a 30 fps proposition there. Drop fps to 30 if loss appears. Halving bits/pixel is not
+ * the limit: a PC decode of a real capture shows the PS5 home screen fully legible at 0.10 bits/pixel.
+ * What limits text is the 240-row screen, and more source rows is the only lever.
  *
- * `videoformat` exists because MVD can emit either byte order and the top screen is configured RGB565.
- * The devkitPro example pairs MVD_OUTPUT_BGR565 with an RGB565 screen, which is what this port copied -
- * if reds and blues look swapped, this is the setting, not the blit.
+ * `videoformat` exists because MVD can emit either byte order and the 3DS top screen is configured
+ * RGB565. The devkitPro example pairs MVD_OUTPUT_BGR565 with an RGB565 screen, which is the default
+ * here - if reds and blues look swapped, this is the setting, not the blit.
  *
- * Lives here rather than inside a program's main.c because two on-device probes read the same file
- * (source/session/main.c and source/connect/main.c) and must agree on what a valid record is.
+ * Lives in the core rather than inside a program's main.c because every program that opens a session
+ * reads the same file and must agree on what a valid record is.
  *
  * ON THE LENGTH RULES: rc_hex_decode returns "bad" for malformed AND for over-long input, and this
- * loader reports its three required fields in one message, so an over-long registkey reports as a
- * *missing* field. The message names lengths explicitly for that reason - see HARDWARE-PROBES.md.
+ * loader reports the three required fields in one message, so an over-long registkey reports as an
+ * incomplete console. The message names lengths explicitly for that reason - see
+ * ports/ripcord-3ds/HARDWARE-PROBES.md.
  */
 #ifndef HALYARD_PAIRING_FILE_H
 #define HALYARD_PAIRING_FILE_H
@@ -117,7 +123,7 @@ typedef struct {
      * not, so a record that carries one can be re-addressed (halyard_pairing_file_readdress) instead of
      * re-paired.
      *
-     * Empty for a record written before this existed, or one paired by hand from a typed address. That
+     * Empty for a record with no `consoleid` key, such as one paired by hand from a typed address. That
      * is a normal state: the console cannot be found again if it moves, until the id is learned.
      */
     char console_id[HALYARD_PAIRING_CONSOLE_ID_MAX];
@@ -154,23 +160,22 @@ typedef struct {
      * Scale on the GPU rather than on the CPU cores. 0 keeps the port's own scaler, 1 asks the platform
      * to use whatever fixed-function scaler it has.
      *
-     * A setting rather than a replacement: the port that implements this keeps its old scaler and falls
+     * A setting rather than a replacement: a port that implements this keeps its CPU scaler and falls
      * back to it. `bilinear` still chooses the filter - on a hardware scaler the interpolation is wired
      * rather than executed, so mode 1 and mode 2 cost the same as mode 0.
      */
     int hardware_scale;
 
     /*
-     * Show the diagnostics overlay on the stream. A setting because it is meant to become a toggle the
-     * user reaches for mid-session rather than a build flag: the numbers are most wanted at the moment
-     * something looks wrong, which is not a moment anyone can rebuild for.
+     * Show the diagnostics overlay on the stream. A setting rather than a build flag: the numbers are
+     * most wanted at the moment something looks wrong, which is not a moment anyone can rebuild for.
      */
     int diagnostics;
 
     /*
      * Try the platform's own font for the overlay instead of the port's drawn one. OFF BY DEFAULT and
-     * that is a finding rather than a preference - see the port's notes on what was tried. Kept as a
-     * setting so a future attempt costs one line in this file rather than a rebuild.
+     * that is a finding rather than a preference - see the port's notes on what was tried. A setting,
+     * so trying it costs one line in the file rather than a rebuild.
      */
     int system_font;
 
@@ -187,7 +192,7 @@ typedef struct {
     int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
     int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */
     int smoothing;           /* 1 = vertical pair-average in the scale (default on) */
-    int scale_thread;        /* 1 = run the frame scale on a spare core - RACY, see below */
+    int scale_thread;        /* 1 = run the frame scale on a spare core - RACY, see above */
     int dump_video;          /* 1 = write the Annex-B stream to video.264 for host-side decoding */
     /*
      * Send CONNECTION_QUALITY (type 16) reports. Off by default, and deliberately: the targetBitrate
@@ -263,8 +268,8 @@ typedef struct {
  * 0 for a missing or unusable file - `out` is filled with defaults either way, so a caller with nothing
  * paired still has somewhere sensible to start from.
  *
- * A FILE WRITTEN BEFORE THIS EXISTED STILL LOADS. Console keys appearing before any [console] line are
- * read as the first console, which is exactly the old single-console layout; a test covers it.
+ * A FILE WITH NO [console] LINE LOADS. Console keys appearing before any [console] line are read as
+ * the first console, which is the single-console layout; a test covers it.
  */
 int halyard_pairing_file_load_set(const char *argv0, halyard_pairing_set *out);
 
@@ -313,8 +318,7 @@ const halyard_pairing_record *halyard_pairing_set_selected(const halyard_pairing
  * and companion were all present and well-formed; 0 otherwise, having logged why. Optional fields are
  * defaulted whether or not the load succeeds.
  *
- * Unchanged for every caller that had one console: it is halyard_pairing_file_load_set followed by
- * taking the selected entry.
+ * It is halyard_pairing_file_load_set followed by taking the selected entry.
  */
 int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *out_record);
 
@@ -326,7 +330,7 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *out_rec
  * IT WRITES SECRETS AND IS THE ONLY THING HERE THAT MAY. registkey and companion are tied to one
  * console and one account - the wrong side of the generic-versus-personal line, and never logged,
  * never printed, never sent anywhere. They go in this file because that is what the file is for, and
- * nothing else in this port writes them anywhere at all.
+ * nothing else in this core writes them anywhere at all.
  *
  * EXISTING SETTINGS SURVIVE because the record carries them: a caller loads, registers, and saves the
  * same struct. Saving a record that was never loaded writes the defaults, which is correct for a first

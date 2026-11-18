@@ -1,9 +1,9 @@
 /*
- * ripcord-3ds - lowercase hex encode/decode.
+ * libripcord - lowercase hex encode/decode.
  *
  * A generic codec, not protocol-specific: /sess/init's RP-Registkey header is the hex of the raw
- * registration-key bytes, and the provisional pairing-record file (source/session/main.c) stores its
- * key material as hex for a human to type.
+ * registration-key bytes, and the pairing-record file (session/halyard_pairing_file.c) stores its key
+ * material as hex.
  */
 #ifndef RC_HEX_H
 #define RC_HEX_H

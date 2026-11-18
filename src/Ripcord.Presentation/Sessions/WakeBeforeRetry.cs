@@ -9,9 +9,9 @@ using Ripcord.Presentation.Resources;
 ///
 /// <para>
 /// <b>Why.</b> <see cref="ConnectFlow"/> checks the console's power state once, before the first attempt. A
-/// console going into rest as the connect began answered discovery as awake, dropped the first attempt, and
-/// refused every retry after it: six "connection refused" in a row, then "Couldn't connect" (2026-10-02).
-/// Asking before each retry finds it resting and wakes it.
+/// console going into rest as the connect begins answers discovery as awake, drops the first attempt, and
+/// refuses every retry after it: six "connection refused" in a row, then "Couldn't connect" (observed
+/// 2026-10-02). Asking before each retry finds it resting and wakes it.
 /// </para>
 ///
 /// <para>
@@ -27,7 +27,7 @@ public static class WakeBeforeRetry
     /// </summary>
     /// <remarks>
     /// A console that reported standby and never came up fails that open with <see cref="Strings.Connect_DidNotWakeDetail"/>,
-    /// which the controller reports and retries like any other failed open. Every other outcome opens as before:
+    /// which the controller reports and retries like any other failed open. Every other outcome goes on to open:
     /// a console whose power state cannot be told may still be reachable, and the open says more about why not.
     /// </remarks>
     public static Func<CancellationToken, Task<IStreamingSession>> Wrap(

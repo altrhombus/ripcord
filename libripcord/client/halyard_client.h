@@ -10,8 +10,7 @@
  *   src/Ripcord.Protocol.Halyard.Takion/HalyardTakionStream.cs      the .NET reference
  *
  * Where the two disagree, each default below follows whichever side has the better hardware evidence,
- * and says which. The first consumer is the macOS client (src/Ripcord.Mac); the ports move onto it later,
- * each on its own hardware.
+ * and says which.
  *
  * THREADING: ONE HOST-OWNED THREAD, AND NOTHING ELSE. The core creates no threads, takes no locks and
  * allocates nothing. The host calls halyard_client_connect() on a thread of its choosing, and then
@@ -63,9 +62,8 @@ typedef enum {
     HALYARD_CLIENT_STAGE_ENDED
 } halyard_client_stage;
 
-/* Why a session ended, separately from where it got to: several endings share a stage, which is the
- * distinction rc_connect.h's own comments (the menu_disconnect / xmb_quit / login_blocked fields) kept
- * having to add after the fact. */
+/* Why a session ended, separately from where it got to: several endings share a stage, a distinction
+ * rc_connect.h carries as separate result fields (menu_disconnect / xmb_quit / login_blocked). */
 typedef enum {
     HALYARD_CLIENT_END_NONE = 0,          /* still running */
     HALYARD_CLIENT_END_USER_DISCONNECT,   /* halyard_client_disconnect() */
@@ -90,7 +88,7 @@ typedef struct {
     const halyard_pairing_record *record; /* keys and host; copied at init */
     halyard_route route;                  /* HALYARD_ROUTE_LOCAL */
 
-    /* What the host can show, not what the core imposes: the PS3's 720p cap was a cellVdec limit and
+    /* What the host can show, not what the core imposes: the PS3's 720p cap is a cellVdec limit and
      * belongs to that port, not to the protocol. 0 means "the console's default". */
     int width, height, fps, bitrate_kbps;
     int allow_hevc;                       /* the host can decode HEVC */
@@ -333,7 +331,7 @@ void halyard_client_destroy(halyard_client *client);
  * HalyardAccountPairing.ConnectAsync/RunAsync and HalyardStreamingSession.ConnectAsync/StartStreamingAsync.
  *
  * THE SPLIT. The cloud tier (sign-in, the session, the push WebSocket, OFFER/ACCEPT/RESULT signaling) is
- * the host's, in Swift on the Mac; everything on UDP is here. The two interleave at exact points - the
+ * the host's; everything on UDP is here. The two interleave at exact points - the
  * console discards an Init it cannot tie to an OFFER, and races one sent too late - so the core exposes
  * those points as calls and one pull callback, and the host drives the signaling around them:
  *

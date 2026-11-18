@@ -47,9 +47,8 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     //
     // A depth AT capacity is a diagnosis: the A/V processing loop is slower than the wire, and the "packet loss"
     // the demuxer then reports is ours, not the network's. Both times it has read that way the cause was
-    // per-packet crypto cost — pegged at 511 before the x86 GHASH fix, and at 512 on the ARM64 first run, which
-    // had no carry-less GHASH path at all (see AesGcmCore.GfMul). Check the crypto hot path before believing the
-    // link.
+    // per-packet crypto cost — pegged at 511 on x86 with a slow GHASH, and at 512 on ARM64 with no carry-less
+    // GHASH path at all (see AesGcmCore.GfMul). Check the crypto hot path before believing the link.
     private const int AvQueueCapacity = 512;
     private Channel<byte[]>? _avQueue;
 
@@ -114,6 +113,8 @@ public sealed class HalyardTakionStream : IAsyncDisposable
 
     // Loss reports: a raw sealed Takion packet (base type 5, 15 bytes) carrying received/lost unit
     // counts, sent periodically so the console's rate controller can adapt the encoder bitrate to the link.
+    // Always the 15-byte form, whichever crypto is in use; HalyardV2SessionCrypto.SealLossReport seals only
+    // the 23-byte form and leaves a shorter packet untouched.
     // The vendor client sends one about every 200 ms (spec §3: cap47; cap48-cap52 median 216 ms).
     private static readonly TimeSpan LossReportInterval = TimeSpan.FromMilliseconds(200);
     private const byte LossReportType = 0x05;
@@ -126,16 +127,16 @@ public sealed class HalyardTakionStream : IAsyncDisposable
 
     /// <summary>
     /// Raised once per <see cref="LossReportInterval"/> with the (received, lost) A/V unit counts for that
-    /// window — the same numbers reported to the console's rate controller. Drives the on-screen loss readout
-    /// (and, later, client-side bitrate adaptation). Counts are per-window (reset each tick).
+    /// window — the same numbers reported to the console's rate controller. Counts are per-window (reset
+    /// each tick).
     /// </summary>
     public event Action<long, long>? PacketStatsSampled;
 
     /// <summary>
     /// Raised once when the console sends a Takion DISCONNECT, with its reason (empty when it gave none). A
     /// rejected launchSpec is announced this way, so the reason is often the only account of why a session
-    /// ended. The control loop stops after it. Until 2026-09-26 the loop ignored the message, and the session
-    /// ran on until the controller's watchdog saw silence (engine comparisons).
+    /// ended. The control loop stops after it; a loop that ignored the message would leave the session running
+    /// until the controller's watchdog saw silence.
     /// </summary>
     public event Action<string>? ConsoleDisconnected;
 
@@ -241,8 +242,8 @@ public sealed class HalyardTakionStream : IAsyncDisposable
             ControlMessage message = await _reliable!.ReceiveMessageAsync(cancellationToken).ConfigureAwait(false);
             if (message.Type == ControlMessage.Types.MessageType.StreamInfo)
             {
-                // STREAM_INFO carries the video parameter sets (SPS/PPS) per resolution; hand them to the
-                // demuxer so it can prepend them to the first IDR (they are not sent in the video stream).
+                // STREAM_INFO carries the video parameter sets per resolution; hand the first resolution's to
+                // the demuxer so it can prepend them to each keyframe (they are not sent in the video stream).
                 var resolutions = message.StreamInfoPayload?.Resolution;
                 if (resolutions is { Count: > 0 } && resolutions[0].VideoHeader is { Length: > 0 } vh)
                 {
@@ -268,7 +269,8 @@ public sealed class HalyardTakionStream : IAsyncDisposable
 
     /// <summary>
     /// Keep the stream alive after the handshake: answer the console's heartbeats (channel 1) and drain
-    /// incoming control messages — re-acking STREAM_INFO if resent. A/V packets are handled by the receive loop.
+    /// incoming control messages — re-acking STREAM_INFO if resent, recording the console's
+    /// CONNECTION_QUALITY target, and stopping on DISCONNECT. A/V packets are handled by the receive loop.
     /// </summary>
     private async Task StreamControlLoopAsync(CancellationToken cancellationToken)
     {
@@ -344,15 +346,13 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     public void RequestKeyFrame() => _ = RequestIdrAsync(_loopCts?.Token ?? CancellationToken.None);
 
     /// <summary>
-    /// Report our measured link quality and the bitrate we would like, via CONNECTION_QUALITY (spec type 16).
-    /// This is the client → server side of rate control: the console's encoder decides its own rate, and this is
-    /// how it learns what we are actually seeing rather than inferring it from loss-report counts alone.
+    /// Send a CONNECTION_QUALITY message (spec type 16) carrying our measured round-trip time and loss and the
+    /// bitrate we would like.
     ///
     /// <para>
-    /// <b>Unvalidated on the wire.</b> The <c>targetBitrate</c> field's units are not confirmed — kbps is sent
-    /// here to match the launchSpec's <c>bwKbpsSent</c> convention, but bps is equally plausible, and being
-    /// wrong by 1000x would make the console choose an absurd rate. That is why the caller gates this behind an
-    /// opt-in setting rather than enabling it by default.
+    /// <c>targetBitrate</c> goes out as the report's kbps value, unconverted. The console's own reports carry
+    /// that field in bits per second, and the console ignores a report sent to it (see
+    /// <see cref="ConsoleTargetBitrateKbps"/>).
     /// </para>
     ///
     /// <para>Fire-and-forget: a failed report must never disturb the stream.</para>
@@ -482,15 +482,16 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                 // zero-loss session, non-zero and tracking loss in the lossy cap54/cap55 [W]; its exact unit
                 // is [X]), GMAC @7, keystream offset @11. See spec §3.
                 //
-                // Version caveat: this 15-byte form is what cap47 shows. Our older session8 capture shows a
+                // Version caveat: this 15-byte form is what cap47 shows. Our session8 capture shows a
                 // 23-byte variant of the same base type (sequence @1, 90 kHz timestamp @3, GMAC @15, key
-                // position @19), so the size is protocol-version-specific, not universal. We only ever
-                // negotiate the version cap47 used; if a future firmware rejects these, that variant is why.
+                // position @19), so the size is protocol-version-specific, not universal. Only the 15-byte
+                // form is built here.
                 BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(3), (ushort)Math.Min(received, ushort.MaxValue));
                 BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(5), (ushort)Math.Min(lost, ushort.MaxValue));
 
-                // Per report, not per loop: one failed send (a Wi-Fi roam, a moment with no route) skipped every
-                // report for the rest of the session (review, 2026-10-05). The next interval tries again.
+                // Caught per report, not per loop: a catch around the loop would let one failed send (a Wi-Fi
+                // roam, a moment with no route) end every report for the rest of the session. The next interval
+                // tries again.
                 try
                 {
                     _crypto.SealLossReport(packet);

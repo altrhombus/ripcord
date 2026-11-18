@@ -1,12 +1,11 @@
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
 /// <summary>
-/// The extracted, on-the-wire interoperability constants the v1 control-plane crypto needs but which are
-/// deliberately NOT baked into this repository (independent-implementation discipline: see docs/protocol/README.md and
-/// IMPLEMENTATION.md "Two inputs that live outside these committed docs"). They are values the console
-/// itself computes against, so they cannot be changed without breaking interoperability, but they are
-/// data the client reads from its own binary — not authored code — and so are supplied as configuration
-/// from the gitignored captures folder rather than committed here.
+/// The extracted, on-the-wire interoperability constants the v1 control-plane crypto needs. They are
+/// values the console itself computes against, so they cannot be changed without breaking
+/// interoperability, but they are data the client reads from its own binary — not authored code — and so
+/// this assembly holds none of them: an instance is built by its caller and passed in. See
+/// docs/protocol/README.md and docs/protocol/IMPLEMENTATION.md ("Two inputs the spec withholds").
 ///
 /// <para>
 /// Contents:
@@ -17,7 +16,12 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 ///   selection rule — see <see cref="HalyardFieldContextKeys"/>.</description></item>
 /// </list>
 /// </para>
-/// A loader that populates these from the captures-folder fixture lives outside the committed tree.
+/// <c>HalyardControlSecretsLoader</c> (Ripcord.Protocol.Halyard) populates this type. It takes the first
+/// source that exists: the file named by <c>RIPCORD_CONTROL_FIXTURE</c>, then
+/// <c>control_crypto_vectors.json</c> in the platform config directory, then the same file in a dev tree's
+/// captures folder, and last the constants bundled with the build
+/// (<c>src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json</c>, embedded as a resource and read by
+/// <c>HalyardInteropConstants</c>; <c>NOTICE</c> describes them).
 /// </summary>
 public sealed class HalyardControlSecrets
 {
@@ -89,7 +93,7 @@ public sealed class HalyardControlSecrets
 
 /// <summary>
 /// The four 16-byte context keys used to derive per-field IVs, plus the selection rule. The key
-/// <em>values</em> are extracted constants (supplied via configuration); the selection rule is the
+/// <em>values</em> are extracted constants (passed in with <see cref="HalyardControlSecrets"/>); the selection rule is the
 /// protocol's own logic and lives in code.
 /// </summary>
 public sealed class HalyardFieldContextKeys

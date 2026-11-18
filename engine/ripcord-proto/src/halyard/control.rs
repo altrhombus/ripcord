@@ -11,8 +11,8 @@ use crate::crypto::modes;
 /// stored per-pairing companion (RP-Key).
 ///
 /// **The roles are not interchangeable.** `key` comes from the companion and is the AES-128 key;
-/// `material` comes from the nonce and feeds [`field_iv`]. Ripcord shipped these swapped once: it passed
-/// every primitive test and failed against a console.
+/// `material` comes from the nonce and feeds [`field_iv`]. Swapped, they pass every primitive test and
+/// fail against a console.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ControlKeys {
     pub key: [u8; KEY_LENGTH],

@@ -13,11 +13,11 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto;
 /// ephemeral private key between <see cref="GenerateEphemeralPublicKey"/> and
 /// <see cref="TryEstablishStream"/>, and the per-direction packet keys after that.
 ///
-/// Everything else in the connect path is built and tested against
-/// <see cref="PassthroughHalyardSessionCrypto"/>. The real implementation is derived from our own analysis of
-/// the vendor binary and our own captures (see docs/protocol/). A small number of values are still
-/// <b>assumptions</b> rather than confirmed findings; those are tagged <b>[X]</b> in the spec and listed in
-/// the roadmap. An <b>[X]</b> value is provisional — don't treat it as settled.
+/// The connect path runs against any implementation; <see cref="PassthroughHalyardSessionCrypto"/> is the
+/// identity one, for captures and tests. The real implementation is derived from our own analysis of
+/// the vendor binary and our own captures (see docs/protocol/). Values that are <b>assumptions</b> rather
+/// than confirmed findings are tagged <b>[X]</b> where they sit and in the spec. An <b>[X]</b> value is
+/// provisional — don't treat it as settled.
 /// </summary>
 public interface IHalyardSessionCrypto
 {
@@ -87,7 +87,7 @@ public interface IHalyardSessionCrypto
 
     /// <summary>
     /// Authenticate an outgoing loss report (base type 5) in place: write the advancing key
-    /// position (offset 0xb) and the 4-byte GMAC tag (offset 7) over the whole packet. Like control, the GMAC
+    /// position (v1: offset 0xb; v2: 19) and the 4-byte GMAC tag (v1: offset 7; v2: 15) over the whole packet. Like control, the GMAC
     /// zeroes both the tag and the keystream-offset field; the packet has no encrypted payload. Shares the same
     /// outgoing keystream-offset counter as <see cref="SealControlMessage"/> so nonces never repeat. No-op before
     /// the stream keys are established.
@@ -96,16 +96,16 @@ public interface IHalyardSessionCrypto
 
     /// <summary>
     /// Seal an outgoing controller-input packet (base type 6 = state, 1 = history) in place: reserve an
-    /// advancing keystream offset from the shared outgoing counter, write it (offset 4), AES-CTR encrypt the
-    /// payload (from <paramref name="payloadOffset"/>, normally 0xc), then compute + write the 4-byte GMAC
-    /// tag (offset 8) over the whole packet. Like A/V — and unlike control and loss reports — the GMAC zeroes only
+    /// advancing keystream offset from the shared outgoing counter, write it (v1: offset 4; v2: 12), AES-CTR encrypt the
+    /// payload (from <paramref name="payloadOffset"/>; v1: 0xc, v2: 20), then compute + write the 4-byte GMAC
+    /// tag (v1: offset 8; v2: 16) over the whole packet. Like A/V — and unlike control and loss reports — the GMAC zeroes only
     /// the tag, not the keystream-offset field. Shares the same keystream-offset counter as control and loss reports so
     /// nonces never repeat across the up direction. No-op before the stream keys are established.
     /// </summary>
     void SealInputPacket(Span<byte> packet, int payloadOffset);
 }
 
-/// <summary>First-time registration seam (obtaining a registration key). Stubbed until registration is derived.</summary>
+/// <summary>First-time registration seam (obtaining a registration key).</summary>
 public interface IHalyardRegistration
 {
     /// <summary>
@@ -128,17 +128,17 @@ public interface IHalyardRegistration
 ///
 /// <para>The transform is implemented in <see cref="V1.HalyardRegistrationKdf"/> /
 /// <see cref="V1.HalyardRegistrationCipher"/>; the lookup table + selector offset are extracted interop
-/// constants supplied from the gitignored captures folder (never committed), so the concrete cipher is injected by
-/// config. The default is <see cref="UnavailableRegistrationCipher"/>.</para>
+/// constants that reach it as a <see cref="V1.HalyardRegistrationSecrets"/> (that type's remarks say where
+/// they are loaded from), so the concrete cipher is built by whoever resolves those constants. With none
+/// resolved, the cipher is <see cref="UnavailableRegistrationCipher"/>.</para>
 ///
-/// <para>Callers pass the request <paramref name="requestContext"/> (the body's leading random bytes, which
-/// both peers hold) and the per-pairing <paramref name="material"/>. Deriving these for an <em>outbound</em>
-/// request is the remaining send-side work (the context byte-layout the console gathers <c>material</c> from);
-/// the inbound path (decrypting a response to the pairing record) is complete.</para>
+/// <para>The request's random context and the per-pairing material are generated inside
+/// <see cref="BuildRequest"/> / <see cref="BuildAccountRequest"/> and travel in the returned
+/// <see cref="HalyardRegistrationExchange"/>, which <see cref="DecryptResponse"/> takes back.</para>
 /// </summary>
 public interface IHalyardRegistrationCipher
 {
-    /// <summary>Whether the real transform is available (a captures-folder implementation is injected).</summary>
+    /// <summary>Whether the real transform is available (false on <see cref="UnavailableRegistrationCipher"/>).</summary>
     bool IsAvailable { get; }
 
     /// <summary>
@@ -179,8 +179,9 @@ public sealed class HalyardRegistrationExchange
     internal byte[] Seed { get; init; } = [];
 }
 
-/// <summary>Default registration cipher: reports unavailable so registration fails cleanly until the real
-/// (captures-folder) transform is injected. Keeps the DI graph and pairing UI buildable without any secret.</summary>
+/// <summary>The registration cipher used when no interop constants resolve (for example a build made with
+/// <c>-p:BundleInteropConstants=false</c> and no local fixture): reports unavailable and throws from every
+/// operation, so registration fails cleanly and the pairing flow still constructs.</summary>
 public sealed class UnavailableRegistrationCipher : IHalyardRegistrationCipher
 {
     public bool IsAvailable => false;

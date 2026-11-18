@@ -1,5 +1,5 @@
 /*
- * ripcord ports - the LAN wake datagram. See halyard_wake.h for the spec derivation, for why the lines
+ * libripcord - the LAN wake datagram. See halyard_wake.h for the spec derivation, for why the lines
  * are LF-terminated, and for the signed-versus-unsigned credential finding.
  */
 #include "halyard_wake.h"
@@ -45,8 +45,8 @@ int halyard_wake_credential(const uint8_t *registkey, size_t registkey_length,
     /*
      * Signed, per the spec - see the header. The cast is written as an explicit two's-complement fold
      * rather than (int32_t)value because converting an out-of-range uint32_t to int32_t is
-     * implementation-defined in C99, and this port runs on a big-endian PPC and two little-endian ARMs.
-     * Being right by accident on all three is not the same as being right.
+     * implementation-defined in C99, and this core runs on a big-endian PPC and on little-endian ARMs.
+     * Being right by accident on each is not the same as being right.
      */
     {
         long credential = (value <= 0x7fffffffu)

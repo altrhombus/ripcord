@@ -1,10 +1,10 @@
 /*
- * ripcord-3ds - the launch spec (spec sec4.3), the JSON that configures the stream.
+ * libripcord - the launch spec (spec sec4.3), the JSON that configures the stream.
  *
  * Ported from HalyardStreamingSession.BuildLaunchSpecJson / BuildStreamResolutions. This is a
  * single-line UTF-8 JSON document with its keys in a fixed order, most of whose contents are constants
  * transcribed from the vendor's own decrypted launch spec - `"ps3AccessToken"`, `"bravia_tv"`,
- * `"psnId"` and friends are not placeholders this port failed to fill in, they are what the capture
+ * `"psnId"` and friends are not placeholders left unfilled, they are what the capture
  * contains and what the console accepts.
  *
  * THIS IS HOW handshakeKey REACHES THE CONSOLE. The 16 random bytes that authenticate the ECDH exchange
@@ -21,7 +21,7 @@
  * experiment.
  *
  * KNOWN DIVERGENCE FROM THE CAPTURE: the vendor's own launch spec carries
- * `"adaptiveStreamMode":"resize"` as the last key of `requestGameSpecification`; both this port and the
+ * `"adaptiveStreamMode":"resize"` as the last key of `requestGameSpecification`; both this core and the
  * .NET side omit it. If SESSION_REPLY never arrives, adding it back is the first thing to try.
  */
 #ifndef HALYARD_LAUNCH_SPEC_H

@@ -1,10 +1,10 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport: the DATA chunk.
+ * libripcord - Takion transport: the DATA chunk.
  *
  * Ported from Ripcord.Protocol.Halyard.Takion.TakionDataChunk. Carries SESSION_REQUEST/REPLY,
  * STREAMINFO and input reliably (acked by SACK, see takion_sack_chunk.h) - the unreliable A/V/input/
- * loss-report base types never use DATA chunks at all; they rely on FEC instead (out of scope for this
- * phase, and for good reason: it lives entirely in the A/V demux/reassembly layer, not here).
+ * loss-report base types never use DATA chunks at all; they rely on FEC instead, which lives entirely
+ * in the A/V demux/reassembly layer (stream/), not here.
  *
  * WIRE FORMAT, chunk header (SCTP-standard shape):
  *   offset 0, 1 byte : chunk type = TAKION_CHUNK_DATA (0x00)

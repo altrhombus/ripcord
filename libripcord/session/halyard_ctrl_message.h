@@ -1,13 +1,12 @@
 /*
- * ripcord-3ds - Phase 4 binary control-channel frame.
+ * libripcord - the binary control-channel frame.
  *
  * One message on the persistent binary control channel that follows the /sess/ctrl HTTP handshake on
  * the same TCP connection. Re-derived from this project's own corrected reading, not from
  * docs/protocol/ps5-session-transport.md's "RPCS" description: that doc file predates a correction
  * recorded in docs/protocol-research-log.md (2026-08-03) and in the .NET implementation's own doc
  * comment (Ripcord.Protocol.Halyard.Common/Control/HalyardCtrlMessage.cs) - no "RPCS" magic appears on
- * the wire. Treat those two as authoritative over the stale doc file if the two ever seem to disagree
- * again.
+ * the wire. Treat those two as authoritative over that doc file where they disagree.
  *
  * WIRE FORMAT (all big-endian):
  *   offset 0, 4 bytes: payload length (bytes after this 8-byte header)

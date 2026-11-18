@@ -414,7 +414,7 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
                 ? Strings.Settings_HdrToneMapped
                 // Say so when the machine is ready. Three ticks plus a sentence about what happens if something
                 // is missing leaves the reader to work out that nothing is; an affirmative line is shorter and
-                // is the answer they came for. An SDR display is ready too since 2026-10-02: Ripcord tone-maps.
+                // is the answer they came for. An SDR display is ready too: Ripcord tone-maps.
                 : _displayHdr ? Strings.Settings_HdrReady : Strings.Settings_HdrReadySdrDisplay,
             HdrDescription: HdrSelectable ? Strings.Settings_HdrDescription
                 : _hevcAvailable ? Strings.Settings_HdrNeedsHevc
@@ -432,8 +432,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             ExitGestureIndex: (int)_draft.ExitGesture,
             ExitGestureDescription: ComposeExitGestureDescription(),
             UiStickDeadzone: _draft.UiStickDeadzone,
-            // As a share of the stick's travel ("50%"), which is what the row's question is about. It printed the
-            // raw fraction, "0.50", which reads as a measurement nobody can picture (visual audit, 2026-10-08).
+            // As a share of the stick's travel ("50%"), which is what the row's question is about. The raw
+            // fraction, "0.50", reads as a measurement nobody can picture.
             DeadzoneLabel: _draft.UiStickDeadzone.ToString("P0", System.Globalization.CultureInfo.CurrentCulture),
 
             FullScreenOnConnect: _draft.FullScreenOnConnect,

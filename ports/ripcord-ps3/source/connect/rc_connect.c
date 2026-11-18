@@ -82,10 +82,15 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
 }
 
 /*
- * One SRCH to a known address, unicast. Discovery broadcasts to find anything; here the address is
- * already known from the record, so asking it directly avoids depending on broadcast reaching it and
- * avoids waking the question of which console replied.
+ * Which family's discovery profile, from the record. The ports and the protocol version differ between
+ * the families, so a PS4 sent a PS5 SRCH never hears it. The record is the authority: pairing already
+ * established the family and wrote it down.
  */
+static const halyard_discovery_profile *profile_for(int is_ps5)
+{
+    return is_ps5 ? &halyard_discovery_profile_ps5 : &halyard_discovery_profile_ps4;
+}
+
 /*
  * Broadcast SRCH, for the console whose address has changed since the record was written (a DHCP lease
  * outliving a pairing record is ordinary, and looks the same as an absent console otherwise).
@@ -97,16 +102,6 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
  * `found_addr` receives the address that answered and `found_id` its id, so the caller can compare
  * both with the record's WITHOUT either of them being logged.
  */
-/*
- * Which family's discovery profile, from the record. The ports and the protocol version differ between
- * the families, so a PS4 sent a PS5 SRCH never hears it. The record is the authority: pairing already
- * established the family and wrote it down.
- */
-static const halyard_discovery_profile *profile_for(int is_ps5)
-{
-    return is_ps5 ? &halyard_discovery_profile_ps5 : &halyard_discovery_profile_ps4;
-}
-
 static int broadcast_find(int is_ps5, char *found_addr, size_t addr_size, char *found_id, size_t id_size,
                           const char *want_id, unsigned timeout_ms)
 {
@@ -171,6 +166,11 @@ static int broadcast_find(int is_ps5, char *found_addr, size_t addr_size, char *
     return got;
 }
 
+/*
+ * One SRCH to a known address, unicast. Discovery broadcasts to find anything; here the address is
+ * already known from the record, so asking it directly avoids depending on broadcast reaching it and
+ * avoids waking the question of which console replied.
+ */
 static int probe_once(int is_ps5, const char *host, unsigned short src_port, int *is_awake,
                       unsigned timeout_ms)
 {
@@ -270,14 +270,10 @@ static int send_wakeup(const halyard_pairing_record *rec, rc_connect_result *out
 }
 
 /*
- * A TCP connect with a deadline, which libripcord's does not have.
- *
- * rc_tcp_connect calls connect() on a BLOCKING socket and only sets O_NONBLOCK afterwards, so a console
- * that does not accept on the control port leaves halyard_control_session_open stuck inside it (b31
- * locked the console this way). This pre-flights the same port from the port layer: non-blocking
- * connect, select with a deadline, then close. If it does not accept, open() is never entered. Fixing
- * rc_tcp.c itself is the better long-term answer; it is shared by every port and this rests on one
- * hardware run.
+ * A bounded pre-flight of the control port, from the port layer: non-blocking connect, select with a
+ * deadline, then close. If the port does not accept, halyard_control_session_open is never entered
+ * (b31 locked the console inside a connect() that had no deadline). rc_tcp_connect carries a deadline
+ * of its own; this one answers before the session open is attempted at all.
  */
 static int tcp_port_accepts(const char *host, unsigned short port, unsigned timeout_ms)
 {
@@ -358,8 +354,8 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
  * The receive cushion. Not for the handshake, whose datagrams are tiny: the socket this opens is the
  * one the A/V stream later arrives on, and a keyframe arrives as a burst of ~20 back-to-back datagrams
  * (~50 KB under motion) that the stack drops the tail of if the buffer is smaller than the burst.
- * Raised from 256 KB after real content showed 12.9% unit loss where a static screen showed none:
- * anything the socket cannot hold while the PPE is inside an 18.9 ms decode is gone.
+ * 256 KB showed 12.9% unit loss under real content where a static screen showed none: anything the
+ * socket cannot hold while the PPE is inside an 18.9 ms decode is gone.
  */
 #define RC_UDP_RCVBUF (1024 * 1024)
 
@@ -452,8 +448,8 @@ static rc_session_state g_session;
  * How long a finished session's card is held before anything else is allowed to draw.
  *
  * Only for the states that END something. A progress card is replaced by the next progress card and
- * wants no dwell at all; a failure is the last thing that will be said for a while and was previously
- * on screen for whatever fraction of a second passed before the next check painted over it.
+ * wants no dwell at all; a failure is the last thing said for a while, and without the dwell it is on
+ * screen for whatever fraction of a second passes before the next check paints over it.
  */
 #define RC_SESSION_DWELL_MS 3000u
 
@@ -541,18 +537,18 @@ void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *
 static int g_stream_is_hevc;
 
 /*
- * Input cadences. The poll is 4 ms (250 Hz), deliberately faster than any pad reports: a gate of G ms
- * adds G/2 of latency on average and G at worst, and a poll that finds nothing new is two syscalls.
- *
- * The send cadence is cap48's: state every 15 ms, history on a transition and again every 200 ms.
- */
-/*
  * How long without a picture counts as the stream having stopped. Generous enough that a slow keyframe
  * or a congested second cannot trip it - the frame queue is eight deep and a bad second still delivers
  * something - and short enough that a viewer is told rather than left looking at a still frame.
  */
 #define RC_STREAM_STALL_MS          4000u
 
+/*
+ * Input cadences. The poll is 4 ms (250 Hz), deliberately faster than any pad reports: a gate of G ms
+ * adds G/2 of latency on average and G at worst, and a poll that finds nothing new is two syscalls.
+ *
+ * The send cadence is cap48's: state every 15 ms, history on a transition and again every 200 ms.
+ */
 #define RC_INPUT_POLL_INTERVAL_MS   4u
 #define RC_INPUT_STATE_INTERVAL_MS  15u
 #define RC_INPUT_HISTORY_REPEAT_MS  200u
@@ -750,16 +746,15 @@ static uint64_t g_next_connquality;
  * answer is still in flight buys nothing and costs upstream bandwidth. */
 #define RC_IDR_REQUEST_MIN_MS 200u
 
-/* RC_AV_DRAIN_BURST now lives in rc_connect.h, so the run's report cannot disagree with it. */
+/* RC_AV_DRAIN_BURST is defined in rc_connect.h, so the run's report cannot disagree with it. */
 
 /* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
 #define RC_TAKION_PROTOCOL_VERSION_ACK 32u
 
 /*
- * The declared MTU, which is a protocol figure rather than the interface's. Senkusha's MTU legs can
- * confirm it; this port does not run them yet, so it declares the default the launch spec has always
- * used. Declaring an unverified figure is the status quo; declaring one a probe had just disproved
- * would be worse than not probing.
+ * The declared MTU, which is a protocol figure rather than the interface's. senkusha_mtu_probe tests
+ * this one value in both directions and records the result; the launch spec declares this figure
+ * whether or not the probe confirmed it, because it is the only candidate.
  */
 #define RC_DECLARED_MTU 1454
 
@@ -1075,15 +1070,15 @@ static int g_decode_receive_priority;
 static uint8_t g_decode_buf[RC_FRAME_SLOT_BYTES];
 
 /*
- * The picture sink: a decoded frame goes straight onto the screen.
+ * The picture sinks (on_picture and on_picture_rgb): a decoded frame goes straight onto the screen,
+ * from the decoder's callback. That is on the decode side of the frame queue, not in the receive loop,
+ * so a slow blit delays the next decode rather than the socket drain; the blit is timed and its worst
+ * reported.
  *
- * In the decoder's callback, which is inside the demuxer's callback, which is inside the receive loop.
- * Deep, and deliberately so - every layer's contract says its buffer is valid for the call only, so
- * doing the work here is what avoids a copy at each level. The cost of that decision is that a slow
- * blit stalls the receive loop, which is why it is measured rather than assumed.
+ * RC_BLIT_WAIT_MS is how long a sink waits for the display: longer than a 60 Hz vsync with margin,
+ * short enough that a stalled display cannot wedge the decode thread. A picture still waiting past
+ * this is stale anyway - the next one is already decoded.
  */
-/* Longer than a 60 Hz vsync with margin, short enough that a stalled display cannot wedge the decode
- * thread. A picture still waiting past this is stale anyway - the next one is already decoded. */
 #define RC_BLIT_WAIT_MS 25u
 static unsigned g_blit_worst_wait_ms;
 static unsigned g_pictures_dropped;
@@ -1102,11 +1097,6 @@ static int g_decode_backend_id;
 static int g_awaiting_keyframe;
 static void request_idr(uint64_t now);
 
-/*
- * The two things this client owes the console on a timer, checked wherever there is a moment: at the
- * top of the hold loop and from inside the drain (two comparisons per packet), so the drain bound can
- * be sized for the burst alone without starving a heartbeat.
- */
 /*
  * Controller input, up the stream channel.
  *
@@ -1207,8 +1197,8 @@ static void send_input(rc_connect_result *out)
                  * A MOMENTARY PRESS, and the distinction matters on the far end: a PS5 opens its control
                  * centre on a tap and offers to power down on a hold, so a press of the wrong length is
                  * not a worse version of the right one, it is a different command. 120 ms is the same
-                 * figure rc_pad_ps3.c replays a withheld tap for, and for the same reason - long enough
-                 * that a console reading state at 200 Hz cannot miss it, short enough to be a tap.
+                 * figure a withheld tap is replayed for (RC_CHORD_REPLAY_MS), for the same reason - long
+                 * enough that a console reading state at 200 Hz cannot miss it, short enough to be a tap.
                  */
                 g_ps_until = rc_time_ms() + RC_MENU_PS_MS;
                 g_ps_sent++;
@@ -1297,6 +1287,11 @@ static void send_input(rc_connect_result *out)
     g_input.have_previous = 1;
 }
 
+/*
+ * What this client owes the console on a timer - input, loss reports, the CONNECTION_QUALITY step and
+ * the repeated keyframe request - checked wherever there is a moment: at the top of the hold loop and
+ * from inside the drain, so the drain bound can be sized for the burst alone.
+ */
 static void send_periodic(halyard_control_session *session, rc_connect_result *out,
                           uint64_t *next_loss_report)
 {
@@ -1396,13 +1391,6 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
 }
 
 /*
- * Takes whatever A/V is waiting, up to the bound, and feeds it to the demuxer. Returns how many
- * datagrams it took.
- *
- * A function because it is called from more than one place: the socket holds 122 KB and one decode
- * is 19 to 23 ms, so it must not go more than one decode unread (b130: 6.6% loss, against b129's 1.3%).
- */
-/*
  * The longest the socket goes unread, measured. A 122 KB buffer at ~300 KB/s is full in about 400 ms;
  * a worst gap nowhere near that means the loss is not overflow.
  */
@@ -1450,6 +1438,13 @@ static int timed_open_packet(void *ctx, uint8_t *packet, size_t packet_length,
     return ok;
 }
 
+/*
+ * Takes whatever A/V is waiting, up to RC_AV_DRAIN_BURST datagrams, and feeds it to the demuxer.
+ * Returns how many datagrams it took.
+ *
+ * The socket holds 122 KB and one decode is 19 to 23 ms, so it must not go more than one decode unread
+ * (b130: 6.6% loss, against b129's 1.3%).
+ */
 static int drain_av(halyard_control_session *session, rc_connect_result *out,
                     uint64_t *next_loss_report)
 {
@@ -1473,7 +1468,7 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
     while (drained < RC_AV_DRAIN_BURST) {
         /*
          * The timers are checked in here too, so the bound can be sized for the burst alone - see
-         * the note above send_input.
+         * send_periodic.
          */
         send_periodic(session, out, next_loss_report);
 
@@ -1508,9 +1503,9 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
                  * through its own crypto seam, and a second GMAC over ~1400 bytes per packet on this
                  * thread was measurable (b137: a bounded 256-packet drain took 192 ms).
                  *
-                 * The A/V rule itself is unchanged and still enforced, inside the demuxer: tag at offset
-                 * 10, keystream offset read from the packet at 14, and only the tag zeroed in the AAD - not
-                 * the control rule. av_verified now counts what the DEMUXER accepted.
+                 * The A/V rule is enforced inside the demuxer: tag at offset 10, keystream offset read
+                 * from the packet at 14, and only the tag zeroed in the AAD - not the control rule.
+                 * av_ingested counts what was handed to the demuxer.
                  */
                 if (out->demux_ready) {
                     /*
@@ -1553,7 +1548,7 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
     /*
      * Wait briefly for the display rather than dropping the picture, and ask before converting.
      *
-     * Since b144 the decode and blit have their own thread, so a bounded wait here does not stop the
+     * The decode and blit have their own thread (b144), so a bounded wait here does not stop the
      * socket being drained (on the receive thread it did: b87 lost 90 units and saw 81 decoder
      * errors). Dropping instead costs frames: b186 decoded 1,777 pictures without an error and threw
      * 649 away here, 37 fps on screen from a 60 fps stream. A flip completes every vsync, so the wait
@@ -1594,27 +1589,6 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
 }
 
 /*
- * The packed-RGB sink. Same shape as on_picture without the conversion: the decoder has already done it,
- * which is the point - b185 measured the SPE spending 16,444 us a frame converting and scaling against
- * 1,667 us waiting for the MFC, so the conversion is what there is to remove.
- *
- * If the SPE scale returns 0 the picture is dropped rather than converted on the PPE, because there is
- * no PPE scaler. That is counted, and a run where it is non-zero is a run that should go back to YUV.
- */
-/*
- * The diagnostics panel. Laid out here rather than in rc_overlay.c: the overlay file owns the bitmap
- * and the primitives, this owns what is shown.
- *
- * The shape follows the .NET client's diagnostics report - what was asked for, what arrived, what is
- * happening now - so a fault described against one client is recognisable on the other.
- *
- * Everything is read from counters this port already keeps, all in main memory: the buffer being
- * drawn ON is RSX memory and must only be written.
- *
- * Two columns: labels at one x, values at another, and numbers right-aligned to a fixed edge so a
- * frame rate going 59 -> 9 does not shift everything after it.
- */
-/*
  * DESIGN PIXELS, against a 1920x1080 screen. rc_overlay_px converts each to whatever the television
  * actually negotiated - see the note on it, and note that a fixed pixel layout is wider than a
  * 720x480 screen, at which point the overlay silently is not drawn at all.
@@ -1651,14 +1625,9 @@ static const char *bitrate_text(int kbps, char *out, size_t out_size)
 }
 
 /*
- * Drawn in the diagnostics panel's own space, because the two are alternatives - the overlay is one of
- * this menu's entries, so they are never wanted at once - and because that panel is the one surface
- * already proven to composite over a live picture every frame.
- */
-/*
  * THE PANEL'S GEOMETRY, worked out in one place because three things read it: the fill, the blit, and
- * the row layout. It used to be the same expression written twice, and neither copy counted the line at
- * the bottom - so the hint was drawn below the panel it belongs to and cut off.
+ * the row layout. The height counts the hint line at the bottom; a height without it draws the hint
+ * below the panel it belongs to, where it is cut off.
  */
 static void menu_geometry(int *out_w, int *out_h, int *out_rows)
 {
@@ -1679,8 +1648,8 @@ static void paint_session_menu(void)
     const char *const *rows = (g_menu_page == 0) ? kMenuRows : kRestRows;
     const char *title = (g_menu_page == 0) ? "Ripcord" : "Disconnect";
     /*
-     * The Disconnect row says what it will DO, because with a standing preference it no longer always
-     * does the same thing and the question that used to reveal that is skipped.
+     * The Disconnect row says what it will DO, because with a standing preference it does not always
+     * do the same thing, and the question that would reveal that is skipped.
      */
     const char *disconnect = (g_rest_pref == 1) ? "Disconnect and rest the console"
                            : (g_rest_pref == 2) ? "Disconnect"
@@ -1734,6 +1703,11 @@ static void paint_session_menu(void)
     }
 }
 
+/*
+ * Drawn in the diagnostics panel's own space, because the two are alternatives - the overlay is one of
+ * this menu's entries, so they are never wanted at once - and because that panel is the one surface
+ * already proven to composite over a live picture every frame.
+ */
 static void draw_session_menu(void)
 {
     /*
@@ -1760,6 +1734,19 @@ static void draw_session_menu(void)
     rc_overlay_end_now(rc_overlay_px(48), rc_overlay_px(32), w, h);
 }
 
+/*
+ * The diagnostics panel. Laid out here rather than in rc_overlay.c: the overlay file owns the bitmap
+ * and the primitives, this owns what is shown.
+ *
+ * The shape follows the .NET client's diagnostics report - what was asked for, what arrived, what is
+ * happening now - so a fault described against one client is recognisable on the other.
+ *
+ * Everything is read from counters this port already keeps, all in main memory: the buffer being
+ * drawn ON is RSX memory and must only be written.
+ *
+ * Two columns: labels at one x, values at another, and numbers right-aligned to a fixed edge so a
+ * frame rate going 59 -> 9 does not shift everything after it.
+ */
 static void draw_overlay(void)
 {
     const rc_overlay_bucket *now;
@@ -1798,8 +1785,7 @@ static void draw_overlay(void)
     now = overlay_latest();
 
     /*
-     * How far to drop the small text so it shares a baseline with the large figure beside it. The rows
-     * used a hand-chosen +5, which is the same top-versus-baseline mistake the header had: two runs
+     * How far to drop the small text so it shares a baseline with the large figure beside it: two runs
      * whose boxes line up do not have their letters on the same line.
      */
     small_drop = rc_overlay_ascent(2) - rc_overlay_ascent(1);
@@ -1846,9 +1832,9 @@ static void draw_overlay(void)
     rc_overlay_rect(rc_overlay_width() - 1, 0, 1, rc_overlay_height(), RC_OV_EDGE);
 
     /*
-     * ONE BASELINE, TWO SIZES. These were placed by their top edges with hand-chosen y values, so the
-     * boxes lined up and the letters did not - the name sat a few pixels above the build id beside it.
-     * Each run is now placed at (baseline - its own ascent), which is what "on the same line" means.
+     * ONE BASELINE, TWO SIZES. Each run is placed at (baseline - its own ascent), which is what "on the
+     * same line" means. Placed by their top edges the boxes line up and the letters do not - the name
+     * sits a few pixels above the build id beside it.
      */
     {
         int base = rc_overlay_px(34);
@@ -1913,9 +1899,9 @@ static void draw_overlay(void)
     rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, rc_overlay_px(20), fps_series, series_n,
                     (peak_fps > 60u) ? peak_fps : 60u, RC_OV_ACCENT);
     /*
-     * The label is placed from the NUMBER'S measured width rather than from a guess at it. These three
-     * lines are where the hand-measured offsets showed: "low", "peak" and "pk" each sat a fixed
-     * distance from the right edge, the figure beside them grew a digit, and the two met.
+     * The label is placed from the NUMBER'S measured width rather than from a guess at it, here and on
+     * the two rows below: a label a fixed distance from the right edge meets the figure beside it as
+     * soon as that figure grows a digit.
      */
     {
         int w = rc_overlay_num_width(1, "%u", low_fps);
@@ -2011,6 +1997,14 @@ static void draw_overlay(void)
     rc_overlay_end();
 }
 
+/*
+ * The packed-RGB sink. Same shape as on_picture without the conversion: the decoder has already done it,
+ * which is the point - b185 measured the SPE spending 16,444 us a frame converting and scaling against
+ * 1,667 us waiting for the MFC, so the conversion is what there is to remove.
+ *
+ * If the SPE scale returns 0 the picture is dropped rather than converted on the PPE, because there is
+ * no PPE scaler. That is counted, and a run where it is non-zero is a run that should go back to YUV.
+ */
 static void on_picture_rgb(void *ctx, const unsigned char *argb, int stride, int width, int height)
 {
     unsigned us;
@@ -2278,18 +2272,6 @@ static uint64_t g_last_idr_request_ms;
 
 
 /*
- * Why g_awaiting_keyframe exists, recorded where the loss is handled.
- *
- * Loss breaks the reference chain, and every frame after it is undecodable until the next keyframe -
- * which the console only sends when asked. Asking ONCE per loss event is what b124 did: 4 requests for
- * 36 events, 2 keyframes in thirty seconds, and 835 of 857 frames undecodable. Fewer loss events than
- * the run before it, and one seventeenth the pictures.
- *
- * The request is not an acknowledgement that something broke, it is a demand for the thing that repairs
- * it. An unanswered demand is a reason to repeat it.
- */
-
-/*
  * Asks for a keyframe, throttled. One IDR repairs the whole reference chain, so asking again while the
  * answer is still in flight spends upstream bandwidth on a repair already on its way.
  */
@@ -2308,6 +2290,17 @@ static void request_idr(uint64_t now)
         g_idr_requests++;
 }
 
+/*
+ * Why g_awaiting_keyframe exists, recorded where the loss is handled.
+ *
+ * Loss breaks the reference chain, and every frame after it is undecodable until the next keyframe -
+ * which the console only sends when asked. Asking ONCE per loss event is what b124 did: 4 requests for
+ * 36 events, 2 keyframes in thirty seconds, and 835 of 857 frames undecodable. Fewer loss events than
+ * the run before it, and one seventeenth the pictures.
+ *
+ * The request is not an acknowledgement that something broke, it is a demand for the thing that repairs
+ * it. An unanswered demand is a reason to repeat it.
+ */
 static void on_video_loss(void *userdata, int first_frame_index, int last_frame_index)
 {
     uint64_t now;
@@ -2340,9 +2333,9 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
  * stream channel's real SESSION_REQUEST. ports/ripcord-3ds established which legs those are, and this
  * follows it rather than re-deriving it.
  *
- * NOT DONE HERE: the echo and MTU measurement legs. Those produce the rtt and mtu the launch spec
- * declares, and rtt 0 is an input the console uses (the 3DS port's note). This port declares the same
- * defaults it always has, and the measurement is unfinished business rather than a decision.  [X]
+ * The echo and MTU measurement legs run last, after that exchange. They produce the rtt and mtu the
+ * launch spec declares, and rtt 0 is an input the console uses (the 3DS port's note). A probe that
+ * fails leaves the defaults declared: rtt 0 and RC_DECLARED_MTU.  [X]
  */
 static int senkusha_legs(halyard_control_session *session, rc_connect_result *out)
 {
@@ -2521,7 +2514,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->declared_bitrate_kbps = params.bitrate_kbps;
     params.mtu = (g_measured_mtu > 0) ? g_measured_mtu : RC_DECLARED_MTU;
     params.rtt_ms = g_measured_rtt_ms;   /* 0 if the echo probe did not get a majority */
-    params.is_hevc = 0;  /* H.264 only: the decoder this port proved is openh264   */
+    params.is_hevc = 0;  /* H.264 only                                            */
     params.is_hdr = 0;
 
     out->asked_width = params.width;
@@ -2748,14 +2741,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_ingest_calls = 0u;
                     g_crypto_ticks = 0u;
                     g_crypto_calls = 0u;
-                    /* The stream's size decides which H.264 level the hardware decoder opens at,
-                     * and therefore how much memory it reserves. */
                     /* Audio is optional: if the port will not open the stream continues without it,
                      * which is better than failing a session over sound. */
                     out->audio_ready = rc_audio_init();
                     /* Not fatal if it refuses: a stream you cannot steer is worth more than no
                      * stream, and the report says which happened. */
                     (void)rc_pad_open();
+                    /* The stream's size, which the decoder's open checks against its picture buffer. */
                     rc_decode_live_hint((int)info.width, (int)info.height);
                     /*
                      * Before the open, because that is where the picture slots are fixed; set after it,
@@ -2778,15 +2770,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
                         /*
-                         * Asking the decoder for RGB removes the SPE's colour pass; it is opt-in while
-                         * it is new, since the YUV path is the one with a thousand frames behind it.
+                         * Asking the decoder for RGB removes the SPE's colour pass. Opt-in, from the
+                         * pairing record; YUV is the default path.
                          */
                         g_decoder_rgb = rec->decoder_rgb;
                         /*
                          * WHOEVER SCALES OWNS THE FILTER. With the RSX scaling, the SPE pass is a 1:1
                          * copy and interpolating it would be a null operation at full price - b207 did
                          * exactly that and charged 6,957 us a frame to copy a picture the SPEs had been
-                         * converting AND scaling for 3,013. The kernel now refuses it at 1:1 as well;
+                         * converting AND scaling for 3,013. The kernel refuses it at 1:1 as well;
                          * this says the intent rather than relying on that.
                          */
                         rc_spu_yuv_set_bilinear(rec->hardware_scale ? 0 : rec->bilinear_upscale);
@@ -2841,8 +2833,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     /*
                      * HEVC is refused loudly rather than decoded badly.
                      *
-                     * The launch spec asks for "avc" and both console families honour it, so this has
-                     * never fired. cellVdec decodes H.264 and nothing else, and can accept access units
+                     * The launch spec asks for "avc" and both console families honour it, so this is a
+                     * guard. cellVdec decodes H.264 and nothing else, and can accept access units
                      * it cannot decode without reporting an error (b169 through b171 produced uniformly
                      * black pictures that way). The demuxer already classifies the stream from the
                      * parameter sets.
@@ -2945,7 +2937,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              * group running, sockets open and a decoder mid-picture (three beeps and a reboot).
              *
              * Leaving by `break` collects the tallies below and runs the teardown in its usual order.
-             * The shell has answered the same request since b373.
+             * The shell answers the same request (b373).
              */
             if (rc_time_ms() >= next_sysutil) {
                 next_sysutil = rc_time_ms() + 100u;
@@ -2973,11 +2965,11 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             send_periodic(session, out, &next_loss_report);
 
             /*
-             * A STREAM THAT STOPS DOES NOT CLOSE THE SOCKET, which is why nothing noticed it before.
-             * Quitting the game on the console, or the console going to sleep, simply ends the flow of
-             * pictures - the association stays up, the heartbeats keep being answered, and this loop
-             * would run out its whole hold showing the last frame or a black screen with no explanation
-             * anywhere the viewer can see.
+             * A STREAM THAT STOPS DOES NOT CLOSE THE SOCKET, so nothing else notices it. Quitting the
+             * game on the console, or the console going to sleep, simply ends the flow of pictures -
+             * the association stays up, the heartbeats keep being answered, and without this check the
+             * loop would go on showing the last frame or a black screen with no explanation anywhere
+             * the viewer can see.
              *
              * Counted from the last PICTURE rather than the last packet, because the packets do not
              * stop: audio and control keep arriving from a console that has stopped sending video.
@@ -3090,7 +3082,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         /*
          * Whatever is left in the last, partial window. ADDED rather than assigned: the loss-report loop
          * has been draining these every 200 ms, and take_packet_stats resets on read - assigning here
-         * would report only the final fragment and throw away thirty seconds of counting.
+         * would report only the final fragment and throw away the rest of the session's counting.
          */
         long got = 0, missed = 0;
 
@@ -3278,10 +3270,10 @@ static void signin_absorb(const halyard_control_event *ev)
             out->heartbeats++;
 
         /*
-         * THE CONSOLE'S VERDICT ON THE PASSCODE, which b41 could not read and so had to report a wrong
-         * passcode and a silent console as the same thing. libripcord decrypts the console's
-         * direction now, so the one byte is here; the .NET side reads plaintext[0] the same way and
-         * established both values by controlled experiment - see HALYARD_CTRL_LOGIN_ACCEPTED.
+         * THE CONSOLE'S VERDICT ON THE PASSCODE, which is what tells a wrong passcode from a silent
+         * console (b41 could not read it and reported the two as the same thing). libripcord decrypts
+         * the console's direction, so the one byte is here; the .NET side reads plaintext[0] the same
+         * way and established both values by controlled experiment - see HALYARD_CTRL_LOGIN_ACCEPTED.
          */
         if (ev->type == HALYARD_CTRL_TYPE_LOGIN && ev->plaintext_length > 0u) {
             if (ev->plaintext[0] == HALYARD_CTRL_LOGIN_ACCEPTED)
@@ -3422,12 +3414,12 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
     out->login_counter = -1;  /* nothing has accepted anything yet */
 
     /*
-     * THE IN-SESSION MENU'S STATE, CLEARED, because this function can now be entered more than once.
+     * THE IN-SESSION MENU'S STATE, CLEARED, because this function is entered more than once.
      *
-     * It could not before: the program ran one session and left. Returning to the shell afterwards
-     * means a second connect inherits whatever the first one left in these - a menu still flagged open,
-     * a disconnect still asked for, a PS press still in flight - and the most damaging of those is
-     * g_menu_quit, which would end the next session the moment it started for a reason nobody could see.
+     * The program returns to the shell after a session, so without this a second connect inherits
+     * whatever the first one left in these - a menu still flagged open, a disconnect still asked for, a
+     * PS press still in flight - and the most damaging of those is g_menu_quit, which would end the
+     * next session the moment it started for a reason nobody could see.
      */
     g_menu_open = 0;
     g_menu_page = 0;
@@ -3491,9 +3483,9 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
     }
 
     /*
-     * THE inet_aton QUESTION, asked before anything can hang on the answer. See rc_connect.h: the core
-     * parses every address with inet_aton and this port never has, and the consequence of a wrong
-     * result is not an error but a blocking connect to nowhere.
+     * THE inet_aton QUESTION, asked before the session open depends on the answer. See rc_connect.h:
+     * the core parses every address with inet_aton and this port uses inet_pton, and a wrong result
+     * there is not a parse error but a connect to somewhere else.
      */
     {
         struct in_addr by_pton, by_aton;
@@ -3512,7 +3504,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
 
     /*
      * DOES fcntl ACTUALLY SET A PS3 SOCKET NON-BLOCKING? Tested with calls that cannot block, because
-     * the way to find out by doing I/O is to hang the console, which this has now done twice.
+     * the way to find out by doing I/O is to hang the console.
      *
      * fcntl is asked to set O_NONBLOCK and then asked to read the flags back. If sockets are not newlib
      * file descriptors here - which is what SO_NBIO existing suggests - the readback will not carry the
@@ -3627,7 +3619,7 @@ answered:
                      (unsigned)((rc_time_ms() - started) / 1000u));
             say(RC_PHASE_WAKING, "Waking the console", waited, NULL);
             /* Twenty seconds is long enough to be asked to quit inside; this loop already sleeps, so
-             * asking costs nothing. See the note in the hold loop below. */
+             * asking costs nothing. See the note in the hold loop. */
             sysUtilCheckCallback();
             if (rc_ps3_exit_requested()) {
                 out->stage = RC_CONNECT_WAKE_SENT;
@@ -3648,8 +3640,8 @@ answered:
     out->stage = RC_CONNECT_AWAKE;
 
     /*
-     * PRE-FLIGHT BEFORE THE BLOCKING CALL. See tcp_port_accepts: the core's connect has no deadline, so
-     * entering open() against a port that will not accept is what hung b31.
+     * PRE-FLIGHT BEFORE THE SESSION OPEN. See tcp_port_accepts: entering open() against a port that
+     * will not accept is what hung b31.
      */
     say(RC_PHASE_CONNECTING, "Connecting", "Reaching the console", NULL);
     SAY("pre-flighting the control port with a bounded TCP connect");
@@ -3661,9 +3653,9 @@ answered:
     out->tcp_preflight_ok = 1;
 
     /*
-     * REFUSE TO ENTER open() IF THE CORE WOULD PARSE THE ADDRESS DIFFERENTLY. rc_tcp_connect's connect()
-     * is blocking and unbounded, so a disagreement here is the difference between a report and a locked
-     * console. Better to stop with a finding than to reproduce the hang for a third time.
+     * REFUSE TO ENTER open() IF THE CORE WOULD PARSE THE ADDRESS DIFFERENTLY. The core would connect
+     * to an address the probe and the pre-flight above never tested, so this stops with a finding
+     * instead.
      */
     if (!out->aton_matches_pton) {
         SAY("refusing to open the session: inet_aton would hand the core a different address,");
@@ -3755,11 +3747,11 @@ answered:
 
                 /*
                  * THE COUNTER IS SETTLED FOR BOTH FAMILIES, so the passcode goes at whatever the control
-                 * session left next_counter at - 5 for a PS5, 4 for a PS4. Both are capture facts now: a
+                 * session left next_counter at - 5 for a PS5, 4 for a PS4. Both are capture facts: a
                  * Frida hook on our own vendor client showed the PS4 encrypts the passcode at 4, because
                  * PS4's /sess/ctrl carries four headers where PS5's carries five (see
-                 * halyard_control_session.c). The b469/b470 sweep that established this is gone with it;
-                 * a rejection now means the digits were wrong, and the answer is to ask again.
+                 * halyard_control_session.c). A rejection therefore means the digits were wrong, and the
+                 * answer is to ask again.
                  */
                 say(RC_PHASE_CONNECTING, "Signing in", "Sending the passcode", NULL);
 

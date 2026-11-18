@@ -107,7 +107,7 @@ public sealed class RipcordAppServices
     /// own construction already needs the settings store. Attached rather than injected, and it throws instead of
     /// returning null — a shell that was never attached is a wiring mistake at startup, and this is the stack
     /// trace that says so. The alternative, a nullable that pages null-check, buys silence: the symptom becomes a
-    /// Connect button that does nothing, which is what the <c>as MainWindow</c> casts already did.
+    /// Connect button that does nothing.
     /// </para>
     /// </summary>
     public IShellNavigator Shell => _shell ?? throw new InvalidOperationException(

@@ -14,12 +14,11 @@
 #include "rc_h264_params.h"
 
 /*
- * Sizes. The access-unit ring matches the frame queue in rc_connect.c: eight whole frames, each with
- * room for the largest this stream has produced with margin. Every one is 128-byte aligned - see the
- * header for what happens otherwise.
+ * Sizes. Each access-unit slot holds one whole frame, with room for the largest this stream has
+ * produced with margin. Every one is 128-byte aligned - see the header for what happens otherwise.
  */
 /*
- * SIXTEEN, because eight was a 30 fps number. At 60 fps the console delivers an access unit every 16 ms
+ * SIXTEEN, because eight is a 30 fps number. At 60 fps the console delivers an access unit every 16 ms
  * and the decoder answers AUDONE on its own schedule; b180 at 720p60 hit the ceiling constantly - 489
  * submissions refused in thirty seconds against four units lost on the network - and every refusal is a
  * frame the decoder never sees.
@@ -44,12 +43,12 @@
 /*
  * SIZED FOR THE WIDEST FORMAT, WHICH IS RGB AND NOT YUV.
  *
- * This was 1920*1088*3/2 - a YUV420 picture - and b188 asked the decoder for ARGB32 without resizing it.
- * Packed RGB is four bytes a pixel against YUV420's one and a half, so at 1280x720 vdecGetPicture wrote
- * 3,686,400 bytes into a 3,133,440 byte slot: half a megabyte past the end of every picture, into the
- * next slot and beyond. The console locked up immediately and stayed locked.
+ * Packed RGB is four bytes a pixel against YUV420's one and a half. b188 asked the decoder for ARGB32
+ * with slots sized 1920*1088*3/2, so at 1280x720 vdecGetPicture wrote 3,686,400 bytes into a 3,133,440
+ * byte slot: half a megabyte past the end of every picture, into the next slot and beyond. The console
+ * locked up immediately and stayed locked.
  *
- * The guard below did not catch it because it tested the YUV size too. Both are fixed together; a bound
+ * The guard in the callback tests the size of the format being requested for the same reason; a bound
  * that does not know which format it is bounding is not a bound.
  */
 #define RC_VDEC_PICTURE_BYTES (1920 * 1088 * 4)
@@ -319,11 +318,6 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             }
         }
 
-        /*
-         * Never the buffer the caller is still reading. b160's version reduced to "always slot 0", so
-         * the second buffer was never used and the consumer could be blitting the very bytes being
-         * overwritten. If a picture is published, write the other one.
-         */
         /* The tail of the ring. If it has caught the head, the OLDEST waiting picture goes - the
          * newest is the one closest to live - and it is counted rather than lost in silence. */
         if (s_pic_tail - s_pic_head >= (unsigned)RC_VDEC_PICTURE_SLOTS) {
@@ -418,8 +412,8 @@ int rc_decode_vdec_open(int width, int height)
     vdecClosure closure;
 
     /*
-     * The size is no longer what picks the level - see below - but it is still checked, because a
-     * picture larger than the output buffers would be written past their end.
+     * The size does not pick the level - see below - but it is checked, because a picture larger than
+     * the output buffers would be written past their end.
      */
     if ((long)width * (long)height * 4 > RC_VDEC_PICTURE_BYTES)
         return 0;
@@ -539,8 +533,8 @@ int rc_decode_vdec_open(int width, int height)
      * every one on a transition, and a refusal breaks the reference chain and shows as a block of
      * wrong picture until a keyframe repairs it.
      *
-     * The third comes from the colour converter, which can spare it now that the decoder produces RGB
-     * and it only scales.
+     * The third comes from the colour converter, which can spare it because the decoder produces RGB
+     * and the converter only scales.
      */
     config.num_spus = 3;
     s_num_spus = (int)config.num_spus;
@@ -776,7 +770,7 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
          * Sampled before it is handed on, because b160 proved every counter in this pipeline can report
          * success while the pixels are zeros. A grid down the middle tells a picture from a black
          * rectangle - and, like the grid in the callback, it only has to do so once. See the note there
-         * for why reading the picture on the PPE stopped being free.
+         * for why reading the picture on the PPE is not free.
          */
         if (stats->pictures_out < (int)RC_VDEC_SAMPLE_PICTURES) {
             int i;

@@ -3,8 +3,8 @@
 # Build, verify, and only then upload.
 #
 # WHY THIS EXISTS. `make pkg` leaves the PREVIOUS package in place when it fails, and an upload does not
-# care. "No rule to make target" does not contain the word "error", so a grep for that word passed three
-# failed builds in a row, each of which uploaded, installed and ran the old binary.
+# care. "No rule to make target" does not contain the word "error", so a grep for that word passes a
+# failed build, which then uploads, installs and runs the old binary.
 #
 # A build's success is its EXIT STATUS, and the thing uploaded has to be shown to contain the build that
 # was just made. Both are checked here.
@@ -22,10 +22,9 @@ PKG=ripcord-ps3.gnpdrm.pkg
 
 make pkg                         # set -e: a non-zero exit stops here, before anything is uploaded
 
-# THE PACKAGE STILL HAS TO PROVE IT CARRIES THE BUILD THAT WAS JUST MADE - see the note above. What
-# changed is where it says so: the XMB title is now the program's name, and the build number is its
-# VERSION, which is an NN.NN string whose digits ARE the build. So the check reads the version instead
-# of the title, and the failure it exists to catch is unchanged.
+# THE PACKAGE HAS TO PROVE IT CARRIES THE BUILD THAT WAS JUST MADE - see the note above. It says so in
+# its VERSION: the XMB title is the program's name, and the version is an NN.NN string whose digits ARE
+# the build. So the check reads the version.
 # [a-z]* tolerates the BUILD_ORIGIN suffix - "b35ci" as well as "b460". Without it the pattern needs a
 # quote straight after the digits, yields nothing for a CI build, and this script refuses to upload while
 # blaming a stale package. The digits are what the SFO version can be compared against; the suffix says

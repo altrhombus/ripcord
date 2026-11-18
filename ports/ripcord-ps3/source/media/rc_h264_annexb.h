@@ -8,10 +8,9 @@
  * one picture end and the next begin.
  *
  * ZERO COPY, DELIBERATELY. A NAL unit is reported as a pointer into the caller's buffer and a length.
- * Nothing is copied, nothing is allocated, and the iterator holds no buffer of its own. The demuxer above
- * already has the whole frame in main memory, and an SPE has 256 KB of local store and no cache, so the
- * decoder DMAs slice bytes in from exactly these pointers. Same reasoning as the on-the-fly emulation-
- * prevention handling in rc_h264_bits.h.
+ * Nothing is copied, nothing is allocated, and the iterator holds no buffer of its own. The caller
+ * already has the whole frame in main memory, so a consumer reads each unit where it lies. Same
+ * reasoning as the on-the-fly emulation-prevention handling in rc_h264_bits.h.
  *
  * The buffer must therefore outlive the iteration, and must not be the receive buffer another thread is
  * still writing into.

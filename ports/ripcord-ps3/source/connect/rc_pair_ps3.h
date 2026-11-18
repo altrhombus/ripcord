@@ -5,9 +5,9 @@
  * three questions on the television and writes the answer.
  *
  * What it asks: the console's ADDRESS, because discovery may not have run or may have found several.
- * The PSN ACCOUNT ID, because the console checks it and nothing on this machine knows it - that is the
- * piece worth removing later if the PS3's own account can be read, and it is asked for plainly rather
- * than guessed at. And the PIN, which the console shows on its own screen for a few minutes.
+ * The PSN ACCOUNT ID, because the console checks it; the prompt is pre-filled from the record or from
+ * this PS3's own account (rc_account_ps3.h) and is still shown, so the number is confirmed rather than
+ * guessed at. And the PIN, which the console shows on its own screen for a few minutes.
  *
  * Every step reports through rc_session_state, so a refusal reaches the person standing in front of it
  * instead of a log file on another machine - see that header.

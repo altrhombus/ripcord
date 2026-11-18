@@ -7,9 +7,8 @@ namespace Ripcord.Presentation.Accounts;
 ///
 /// <para>
 /// Two callers need this and must agree: pairing, which learns the cloud id at the moment it saves a console,
-/// and the backfill that repairs consoles paired before sign-in existed. They agreed by coincidence when the
-/// rule lived inside the pairing flow, which is the kind of agreement that stops being true the first time one
-/// of them is edited.
+/// and the backfill that fills the id in on stored consoles that lack one. One rule in one place, so the two
+/// cannot drift apart when one of them is edited.
 /// </para>
 /// </summary>
 public static class CloudConsoleMatch
@@ -77,8 +76,8 @@ public static class CloudConsoleMatch
     /// Fill in the cloud id on stored consoles that do not have one, and report how many were repaired.
     ///
     /// <para>
-    /// Consoles paired before the field existed have no cloud id, and without one remote wake is never
-    /// attempted for them.
+    /// A stored console can lack a cloud id (the account's list was not available when it was paired, or its
+    /// record was written without the field), and without one remote wake is never attempted for it.
     /// </para>
     ///
     /// <para>

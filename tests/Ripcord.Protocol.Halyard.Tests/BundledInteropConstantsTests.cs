@@ -174,7 +174,7 @@ public class BundledInteropConstantsTests
     {
         Skip.IfNot(HalyardInteropConstants.IsBundled, "Build omitted the interop constants bundle.");
 
-        // A guard against the bundle ever regaining the personal half of the captures-folder fixtures. The
+        // A guard against the bundle carrying the personal half of the captures-folder fixtures. The
         // generic tables are shipped deliberately; anything tied to a specific console or account is not.
         using var stream = typeof(HalyardInteropConstants).Assembly
             .GetManifestResourceStream("Ripcord.Protocol.Halyard.Data.halyard-v1-constants.json");

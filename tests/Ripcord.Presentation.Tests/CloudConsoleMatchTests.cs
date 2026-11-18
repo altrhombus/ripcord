@@ -10,9 +10,9 @@ namespace Ripcord.Presentation.Tests;
 /// that id was ever recorded.
 ///
 /// <para>
-/// The backfill exists because remote wake would otherwise work only for consoles paired after the account
-/// tier shipped — and would fail by simply never being attempted, with nothing on screen to explain why an
-/// older console behaved differently from a newer one.
+/// The backfill exists because remote wake would otherwise work only for consoles whose record already
+/// carries that id — and would fail by simply never being attempted, with nothing on screen to explain why
+/// one console behaved differently from another.
 /// </para>
 /// </summary>
 public class CloudConsoleMatchTests
@@ -28,7 +28,7 @@ public class CloudConsoleMatchTests
     ///
     /// <para>
     /// A hash of the id is neither. .NET randomizes string hashing per process, so
-    /// <c>id.GetHashCode() &amp; 0x7f</c> put two of a test's ids on the same host about one run in forty.
+    /// <c>id.GetHashCode() &amp; 0x7f</c> puts two of a test's ids on the same host about one run in forty.
     /// The store treats a shared host as the same physical console (<c>PairedConsoleStore.IsSameConsole</c>
     /// matches on <c>Id</c> <em>or</em> <c>Host</c>, so a re-pair after a DHCP change still finds its record),
     /// and an Upsert would then quietly replace a record the test still expected to be there.

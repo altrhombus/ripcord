@@ -37,7 +37,8 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
 
     /// <summary>
     /// Header before the payload: [type][seq u16 BE][0][keystreamOffset u32][gmac u32]. Verified by decrypting
-    /// cap48: the input keystream offset reads as a u32 at offset 4 and the payload begins at offset 12.
+    /// cap48: the input keystream offset reads as a u32 at offset 4 and the payload begins at offset 12. This is
+    /// the v1 header, and the only one this writer builds.
     /// </summary>
     private const int HeaderLength = 0xc;
 
@@ -299,15 +300,15 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     // ---- analog encoders ----
 
     /// <summary>
-    /// Write one motion axis. A null reading (no motion sensor, or gyro/accel not yet wired) sends the
+    /// Write one motion axis. A null reading (the frame carries no gyro/accel sample) sends the
     /// resting encoding observed on real hardware.
     ///
     /// <para>
-    /// <b>The full-scale range is not yet derived.</b> Our capture establishes where these fields live, that
+    /// <b>The full-scale range is <c>[X]</c>.</b> Our capture establishes where these fields live, that
     /// they are u16 LE, and where they rest — but not what physical rate/acceleration the endpoints
-    /// correspond to, because deriving that needs a capture with known applied motion. Until then a non-null
-    /// reading is treated as an already-normalised [-1,1] fraction of full scale. Wiring real sensor data
-    /// (ROADMAP, "Controllers") must derive the scale first, or motion will be sent at the wrong magnitude.
+    /// correspond to, because deriving that needs a capture with known applied motion. A non-null
+    /// reading is treated as an already-normalised [-1,1] fraction of full scale, so real sensor data sent
+    /// through here without a derived scale goes out at an unknown magnitude.
     /// </para>
     /// </summary>
     private static void WriteSensor(Span<byte> dest, float? normalized)
@@ -330,8 +331,8 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     /// no resting/identity value can be read off it either — 5,025 distinct values, none dominant.
     /// </para>
     /// <para>
-    /// Zero is therefore sent deliberately as a placeholder; it is inert today because we never populate
-    /// gyro/accel. Deriving the packing is a prerequisite for real motion support, not for streaming.
+    /// Zero is therefore sent deliberately, in every state packet, whatever the frame's gyro/accel. Streaming
+    /// does not depend on the packing; reporting a real attitude would.
     /// </para>
     /// </summary>
     private const uint RestingOrientation = 0u;

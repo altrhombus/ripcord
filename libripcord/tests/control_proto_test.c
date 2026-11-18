@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - control-plane protobuf known-answer runner (SESSION_REQUEST / SESSION_REPLY).
+ * libripcord - control-plane protobuf known-answer runner (SESSION_REQUEST / SESSION_REPLY).
  *
  * Reads tests/vectors/control-proto.kat, produced by
  *
@@ -7,13 +7,13 @@
  *
  * Every expected byte string in that file was encoded by Google.Protobuf from
  * docs/protocol/stream_control.proto; every byte string here is produced (or consumed) by the ~200 hand-
- * rolled lines in source/takion/takion_control_proto.c. The .NET side gets its wire format from a code
- * generator reading the schema, this port from a human reading the same schema, so a byte-for-byte
+ * rolled lines in takion/takion_control_proto.c. The .NET side gets its wire format from a code
+ * generator reading the schema, this core from a human reading the same schema, so a byte-for-byte
  * comparison catches a field number typed wrong or a varint boundary handled wrong. It does not check
  * either side's understanding of what the console wants.
  *
  * The vectors include a launch spec long enough to push the payload's length prefix to a two-byte
- * varint, an absent-optional case, and a reply carrying a nested message this port does not model
+ * varint, an absent-optional case, and a reply carrying a nested message this core does not model
  * (extendedInfo), to prove the parser skips an unknown length-delimited field without losing its place.
  *
  * Needs no crypto backend and no hardware. Builds for the host - see tests/Makefile.
@@ -318,8 +318,8 @@ static void run_launchspec(char **fields, int count, int line_number)
 }
 
 /*
- * The hand-written literals in source/connect/main.c. These are the only protobuf this port still
- * encodes by eye, and the failure they invite is specific: field 31 length-delimited is
+ * The hand-written literals in ports/ripcord-3ds/source/connect/main.c. That file encodes these by
+ * eye, and the failure they invite is specific: field 31 length-delimited is
  * (31 << 3) | 2 = 250, a TWO-byte varint tag. Writing the single 0xFA the arithmetic suggests leaves a
  * message whose type field still reads 31 correctly and whose remainder is garbage - so this walks the
  * whole message, and also proves the wrong encoding would actually be caught.

@@ -1,7 +1,6 @@
 // The Rust engine's key agreement on the Mac, in CryptoKit (docs/engine-plan.md, "Dependencies": the OS's
 // implementation where it has one). The engine reaches it through the RipcordEcdhBackend table its C ABI
-// defines; the contract is ripcord_proto::crypto::ecdh's, the same one CryptoKitECDH.swift meets for the C
-// core:
+// defines; the contract is ripcord_proto::crypto::ecdh's:
 //
 //   - a public key is the uncompressed X9.63 point, 0x04 || X || Y;
 //   - a shared secret is the X coordinate at the curve's full width;

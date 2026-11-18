@@ -108,10 +108,10 @@ public sealed class HalyardAccountConsoleSession
         // is the whole reason this trace exists.
         _options.Log?.Invoke("account route entered");
 
-        // Restores the session if it is only on disk, rather than reading "not loaded yet" as "not signed in".
-        // This asked IsSignedIn, which is an in-memory question, and refused a user whose stored token was
-        // perfectly good but whom nothing had got round to restoring - which nothing did except the settings
-        // page, so this route worked only for somebody who had happened to open it.
+        // Restores the session if it is only on disk, rather than reading "not loaded" as "not signed in".
+        // IsSignedIn is an in-memory question: asking it here would refuse a user whose stored token is
+        // perfectly good but whom nothing has restored, and this route would work only for somebody who had
+        // happened to open a surface that restores it.
         if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return HalyardAccountSessionResult.Failed(
@@ -263,7 +263,7 @@ public sealed class HalyardAccountConsoleSession
             }
 
             // The endpoints are informational on this path: the control plane rides the association, and the
-            // stream endpoint is the second negotiated connection, which this does not open yet.
+            // stream endpoint is the second negotiated connection, which this does not open.
             var parameters = new HalyardConnectionParameters(
                 ConsoleId: consoleHost,
                 ControlEndpoint: new IPEndPoint(

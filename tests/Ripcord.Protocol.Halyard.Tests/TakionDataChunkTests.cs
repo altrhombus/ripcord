@@ -74,9 +74,9 @@ public class TakionDataChunkTests
     }
 
     /// <summary>
-    /// The 2026-09-30 review's finding: a 12-byte DATA chunk (an 8-byte value) parses, because a continuation
-    /// fragment can be that short, but slicing it as a first fragment threw. Reaching the reassembler as the
-    /// first fragment on its channel, it is now dropped instead.
+    /// A 12-byte DATA chunk (an 8-byte value) parses, because a continuation fragment can be that short, but
+    /// it cannot be sliced as a first fragment. Reaching the reassembler as the first fragment on its channel,
+    /// it is dropped rather than thrown on.
     /// </summary>
     [Fact]
     public void TwelveByteChunk_AsAFirstFragment_IsDroppedNotThrown()

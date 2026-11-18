@@ -12,7 +12,7 @@
  * MEASURED, NOT ASSUMED. svcGetSystemTick does not count at SYSCLOCK_ARM11 regardless of clock:
  * osSetSpeedupEnable(true) puts the ARM11 on SYSCLOCK_ARM11_LGR2, which os.h defines as exactly
  * SYSCLOCK_ARM11 * 3, and the tick counter goes with it - while libctru's CPU_TICKS_PER_USEC is fixed to
- * the base clock. Uncalibrated, every reported figure was 3x too large.
+ * the base clock. Uncalibrated, every reported figure is 3x too large.
  *
  * Timing a known sleep settles it on whatever hardware is actually running, at any clock, with no model
  * detection. The sleep is long enough that scheduler jitter is noise and short enough to be invisible at
@@ -70,9 +70,9 @@ void rc_profile_stop(rc_profile *p, rc_stage stage, uint64_t started)
 
     /*
      * These run inside the demux callback; record them so demux can subtract its own children. SCALE is
-     * in the list because the blit runs inside rc_mvd_decode_frame: without it the scaling was counted
-     * twice - demux reported 2684 us/call against ~750, and the receive core read 64% busy instead of
-     * ~27%.
+     * in the list because the inline blit runs inside rc_mvd_decode_frame: without it the scaling is
+     * counted twice - demux reported 2684 us/call against ~750, and the receive core read 64% busy
+     * instead of ~27%.
      */
     if (stage == RC_STAGE_MVD_FEED || stage == RC_STAGE_MVD_RENDER || stage == RC_STAGE_SCALE)
         p->inner += elapsed;
@@ -125,9 +125,9 @@ void rc_profile_report(const rc_profile *p, unsigned window_ms)
     }
 
     /*
-     * THE HEADLINE IS PER-CORE, because the stages no longer share one. Adding every stage up as "% of
-     * one core" reported 74% once the scale moved to core 2, when core 0 - the core that actually drains
-     * the socket - was at 47%. The receive loop's headroom is the number worth knowing, so it gets its
+     * THE HEADLINE IS PER-CORE, because the stages may not share one. With the scale on core 2, adding
+     * every stage up as "% of one core" reported 74% when core 0 - the core that actually drains the
+     * socket - was at 47%. The receive loop's headroom is the number worth knowing, so it gets its
      * own line.
      */
     if (window_ms > 0) {

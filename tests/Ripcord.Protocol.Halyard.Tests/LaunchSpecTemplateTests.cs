@@ -11,10 +11,10 @@ namespace Ripcord.Protocol.Halyard.Tests;
 ///
 /// <para>
 /// The console parses this and rejects an incomplete one <em>silently</em> — no SESSION_REPLY, no diagnostic — so
-/// a divergence costs a debugging session to find. Two were found exactly that way: <c>videoCodec</c> and
-/// <c>dynamicRange</c> were absent entirely, and <c>appSpecification.minFps</c> was hardcoded to 30 while the
-/// vendor declares its target frame rate, which told the console it was free to halve our frame rate. These
-/// tests exist so the next divergence is caught here instead.
+/// a divergence costs a debugging session to find. Two examples: <c>videoCodec</c> or <c>dynamicRange</c>
+/// absent entirely, and <c>appSpecification.minFps</c> hardcoded to 30 where the vendor declares its target
+/// frame rate, which tells the console it is free to halve our frame rate. These tests exist so a divergence
+/// is caught here instead.
 /// </para>
 /// </summary>
 public class LaunchSpecTemplateTests

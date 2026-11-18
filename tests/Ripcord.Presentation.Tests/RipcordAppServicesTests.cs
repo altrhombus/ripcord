@@ -17,9 +17,8 @@ namespace Ripcord.Presentation.Tests;
 /// The composition root's own contract.
 ///
 /// <para>
-/// Small, but not ceremonial: the graph replaced a scheme in which each surface constructed its own
-/// collaborators, and the thing that made that scheme survivable — a page could always fall back on
-/// <c>new</c> — is exactly what is gone. What is left is one late-bound member (the shell) and a set of
+/// Small, but not ceremonial: no surface constructs its own collaborators, so a page cannot fall back on
+/// <c>new</c> when the graph is wrong. The graph has one late-bound member (the shell) and a set of
 /// factories, and both have failure modes worth pinning: a shell read too early, and a second shell attached
 /// over the first.
 /// </para>

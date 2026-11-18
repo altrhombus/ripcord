@@ -71,14 +71,14 @@ public static class StreamHealthAssessor
 
     // The receive queue is normally ~0 (the processor drains instantly).
     //
-    // It is NOT a usable discriminator and is no longer used as one. Measured on ARM64 over four sessions
+    // It is NOT a usable discriminator and is not used as one. Measured on ARM64 over four sessions
     // (~2100 live samples, 2026-09-19) it never once pointed at the right cause, and in the device-starved
     // run it pointed confidently at the wrong one: every sample carrying real loss read a depth of exactly 0
     // while the machine was demonstrably the bottleneck, and every excursion above 16 happened on a sample
     // with exactly zero loss. What it actually records is an instantaneous depth sampled at 2 Hz against
     // frame-sized arrival bursts - 0 → 34 → 0 inside two seconds, peaking at 266 during a stall whose
-    // neighbouring samples both read 0. No threshold survives that, which is why this is a shape problem and
-    // retuning the number was the wrong fix. Kept as a displayed diagnostic and as the low-water guard on
+    // neighbouring samples both read 0. No threshold survives that: it is a shape problem, and retuning the
+    // number cannot fix it. Kept as a displayed diagnostic and as the low-water guard on
     // rule 4, where a spurious reading suppresses a warning rather than inventing one.
     public const int ReceiveQueueBusyDepth = 16;
 

@@ -62,9 +62,9 @@ fi
 INC="-I$SRC/codec/decoder/core/inc -I$SRC/codec/decoder/plus/inc -I$SRC/codec/common/inc \
      -I$SRC/codec/api/wels -I$SRC/codec/api -I$HERE/shim -I$PSL1GHT/ppu/include"
 
-# -O2 and nothing clever. The inner loops are going to be rewritten for the SPU's 128-bit SIMD anyway -
-# that is the whole shape of the work in DECODE.md section 1 - so tuning the PPE build is effort spent on
-# code that is scheduled to be replaced.
+# -O2 and nothing clever. openh264 is the file probe's decoder and the live path's fallback; the stream
+# is decoded by the console's own decoder (source/media/rc_decode_vdec.c), so tuning the PPE build is
+# effort spent where the stream does not go.
 # -std=gnu++11, NOT -std=c++11, and this is the same trap the port's C code hit with -std=c99. Strict ISO
 # mode defines __STRICT_ANSI__, under which newlib hides everything that is not ISO C++ - including
 # vsnprintf, which openh264 calls on every platform while only including <stdio.h> on the Windows paths.

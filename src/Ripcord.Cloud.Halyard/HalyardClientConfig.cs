@@ -13,9 +13,9 @@ namespace Ripcord.Cloud.Halyard;
 ///
 /// <para>
 /// <see cref="IsConfigured"/> is how every surface asks whether signing in is even possible, and it is asked
-/// rather than assumed because it is genuinely false in two ordinary cases: a
-/// <c>-p:BundleOAuthClient=false</c> build, and a checkout without the captures folder that has never populated the
-/// placeholder. Either way the app is fully functional for LAN play against a paired console; it simply cannot
+/// rather than assumed because it is genuinely false in two ordinary cases, when no override supplies a
+/// credential: a <c>-p:BundleOAuthClient=false</c> build, and a bundled file whose fields are empty. Either
+/// way the app is fully functional for LAN play against a paired console; it simply cannot
 /// reach the account tier. See <c>NOTICE</c> for what is bundled and why.
 /// </para>
 /// </summary>

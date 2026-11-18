@@ -1,13 +1,11 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport probe.
+ * ripcord-3ds - Takion transport probe.
  *
- * Drives just the SCTP handshake, then (once established) exchanges a synthetic
- * PROTOCOL_VERSION_REQUEST-shaped message, against a UDP host:port read from a small config file next
- * to this .3dsx. This is EXPLORATORY, not the real connect flow: a real session gates the Takion INIT on
- * the binary control channel's session-ready frame (Phase 4) and a keyless senkusha probe first (both
- * out of scope - see SETUP.md), neither of which this program does. It was written to ask whether the
- * handshake completes against a real peer and whether its SACK/DATA behaviour matches
- * tests/takion_test.c's captured vectors.
+ * Drives just the SCTP handshake against a UDP host:port read from a small config file next to this
+ * .3dsx, then sends one synthetic PROTOCOL_VERSION_REQUEST-shaped message and logs every reliable
+ * message that arrives in the next 10 s. It opens no control session and runs no senkusha bring-up, both
+ * of which a real session needs before the Takion INIT. The handshake and SACK/DATA behaviour it
+ * exercises are the ones libripcord/tests/takion_test.c checks against captured vectors.
  *
  * THIS PROGRAM CANNOT SUCCEED AGAINST A CONSOLE ON ITS OWN, and hardware confirmed it (2026-08-12): five
  * INITs to <console-ip>:9297 went unanswered. The console opens its UDP listeners only between
@@ -15,10 +13,9 @@
  * default port compounds it: 9297 is the SENKUSHA port, one above the A/V stream port 9296
  * (HalyardStreamingSession.SenkushaPort, wire-confirmed).
  *
- * Keep this program for driving the transport against a peer you control (a host-side responder, a
- * second 3DS). Testing Takion against a console needs the connect flow instead: hold the Phase 4 control
- * channel open past session-ready, run senkusha on 9297, then INIT the stream on 9296. That is a single
- * combined probe, not this one plus a port number.
+ * This program is for driving the transport against a peer you control (a host-side responder, a
+ * second 3DS). Testing Takion against a console needs the connect flow (source/connect/main.c): hold the
+ * control channel open past session-ready, run senkusha on 9297, then INIT the stream on 9296.
  *
  * takion.txt (next to this .3dsx, plain key=value text):
  *   host=192.168.1.42   (required)
@@ -129,9 +126,9 @@ static int run_takion(const char *host, unsigned short port)
     rc_log("handshake ESTABLISHED - local tag 0x%08x, peer tag 0x%08x\n",
         (unsigned)channel.local_tag, (unsigned)channel.peer_tag);
 
-    /* A synthetic PROTOCOL_VERSION_REQUEST-shaped payload - not a real protobuf encode (building the
-     * actual ControlMessage protobuf is later-phase work), just enough bytes to see whether anything on
-     * the other end answers on the reliable channel at all. */
+    /* A synthetic PROTOCOL_VERSION_REQUEST-shaped payload - not a protobuf encode
+     * (takion_control_proto.c is not linked into this program), just enough bytes to see whether
+     * anything on the other end answers on the reliable channel at all. */
     {
         static const uint8_t probe_payload[4] = { 0x08, 0x11, 0x08, 0x09 };
         if (takion_channel_send(&channel, TAKION_CHANNEL_PROTOCOL_VERSION, probe_payload, sizeof(probe_payload)))

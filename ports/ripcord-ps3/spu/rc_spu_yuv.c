@@ -1,5 +1,5 @@
 /*
- * ripcord-ps3 - YUV 4:2:0 to XRGB8888 on one SPE.
+ * ripcord-ps3 - YUV 4:2:0 to XRGB8888, and scaling, on one SPE.
  *
  * The PPE measured this conversion at 12,037 us per 960x540 picture while also spending 11,731 us
  * decoding, which is 72% of a 30 fps budget for one 960x540 window - and filling a 1080p screen needs
@@ -26,8 +26,8 @@
  * TWO MORE TAGS, ONE PER OUTPUT BUFFER, SO A STORE NEED NOT BE WAITED ON.
  *
  * With a single tag and a block after every transfer, b185 measured 1,667 us of waiting against
- * 16,444 us of converting and scaling, 9%. After the colour conversion was removed and the scaler
- * vectorised, b193 measures 4,007 us of waiting against 4,386 us of work - 48% - and the stores are the
+ * 16,444 us of converting and scaling, 9%. With a packed-RGB source and the scaler vectorised, b193
+ * measured 4,007 us of waiting against 4,386 us of work - 48% - and the stores are the
  * larger half of it: at 720p into 1080p each SPE issues about 360 puts of 7,680 bytes against 240 gets
  * of 5,120.
  *
@@ -38,11 +38,10 @@
 #define TAG_PUT1 2u
 
 /*
- * Local store is 256 KB for this program, its stack and every buffer below. At the maximum width this
- * is sized for, one pass costs: 2 luma rows (2 x 1280), one chroma row pair (2 x 640), and 2 output rows
- * (2 x 1280 x 4) = 13,824 bytes. Two of everything would allow overlapping DMA with compute, which is
- * the guide's central technique and is NOT done here - correctness first, and the measurement will say
- * whether it is worth it.
+ * Local store is 256 KB for this program, its stack and every buffer below. At the widths they are sized
+ * for the buffers come to 34,560 bytes: one luma row (1920), one U and one V row (960 each), two source
+ * lines (2 x 1920 x 4) and two output lines (2 x 1920 x 4). Gets are waited on where they are issued;
+ * only the puts overlap with compute, through the two output buffers.
  */
 static unsigned char g_y[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
 static unsigned char g_u[RC_SPU_YUV_MAX_WIDTH / 2] __attribute__((aligned(128)));
@@ -58,7 +57,7 @@ static unsigned int g_line[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
 static unsigned int g_line_b[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
 static unsigned int g_out[2][RC_SPU_YUV_MAX_DST_WIDTH] __attribute__((aligned(128)));
 
-/* Sequence first, so the PPE's existing poll on the first word is unchanged; the two tick counts ride
+/* Sequence first, because the PPE polls the first word; the two tick counts ride
  * along in the same 16-byte transfer. The MFC accepts 1, 2, 4, 8 or a multiple of 16 - see the note in
  * rc_spu_yuv_job.h - and 16 is the smallest that carries three words. */
 static volatile unsigned int g_report[4] __attribute__((aligned(16)));
@@ -152,9 +151,8 @@ static void convert_line(unsigned int width)
  * x * src_width / dst_width; accumulating a 16.16 step is an add and a shift instead of a divide.
  *
  * Nearest neighbour rather than bilinear, and a measurement settled that. It is exactly correct for the
- * integer factors that matter most here (960x540 doubles to 1080p), and scale_line_bilinear below
- * measured 21,038 us an SPE for a frame and halved the frame rate. The [X] this comment used to carry
- * is removed because that comparison has been made on hardware.
+ * integer factors that matter most here (960x540 doubles to 1080p), and full bilinear measured
+ * 21,038 us an SPE for a frame and halved the frame rate.
  */
 static void scale_line(unsigned int *out, unsigned int src_width, unsigned int dst_width)
 {
@@ -210,9 +208,9 @@ static void scale_line(unsigned int *out, unsigned int src_width, unsigned int d
 }
 
 /*
- * Bilinear, with the four channels of a pixel interpolated at once. The scalar version this replaces -
- * nine interpolations a pixel - missed the 25 ms strip deadline so completely that b195 converted no
- * stream frames at all.
+ * Bilinear, with the four channels of a pixel interpolated at once. A scalar version - nine
+ * interpolations a pixel - missed the 25 ms strip deadline so completely that b195 converted no stream
+ * frames at all.
  *
  * A pixel's four bytes are unpacked into four 32-bit lanes, interpolated as one vector, and packed back.
  * The multiply is the same idiom convert_line uses: spu_mulo against the odd halfword of each lane,
@@ -423,15 +421,9 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
         work_ticks = 0u;
         {
             /*
-             * WHERE THE TIME GOES, split between waiting for the MFC and doing the arithmetic.
-             *
-             * When this loop blocked on every transfer - one tag, at 1280x720 into 1920x1080 roughly
-             * 270 blocking puts and 180 blocking gets per SPE per frame - the conversion measured
-             * 4,945 us a frame without anyone knowing which half that was. If the arithmetic
-             * dominates, dropping the YUV-to-RGB pass (the decoder can output ARGB32 - b179 confirmed
-             * it) is worth doing. If the waiting dominates, that same change makes things WORSE,
-             * because ARGB source is 4 bytes a pixel against YUV420's 1.5, and double buffering is the
-             * answer instead.
+             * WHERE THE TIME GOES, split between waiting for the MFC (dma_ticks) and doing the
+             * arithmetic (work_ticks). Both go back to the PPE with the sequence word. A packed-RGB
+             * source removes the colour pass and costs more DMA: 4 bytes a pixel against YUV420's 1.5.
              */
             /*
              * The output buffer alternates only when a row is RECOMPUTED. Consecutive output rows often
@@ -604,7 +596,7 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
         }
 
         /*
-         * EVERY STORE MUST LAND BEFORE THE STRIP IS CALLED FINISHED. The puts are no longer waited on
+         * EVERY STORE MUST LAND BEFORE THE STRIP IS CALLED FINISHED. The puts are not waited on
          * where they are issued, so the last one or two are still in flight here - and the PPE takes the
          * sequence word as permission to blit, which would then race the tail of its own picture.
          */

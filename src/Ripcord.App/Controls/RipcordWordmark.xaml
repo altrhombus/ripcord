@@ -12,8 +12,8 @@
 
     **Never shown without the mark.** brand/README.md is explicit: without the mark the colour disappears
     and it is just a word in a nice font. Every surface using this places it beside the mark or the tile,
-    which is also why it is decorative to a screen reader - the mark beside it carries the name, and two
-    voices saying "Ripcord" is worse than one.
+    which is also why it is decorative to a screen reader by default - the mark beside it carries the name,
+    and two voices saying "Ripcord" is worse than one. A caller that wants it as a heading opts back in.
 
     Lowercase is correct here and is not a typo. In artwork the word is lowercase; in running text the name
     is "Ripcord". brand/README.md gives the reason: title case puts a tall R beside the wedge and the two
@@ -32,8 +32,7 @@
         measured from the origin to its geometry's maximum extent, so a glyph outline - which lives at
         NEGATIVE y, because the typographic baseline is zero - measures as though everything above the
         baseline were outside the box. A Viewbox around a bare Path therefore scales by the wrong height
-        and the word renders several times too large, overflowing whatever it was put in. Seen exactly
-        that way on the About page.
+        and the word renders several times too large, overflowing whatever it is put in.
 
         A Canvas with an explicit Width and Height reports those, so the Viewbox scales by the real
         viewBox, and the translate below moves the outline into it. Same shape as RipcordMark, which
@@ -45,7 +44,7 @@
         **The F1 that opens the path data is the fill rule and it is not optional.** SVG fills nonzero;
         XAML's path mini-language defaults to evenodd. Glyph outlines have overlapping contours - the
         shaper emits each glyph's own, and they meet - and under evenodd an overlap cancels instead of
-        uniting, which shows up as thin white lines through the letters. Seen exactly that way. F1 selects
+        uniting, which shows up as thin white lines through the letters. F1 selects
         nonzero and matches the source.
     -->
     <Viewbox

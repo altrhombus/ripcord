@@ -16,8 +16,8 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 /// The console drives this channel — most importantly it sends <see cref="TypeHeartbeatReq"/> every few
 /// seconds and disconnects the whole session if the client does not answer with
 /// <see cref="TypeHeartbeatRep"/> (both empty-payload). Heartbeats carry no payload, so they need no
-/// crypto; only message types that carry a payload are control-plane-encrypted (a later refinement for the
-/// feature/keyboard/login messages). No "RPCS" magic appears on the wire.
+/// crypto; only message types that carry a payload are control-plane-encrypted. This type frames the
+/// message and leaves the payload as the caller gives it. No "RPCS" magic appears on the wire.
 /// </summary>
 public readonly struct HalyardCtrlMessage
 {

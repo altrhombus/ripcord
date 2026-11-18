@@ -104,8 +104,8 @@ public class InputScopeStackTests
 
         stack.Push(modal);
 
-        // Previously this was the broken state: the session still claimed the pad while a dialog was on screen,
-        // so a controller-only user could not reach the dialog they had just opened.
+        // The modal takes the pad. A session that still claimed it while a dialog was on screen would leave a
+        // controller-only user unable to reach the dialog they had just opened.
         Assert.True(stack.IsActive(InputScopeKind.Modal));
         Assert.False(stack.IsActive(InputScopeKind.Session));
     }
@@ -185,8 +185,8 @@ public class InputScopeStackTests
     }
 
     /// <summary>
-    /// Top is read from input threads while the UI thread pushes and pops. Reading the list there could throw (count
-    /// checked, then a pop, then an index), which on a thread-pool timer ends the process (2026-10-05).
+    /// Top is read from input threads while the UI thread pushes and pops. Reading a list there can throw (count
+    /// checked, then a pop, then an index), which on a thread-pool timer ends the process.
     /// </summary>
     [Fact]
     public void Top_CanBeReadFromAnotherThread_WhileScopesComeAndGo()

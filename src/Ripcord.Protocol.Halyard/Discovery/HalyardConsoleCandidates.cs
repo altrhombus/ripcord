@@ -9,10 +9,10 @@ namespace Ripcord.Protocol.Halyard.Discovery;
 ///
 /// <para>
 /// The same choice has to reach two places: the transport that opens the association, and the ACCEPT that names
-/// the candidate back to the console. Separate rules disagree when no candidate parses: the transport falls
-/// back to the console's known host on 9303 while the ACCEPT names the first candidate offered (engine
-/// comparisons, 2026-09-26). The C core and the Rust engine make one choice and leave the fallback to the
-/// caller, which applies it to both; this is that, for .NET.
+/// the candidate back to the console. Separate rules would disagree when no candidate parses: the transport
+/// falling back to the console's known host on 9303 while the ACCEPT names the first candidate offered. The
+/// C core and the Rust engine make one choice and leave the fallback to the caller, which applies it to
+/// both; this is that, for .NET.
 /// </para>
 /// </summary>
 public static class HalyardConsoleCandidates

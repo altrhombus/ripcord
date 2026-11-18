@@ -8,7 +8,7 @@
  * also opens the A/V leg on 9297 before its first Takion byte, where it doubles as the NAT hole-punch.
  * docs/protocol/ps5-session-transport.md, "The account-route control transport", is the spec.
  *
- * Ported from src/Ripcord.Protocol.Halyard.Common/Control/, which remains the reference:
+ * Ported from src/Ripcord.Protocol.Halyard.Common/Control/, which is the reference:
  *
  *   HalyardControlPrelude.cs      -> halyard_dgram_prelude_*       (halyard_dgram_wire.c)
  *   HalyardControlChunk.cs        -> halyard_dgram_chunk_*         (halyard_dgram_wire.c)
@@ -187,7 +187,7 @@ typedef enum {
  * How a chunk we originate addresses the peer - the header's word count, named for what it selects. The
  * receiver looks a connection up by the LAST port word, and a chunk with none is matched on the peer
  * address alone, so this is a real protocol choice. PORT_PAIR is what every capture carries; the other
- * two are accepted by the receiver and never observed - PEER_ADDRESS_ONLY is an [X] experiment kept
+ * two are accepted by the receiver and never observed - ADDRESS_PEER_ONLY is an [X] experiment kept
  * because the .NET side keeps it.
  */
 typedef enum {

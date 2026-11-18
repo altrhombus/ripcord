@@ -14,8 +14,8 @@
  * claim, the stage/end-reason bookkeeping, and teardown on an instance that never connected. Not a
  * connect() against loopback: see test_log_routing for why that would not stay on this machine.
  *
- * Slice 0's two core fixes are here too: rc_tcp_connect's deadline (against loopback listeners) and the
- * rc_log sink.
+ * Two pieces of the core are checked here too: rc_tcp_connect's deadline (against loopback listeners)
+ * and the rc_log sink.
  */
 #include "../client/halyard_client.h"
 #include "../client/halyard_client_policy.h"

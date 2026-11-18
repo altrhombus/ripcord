@@ -1,17 +1,16 @@
 /*
- * ripcord-3ds - cryptographic primitives seam.
+ * libripcord - the cryptographic primitives.
  *
  * This is the C counterpart of Ripcord.Core.Net.Crypto: AES-128 (forward direction only), SHA-256,
  * HMAC-SHA-256, and the keystream cipher modes built on them. It knows nothing about PlayStation - the
- * protocol layer in source/halyard sits on top, exactly as Ripcord.Core.Net sits below
+ * protocol layer in halyard/ sits on top, exactly as Ripcord.Core.Net sits below
  * Ripcord.Protocol.Halyard.Common.
  *
- * WHY A SEAM RATHER THAN A DIRECT mbedtls DEPENDENCY.
- *   On 3DS hardware mbedtls is the better backend: the ARM11 has no crypto extensions, every A/V packet
- *   pays for AES, and mbedtls has hand-tuned paths this file does not. But the known-answer vectors the
- *   .NET side produces must run on any machine with a C compiler and nothing else installed. So the
- *   default build uses the self-contained implementation here, and -DRC_CRYPTO_MBEDTLS swaps in mbedtls
- *   behind the same three functions. Same seam-and-stub shape as IHalyardSessionCrypto.
+ * SELF-CONTAINED, WITH NO mbedtls DEPENDENCY.
+ *   The known-answer vectors the .NET side produces must run on any machine with a C compiler and
+ *   nothing else installed, so rc_aes.c, rc_sha256.c and rc_modes.c are the only implementation of
+ *   these functions and no build switch replaces them. -DRC_CRYPTO_MBEDTLS selects the ECDH backend in
+ *   rc_ecdh.c and nothing in this header.
  *
  * ON ROLLING OUR OWN. These are the forward AES block permutation and SHA-256, both transcribed from
  * FIPS-197 and FIPS 180-4 - public specifications, which is the only source independence rules permit here
@@ -44,7 +43,7 @@ typedef struct {
 
 /* Expand a 16-byte key into the round-key schedule. Cheap, but not free: the A/V path should expand once
  * per session and reuse the context, which is why the schedule is a caller-owned struct rather than an
- * argument to the block function. Ripcord learned this the expensive way - see the remarks on
+ * argument to the block function. The .NET side does the same - see the remarks on
  * AesKeystreamModes.CreateReusableEcb. */
 void rc_aes128_init(rc_aes128 *ctx, const uint8_t key[RC_AES128_KEY_SIZE]);
 

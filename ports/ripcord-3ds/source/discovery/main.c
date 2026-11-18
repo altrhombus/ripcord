@@ -1,13 +1,13 @@
 /*
- * ripcord-3ds - Phase 3 LAN discovery, on-device.
+ * ripcord-3ds - LAN discovery, on-device.
  *
  * Broadcasts the SRCH probe for both console families (halyard_discovery.h) and lists every distinct
  * console - deduplicated by host-id - that answers within a fixed search window. Four seconds, the same
- * generous window the .NET side's own pairing UI settled on, because a resting console answers slowly.
+ * generous window the .NET side's own pairing UI uses, because a resting console answers slowly.
  *
- * This is Phase 3's on-device half. tests/discovery_test.c already checks the parser without hardware,
- * against hand-transcribed examples from docs/protocol/ps5-local-discovery.md; only a real broadcast on
- * a real LAN proves the wire format still matches an actual console rather than just those examples.
+ * libripcord/tests/discovery_test.c checks the parser without hardware, against hand-transcribed
+ * examples from docs/protocol/ps5-local-discovery.md. This program puts a real broadcast on a real LAN,
+ * which is what shows the wire format matches an actual console rather than just those examples.
  */
 #include "../net/rc_soc.h"
 #include "util/rc_log.h"

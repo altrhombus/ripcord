@@ -43,7 +43,7 @@ using Ripcord.Core.Reactive;
 namespace Ripcord_App.Pages;
 
 /// <summary>
-/// The streaming surface. Its job is now presentation only: <see cref="SessionController"/> owns the session
+/// The streaming surface. Its job is presentation only: <see cref="SessionController"/> owns the session
 /// lifecycle (connect, degrade, reconnect, tear down), so this page renders status, routes controller input,
 /// and handles the immersive-mode concerns a Page is actually responsible for.
 /// </summary>
@@ -77,7 +77,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     // holds focus. Held so it can be unsubscribed from exactly what was subscribed to.
     private UIElement? _keyRoot;
 
-    // On-screen controls: idle timer plus which console buttons the user is currently holding, so the bar never
+    // On-screen controls: idle timer plus which console buttons the user is holding, so the bar never
     // hides out from under a finger.
     private DispatcherTimer? _touchControlsTimer;
     private ControllerButtons _virtualButtonsHeld;
@@ -125,8 +125,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// <summary>
     /// False until the preamble has been written. The preamble carries the GPU name, and the GPU is not known
     /// at connect time - the adapter is resolved when the decode pipeline initialises, which is the first
-    /// frame, not the first tick. Writing the preamble eagerly produced an empty <c>adapter:</c> line in every
-    /// trace taken so far.
+    /// frame, not the first tick. Writing the preamble eagerly produces an empty <c>adapter:</c> line.
     /// </summary>
     private bool _tracePreambleWritten;
 
@@ -136,7 +135,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private int _tracePreambleWaits;
 
-    /// <summary>Which arrangement the panel is currently in, so the rebuild only runs when it changes.</summary>
+    /// <summary>Which arrangement the panel is in, so the rebuild only runs when it changes.</summary>
     private bool _diagnosticsIsSheet;
 
     private PairedConsole? _console;
@@ -159,12 +158,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     // exit trigger (another Esc, the exit gesture) cannot stack a second dialog on top of the first.
     private bool _confirmingLeave;
 
-    // Cancels the pre-connect work (currently the wake poll) when the user leaves before the session is up.
+    // Cancels the connect flow's work (the wake poll among it) when the user leaves before the session is up.
     private CancellationTokenSource? _connectCts;
 
     // Rate sampling, pill tracking, the attached-controller set, the rolling histories and every full-scale
-    // constant used to live here. All of it is arithmetic and wording over plain numbers, so all of it moved to
-    // SessionViewModel — see the histories and the FullScale members it exposes for the sparklines below.
+    // constant are SessionViewModel's: all of it is arithmetic and wording over plain numbers. See the histories
+    // and the plot scales it exposes for the sparklines below.
 
     // Whether we switched the window to fullscreen, so we only restore what we changed.
     private bool _enteredFullScreen;
@@ -185,8 +184,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         base.OnNavigatedTo(e);
 
         // The shelf the touch bar lives in. Sized here rather than in markup because the token is a double
-        // and this is a GridLength; XAML will not convert, and binding it threw at page load - which is to
-        // say when somebody opened a stream, not when anybody built.
+        // and this is a GridLength; XAML will not convert, and binding it throws at page load - which is to
+        // say when somebody opens a stream, not when anybody builds.
         TouchShelfRow.Height = new GridLength(ThemeBrush.LookupDouble("RipcordTouchShelfHeight", fallback: 90));
         _console = e.Parameter as PairedConsole;
         ShowConnectIdentity();
@@ -238,8 +237,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     ///
     /// <para>
     /// Every failure here is silent and harmless: no prepared animation, an animation that has already
-    /// expired, or a user who has turned animation effects off all end with the page appearing exactly as it
-    /// did before this existed. Motion is the garnish, never the mechanism.
+    /// expired, or a user who has turned animation effects off all end with the page simply appearing.
+    /// Motion is the garnish, never the mechanism.
     /// </para>
     /// </summary>
     private void TryStartConnectAnimation()
@@ -253,11 +252,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         {
             ConnectedAnimation? animation = ConnectedAnimationService.GetForCurrentView()
                 .GetAnimation(AppMotion.ConnectAnimationKey);
-            // Onto the mark, which is what this always meant to carry. It used to land on StatusOverlay, which
-            // covers the window, so the card's snapshot was stretched over the whole screen until the animation
-            // ended - and that waits for the page, which is busy bringing the video device up. In Dark the card
-            // is near black and nobody saw it. In Light it is white, and the connect screen's white text sat on
-            // it unreadable (owner, 2026-10-09).
+            // Onto the mark, not StatusOverlay. The overlay covers the window, so landing there would stretch
+            // the card's snapshot over the whole screen until the animation ends - and that waits for the page,
+            // which is busy bringing the video device up. In Light the card is white, and the connect screen's
+            // white text would sit on it unreadable.
             animation?.TryStart(ConnectMark);
         }
         catch (Exception)
@@ -292,8 +290,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     ///
     /// <para>
     /// A rung keeps its place while it fades, and collapses after. With the compositor's implicit show and hide
-    /// animations a rung collapsed at once, so the bottom band's auto-height row shrank under the summary while
-    /// it was still fading, and the summary slid down as it went (owner, stream, 2026-10-09).
+    /// animations a rung collapses at once, so the bottom band's auto-height row shrinks under the summary while
+    /// it is still fading, and the summary slides down as it goes.
     /// </para>
     /// </summary>
     private void ShowRung(UIElement rung, bool show)
@@ -371,8 +369,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // Input set-up is ISOLATED and non-fatal. It reaches native code (GameInput via Ripcord.Input.Interop), and
         // a stream is perfectly watchable without a controller — so a failure here must degrade to "no input", never
-        // prevent connecting. It previously ran unguarded ahead of the first status message, so any failure left the
-        // static "Starting…" on screen with nothing reported anywhere.
+        // prevent connecting. Unguarded, a failure ahead of the first status message would leave the static
+        // "Starting…" on screen with nothing reported anywhere.
         try
         {
             // The keyboard is on when the setting says so, or when there is no pad to play with (KeyboardActiveFor).
@@ -479,8 +477,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             _viewModel.ShowConnectStage(stage);
 
             // And to the trace, because the surface keeps only the current stage. A connect that sits in one
-            // of these for minutes is indistinguishable, on screen, from a connect that never started - which
-            // is exactly how an account connect over a hotspot was reported.
+            // of these for minutes is indistinguishable, on screen, from a connect that never started.
             _services.DiagnosticTrace?.Invoke(
                 $"connect stage [{stage.Phase}] {stage.Headline} - {stage.Detail}");
         });
@@ -502,10 +499,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // A real power monitor, so the adaptive controller's battery / energy-saver / critical-battery caps can
         // actually engage. Without one injected, SessionController falls back to UnknownPowerThermalMonitor,
-        // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
-        // Bracketed, because this window had no instrumentation at all and a connect was reported sitting in
-        // it indefinitely: the flow's last stage reached the trace, the account route's first line never did,
-        // and everything between them is device work on the UI path - a power monitor, a controller, the open.
+        // which always claims external power — meaning a handheld on battery would stream at full desktop quality.
+        // Bracketed with trace lines, because everything between the flow's last stage and the account route's
+        // first line is device work on the UI path - a power monitor, a controller, the open - and a connect
+        // that sits here would otherwise leave nothing in the trace.
         void Trace(string line) => _services.DiagnosticTrace?.Invoke(line);
 
         Trace("connect: building the power monitor");
@@ -519,9 +516,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             _services.DiagnosticTrace?.Invoke($"connect: {line}");
 
             // **Nothing on screen once the picture is up.** The control channel goes on narrating after the
-            // stream is live - "DataReceived" and its neighbours - and every one of those lines used to call
-            // ShowStatus, which re-raised the overlay that Streaming had just dismissed. Seen on hardware as
-            // "Connecting to your console…" sitting over a running stream with a protocol word underneath it.
+            // stream is live - "DataReceived" and its neighbours - and passing those lines to ShowStatus would
+            // re-raise the overlay that Streaming has just dismissed: "Connecting to your console…" sitting
+            // over a running stream with a protocol word underneath it.
             //
             // The right half to guard is this one, not ShowStatus: a connect reporter has nothing to say
             // after the connect, while ShowStatus still has to work for Degraded and for a failure.
@@ -615,8 +612,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
                 // Posted, never called here: the token is cancelled from wherever cancellation happens, which for
                 // the connect deadline is a thread-pool timer, and Hide() off the UI thread throws
-                // RPC_E_WRONG_THREAD. Thrown from a cancellation callback, that took the process down: leaving
-                // the passcode prompt open past the deadline crashed the app (2026-10-02).
+                // RPC_E_WRONG_THREAD. Thrown from a cancellation callback, that takes the process down.
                 using CancellationTokenRegistration reg = cancellationToken.Register(() =>
                     _dispatcherQueue.TryEnqueue(() =>
                     {
@@ -714,12 +710,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         Marshal.ThrowExceptionForHR(panelNative.SetSwapChain(new IntPtr((long)_pipeline.SwapChainPointer)));
 
         // The view-model can read the pipeline from here on; before this, IsReady is false and the diagnostics
-        // readout reports the "nothing yet" state rather than zeroes that look like real measurements.
+        // readout reports its empty state rather than zeroes that look like real measurements.
         _pipelineStats.Attach(_pipeline);
 
         AdapterText.Text = $"GPU: {_pipeline.ActiveAdapterDescription}";
 
-        // Keep the swap chain sized to the panel in physical pixels. These now only publish values for the
+        // Keep the swap chain sized to the panel in physical pixels. These only publish values for the
         // decode worker to pick up, so they never block this (UI) thread on GPU work.
         VideoPanel.SizeChanged += OnVideoPanelSizeChanged;
         VideoPanel.CompositionScaleChanged += OnVideoPanelScaleChanged;
@@ -754,8 +750,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         {
             _viewModel.ApplyLifecycle(status);
 
-            // Who owns the pad follows the session being live. This is the edge that used to be a poll: the
-            // window asked this page for a bool on every frame instead.
+            // Who owns the pad follows the session being live: an edge pushed from here, not a bool the window
+            // polls this page for.
             UpdateSessionScope(status.IsLive);
 
             switch (status.Lifecycle)
@@ -890,8 +886,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             AlertTapPill.Visibility = Vis(s.AlertHint == AlertHint.Tap);
         }
 
-        // One source of truth for how much of the HUD is up. It used to be DiagnosticsPanel.Visibility,
-        // consulted from eight places, three of which had to agree about a panel they did not own.
+        // The rung in the state is the one source of truth for how much of the HUD is up; nothing reads
+        // DiagnosticsPanel.Visibility for it.
         // The decoded size is not known until the first frame, so placement cannot be settled at load.
         ApplyDiagnosticsPlacement();
 
@@ -917,8 +913,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private void RenderSummary(SessionDiagnosticsState d, bool statusVisible)
     {
-        // The verdict goes while the status screen is up: "Reconnecting…" above "The stream has stopped" was two
-        // messages about one problem (2026-10-02). The numbers and Details stay, since they are what help then.
+        // The verdict goes while the status screen is up: "Reconnecting…" above "The stream has stopped" is two
+        // messages about one problem. The numbers and Details stay, since they are what help then.
         SummaryHealth.Visibility = Vis(!statusVisible);
         SummaryHealthDivider.Visibility = Vis(!statusVisible);
 
@@ -1022,7 +1018,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         {
             target.Items.Add(new Border
             {
-                // Application.Current.Resources, not this page's: the pill styles are shared now, and a page's
+                // Application.Current.Resources, not this page's: the pill styles are shared, and a page's
                 // own dictionary does not see app-level ones.
                 Style = (Style)Application.Current.Resources[
                     pill.Accent ? "RipcordAccentPillStyle" : "RipcordPillStyle"],
@@ -1040,7 +1036,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// <summary>
     /// The DOT carries the verdict's colour, not the headline: coloured body text fails contrast in some themes
     /// and reads as an error even when the verdict is "healthy". Theme brushes rather than hardcoded colours —
-    /// the previous LimeGreen/Orange were wrong in light theme and invisible in high contrast — and looked up
+    /// literals such as LimeGreen/Orange are wrong in light theme and invisible in high contrast — and looked up
     /// defensively, so a missing key can never crash the overlay.
     /// </summary>
     private void RenderHealthDot(Shape dot, StreamHealthLevel level)
@@ -1134,9 +1130,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // The console's own accent for the trail, resolved through AccentResources so high contrast drops it
         // to a system brush rather than painting decorative colour where the palette forbids it. The wedge
-        // takes the ordinary foreground, set in the markup: it is the app's mark, not the console's. It was looked
-        // up here, from the app's resources, and so took the Windows theme rather than this page's Dark: a black
-        // wedge on the connect screen in Light (owner, 2026-10-09).
+        // takes the ordinary foreground, set in the markup: it is the app's mark, not the console's. Looked up
+        // here, from the app's resources, it would take the Windows theme rather than this page's Dark: a black
+        // wedge on the connect screen in Light.
         ConsoleFamily family = ConsoleFamily.ForPlatformName(_console?.Platform);
         StatusTrail.Accent = AccentResources.Brush(family.Accent);
         StatusTrail.Reached = reached;
@@ -1201,9 +1197,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// Claim the pad for the console, or release it.
     ///
     /// <para>
-    /// Tied to the session actually being live rather than to this page existing, which preserves the previous
-    /// behaviour and is the behaviour you want: while "Connecting…" is on screen the pad should still drive the
-    /// interface, so someone can back out of a console that is not answering.
+    /// Tied to the session actually being live rather than to this page existing: while "Connecting…" is on
+    /// screen the pad should still drive the interface, so someone can back out of a console that is not
+    /// answering.
     /// </para>
     /// </summary>
     private void UpdateSessionScope(bool live)
@@ -1297,17 +1293,17 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     /// <summary>
     /// Fullscreen with the chrome out of the way, and the display kept awake. A remote play stream is the whole
-    /// point of the window while it is running; it previously rendered inside a nav pane and title bar, and
-    /// nothing stopped the screen blanking mid-game because a gamepad is not "user activity" to Windows.
+    /// point of the window while it is running, and without the request the screen would blank mid-game,
+    /// because a gamepad is not "user activity" to Windows.
     /// </summary>
     private void EnterImmersiveMode()
     {
         KeepDisplayAwake(true);
 
         // "Full screen when a stream starts" is a start preference, applied once per connection. Streaming
-        // resumes after every reconnect too, and applying it then overrode the player's own choice: someone who
-        // had pressed Esc for a window was put back in full screen when the Wi-Fi came back (visual audit,
-        // 2026-10-08). After the first time, the window stays in whatever mode the player has it.
+        // resumes after every reconnect too, and applying it then would override the player's own choice:
+        // someone who had pressed Esc for a window would be put back in full screen when the Wi-Fi came back.
+        // After the first time, the window stays in whatever mode the player has it.
         if (_settings.FullScreenOnConnect && !_enteredFullScreen && !_startModeApplied)
         {
             Shell.SetFullScreen(true);
@@ -1362,7 +1358,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     private Task ShowExitHintBriefly()
     {
         // With no controller attached, the controller's gesture is no way out at all, and naming one pad's buttons
-        // for it taught Xbox names to someone holding nothing (visual audit, 2026-10-08).
+        // for it would teach Xbox names to someone holding nothing.
         if (_settings.ExitGesture == ExitGesture.None || !App.Input.PadAttached)
         {
             ExitHintText.Text = Strings.Session_PressEscToLeave;
@@ -1412,11 +1408,6 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     // ---- leaving ----
 
     /// <summary>
-    /// Escape steps back one level rather than ending everything at once: fullscreen → windowed → leave the
-    /// session. One Escape should not drop a live session, and "let me see the desktop for a moment without
-    /// disconnecting" is the more common intent.
-    /// </summary>
-    /// <summary>
     /// The session's own keys: Escape steps out, F11 toggles fullscreen, F3 toggles diagnostics. True when one
     /// was handled.
     ///
@@ -1427,9 +1418,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private bool TryHandleReservedKey(Windows.System.VirtualKey key)
     {
-        // A tooltip is a popup too, and counting it made Escape do nothing whenever the pointer rested on a HUD
-        // button long enough to show one; opening and cancelling the disconnect prompt cleared it, which is how
-        // it was found on hardware (2026-10-01). Only a popup that wants the key, a dialog or a flyout, declines.
+        // A tooltip is a popup too, and counting it would make Escape do nothing whenever the pointer rested on a
+        // HUD button long enough to show one. Only a popup that wants the key, a dialog or a flyout, declines.
         if (XamlRoot is not null
             && VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot).Any(popup => popup.Child is not ToolTip))
         {
@@ -1464,6 +1454,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
     }
 
+    /// <summary>
+    /// Escape steps back one level rather than ending everything at once: fullscreen → windowed → leave the
+    /// session. One Escape should not drop a live session, and "let me see the desktop for a moment without
+    /// disconnecting" is the more common intent.
+    /// </summary>
     private void ExitAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
@@ -1518,8 +1513,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         ShowStatus(Strings.Session_Connecting, Strings.Session_StartingNewSession, terminal: false);
 
         // The whole attempt, not just the controller: StartSessionAsync builds a new video pipeline, stats timer,
-        // trace and cancellation source, and overwrote the old ones while they still held a D3D12 device, a
-        // decoder, a swap chain, an audio stream and a worker thread (review, 2026-10-05).
+        // trace and cancellation source, and would overwrite the old ones while they still hold a D3D12 device, a
+        // decoder, a swap chain, an audio stream and a worker thread.
         await TeardownAttemptAsync();
         await StartSessionAsync();
     }
@@ -1547,11 +1542,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         {
             _confirmingLeave = true;
 
-            // The prompt owns the pad while it is up. That is ModalHost's doing now rather than this
-            // method's, and it is what stops presses leaking into the game behind it: the session's
-            // deactivation edge suspends forwarding and releases whatever is held, and the matching pop
-            // restores forwarding on every exit path — including "Stay connected", where the session keeps
-            // running. This site is where that was first got right; it is now what every dialog gets.
+            // The prompt owns the pad while it is up. That is ModalHost's doing rather than this method's,
+            // and it is what stops presses leaking into the game behind it: the session's deactivation edge
+            // suspends forwarding and releases whatever is held, and the matching pop restores forwarding on
+            // every exit path — including "Stay connected", where the session keeps running.
             try
             {
                 var dialog = new DisconnectDialog(_settings.RestConsoleOnDisconnect) { XamlRoot = XamlRoot };
@@ -1615,10 +1609,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private void OnPadFrame(ControllerStateFrame frame)
     {
-        // To the console first. The 2026-08-06 router refactor moved pad reading out of this page and
-        // subscribed here only for the exit gesture, and _inputSource was built with pad: null - so from then
-        // on a stream received the keyboard and the on-screen buttons and no controller at all. It was one of
-        // the input commits landed without a pad in hand, and it was found that way on 2026-09-30.
+        // To the console first: this is the only path a pad frame takes into _inputSource. Without it a stream
+        // receives the keyboard and the on-screen buttons and no controller at all.
         _padFrames.OnNext(frame);
 
         // Runs on the input thread. The exit gesture is evaluated here rather than in MainWindow because
@@ -1637,7 +1629,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             ExitProgressBar.Value = progress;
             ExitProgressPanel.Visibility = progress is > 0 and < 1 ? Visibility.Visible : Visibility.Collapsed;
 
-            // The live pad readout moved to Settings, beside the bindings it helps check. On the UI thread,
+            // The live pad readout is in Settings, beside the bindings it helps check. On the UI thread,
             // nothing here reads the frame except the exit gesture above.
         });
     }
@@ -1664,10 +1656,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         _pipeline.SetCompositionScale(scaleX, scaleY);
 
         // Black until the first frame. The swap chain is premultiplied and its buffers start transparent, and
-        // a transparent panel shows the window under it, which Windows paints white in Light: the connect screen
-        // went black for a second, then white, the moment this attached (owner, 2026-10-09). Queued after the
-        // resize, so the buffers it clears are the ones that will be shown. Once a picture has arrived each frame
-        // clears its own.
+        // a transparent panel shows the window under it, which Windows paints white in Light: uncleared, the
+        // connect screen goes white the moment this attaches. Queued after the resize, so the buffers it clears
+        // are the ones that will be shown. Once a picture has arrived each frame clears its own.
         if (!_viewModel.State.IsStreamLive)
         {
             _pipeline.RenderClear(0, 0, 0);
@@ -1680,8 +1671,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// Move focus off the on-screen chrome after it is used.
     ///
     /// <para>
-    /// No longer required for key delivery — that is handled at the window root, independent of focus — but it
-    /// still stops a button keeping a visible focus ring and being re-triggered by Enter. Only when keyboard input
+    /// Not required for key delivery — that is handled at the window root, independent of focus — but it
+    /// stops a button keeping a visible focus ring and being re-triggered by Enter. Only when keyboard input
     /// is enabled: stealing focus otherwise would break Tab access to those buttons for someone who never wanted
     /// keys sent to the console.
     /// </para>
@@ -1716,8 +1707,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private void ShowTouchControls()
     {
-        // Only over a live stream. Before one, the bar sat under "Connecting" and "Couldn't connect" offering PS
-        // and Options to a console that was not listening (2026-10-02).
+        // Only over a live stream. Before one, the bar would sit under "Connecting" and "Couldn't connect"
+        // offering PS and Options to a console that is not listening.
         if (!_viewModel.State.IsStreamLive)
         {
             return;
@@ -1769,11 +1760,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     }
 
     /// <summary>
-    /// Press a console button from the bar. Pointer events rather than Click, because a hold must read as a hold —
-    /// holding PS opens the console's power menu, and a Click handler can only ever express a tap.
-    /// </summary>
-    /// <summary>
-    /// Wire the console buttons' pointer events.
+    /// Wire the console buttons' pointer events, and Click for everything that is not a pointer.
     ///
     /// <para>
     /// Registered in code with <c>handledEventsToo: true</c>: WinUI's ButtonBase handles PointerPressed and
@@ -1795,7 +1782,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
                 PointerCaptureLostEvent, new PointerEventHandler(ConsoleButton_PointerReleased), handledEventsToo: true);
 
             // And Click, for everything that isn't a pointer: Enter or Space, Narrator's Invoke, a pad's Accept.
-            // Pointer-only, these did nothing from a keyboard or a screen reader (review, 2026-10-05).
+            // Pointer-only, these would do nothing from a keyboard or a screen reader.
             button.Click += ConsoleButton_Click;
 
             // Nothing can be sent without an input source, so say so rather than offering a dead control.
@@ -1803,6 +1790,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
     }
 
+    /// <summary>
+    /// Press a console button from the bar with a pointer. Pointer events rather than Click, because a hold must
+    /// read as a hold — holding PS opens the console's power menu, and a Click handler can only ever express a tap.
+    /// </summary>
     private void ConsoleButton_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: string name } || !Enum.TryParse(name, out ControllerButtons button))
@@ -1848,8 +1839,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     ///
     /// <para>
     /// A mouse click is press and release a few tens of milliseconds apart, and a release sent at once could fall
-    /// between two input reports and never reach the console: the PS button needed clicking twice (owner,
-    /// 2026-10-08). The keyboard and screen-reader path holds a press for the same tap length. A real hold, for
+    /// between two input reports and never reach the console, so the PS button would need clicking twice. The
+    /// keyboard and screen-reader path holds a press for the same tap length. A real hold, for
     /// the power menu, is longer than the floor and is released exactly when the pointer lets go.
     /// </para>
     /// </summary>
@@ -1899,7 +1890,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     ///
     /// <para>
     /// Applied from code because the panel is top-aligned: without a ceiling it simply grows past the bottom of the
-    /// window and the last rows are unreachable, which is what happened at 7 inches (the power row was cut in half).
+    /// window and the last rows are unreachable (on a 7-inch screen the power row is cut in half).
     /// Stretching it instead would make it full height even when nearly empty.
     /// </para>
     /// </summary>
@@ -1918,10 +1909,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// is nearly always a bar that is already black, and claiming it costs the player no picture.
     ///
     /// <para>
-    /// Only the pillarbox case is wired here. The panel is already a tall narrow column, so moving it into a
-    /// pillar is a position change; the letterbox <see cref="DiagnosticsPlacement.Sheet"/> wants a four-column
-    /// re-flow that does not exist yet, and until it does that case is handled as an overlay — which is what
-    /// happens today, so nothing regresses while it is missing.
+    /// <c>HudPlacement</c> decides where. In a pillarbox the panel is a rail: the tall narrow column, centred in
+    /// the pillar. In a letterbox it is a <see cref="DiagnosticsPlacement.Sheet"/>: turned on its side by
+    /// <see cref="ApplyDiagnosticsLayout"/>, stretched along the bottom and no taller than the bar. Otherwise it
+    /// overlays the picture's top-left corner. A panel the player has moved stays where they put it. The summary
+    /// strip is held to the picture's width.
     /// </para>
     /// </summary>
     private void ApplyDiagnosticsPlacement()
@@ -1935,11 +1927,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             ? DiagnosticsPanel.ActualWidth
             : DiagnosticsPanel.MaxWidth;
 
-        // **The summary strip belongs to the picture, not to the window.** It stretched the full width
-        // whatever the stream was doing, so a 16:9 stream in a wide window put a bar of instruments out over
-        // both pillarboxes - reading as chrome bolted to the window rather than as something measuring the
-        // thing above it. PillarWidth is one bar, so the picture is the viewport less two of them; with no
-        // pillarboxing that is the viewport and the strip is exactly as wide as it was.
+        // **The summary strip belongs to the picture, not to the window.** Stretched the full width, a 16:9
+        // stream in a wide window would put a bar of instruments out over both pillarboxes - reading as
+        // chrome bolted to the window rather than as something measuring the thing above it. PillarWidth is
+        // one bar, so the picture is the viewport less two of them; with no pillarboxing that is the viewport.
         double pictureWidth = ActualWidth - (layout.PillarWidth * 2);
         DiagnosticsSummary.MaxWidth = pictureWidth > 120 && double.IsFinite(pictureWidth)
             ? pictureWidth
@@ -1991,7 +1982,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     // ---- the movable panel ----
     //
     // The full panel goes where HudPlacement puts it until the player moves it: dragged by its header, resized from
-    // any edge, and kept from one stream to the next (owner, 2026-10-09). "Put back", or a double-click on the
+    // any edge, and kept from one stream to the next. "Put back", or a double-click on the
     // header, returns it. Pointer only; nothing on the stream layer takes the pad, by design.
 
     // Where the player put it, or null for where it goes by itself.
@@ -2183,15 +2174,6 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     }
 
     /// <summary>
-    /// Write a plain-text snapshot of everything the overlay knows to the state directory.
-    ///
-    /// <para>
-    /// For machines with no development environment — a handheld, in practice — where the overlay can be
-    /// photographed but nothing can be attached to the process, ETW is impractical to collect, and
-    /// Debug.WriteLine goes nowhere. Plain text and self-contained, so it can be read anywhere and pasted whole.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// Open the session trace. One CSV per session, beside the F8 reports, recording every stats tick.
     ///
     /// <para>
@@ -2262,7 +2244,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
                 return;
             }
 
-            // Said plainly rather than left blank: "not known yet" and "there is no GPU row at all" are
+            // Said plainly rather than left blank: "not known" and "there is no GPU row at all" are
             // different findings, and a reader months later cannot tell an empty field from a missing one.
             adapter = "unknown (no frame decoded)";
         }
@@ -2338,7 +2320,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     /// <summary>
     /// Keep the newest <see cref="DiagnosticFiles.SessionTracesKept"/> traces and delete the rest, before a new one
-    /// is started. Every stream writes one and nothing ever removed them. Only this app's own trace files, by
+    /// is started. Every stream writes one, and nothing else removes them. Only this app's own trace files, by
     /// their own name pattern, in its own state folder.
     /// </summary>
     private void PruneOldTraces()
@@ -2368,6 +2350,15 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
     }
 
+    /// <summary>
+    /// Write a plain-text snapshot of everything the overlay knows to the state directory.
+    ///
+    /// <para>
+    /// For machines with no development environment — a handheld, in practice — where the overlay can be
+    /// photographed but nothing can be attached to the process, ETW is impractical to collect, and
+    /// Debug.WriteLine goes nowhere. Plain text and self-contained, so it can be read anywhere and pasted whole.
+    /// </para>
+    /// </summary>
     private void SaveDiagnostics()
     {
         try
@@ -2428,10 +2419,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         //
         // A KeyboardAccelerator only fires while focus is inside its scope, and focus leaves this page as soon
         // as the video is clicked -- SwapChainPanel is not focusable, and FocusStreamSurface only takes focus
-        // when keyboard input is enabled, which is off by default. So Escape, F11 and F3 all worked until the
-        // first click on the stream and were dead afterwards: reported as "Esc does nothing, F11 still
-        // toggles", which was simply whether focus had moved yet. Game input was already routed here for
-        // exactly this reason; the reserved keys were left behind.
+        // when keyboard input is enabled, which is off by default. As accelerators, Escape, F11 and F3 would work
+        // until the first click on the stream and be dead afterwards. Game input is routed here for the same
+        // reason.
         if (TryHandleReservedKey(e.Key))
         {
             e.Handled = true;
@@ -2450,7 +2440,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
 
     /// <summary>
-    /// Whether a text-entry control currently has focus.
+    /// Whether a text-entry control has focus.
     ///
     /// <para>
     /// The key handlers sit on the window root so that delivery does not depend on focus, but that breadth cuts
@@ -2551,10 +2541,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     {
         // SAMPLED whether or not the panel is showing; only the DRAWING is gated on visibility, further down in
         // Render. With the sample gated, the health verdict could read "Not connected yet" beside a lifecycle of
-        // "Streaming" (composed before the session existed, never recomposed), and the sparklines opened empty,
-        // with no history of the thirty seconds before the overlay was opened.
+        // "Streaming" (composed before the session existed, never recomposed), and the sparklines would open
+        // empty, with no history of the thirty seconds before the overlay was opened.
         //
-        // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
+        // False means the sample was skipped — no pipeline, or too little time since the last one for a rate
         // to mean anything — so there is nothing new to plot either.
         // The connect gate needs the clock, not just reports. ConnectFlow reports only when something
         // changes, so a stage that hangs reports once and then goes quiet, and a four-second stall would never
@@ -2638,16 +2628,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     ///
     /// <para>
     /// One canvas per metric rather than four series sharing one box. They have no common unit, so overlaying them
-    /// invited exactly the wrong comparison — a tall loss line looked worse than a tall frame-rate line — and no
-    /// line was identifiable. Each is now labelled, scaled independently, and sits beside its own value and peak.
+    /// invites exactly the wrong comparison — a tall loss line looks worse than a tall frame-rate line — and no
+    /// line is identifiable. Each is labelled, scaled independently, and sits beside its own value and peak.
     /// </para>
     /// </summary>
     private static void PlotSpark(
         Polyline line, Canvas host, MetricHistory history, MetricPlot plot, MetricSeverity severity)
     {
-        // The stroke's colour is the reading, not the row's identity. These were fixed per metric in markup,
-        // so the loss line was red at zero loss and the frames line green while frames collapsed - colour that
-        // looked like it meant something and never did.
+        // The stroke's colour is the reading, not the row's identity. Fixed per metric in markup, the loss
+        // line would be red at zero loss and the frames line green while frames collapsed - colour that
+        // looks like it means something and does not.
         if (SeverityBrush(severity) is { } stroke)
         {
             line.Stroke = stroke;
@@ -2717,9 +2707,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         LeaveImmersiveMode();
 
-        // Still not awaited HERE — blocking the UI thread on it froze the window on exit and risked a
+        // Not awaited HERE — blocking the UI thread on it freezes the window on exit and risks a
         // deadlock, since session disposal awaits the control keep-alive task and joins the decode worker.
-        // But the task is no longer dropped: the window needs something to wait on when the app is closing
+        // The task is kept, not dropped: the window needs something to wait on when the app is closing
         // mid-stream, or the process exits before the session is ended properly. See Teardown.
         Teardown = TeardownAsync();
     }

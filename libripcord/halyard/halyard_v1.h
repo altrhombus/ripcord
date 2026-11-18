@@ -1,17 +1,17 @@
 /*
- * ripcord-3ds - the v1 Halyard control-plane crypto.
+ * libripcord - the v1 Halyard control-plane crypto.
  *
  * This is the C counterpart of Ripcord.Protocol.Halyard.Common/Crypto/V1: the control-session KDF, the
  * per-field IV derivation, and the field/streaminfo ciphers built on them - ported from that
  * implementation (docs/protocol/ps5-remoteplay-v1-spec.md section 2.1 is the spec both read) and checked against it with
  * known-answer vectors (tests/vector_runner.c), so a transcription slip shows up as a mismatch instead of
- * shipping quietly.
+ * going unnoticed.
  *
  * NOTHING HERE IS A SECRET. The lookup tables live in a generated file (halyard_v1_constants.g.c, built
  * from the committed src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json) and are the generic
  * interoperability constants described in the repository NOTICE. Per-console and per-account material -
- * registration keys, pairing records, session keys - never appears in this tree; on this port it arrives
- * as a pairing record copied from a desktop Ripcord install.
+ * registration keys, pairing records, session keys - never appears in this tree; it reaches a port as a
+ * pairing record, one the port registered for itself or one copied from another Ripcord install.
  */
 #ifndef HALYARD_V1_H
 #define HALYARD_V1_H
@@ -75,8 +75,8 @@ extern const uint8_t halyard_v1_ps4_material_wrap_table[HALYARD_MATERIAL_WRAP_TA
 
 /* v2 PlayStation 5 registration-authentication key: the fixed value the console checks a v2 pairing request's
  * authentication code against (NOTICE, "Interoperability constants"). Emitted only with --registration, like the
- * tables above; the other console family's value is [X] and not bundled. No v2 C consumer yet, but declared so
- * the generated unit links and so a future port finds it here. */
+ * tables above; the other console family's value is [X] and not bundled. Nothing in the C core reads it; it is
+ * declared so the generated unit links. */
 #define HALYARD_REGISTRATION_AUTH_KEY_LENGTH 16
 extern const int halyard_v1_registration_auth_bundled;
 extern const uint8_t halyard_v1_registration_auth_key[HALYARD_REGISTRATION_AUTH_KEY_LENGTH];

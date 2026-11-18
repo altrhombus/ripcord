@@ -2,15 +2,15 @@
  * ripcord-3ds - the main-thread stack size, and why the default is not enough.
  *
  * libctru defines `__stacksize__` as a WEAK symbol with the value 0x8000 - 32 KB for the whole main
- * thread. A strong definition here overrides it. This port creates no threads of its own during a
- * session (see connect/main.c), so *every* stage - receive, GMAC verify, decrypt, demux, MVD feed,
- * render, frame scale and Opus decode - shares that one stack.
+ * thread. A strong definition here overrides it. Every stage that runs on the main thread - receive,
+ * GMAC verify, decrypt, demux, MVD feed, render, Opus decode, and the frame scale unless
+ * rc_mvd_start_scale_thread moved it to its own worker - shares that one stack.
  *
  * WHAT 32 KB COST, TWICE.
  *
  * 2026-08-12: a data abort writing 12 bytes below SP, with a log that stopped after the banner. That one
- * was a single oversized local (takion_reliable_channel, 49.6 KB) blowing the frame in the PROLOGUE, and
- * the fix was -Wframe-larger-than=8192 in the Makefile, which fails the build instead of the handheld.
+ * was a single oversized local (takion_reliable_channel, 49.6 KB) blowing the frame in the PROLOGUE.
+ * -Wframe-larger-than=8192 in the Makefile fails the build on that instead of the handheld.
  *
  * 2026-08-13, crash_dump_00000009: a data abort writing 40 bytes below SP - a plain
  * `push {r4-r11, ip, lr}` register save area that could not be stored. -Wframe-larger-than cannot catch

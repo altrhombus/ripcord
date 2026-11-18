@@ -4,11 +4,11 @@ namespace Ripcord.Cloud.Halyard;
 
 /// <summary>
 /// Every JSON shape the cloud client reads or writes, source-generated so none of it depends on reflection, which
-/// trimming removes. The request bodies used to be anonymous types, which source generation cannot see; they are
-/// named records now, each property declared in the order the body carries it, because the serializer writes
+/// trimming removes. The request bodies are named records rather than anonymous types, which source generation
+/// cannot see, each property declared in the order the body carries it, because the serializer writes
 /// them in declaration order and several of these orders were matched against our own captures.
-/// <c>HalyardCloudClientWireTests</c> pins every body byte for byte against what the anonymous types produced.
-/// Default options, as before: the same encoder and no null-skipping.
+/// <c>HalyardCloudClientWireTests</c> pins every body byte for byte.
+/// Default options: the default encoder and no null-skipping.
 /// </summary>
 [JsonSerializable(typeof(HalyardAccountInfo))]
 [JsonSerializable(typeof(HalyardPushServerInfo))]

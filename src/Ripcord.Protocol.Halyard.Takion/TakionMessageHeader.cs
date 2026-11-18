@@ -45,7 +45,7 @@ public readonly struct TakionMessageHeader
     public uint GmacTag { get; }
     public uint KeystreamOffset { get; }
 
-    /// <summary>The offset of the SCTP chunk region (also the byte offset the control-class GMAC tag lives at is 5).</summary>
+    /// <summary>The offset of the SCTP chunk region, immediately after the 13-byte header.</summary>
     public const int ChunkOffset = Length;
 
     public void Write(Span<byte> destination)

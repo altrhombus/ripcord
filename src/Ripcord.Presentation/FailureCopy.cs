@@ -12,7 +12,7 @@ public sealed record PlainFailure(string Message, string Technical);
 /// Plain words for the failures that reach a screen.
 ///
 /// <para>
-/// <b>Why (review, 2026-10-05).</b> Every failure showed its raw text: a wrong or expired pairing code read
+/// <b>Why.</b> A failure's raw text is not written for a player: a wrong or expired pairing code reads
 /// "Registration was rejected by the console (HTTP 403, RP-Application-Reason …)". The raw text is still worth
 /// having, for a bug report, so it is kept as <see cref="PlainFailure.Technical"/> and shown small, under the
 /// plain sentence that leads. Matching is on markers in the raw text, the same text the backends write; a
@@ -48,9 +48,9 @@ public static class FailureCopy
         ("rejected (HTTP 403", () => Strings.Failure_ConnectRefused),
         ("rejected (HTTP 401", () => Strings.Failure_ConnectRefused),
 
-        // The account route's session registration, refused. Worded differently from /sess/init's, so it fell
-        // through to the general sentence, which told someone connecting over the internet to check they were
-        // on the same network (visual audit, 2026-10-08).
+        // The account route's session registration, refused. Worded differently from /sess/init's, so without
+        // its own rule it falls through to the general sentence, which tells someone connecting over the
+        // internet to check they are on the same network.
         ("rejected by the console (HTTP 403", () => Strings.Failure_ConnectRefused),
         ("Pair the console again", () => Strings.Failure_ConnectRepair),
         ("did not wake", () => Strings.Connect_DidNotWakeDetail),

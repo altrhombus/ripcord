@@ -11,14 +11,12 @@ namespace Ripcord.Presentation.Halyard.Pairing;
 ///
 /// <para>
 /// One service per family is unavoidable: the two families listen on different ports with different protocol
-/// versions (PS5 on 9302/00030010, PS4 on 987/00020020), so a single client can only ever see one of them. A
-/// scan that used one client silently saw PS5 only.
+/// versions (PS5 on 9302/00030010, PS4 on 987/00020020), so a single client can only ever see one of them.
 /// </para>
 ///
 /// <para>
 /// An adapter here rather than an all-families <c>IConsoleDiscoveryService</c> in
-/// <c>Ripcord.Protocol.Halyard</c> because there is one caller; the merge is worth moving there, where the
-/// existing protocol test project could reach it, if a second caller ever appears.
+/// <c>Ripcord.Protocol.Halyard</c> because there is one caller.
 /// </para>
 /// </summary>
 public sealed class HalyardConsoleScanner : IConsoleScanner

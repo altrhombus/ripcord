@@ -91,7 +91,7 @@ public sealed class ExitGestureDetector(ExitGesture gesture, TimeSpan? holdDurat
 
     /// <summary>
     /// The same, in the names on <paramref name="family"/>'s pad. The stream's hint is read with a pad in hand, and
-    /// "Options + Create + L1 + R1" names nothing on an Xbox pad (2026-10-02).
+    /// "Options + Create + L1 + R1" names nothing on an Xbox pad.
     /// </summary>
     public static string Describe(ExitGesture gesture, PadFamily family)
         => Buttons(gesture, family) is { } buttons ? $"Hold {buttons}" : "Press Esc";

@@ -28,8 +28,8 @@ public enum ConsoleWakeOutcome
     /// <para>
     /// Its own value rather than <see cref="Woken"/> because we genuinely do not know: the remote wake is
     /// delivered through PSN's own server-side fan-out, so acceptance says the request was queued and nothing
-    /// more. Claiming <see cref="Woken"/> here would be the kind of over-confident status string this app has
-    /// already lost hours to. Like <see cref="Unknown"/>, it is not a reason to stop.
+    /// more. Claiming <see cref="Woken"/> here would be an over-confident status string. Like
+    /// <see cref="Unknown"/>, it is not a reason to stop.
     /// </para>
     /// </summary>
     AskedRemotely,

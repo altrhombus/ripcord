@@ -85,7 +85,7 @@ int rc_spu_yuv_init(void)
     memset((void *)s_done, 0, 128u * RC_SPU_YUV_MAX_SPES);
 
     /*
-     * sysSpuInitialize is NOT called here. rc_spu.c's probe already initialises the SPU subsystem for
+     * sysSpuInitialize is NOT called here. rc_spu.c's probe initialises the SPU subsystem for
      * this process, and calling it twice returns an error that means "already done" - which would have
      * to be special-cased by value. Depending on the probe having run is the smaller assumption, and
      * rc_spu_yuv_init is only reached after it.
@@ -187,13 +187,12 @@ static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const ui
         s_sequence += 2u;   /* never collide with the phase values the SPE also writes */
 
     /*
-     * Strips are divided by OUTPUT row now, and the even-row rule no longer applies to them.
+     * Strips are divided by OUTPUT row, and a strip need not start on an even row.
      *
-     * It used to: a strip starting on an odd SOURCE row takes the wrong chroma line. With scaling the
-     * SPE computes its own source row from the output row, so every row - first in a strip or not -
-     * derives its chroma the same way. The constraint moved into the kernel where the mapping lives,
-     * which is the right place for it, and keeping a stale evenness rule here would silently misalign
-     * strips whenever the scale factor is not an integer.
+     * The SPE computes its own source row from the output row, so every row - first in a strip or
+     * not - derives its chroma the same way. The chroma pairing lives in the kernel where the mapping
+     * is; an evenness rule here would silently misalign strips whenever the scale factor is not an
+     * integer.
      */
     rows_each = (dst_height + s_spes - 1) / s_spes;
     if (rows_each < 1)
@@ -248,7 +247,7 @@ static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const ui
      * Sleep rather than spin, because a hard poll of main memory from the PPE saturates the bus the
      * SPEs need. A deadline of one frame time, because a conversion that has not finished in 25 ms has
      * already lost its frame. And a consecutive-failure count, because one late frame is a hiccup while
-     * five in a row is a broken subsystem: with only a per-frame deadline (then 100 ms, spinning), every
+     * five in a row is a broken subsystem: with only a per-frame deadline (100 ms, spinning), every
      * frame after the SPEs stopped answering paid the spin plus a full PPE conversion, and ninety
      * seconds of that left the console unresponsive.
      */

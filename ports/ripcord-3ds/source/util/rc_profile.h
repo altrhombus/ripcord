@@ -2,10 +2,8 @@
  * ripcord-3ds - a stage timer, and a probe for which CPU cores this port may use.
  *
  * WHY BOTH LIVE IN ONE FILE. They answer the same question from two sides: what does a frame cost, and
- * how many cores are there to spend it on. Phase 1 measured the control plane at ~25 us per field, and
- * the Phase 6d resolution probe made the A/V cost load-bearing: the console will only ever send 640x360,
- * MVD will not scale, so a per-frame resample is a permanent fixed cost sitting on the same core as the
- * packet crypto and the decoder feed.
+ * how many cores are there to spend it on. The control plane measured ~25 us per field. MVD will not
+ * scale, so a per-frame resample is a fixed cost on top of the packet crypto and the decoder feed.
  *
  * ON MEASURING WITH svcGetSystemTick. Reading it is cheap (a coprocessor read, no syscall), which
  * matters when the thing being timed is a few microseconds. But the RATE IS NOT THE LIBCTRU CONSTANT:
@@ -16,11 +14,12 @@
  * available, core 1 needs APT_SetAppCpuTimeLimit, core 2 is New3DS-only and requires exheader kernel
  * flag 0x2000 - which for homebrew launched through the Homebrew Launcher means whatever the HOST
  * application carries, not anything this code can declare. So it has to be tried rather than reasoned
- * about, and the answer decides whether decode can ever move off the network thread.
+ * about, and the answer decides whether the frame scale can run off the receive thread
+ * (rc_mvd_start_scale_thread).
  *
- * That decision has a known cost already recorded in the tree: fec_reed_solomon_recover_source keeps 8 KB of
- * scratch static specifically because this port has no threads. Adding one means that function needs
- * caller-supplied scratch. Better to know the constraint before the media pipeline grows around it.
+ * A constraint on any further threading: fec_reed_solomon_recover_source keeps 8 KB of scratch static,
+ * so two threads recovering at once race on it. The scale thread does not touch it; threading the demux
+ * path means that function needs caller-supplied scratch.
  */
 #ifndef RC_PROFILE_H
 #define RC_PROFILE_H
@@ -58,9 +57,9 @@ void rc_profile_stop(rc_profile *p, rc_stage stage, uint64_t started);
 
 /*
  * For a stage that CONTAINS other timed stages. stream_demux_ingest invokes the video-frame callback
- * synchronously, so MVD feed and render both run inside the demux timer - which made the report add up
- * to 153% of one core on hardware and still nobody disbelieved it. Capture p->inner before the call and
- * pass it here; the nested time is subtracted so every row is exclusive and the total is meaningful.
+ * synchronously, so MVD feed and render both run inside the demux timer - which, uncorrected, made the
+ * report add up to 153% of one core on hardware. Capture p->inner before the call and pass it here;
+ * the nested time is subtracted so every row is exclusive and the total is meaningful.
  */
 void rc_profile_stop_nested(rc_profile *p, rc_stage stage, uint64_t started, uint64_t inner_at_start);
 

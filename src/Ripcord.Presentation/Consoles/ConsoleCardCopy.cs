@@ -17,8 +17,8 @@ public sealed record ConsoleDetail(string Label, string Value);
 /// </para>
 ///
 /// <para>
-/// Which rows appear is decided here too: most of these facts are only known for consoles paired since
-/// discovery started carrying them, so each is shown only when there is something to show.
+/// Which rows appear is decided here too: a stored console's record may lack any of these facts, so each is
+/// shown only when there is something to show.
 /// </para>
 /// </summary>
 public static class ConsoleCardCopy
@@ -67,7 +67,7 @@ public static class ConsoleCardCopy
 
     /// <summary>
     /// The card menu's accessible name. Named for the console, for the same reason as the remove prompt: a menu
-    /// that can open from any card should say whose it is. It had no name at all (visual audit, 2026-10-08).
+    /// that can open from any card should say whose it is.
     /// </summary>
     public static string MenuName(string displayName)
         => string.Format(Strings.Console_MenuName, displayName);

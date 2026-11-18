@@ -49,17 +49,16 @@ static void build_sine(void)
     int i;
 
     /*
-     * Built from the half-angle identity rather than from libm, so nothing here pulls in floating point
-     * or a trig call on a path that runs per frame. sin(x) is walked as a chord: start at 0 and 1 and
-     * rotate by a fixed small angle, which is exact enough for a background and is thirty operations.
+     * Built from a polynomial rather than from libm, so nothing here pulls in floating point or a trig
+     * call. The table is filled once; the per-frame path only reads it.
      */
     for (i = 0; i <= RC_WAVE_SINE_STEPS; i++) {
-        /* Quadratic approximation of sin over 0..pi/2, good to under 1% - which is far inside what a
-         * gradient this soft can show. x is 0..1 in 8.8. */
+        /* A cubic approximation of sin over 0..pi/2, close enough for a gradient this soft. x is 0..1
+         * in 8.8. */
         int x = (i * 256) / RC_WAVE_SINE_STEPS;
         int xx = (x * x) >> 8;
 
-        /* 4x(1-x) style curve, shaped to land on 0 and 256 at the ends. */
+        /* (3x - x^3) / 2, which lands on 0 and 256 at the ends. */
         s_sine[i] = (short)((x * 3 - ((xx * x) >> 8)) >> 1);
         if (s_sine[i] > 256)
             s_sine[i] = 256;
@@ -152,7 +151,7 @@ static uint32_t hsv(int h, int s, int v)
  *
  * Saturation is what gives: dropping it mixes in white and lifts every channel, where raising the value
  * cannot help a channel that is already at its ceiling. It comes down in steps until the colour is light
- * enough, so a hue that was fine keeps exactly the saturation it always had.
+ * enough, so a hue that already clears the threshold keeps exactly the saturation in the table.
  *
  * The luminance here approximates sRGB's gamma as a square rather than the standard's 2.4. It is
  * monotonic, which is all a threshold needs, and it keeps this file free of floating point - the test
@@ -273,19 +272,6 @@ static uint32_t avg2(uint32_t a, uint32_t b)
     return (a & b) + (((a ^ b) >> 1) & 0x7f7f7f7fu);
 }
 
-/*
- * TRIED AND REJECTED: dcbz.
- *
- * b363 measured the small fill plus this expansion at 12,612 us - about six nanoseconds a pixel, far
- * more than three averages and a store per four pixels account for - and the copy to video memory
- * measured 10,976 us for the same eight megabytes, which pointed at moving the bytes.
- *
- * dcbz claims a cache line as zeroed without first reading the data that is about to be discarded.
- * b366 put one dcbz every 128 bytes across this loop and measured 13,774 us: very slightly WORSE. So
- * the line fetch is not what this is paying for, which is part of why the next move for this file is
- * the SPEs rather than another pass over the PPE code.
- */
-
 /* The wave itself, at whatever size it is asked for. Every dimension below is proportional, so this is
  * the same picture at 480 wide as at 1920 - which is what makes drawing it small legitimate. */
 static void wave_fill(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
@@ -405,6 +391,9 @@ static void wave_fill(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
 /*
  * One output row, four-times bilinear from two source rows. `fy` is which of the four vertical phases
  * this row is; phase 0 needs no vertical work at all, which is a quarter of the screen for free.
+ *
+ * No dcbz on the output: one every 128 bytes across this loop measured 13,774 us for the small fill
+ * plus the expansion (b366) against 12,612 without (b363), so the line fetch is not what this pays for.
  */
 static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *b, int sw, int fy)
 {

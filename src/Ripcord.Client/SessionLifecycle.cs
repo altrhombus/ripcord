@@ -9,7 +9,7 @@ namespace Ripcord.Client;
 /// </summary>
 public enum SessionLifecycle
 {
-    /// <summary>Nothing running; nothing has been attempted yet.</summary>
+    /// <summary>Nothing running, and nothing attempted.</summary>
     Idle,
 
     /// <summary>First connection attempt in progress.</summary>
@@ -33,7 +33,7 @@ public enum SessionLifecycle
     /// <summary>
     /// The console ended the stream itself: it said goodbye, or closed its control connection. Terminal, and never
     /// retried, because a reconnect wakes the console first, and a console rested from its own power menu or by its
-    /// auto-rest timer was woken straight back up (2026-10-05). A network fault is not this; it reconnects.
+    /// auto-rest timer would be woken straight back up. A network fault is not this; it reconnects.
     /// </summary>
     Ended,
 }
@@ -49,8 +49,8 @@ public enum SessionLifecycle
 /// <param name="NextRetryIn">How long until the next attempt, when reconnecting and waiting.</param>
 /// <param name="Reason">
 /// The raw reason behind a retry, kept apart from <paramref name="Detail"/> so a screen can lead with the sentence and
-/// show the reason small, for a bug report, rather than appending a socket error to the sentence (visual audit,
-/// 2026-10-08). Null when there is none.
+/// show the reason small, for a bug report, rather than appending a socket error to the sentence. Null when
+/// there is none.
 /// </param>
 public sealed record SessionStatus(
     SessionLifecycle Lifecycle,
@@ -100,8 +100,8 @@ public sealed record SessionControllerOptions
     /// <summary>
     /// Retries of a connect that has never streamed, before giving up. Smaller than
     /// <see cref="MaxReconnectAttempts"/>: a first connect that fails twice more is very likely to keep failing,
-    /// and six tries with backoff and a wake before each kept a person watching "Reconnecting…" for minutes for
-    /// a stream they had never had (review, 2026-10-05). [X]: chosen.
+    /// and six tries with backoff and a wake before each would keep a person watching "Reconnecting…" for minutes
+    /// for a stream they have never had. [X]: chosen.
     /// </summary>
     public int MaxFirstConnectAttempts { get; init; } = 2;
 

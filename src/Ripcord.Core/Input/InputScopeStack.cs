@@ -10,8 +10,8 @@ public enum InputScopeKind
     Session,
 
     /// <summary>
-    /// Something over the top of whatever is underneath — a dialog, a keyboard overlay. Covers a Session, which
-    /// is the case that used to have no representation at all.
+    /// Something over the top of whatever is underneath — a dialog, a keyboard overlay. It can cover a Session
+    /// as well as a page.
     /// </summary>
     Modal,
 }
@@ -70,7 +70,7 @@ public interface IInputScope
 /// <para>
 /// Push and pop are <b>edges</b>, raised by whoever changed the state, rather than a condition re-evaluated by
 /// an observer. A modal pushed over a session therefore takes the pad from it: ownership polled from the
-/// stream page stayed true during modals, so a controller-only user could not reach a dialog opened
+/// stream page would stay true during modals, so a controller-only user could not reach a dialog opened
 /// mid-stream. The window also needs no knowledge of the page's type.
 /// </para>
 /// </summary>
@@ -82,8 +82,8 @@ public sealed class InputScopeStack
     public IInputScope? Top => Volatile.Read(ref _top);
 
     // The top, published whole after every change. Push and Pop run on the UI thread, but Top is read from the
-    // pad's input threads too (InputRouter, the passcode prompt), and reading the list there checked its count and
-    // then indexed it: a pop in between threw on a thread-pool timer, which ends the process (2026-10-05).
+    // pad's input threads too (InputRouter, the passcode prompt), and reading the list there would check its count
+    // and then index it: a pop in between throws on a thread-pool timer, which ends the process.
     private IInputScope? _top;
 
     /// <summary>How many claims are outstanding. Exposed for assertions and diagnostics.</summary>

@@ -9,8 +9,7 @@ namespace Ripcord.Core.Consoles;
 /// <para>
 /// Split out from <see cref="PairedConsoleStore"/> so the format has one obvious home. Two callers need it and
 /// neither should have to reach through a store instance to get at it: the store itself, and the protocol layer
-/// that rehydrates a pairing record from a stored blob. Before this split the decode step was a static member of
-/// the store, called from the record — a shape that only made sense while all three lived in the same file.
+/// that rehydrates a pairing record from a stored blob.
 /// </para>
 /// </summary>
 public static class PairedConsoleBlob

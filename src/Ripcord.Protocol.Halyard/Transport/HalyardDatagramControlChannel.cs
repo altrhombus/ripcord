@@ -61,9 +61,9 @@ public sealed class HalyardUdpDatagramTransport : IHalyardDatagramTransport
 
     /// <summary>
     /// The next datagram from the console. Anything from another address is dropped: on the account route this
-    /// socket sits on a hole-punched public port, and a datagram from anyone was taken as the console's, so an
-    /// injected close ended the session as the console ending it (review, 2026-10-05). The address only, not
-    /// the port: whether the console's NAT can answer from a remapped port is unchecked [X].
+    /// socket sits on a hole-punched public port, and taking a datagram from anyone as the console's would let
+    /// an injected close end the session as the console ending it. The address only, not the port: whether
+    /// the console's NAT can answer from a remapped port is unchecked [X].
     /// </summary>
     public async ValueTask<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken cancellationToken)
     {
@@ -292,7 +292,7 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
 
     /// <summary>
     /// End the open connection politely, so the console stops considering the session live. Best-effort: a
-    /// teardown must not throw, and a console that never sees it is no worse off than before this existed.
+    /// teardown must not throw, so every failure is swallowed.
     /// </summary>
     public async Task CloseConnectionAsync(CancellationToken cancellationToken)
     {
@@ -328,9 +328,8 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
     /// the stage timeout by default, which suits a request waiting for its answer.
     /// <see cref="Timeout.InfiniteTimeSpan"/> waits until the peer closes or the token is cancelled, which is
     /// what a running control channel needs: the console may say nothing for a while, and silence there is not
-    /// a failure. A stage deadline on the running channel made its keep-alive loop stop answering heartbeats
-    /// while the session carried on (engine comparisons, 2026-09-26). The C pipe and the Rust engine have no
-    /// deadline once the channel runs.
+    /// a failure. A stage deadline on the running channel would stop its keep-alive loop answering heartbeats
+    /// while the session carried on. The C pipe and the Rust engine have no deadline once the channel runs.
     /// </para>
     /// </summary>
     public async Task<byte[]?> ReceiveBytesAsync(CancellationToken cancellationToken, TimeSpan? timeout = null)

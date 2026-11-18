@@ -75,9 +75,9 @@ static unsigned s_fresh;
  * pressure was actually granted, since a refusal reads exactly like a trigger nobody touched. */
 static int s_analog_seen;
 /*
- * THE CHORD STATE, and its logic, live in rc_chord.c now - a pure state machine over a button mask and
- * the clock, so the two bugs it has had (a swallowed tap never sent; a stray press left on release) can
- * be driven from a host test rather than only found on hardware. This file supplies the mask and the
+ * THE CHORD STATE. Its logic lives in rc_chord.c - a pure state machine over a button mask and the
+ * clock, so its two failure modes (a swallowed tap never sent; a stray press left on release) can be
+ * driven from a host test rather than only found on hardware. This file supplies the mask and the
  * time and applies the result to the pad state; rc_chord.h owns RC_CHORD_WINDOW_MS/REPLAY_MS.
  */
 static rc_chord s_chord;
@@ -170,13 +170,13 @@ int rc_pad_read(halyard_input_state *out)
          *
          * Two buttons, both menu buttons: no game asks for them together, and neither is
          * latency-sensitive, which is what makes the hold-back below affordable. L3 is out of it
-         * deliberately: it is a sprint or a crouch in most games, so delaying it by a fifth of a second
+         * deliberately: it is a sprint or a crouch in most games, so delaying it by a quarter of a second
          * to see whether a chord forms would be felt.
          *
          * HELD BACK, NOT JUST SWALLOWED. SELECT arrives at the PS5 as Create, which is its screenshot
          * button, so a press of either button is withheld for RC_CHORD_WINDOW_MS. If the other arrives
          * inside that window the pair is swallowed and nothing reaches the console; if it does not, the
-         * press is released and travels normally, a fifth of a second late. A lone tap of SELECT still
+         * press is released and travels normally, a quarter of a second late. A lone tap of SELECT still
          * takes a screenshot on the console. Only a deliberate pair does not.
          *
          * A fumbled chord - one button, a long pause, then the other - still toggles, and still leaks

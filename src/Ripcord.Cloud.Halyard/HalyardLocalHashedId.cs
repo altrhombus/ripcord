@@ -21,8 +21,8 @@ namespace Ripcord.Cloud.Halyard;
 /// <b>So this computes our own, and says so.</b> The value's job, as far as the wire shows, is to let the
 /// console match the peer that sent an OFFER with the peer that opens a transport — the console holds no input
 /// it could recompute a digest from, since our OFFER carries the id and not its preimage. A value that is
-/// stable for this machine and identical in both places should therefore satisfy it. **That is a hypothesis,
-/// and the live pairing run is its test**: if a console rejects our prelude while accepting everything before
+/// stable for this machine and identical in both places should therefore satisfy it. **That is a hypothesis
+/// [X]**: if a console rejects our prelude while accepting everything before
 /// it, this is the first thing to suspect.
 /// </para>
 ///

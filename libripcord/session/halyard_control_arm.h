@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - the control-listener arming probe, ported from
+ * libripcord - the control-listener arming probe, ported from
  * Ripcord.Protocol.Halyard.Discovery.HalyardControlSearch.
  *
  * The console does not keep its TCP control listener (port 9295) open continuously - a cold connect
@@ -30,7 +30,7 @@ void halyard_control_arm_build_probe(int is_ps5, char out[HALYARD_CONTROL_ARM_PR
 
 /* True if `data` (at least 4 bytes) starts with the expected reply magic for `is_ps5` - "RES3"/"RES2".
  * Only the magic is checked; any trailing bytes (a status byte or two, observed on the vendor wire) are
- * not interpreted by this port. */
+ * not interpreted here. */
 int halyard_control_arm_is_reply(int is_ps5, const uint8_t *data, size_t length);
 
 /*

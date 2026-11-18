@@ -20,27 +20,25 @@
 #include <stdint.h>
 
 /*
- * Six SPEs are physically present on a PS3 and one is reserved by the hypervisor, leaving six usable of
- * which lv2 will give a normal process rather fewer. Asking for this many and accepting what arrives is
- * more robust than asserting a number the firmware has opinions about.
+ * Eight SPEs are physically present on a PS3; one is disabled and one is reserved by the hypervisor,
+ * leaving six usable, of which lv2 may give a normal process fewer. Asking for this many and accepting
+ * what arrives is more robust than asserting a number the firmware has opinions about.
  *
  * NOT EVERY SPE IS CLAIMED. cellVdec runs its decoder on the SPEs - vdecConfig has a num_spus field -
  * so a build that means to use the console's own H.264 decoder cannot also hold every SPE for this.
  * This group is created once and never released: the teardown at the foot of rc_spu_yuv.c writes a quit
- * sentinel and deliberately does NOT destroy the group, because sysSpuThreadGroupDestroy and
- * sysSpuThreadGroupTerminate each locked this console during b105 and b107. So the SPEs that vdec needs
- * have to be left free from the start; there is no giving one back later. (b146 hung somewhere inside
- * the vdec probe with all five held, which does not prove this was the cause.)
- */
-/*
- * THREE, because this no longer converts anything. It was five while it did YUV-to-RGB and scaling,
- * then four to leave the decoder an SPE, then the decoder took a second. Now the decoder produces RGB
- * itself and this only scales - 10,876 us a frame across the group against 16,444 before - so the group
- * gives one back to the decoder: b190 still refused twelve submissions, all of them on the large frames
- * of a transition, and refusing one breaks the reference chain.
+ * sentinel and deliberately does NOT destroy the group, because terminating the group (b105) and
+ * joining it (b107) each locked this console. So the SPEs that vdec needs have to be left free from
+ * the start; there is no giving one back later. (b146 hung somewhere inside the vdec probe with five
+ * held here, which does not prove this was the cause.)
  *
- * Three SPEs scaling costs about 3,600 us each against 2,700, which the frame budget has room for. Two
- * decoding against three does not, which is where the blockiness comes from.
+ * THREE, which leaves the decoder three. The decoder produces RGB itself and this group only scales -
+ * 10,876 us a frame across the group against 16,444 with the colour pass - so it can spare the SPE:
+ * with two SPEs decoding, b190 refused twelve submissions, all of them on the large frames of a
+ * transition, and refusing one breaks the reference chain.
+ *
+ * Three SPEs scaling costs about 3,600 us each against four's 2,700, which the frame budget has room
+ * for. Two decoding against three does not, which is where the blockiness comes from.
  */
 #define RC_SPU_YUV_MAX_SPES 3
 
@@ -57,11 +55,8 @@ typedef struct {
      * WHERE AN SPE'S TIME GOES, summed across the SPEs of the last frame and converted from the SPU
      * decrementer, which runs at the same timebase rc_tick_hz reports.
      *
-     * The kernel blocks on every transfer - one tag, a status wait after each get and each put - so it
-     * is idle for the whole of each round trip. These say whether that idling or the arithmetic is the
-     * 4,945 us: if the arithmetic dominates, taking ARGB32 from the decoder (b179 proved it will)
-     * removes the colour pass; if the waiting dominates, that same change makes it worse, since ARGB is
-     * 4 bytes a pixel against YUV420's 1.5, and double buffering is the answer instead.
+     * The kernel waits on every get and, before reusing an output buffer, on that buffer's put, and it
+     * is idle while it waits. `last_dma_us` is that waiting and `last_work_us` is the arithmetic.
      */
     unsigned last_dma_us;
     unsigned last_work_us;

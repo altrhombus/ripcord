@@ -5,8 +5,7 @@ namespace Ripcord_App.Services;
 
 /// <summary>
 /// Says a change out loud to a screen reader. Connect progress, a failure, a pairing result and a health alert
-/// all changed text on screen and were never announced, so Narrator users heard nothing until they went looking
-/// (review, 2026-10-05).
+/// all change text on screen, which Narrator does not read out by itself.
 ///
 /// <para>
 /// A UI Automation notification rather than a live region: a live region needs the app to raise its change event

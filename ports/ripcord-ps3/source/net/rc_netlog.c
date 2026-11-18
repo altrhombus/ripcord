@@ -15,13 +15,13 @@ static int s_net_up;
 static struct sockaddr_in s_dest;
 
 /*
- * The result of the FIRST sendto, kept because ignoring every result turned out to be one decision too
- * many. The channel reported itself open on hardware - netInitialize, socket and inet_pton all succeeded
- * - and no datagram arrived at the other end, and there was no way to tell whether the console had
- * refused the send or the network had dropped it. Those need completely different fixes.
+ * The result of the FIRST sendto, kept because ignoring every result is one decision too many. On
+ * hardware the channel reported itself open - netInitialize, socket and inet_pton all succeeded - while
+ * no datagram arrived at the other end, and without this there is no way to tell whether the console
+ * refused the send or the network dropped it. Those need completely different fixes.
  *
- * Subsequent sends stay fire-and-forget: the argument for that is unchanged, and one sample is enough to
- * distinguish "this console will not send" from "this datagram did not arrive".
+ * Subsequent sends are fire-and-forget: one sample is enough to distinguish "this console will not
+ * send" from "this datagram did not arrive".
  */
 static long s_first_send_result = RC_NETLOG_SEND_UNTRIED;
 
@@ -67,10 +67,10 @@ int rc_netlog_open(const char *ip, uint16_t port)
      * PSL1GHT's samples/network/networktest sets it on every sockaddr it builds, and this was copied
      * from there.
      *
-     * libripcord builds sockaddr_in in three places without the field, so the question was put to the
-     * hardware: source/discovery/rc_discover.c broadcasts the same probe twice, once with the field
-     * zeroed, and on 2026-09-12 the console accepted BOTH and replied to both. sin_len is not required
-     * for sendto here. It stays set to match the SDK's own sample.
+     * libripcord builds sockaddr_in without the field (net/rc_tcp.c, net/rc_udp.c), so the question was
+     * put to the hardware: source/discovery/rc_discover.c broadcasts the same probe twice, once with the
+     * field zeroed, and on 2026-09-12 the console accepted BOTH and replied to both. sin_len is not
+     * required for sendto here. It is set to match the SDK's own sample.
      */
     s_dest.sin_len = (uint8_t)sizeof(s_dest);
     s_dest.sin_family = AF_INET;

@@ -45,9 +45,9 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
 {
     private readonly SettingsViewModel _viewModel;
 
-    // Guards the projection, and is NOT _loading under another name. That flag protected against events fired
-    // before the page had any data, and had to be checked in fourteen handlers plus inside the save; this is set
-    // and cleared in exactly one method and read in exactly one place. It earns its keep on one specific case:
+    // Guards the projection, and is not a loading flag: handlers are attached after the first render, so none
+    // is needed. This is set and cleared in exactly one method and read in exactly one place. It earns its keep
+    // on one specific case:
     // clearing a ComboBox's items drives SelectedIndex to -1 and raises SelectionChanged on the way past, and a
     // handler seeing -1 would clamp it to a real option and save a setting the user never touched.
     private bool _rendering;
@@ -93,11 +93,6 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         });
     }
 
-    /// <summary>
-    /// async void, confined to this one launcher and unable to throw: everything inside is either guarded by the
-    /// view-model or caught here. The load has to be asynchronous because the capability probes are native and
-    /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
-    /// </summary>
     /// <summary>
     /// Where the caller asked us to land. <see cref="SettingsDestination.Top"/> for an ordinary visit
     /// through the gear button.
@@ -149,10 +144,15 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         }
 
         // Scrolling only. Focus is answered through InitialFocus, because the shell seeds it after this
-        // runs and would overwrite anything set here - which is exactly what happened.
+        // runs and would overwrite anything set here.
         AccountCard.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0 });
     }
 
+    /// <summary>
+    /// async void, confined to this one launcher and unable to throw: everything inside is either guarded by the
+    /// view-model or caught here. The load has to be asynchronous because the capability probes are native and
+    /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
+    /// </summary>
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
         try
@@ -253,14 +253,8 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     // ---- render ----
 
     /// <summary>
-    /// Project the whole state onto the controls. One method rather than per-property handlers: the state
-    /// arrives as one value, so the codec picker and the HDR toggle it gates cannot disagree — which is exactly
-    /// what they used to do when a change handler updated one and left the other until the page was reopened.
-    /// </summary>
-    /// <summary>
-    /// Run the sign-in flow. The sequence lives in <see cref="AccountSignIn"/> because this page is no longer
-    /// the only surface that starts one — the pairing flow signs in where it stands rather than sending the
-    /// user here and stranding them.
+    /// Run the sign-in flow. The sequence lives in <see cref="AccountSignIn"/> because this page is not the only
+    /// surface that starts one — the pairing flow signs in where it stands rather than sending the user here.
     /// </summary>
     private async Task SignInAsync()
     {
@@ -282,7 +276,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         AccountCard.Header = s.Heading;
         AccountCard.Description = s.Detail;
 
-        // Its header is set here rather than from a uid, so its accessible name has to be too; the row had none.
+        // Its header is set here rather than from a uid, so its accessible name has to be too.
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(AccountCard, s.Heading);
 
         AccountBusy.IsActive = s.IsBusy;
@@ -328,6 +322,10 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         }
     }
 
+    /// <summary>
+    /// Project the whole state onto the controls. One method rather than per-property handlers: the state
+    /// arrives as one value, so the codec picker and the HDR toggle it gates cannot disagree.
+    /// </summary>
     private void Render(SettingsViewState s)
     {
         _rendering = true;
@@ -420,8 +418,8 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
             return;
         }
 
-        // The good state is Informational, not Success. A permanent green bar for "nothing to do" was the loudest
-        // thing on the page (visual audit, 2026-10-08); colour is for the states that ask something of the reader.
+        // The good state is Informational, not Success. A permanent green bar for "nothing to do" would be the
+        // loudest thing on the page; colour is for the states that ask something of the reader.
         CredentialProtectionBar.Severity = s.CredentialTone switch
         {
             StatusTone.Caution => InfoBarSeverity.Warning,
@@ -499,8 +497,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     // ---- actions ----
 
     /// <summary>
-    /// Open the rebinding dialog. Its result goes to the view-model, which merges it onto the keyboard toggle
-    /// rather than replacing the whole bindings record.
+    /// Open the rebinding page, which saves each change through its own view-model as it is made.
     /// </summary>
     private async void KeyBindings_Click(object sender, RoutedEventArgs e)
     {

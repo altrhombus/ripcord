@@ -161,10 +161,9 @@ public class HalyardControlAssociationTests
     [Fact]
     public void EveryPeerInit_IsEchoed_NotJustTheFirst()
     {
-        // This test previously asserted the opposite, on the reasonable-sounding grounds that a repeated echo
-        // would be noise. The wire disagrees: the peer probes for as long as the association lives — every half
-        // second, each probe carrying a fresh timestamp — and the captured client answers every one. Echoing
-        // once and going quiet is how a live console came to give up on us after ten seconds.
+        // A repeated echo is not noise: the peer probes for as long as the association lives — every half
+        // second, each probe carrying a fresh timestamp — and the captured client answers every one. A live
+        // console gives up after ten seconds on a client that echoes once and goes quiet.
         HalyardControlAssociation association = New();
         association.OnDatagram(PeerInit(0x00017777, 0x11223344));
 
@@ -233,7 +232,7 @@ public class HalyardControlAssociationTests
         Assert.Equal(hello.Body.ToArray(), echo.Body[..hello.Body.Length].ToArray());
         // The cookie's first 8 bytes are a fixed header the peer does not want back — the captured client
         // answers a 42-byte cookie body with 34 bytes, and a console that cookies us rejects an echo that
-        // returns all 42. This assertion used to expect the whole body.
+        // returns all 42.
         Assert.Equal(cookieBody[8..], echo.Body[hello.Body.Length..].ToArray());
     }
 

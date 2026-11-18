@@ -8,9 +8,8 @@
  * IT TAKES ITS HUE FROM THE MONTH, as the XMB's did. It costs a table and one call to localtime.
  *
  * WHAT THIS FILE IS NOT. It does not own a buffer, a display, or a frame rate. It fills a rectangle of
- * ARGB that somebody else allocated, and says how long it took - see rc_wave_last_us, which exists
- * because the answer decides whether the shell's motion can run at the flip rate or has to go to the
- * SPEs. That is a measurement to take on hardware, not a thing to guess at.
+ * ARGB that somebody else allocated, and says how long it took - see rc_wave_last_us, which the shell
+ * adds into its report of what a frame costs.
  */
 #ifndef RC_WAVE_H
 #define RC_WAVE_H
@@ -69,7 +68,7 @@ void rc_wave_motes_row(uint32_t *dst, int w, int y);
  */
 void rc_wave_test_set_month(int month);
 
-/* How long the last fill took. The number that decides what the next stage can afford. */
+/* How long the last fill took, for the shell's report of what a frame costs. */
 unsigned rc_wave_last_us(void);
 
 #endif /* RC_WAVE_H */

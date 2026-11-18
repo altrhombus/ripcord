@@ -1,8 +1,8 @@
 namespace Ripcord.Presentation.Accounts;
 
 /// <summary>
-/// The account seam for a build that cannot sign in — no OAuth client credential, which is the shipping default,
-/// or a host that cannot supply a stable device id.
+/// The account seam for a build or machine that cannot sign in: no OAuth client credential is configured, or
+/// the host cannot supply a stable device id. The composition root uses it when it has no account gateway.
 ///
 /// <para>
 /// A null object rather than a null reference, so every surface renders "this build cannot sign in" from

@@ -1,6 +1,7 @@
 // The Rust engine from .NET, through its generated bindings: a layout check, a differential run against
-// the managed reference (HalyardPacketCrypto, what the dotnet client ships today), the demuxer's
-// callbacks as Phase 4 will host them, and the per-packet benchmark on both engines.
+// the managed reference (HalyardPacketCrypto, the dotnet client's), the demuxer and a whole loopback
+// session through [UnmanagedCallersOnly] callbacks, the platform's key agreement against the vectors,
+// and the per-packet benchmark on both engines.
 //
 //   dotnet run -c Release --project engine/hosts/dotnet/Ripcord.Engine.Harness [check|bench]
 
@@ -170,7 +171,7 @@ static unsafe class Checks
         ((Collected)GCHandle.FromIntPtr((nint)user).Target!).Losses.Add((first, last));
 
     /// <summary>
-    /// The demuxer hosted as Phase 4 describes: <c>[UnmanagedCallersOnly]</c> statics with a GCHandle as
+    /// The demuxer hosted from .NET: <c>[UnmanagedCallersOnly]</c> statics with a GCHandle as
     /// the user pointer. The packets are sealed by the managed engine, so this is also a differential
     /// check of the native demuxer's crypto seam against the managed crypto.
     /// </summary>
@@ -283,7 +284,7 @@ static unsafe class Checks
 }
 
 /// <summary>
-/// A whole LAN session through the client ABI, hosted as Phase 4 will host it: <c>[UnmanagedCallersOnly]</c>
+/// A whole LAN session through the client ABI, hosted from .NET: <c>[UnmanagedCallersOnly]</c>
 /// statics, a GCHandle as the user pointer, connect, then pump until the session ends. The console is the
 /// engine's loopback one (test-support), so nothing leaves the machine.
 /// </summary>

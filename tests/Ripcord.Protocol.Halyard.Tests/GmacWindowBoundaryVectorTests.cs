@@ -10,9 +10,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// <c>(keystreamOffset - 1) / 45000</c> apart from the plain quotient. Each must verify under the key
 /// <see cref="HalyardPacketCrypto"/> picks for it, and must not verify under the key of the window above.
 ///
-/// <para>The client once used the plain quotient for v1, which put these packets one window too high: it
-/// dropped every received packet that landed on a boundary and sent ones the console would refuse. That passed
-/// every other test, because the two rules agree on every other position.</para>
+/// <para>The plain quotient puts these packets one window too high: a client using it drops every received
+/// packet that lands on a boundary and sends ones the console would refuse. It passes every other test,
+/// because the two rules agree on every other position.</para>
 ///
 /// <para>Fixture <c>docs/protocol/captures/gmac_boundary_vectors.json</c> is gitignored (live session keys):
 /// v1 console-to-client from a 2026-10-03 session, v1 client-to-console from cap48, and both directions of

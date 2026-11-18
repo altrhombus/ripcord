@@ -104,7 +104,7 @@ public class SetupFlowTests
     // ---- the picture, while the PC is still being checked ---------------------------------------
     //
     // The choices stay live during the check, so a quick mover is never held on greyed-out options with focus
-    // nowhere (owner, 2026-10-09). What they do then is kept and acted on when the check answers.
+    // nowhere. What they do then is kept and acted on when the check answers.
 
     private sealed class GatedCapabilities : IVideoCapabilitiesProbe
     {
@@ -391,8 +391,8 @@ public class SetupFlowTests
     [Fact]
     public async Task Controller_NoneConnected_NamesTheExitButtonsForBothPads()
     {
-        // It named the Xbox buttons alone, taught to someone who might be holding a DualSense or nothing at all
-        // (visual audit, 2026-10-08).
+        // Naming the Xbox buttons alone teaches them to someone who might be holding a DualSense or nothing at
+        // all.
         (SetupFlow flow, _, _) = await StartAsync();
 
         Assert.Contains("Options + Create + L1 + R1", flow.State.ExitGestureLine, StringComparison.Ordinal);
@@ -446,7 +446,7 @@ public class SetupFlowTests
     [Fact]
     public async Task Done_WithNoConsole_DoesNotSayAllSet()
     {
-        // "All set." over "Console: none yet" (visual audit, 2026-10-08).
+        // "All set." must not sit over "Console: none yet".
         (SetupFlow flow, _, _) = await StartAsync();
         flow.Next();        // welcome
         flow.Next();        // picture

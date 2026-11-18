@@ -8,7 +8,7 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// Drives the Takion connection handshake over a UDP socket: sends INIT, waits for INIT_ACK, sends
 /// COOKIE_ECHO, and reaches ESTABLISHED on COOKIE_ACK (spec §8). Each phase retransmits its packet on a
 /// per-attempt timeout - the minimal reliability the handshake needs; the full DATA/SACK reliable-delivery
-/// loop for control messages is built on top of an established connection (still to come).
+/// loop for control messages is <see cref="TakionReliableChannel"/>, built on top of an established connection.
 ///
 /// The caller owns the <see cref="UdpChannel"/>; this type only sends to / filters on the console endpoint.
 /// </summary>

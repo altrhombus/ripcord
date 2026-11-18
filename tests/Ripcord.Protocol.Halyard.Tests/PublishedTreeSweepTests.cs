@@ -13,8 +13,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// each watch one artefact (two embedded resources and one function's return value); this one watches the
 /// committed tree, its history and its commit messages.
 ///
-/// <para><b>What is tested is the belief, not the pattern.</b> Every miss in this file's history was a
-/// scope narrower than the belief held about it: IPv4 only, a length floor set too high, a lowercase-only
+/// <para><b>What is tested is the belief, not the pattern.</b> A miss in a sweep like this is a scope
+/// narrower than the belief held about it: IPv4 only, a length floor set too high, a lowercase-only
 /// class, a <c>\b</c> anchor that missed everything written behind <c>0x</c>, an uncompressed-only IPv6
 /// pattern, a single-space-only byte run, a prose-only scope that excluded <c>.json</c>, and a one-line
 /// declaration rule that a value wrapped at <c>.editorconfig</c>'s 120 columns walks past (hence
@@ -143,7 +143,7 @@ public class PublishedTreeSweepTests
     /// The one commit message this sweep does not read: the synthetic merge a forge builds for a pull
     /// request. <c>actions/checkout</c> materialises <c>refs/pull/N/merge</c> on a pull_request event, and
     /// that commit's message is generated: <c>Merge &lt;40 hex&gt; into &lt;40 hex&gt;</c>. Both SHAs trip
-    /// <see cref="HexRun"/>, so without this the suite fails on every pull request.
+    /// <see cref="LongHex"/>, so without this the suite fails on every pull request.
     ///
     /// <para><b>Matched as a whole message, never as a line.</b> The entire message must be that one
     /// generated sentence and nothing else, so a forge merge carrying any added prose is read like any
@@ -182,14 +182,14 @@ public class PublishedTreeSweepTests
     /// on <c>const</c>, on <c>readonly</c>, on the literal sharing a line with its declaration, or on the
     /// quoting form. <c>@"…"</c>, <c>"""…"""</c>, a value wrapped onto its own line, an expression-bodied
     /// member and <c>Convert.FromHexString("…")</c> all read alike to it, and either quote character serves:
-    /// the one <c>.py</c> file in this corpus is the OAuth extractor, and Python single-quotes by convention.
+    /// product code includes <c>.py</c> files, and Python single-quotes by convention.
     ///
-    /// <para>This replaced a rule that required a declaration on one line, which the wrapped declaration
-    /// walks past, and <c>.editorconfig</c>'s 120-column limit makes wrapping the <em>expected</em> form
-    /// for any constant larger than 107 characters.</para>
+    /// <para>A rule that requires a declaration on one line is walked past by a wrapped declaration, and
+    /// <c>.editorconfig</c>'s 120-column limit makes wrapping the <em>expected</em> form for any constant
+    /// larger than 107 characters.</para>
     ///
-    /// <para><b>It is absolute because it costs nothing.</b> Product code holds exactly one 32+ character
-    /// hex literal today, <c>ClientTypeHex</c>, pinned below, so every future one has to be argued into
+    /// <para><b>It is absolute because it costs nothing.</b> The one 32+ character hex literal product code
+    /// holds by design is <c>ClientTypeHex</c>, pinned below, so any other has to be argued into
     /// the allowlist. Test code is a different corpus: 83 sites, 61 distinct values, essentially all
     /// published NIST vectors and captured protocol frames. Inverting over those would add 61 entries
     /// reading "a crypto test vector" and bury the 28 whose reasons <em>are</em> the guard. Tests keep the
@@ -217,7 +217,7 @@ public class PublishedTreeSweepTests
     /// on entropy or on proximity to a crypto identifier, not on length.</para>
     ///
     /// <para>Costs one allowlist entry: the only 40+ character base64 literal in shipping code is the
-    /// alphabet itself, in the 3DS encoder. Pure hex is skipped at the call site and not excluded in the
+    /// alphabet itself, in the C core's encoder. Pure hex is skipped at the call site and not excluded in the
     /// pattern, because hex is a subset of the base64 alphabet and the hex rule has already reported it.</para>
     /// </summary>
     private static readonly Regex CodeBase64Literal =
@@ -333,9 +333,9 @@ public class PublishedTreeSweepTests
             + @"|\b(?:sec|section|clause|annex)\.?\s*\d+(?:\.\d+)+", RegexOptions.Compiled);
 
     /// <summary>
-    /// The extensions swept as text. A list that merely looks complete is not enough: <c>.cpp</c>,
-    /// <c>.hpp</c>, <c>.idl</c> and <c>.def</c> were once missing, which left the C++/WinRT interop layer
-    /// (fourteen committed files under <c>src/</c>) outside every sweep. The question to ask of a corpus is
+    /// The extensions swept as text. A list that merely looks complete is not enough: without <c>.cpp</c>,
+    /// <c>.hpp</c>, <c>.idl</c> and <c>.def</c> the C++/WinRT interop layer under <c>src/</c> is outside
+    /// every sweep and nothing says so. The question to ask of a corpus is
     /// "which committed files does it not open", which is <c>git ls-files</c> minus this list, and
     /// <see cref="EveryCommittedTextFile_IsSwept"/> asks it on every run.
     /// </summary>
@@ -356,7 +356,7 @@ public class PublishedTreeSweepTests
     /// <para><c>.svg</c> and <c>.html</c> do not belong here and are in <see cref="TextExtensions"/>: both
     /// are UTF-8 text a person wrote, and SVG can hold <c>&lt;metadata&gt;</c>, <c>&lt;desc&gt;</c>,
     /// <c>data:</c> URIs and editor-inserted author strings. The <c>.html</c> entry stays there whether or
-    /// not any HTML is currently committed: the list classifies a file <em>type</em>, and an unclassified
+    /// not any HTML is committed: the list classifies a file <em>type</em>, and an unclassified
     /// extension would fail closed in front of whoever next commits one.</para>
     ///
     /// <para><c>.pcapng</c> and <c>.bin</c> do not belong here either: "declared binary" would give a
@@ -447,8 +447,8 @@ public class PublishedTreeSweepTests
         DeclaredConstant,
 
         /// <summary>
-        /// A line of shipping code (<c>src/</c>, <c>tools/</c>, a port's <c>source/</c>). Every hex literal
-        /// of sixteen bytes or more is swept here, in any syntax, because this is the corpus a user runs.
+        /// A line of product code as <see cref="IsProductCode"/> classifies it. Every hex literal of
+        /// sixteen bytes or more is swept here, in any syntax, because this is the corpus a user runs.
         /// </summary>
         ProductCode,
 
@@ -477,9 +477,9 @@ public class PublishedTreeSweepTests
     ///
     /// <para><b>Why this is separate from the detector.</b> <em>"Nothing in this looks like a secret"</em>
     /// and <em>"this specific value is gone"</em> are different propositions. <see cref="LongHex"/>'s
-    /// twelve-character floor is a good decision for the tree sweep and the wrong instrument here:
-    /// <see cref="HistoricalBlobs_CarryNothingUnredacted"/> once passed while an eight-character form of a
-    /// purged value sat in a reachable blob.</para>
+    /// twelve-character floor is a good decision for the tree sweep and the wrong instrument here: on that
+    /// rule alone <see cref="HistoricalBlobs_CarryNothingUnredacted"/> passes while an eight-character form
+    /// of a purged value sits in a reachable blob.</para>
     ///
     /// <para><b>Why hashes and not the values.</b> A literal list would put the value back into the one
     /// file the sweep structurally cannot read. Storing the length and the digest keeps the list complete
@@ -489,10 +489,10 @@ public class PublishedTreeSweepTests
     private static readonly (int Length, string Sha256)[] PurgedValues =
     [
         (16, "4293ff14142dd3be6bace0049d591d960bf0fe2545f59a63716443225351dca9"),
-        // The session-id frame payload, purged 2026-09-11. Committed for weeks under a comment
-        // asserting it was synthetic; it was a real captured 0x0033 payload, and because that frame
-        // is encrypted it was ciphertext against a plaintext the spec publishes. Caught by
-        // CaptureProvenanceTests, which checks provenance claims rather than trusting them.
+        // A session-id frame payload that had been committed under a comment asserting it was
+        // synthetic. It was a real captured 0x0033 payload, and because that frame is encrypted it was
+        // ciphertext against a plaintext the spec publishes. CaptureProvenanceTests checks provenance
+        // claims of that kind rather than trusting them.
         (34, "2c7b51060080c732a5c57e7d2720c389e854e912a00aaefbd0607291568b0f51"),
     ];
 
@@ -515,7 +515,7 @@ public class PublishedTreeSweepTests
     /// <summary>
     /// Hex, possibly written with separators, from which a purged value could be reassembled. Runs of
     /// separators are allowed, and <c>:</c> and <c>.</c> are in the class, because the question here is
-    /// what a value could be <em>rewritten</em> as, not what this repository happens to write today.
+    /// what a value could be <em>rewritten</em> as, not what this repository happens to write.
     /// </summary>
     private static readonly Regex HexRun =
         new(@"[0-9a-fA-F](?:[ ,\t:._-]*[0-9a-fA-F])*", RegexOptions.Compiled);
@@ -524,12 +524,11 @@ public class PublishedTreeSweepTests
     private static readonly char[] HexRunSeparators = [' ', (char)0x09, ',', ':', '.', '-', '_'];
 
     /// <summary>
-    /// Flattens a hex run to bare hex. <b>Not <see cref="Normalise"/>.</b> That function maps <c>-</c> to
-    /// <c>:</c> so a dash-separated MAC canonicalises to its colon twin, which is right for the allowlist
-    /// and exactly wrong here: it turned the one separator <see cref="HexRun"/> was widened to accept into
-    /// a character nothing then stripped, so a dash-separated run flattened to a colon-separated one and
-    /// matched nothing. Two halves of one mechanism, each validated against a different definition of "separator" —
-    /// inside the check written specifically to be definition-independent.
+    /// Flattens a hex run to bare lowercase hex by dropping every character in
+    /// <see cref="HexRunSeparators"/>. <b>Not <see cref="Normalise"/>.</b> That function maps <c>-</c> to
+    /// <c>:</c> so a dash-separated MAC canonicalises to its colon twin, and leaves <c>:</c>, <c>.</c> and
+    /// <c>_</c> in place. That is right for the allowlist and wrong here: a run has to lose every separator
+    /// <see cref="HexRun"/> steps over, or its windows match no recorded digest.
     /// </summary>
     private static string FlattenHex(string run)
     {
@@ -706,11 +705,11 @@ public class PublishedTreeSweepTests
     /// <summary>
     /// Values that are not in a file the sweep can usefully read, pinned by the SHA-256 of the value itself.
     ///
-    /// <para><c>ClientTypeHex</c> is the third declared committed constant (<c>NOTICE</c>
-    /// carry it), and until this pin it was the only one with no value-level guard of any kind: it lives in a
-    /// C# string literal with no comment, so the prose-only scope above cannot see it, and the two tests that
-    /// name it assert how a message is built rather than what the value is. The hash is of the constant's
-    /// text, so the value is not restated here.</para>
+    /// <para><c>ClientTypeHex</c> is the committed constant that lives in source rather than in either
+    /// pinned data file (<c>NOTICE</c> lists it). It sits in a C# string literal with no comment, so the
+    /// prose-scoped rules cannot see it, and the tests that build a message with it assert how the message
+    /// is built rather than what the value is. The hash is of the constant's text, so the value is not
+    /// restated here.</para>
     /// </summary>
     private static readonly Dictionary<string, (string Sha256, Func<string> Read)> PinnedConstants = new()
     {
@@ -789,15 +788,15 @@ public class PublishedTreeSweepTests
     /// <summary>
     /// The sweep's own file, which is swept like any other except for the fixture blocks.
     ///
-    /// <para>Still excluded wholesale from the <em>historical</em> corpus, deliberately: revisions
+    /// <para>Excluded wholesale from the <em>historical</em> corpus, deliberately: revisions
     /// predating the markers have leak-shaped fixtures spread through the file, so sweeping them would
     /// report the contract table of every past version. History cannot be given markers retroactively
     /// without a rewrite per revision.</para>
     ///
     /// <para><b>The consequence:</b> three historical blobs of this file carry a dash-separated form of a
     /// purged value, eight characters of a ciphertext prefix that identify nothing, and no guard in this
-    /// repository can see them. Removing them is one <c>filter-repo --replace-text</c> pass and is cheap
-    /// only while the repository is unpublished.</para>
+    /// repository can see them. Removing them is one <c>filter-repo --replace-text</c> pass, and it
+    /// rewrites published history, so every clone and fork has to be replaced after it.</para>
     /// </summary>
     private static bool IsSweepOwnFile(string relative) =>
         relative.EndsWith("PublishedTreeSweepTests.cs", StringComparison.Ordinal);
@@ -816,24 +815,23 @@ public class PublishedTreeSweepTests
             || s.StartsWith("Ripcord..", StringComparison.Ordinal));
 
     /// <summary>
-    /// Code that ships, as opposed to code that tests it. A hex constant under <c>src/</c> is something
-    /// every user runs, while one in a test file is almost always a published NIST vector or a captured
-    /// frame the parser is checked against. Ports keep their tests beside their source, so the ports clause
-    /// names a segment rather than a prefix.
+    /// Code that ships, as opposed to code that tests it: everything under <c>src/</c> and <c>tools/</c>,
+    /// and everything under <c>ports/</c> or <c>libripcord/</c> with no <c>tests</c> path segment. A hex
+    /// constant under <c>src/</c> is something every user runs, while one in a test file is almost always a
+    /// published NIST vector or a captured frame the parser is checked against. Ports and the C core keep
+    /// their tests beside their source, so that clause names a segment rather than a prefix.
     ///
-    /// <para><b>It names the test segment, not the source one.</b> A positive marker fails open. This
-    /// clause read <c>Contains("/source/")</c> until the portable core was extracted to
-    /// <c>ports/common/</c>, whose directories are <c>crypto/</c>, <c>takion/</c>, <c>stream/</c> and
-    /// <c>session/</c> with no <c>/source/</c> segment: ninety files were silently reclassified as test
-    /// code, so <see cref="CodeHexLiteral"/> stopped applying to them and
-    /// <see cref="CodeBase64Literal"/> stopped running on them. A negative marker fails closed: anything
+    /// <para><b>It names the test segment, not the source one.</b> A positive marker fails open. A clause
+    /// reading <c>Contains("/source/")</c> silently classifies as test code every directory with no
+    /// <c>/source/</c> segment, and the C core's are <c>crypto/</c>, <c>takion/</c>, <c>stream/</c> and
+    /// <c>session/</c>: <see cref="CodeHexLiteral"/> would not apply to those files and
+    /// <see cref="CodeBase64Literal"/> would not run on them. A negative marker fails closed: anything
     /// new under <c>ports/</c> is product code until a <c>tests</c> segment says otherwise.
     /// <see cref="ProductCodeClassification"/> pins both halves.</para>
     ///
-    /// <para><b>The negative marker only fails closed inside a prefix this rule names.</b> On 2026-09-24
-    /// the core moved from <c>ports/common/</c> to <c>libripcord/</c>, and a top-level directory is
-    /// outside every prefix above. So <c>libripcord/</c> is named here explicitly, and a new top-level
-    /// code directory has to be added here with it.</para>
+    /// <para><b>The negative marker only fails closed inside a prefix this rule names.</b> A top-level
+    /// directory is outside every prefix, which is why <c>libripcord/</c> is named explicitly. No other
+    /// top-level directory is named: <c>engine/</c> is not, so its files take the test-code rules.</para>
     /// </summary>
     private static bool IsProductCode(string relative) =>
         relative.StartsWith("src/", StringComparison.Ordinal)
@@ -843,11 +841,11 @@ public class PublishedTreeSweepTests
             && !relative.Split('/').Contains("tests", StringComparer.Ordinal));
 
     /// <summary>
-    /// The files this sweep reads: the ones git actually tracks (since 2026-09-12).
+    /// The files this sweep reads: the ones git actually tracks.
     ///
     /// <para>A <c>Directory.EnumerateFiles</c> walk filtered by <see cref="Excluded"/> reads whatever
     /// happens to be on the disk, including files <c>.gitignore</c> keeps out of the repository. With the
-    /// gitignored <c>ports/*/third-party/</c> holding 165 MB of upstream Mbed TLS, that walk reported
+    /// gitignored <c>ports/*/third-party/</c> holding 165 MB of upstream Mbed TLS, that walk reports
     /// upstream's test constants as "unredacted values in committed text". A finding here has to mean
     /// something, and <see cref="EveryCommittedTextFile_IsSwept"/> already asks <c>git ls-files</c>.</para>
     ///
@@ -857,7 +855,7 @@ public class PublishedTreeSweepTests
     /// gitignored capture is correct and a committed one fails. The captures folder stays doubly covered:
     /// gitignored, and named in <see cref="Excluded"/>.</para>
     ///
-    /// <para>If git cannot answer (an archive rather than a clone) this falls back to the old walk
+    /// <para>If git cannot answer (an archive rather than a clone) this falls back to that directory walk
     /// rather than sweeping nothing. Over-reporting is the safe direction to fail in, and an empty corpus
     /// would make every assertion in this file pass while checking nothing.
     /// <see cref="SweptCorpus_ContainsOnlyTrackedFiles"/> pins the property.</para>
@@ -988,8 +986,8 @@ public class PublishedTreeSweepTests
 
     /// <summary>
     /// The prose part of a line. A comment is prose and the policy reaches it, including a trailing one —
-    /// but only the comment, not the code beside it. Returning the whole line put every crypto fixture that
-    /// happens to sit next to a trailing comment back into value-scope, which is the noise that gets a guard
+    /// but only the comment, not the code beside it. Returning the whole line would put every crypto fixture
+    /// that happens to sit next to a trailing comment into value-scope, which is the noise that gets a guard
     /// deleted.
     /// </summary>
     private static string ProsePortion(string line)
@@ -1013,8 +1011,8 @@ public class PublishedTreeSweepTests
 
     /// <summary>
     /// The whole detector, for one line. Everything that reports lives here and nowhere else, so the file
-    /// sweep and the contract cannot drift apart: that drift is what let the contract certify five catches
-    /// the sweep did not perform.
+    /// sweep and the contract cannot drift apart: a contract run against the bare patterns can certify
+    /// catches the sweep does not perform.
     /// </summary>
     private static List<string> ScanLine(
         string line, bool isProse, bool applyAllowlist, string at, bool isProductCode = false,
@@ -1106,9 +1104,9 @@ public class PublishedTreeSweepTests
         {
             if (IsDocumentationAddress(m.Groups[1].Value)) continue;
             if (NotAnAddressContext.IsMatch(line)) continue;
-            // The allowlist hook the IPv6 branch has and this one lacked, so a benign four-dotted value
-            // (an H.264 clause number reads as an IPv4) can be tolerated by exact value with a reason,
-            // rather than only by narrowing the pattern - the scope-too-narrow defect this file warns of.
+            // An allowlist hook, as the IPv6 branch has, so a benign four-dotted value (an H.264 clause
+            // number reads as an IPv4) can be tolerated by exact value with a reason, rather than only by
+            // narrowing the pattern - the scope-too-narrow defect this file warns of.
             if (Allow(m.Value)) continue;
             found.Add($"{at}|ipv4|{m.Value}");
         }
@@ -1142,7 +1140,7 @@ public class PublishedTreeSweepTests
         return found;
     }
 
-    /// <summary>Everything the shipped detector reports, so the tests and the contract share one code path.</summary>
+    /// <summary>Everything the detector reports over the committed text, so the tests and the contract share one code path.</summary>
     private static List<string> Offenders(bool applyAllowlist = true)
     {
         string root = RepoRoot();
@@ -1229,7 +1227,7 @@ public class PublishedTreeSweepTests
     /// Whether the message corpus is readable here, and if not, why. <c>Reason</c> is null when it is.
     ///
     /// <para>A shallow clone is the case that matters. <c>git log</c> in a <c>--depth 1</c> checkout
-    /// returns one commit and exits <b>0</b>: the sweep would read 1 of 200-odd messages and report clean,
+    /// returns one commit and exits <b>0</b>: the sweep would read one message of the history and report clean,
     /// and <c>actions/checkout</c> defaults to exactly that. The other two cases (no <c>.git</c>, no
     /// <c>git</c>) are honest absences and return quietly, because a source archive is a legitimate way to
     /// receive this repository and simply has no such corpus.</para>
@@ -1520,8 +1518,8 @@ public class PublishedTreeSweepTests
 
             if (BinaryExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
             {
-                // Verify the declaration rather than trusting it. A text file on the binary list (as
-                // `.svg` once was) satisfies a list check exactly as well as a right declaration, and is
+                // Verify the declaration rather than trusting it. A text file on the binary list (an
+                // `.svg`, say) satisfies a list check exactly as well as a right declaration, and is
                 // a file nothing reads. A real binary has a NUL in its first few KB.
                 if (File.Exists(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)))
                     && !HasNulByte(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar))))
@@ -1586,7 +1584,7 @@ public class PublishedTreeSweepTests
 
     /// <summary>
     /// The third corpus: not the tree, not the messages, but every revision of every file a clone carries.
-    /// See <see cref="HistoricalBlobOffenders"/> for the redaction this one caught too late.
+    /// See <see cref="HistoricalBlobOffenders"/> for why redacting the file is not enough.
     /// </summary>
     [Fact]
     public void HistoricalBlobs_CarryNothingUnredacted()
@@ -1608,7 +1606,7 @@ public class PublishedTreeSweepTests
 
     /// <summary>
     /// The other published corpus. See <see cref="CommitMessageOffenders"/> for why it is not a file, and
-    /// why that mattered.
+    /// why that matters.
     /// </summary>
     [Fact]
     public void CommitMessages_CarryNoUnredactedValues()
@@ -1677,7 +1675,7 @@ public class PublishedTreeSweepTests
     ///
     /// <para>Stated as a test rather than left to the implementation because the two ways of being wrong
     /// have opposite signs and only one of them is loud. Reading untracked files produces false findings,
-    /// which is what actually happened and is at least visible. Reading <em>fewer</em> files than git
+    /// which is at least visible. Reading <em>fewer</em> files than git
     /// tracks would make this whole file pass while checking less than it claims, and nothing else here
     /// would notice — <see cref="EveryCommittedTextFile_IsSwept"/> checks classification coverage, not
     /// that the sweep opened anything.</para>
@@ -1711,10 +1709,10 @@ public class PublishedTreeSweepTests
     /// <summary>
     /// Which paths get the strict scope. <see cref="IsProductCode"/> decides which of two hex rules applies
     /// and whether <see cref="CodeBase64Literal"/> runs at all, so a path drifting out of it weakens the
-    /// detector everywhere in that directory at once — and does it silently, which is how the extraction of
-    /// <c>ports/common/</c> demoted the whole portable core in a refactor that touched no test.
+    /// detector everywhere in that directory at once — and does it silently: moving a directory can demote
+    /// a whole tree in a refactor that touches no test.
     ///
-    /// <para>The rows that matter are the last two. A directory layout nobody has invented yet must land on
+    /// <para>The rows that matter are the last two. A new directory layout under <c>ports/</c> must land on
     /// the strict side by default, because the alternative is a guard that quietly stops covering new code.
     /// </para>
     /// </summary>
@@ -1735,8 +1733,7 @@ public class PublishedTreeSweepTests
 
     /// <summary>
     /// A committed constant the prose-only scope cannot see, checked by the hash of its value. The two data
-    /// files beside it are pinned the same way; this closes the last declared constant that had no
-    /// value-level guard at all.
+    /// files beside it are pinned the same way.
     /// </summary>
     [Fact]
     public void PinnedConstants_HaveNotChanged()
@@ -1762,7 +1759,7 @@ public class PublishedTreeSweepTests
     }
 
     /// <summary>
-    /// An allowlist entry matching nothing asserts a coverage that does not exist: either the shipped
+    /// An allowlist entry matching nothing asserts a coverage that does not exist: either the detector's
     /// regex cannot reach the text the entry was written for, or a scope rule has put that text out of range.
     /// </summary>
     [Fact]

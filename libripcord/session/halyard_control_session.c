@@ -1,7 +1,7 @@
 /*
- * See halyard_control_session.h. This is a faithful lift of the sequence source/session/main.c ran
- * successfully against a real PS5 - the wire behaviour is deliberately unchanged, including the header
- * set, their order, and the arm probe's timing.
+ * See halyard_control_session.h. With default options this puts on the wire what
+ * ports/ripcord-3ds/source/session/main.c ran successfully against a real PS5 - the same header set,
+ * in the same order, with the same arm-probe timing.
  */
 
 #include "halyard_control_session.h"
@@ -359,7 +359,7 @@ int halyard_control_session_open_with(const halyard_pairing_record *record,
     if (record == NULL || out == NULL)
         return 0;
 
-    /* Every zero is today's LAN behaviour - see halyard_control_open_options. */
+    /* Every zero selects the LAN behaviour - see halyard_control_open_options. */
     memset(&o, 0, sizeof(o));
     if (options != NULL)
         o = *options;
@@ -386,8 +386,8 @@ int halyard_control_session_open_with(const halyard_pairing_record *record,
 
     version_selector = record->is_ps5 ? HALYARD_VERSION_SELECTOR_PS5 : HALYARD_VERSION_SELECTOR_PS4;
     /* Codec selector 2 is the value this project's own captures resolve to; the full RP-KeyType ->
-     * selector mapping is a tracked spec refinement, not something this port settles. Confirmed correct
-     * against a real console on 2026-08-12 - /sess/ctrl would have rejected the fields otherwise. */
+     * selector mapping is not derived here. Confirmed correct against a real console on 2026-08-12 -
+     * /sess/ctrl would have rejected the fields otherwise. */
     if (halyard_control_field_init(&out->ctrl, nonce, record->companion, 2, version_selector) != 0) {
         rc_log("\x1b[31mFAIL\x1b[0m control-field KDF failed\n");
         memset(nonce, 0, sizeof(nonce));
@@ -461,12 +461,12 @@ static void record_frame(halyard_control_session *s, unsigned type, size_t paylo
 }
 
 /*
- * Names the message that under-consumed, which is the one open question about the desync.
+ * Names the message that under-consumed, which is what the desync's cause turns on.
  *
  * Called BEFORE the recovered frame is recorded, so `recent` still holds only frames that preceded the
  * junk - recent[0] is the prime suspect. The discarded bytes go out as hex too: if they turn out to be
  * the tail of the previous message rather than the head of the next, that is visible here and nowhere
- * else. Every earlier attempt to explain this from counters alone failed; the bytes are the evidence.
+ * else. The counters alone do not explain it; the bytes are the evidence.
  */
 static void report_resync(const halyard_control_session *s, size_t discarded)
 {
@@ -522,9 +522,9 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
      * will never arrive, while the console's heartbeats stack up behind it. We stop replying, and it
      * drops the session ~38 s later.
      *
-     * The root cause is still open: something under-consumed an earlier message by exactly one header's
-     * worth of bytes, and identifying which message needs a capture. Meanwhile the frames behind the
-     * junk are readable, and resynchronising keeps the session alive.
+     * The root cause is unknown: something under-consumed an earlier message by exactly one header's
+     * worth of bytes, and identifying which message needs a capture. The frames behind the junk are
+     * readable, and resynchronising keeps the session alive.
      *
      * The scan looks for the frame shape the wire has: reserved bytes zero at offset 6..7, and a payload
      * length small enough to be real. That is weak evidence per byte, so the resync is LOGGED with what
@@ -598,8 +598,8 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
         }
     }
 
-    /* Every frame, not just interesting ones - the under-consuming message is by definition one we
-     * currently believe we handled correctly, so filtering here would hide it. */
+    /* Every frame, not just interesting ones - the under-consuming message is by definition one that
+     * looks correctly handled, so filtering here would hide it. */
     record_frame(session, type, payload_length, consumed);
 
     if (type == HALYARD_CTRL_TYPE_HEARTBEAT_REQ) {

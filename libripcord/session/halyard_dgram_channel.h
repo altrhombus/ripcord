@@ -2,7 +2,7 @@
  * libripcord - the 9303 association over a real transport: the pump that halyard_dgram.h leaves out.
  *
  * Ported from src/Ripcord.Protocol.Halyard/Transport/HalyardDatagramControlChannel.cs (and the
- * IHalyardDatagramTransport seam beside it), which remains the reference. Like that class, THIS HOLDS
+ * IHalyardDatagramTransport seam beside it), which is the reference. Like that class, THIS HOLDS
  * NO PROTOCOL KNOWLEDGE: it puts whatever the association emits on the wire, feeds it whatever arrives,
  * re-sends on a quiet receive window, and gives up at a stage deadline with a message a person can act
  * on. Every decision about what the protocol does next is in halyard_dgram_assoc.c.
@@ -173,7 +173,7 @@ halyard_dgram_channel_status halyard_dgram_channel_exchange(halyard_dgram_channe
 
 /*
  * CloseConnectionAsync: end the open connection politely. Best-effort and never an error, because a
- * teardown must not fail and a console that never hears it is no worse off than before this existed.
+ * teardown must not fail.
  */
 void halyard_dgram_channel_close_connection(halyard_dgram_channel *channel);
 

@@ -130,12 +130,12 @@ int fec_reed_solomon_recover_source(uint8_t *units, size_t coded_length, int k, 
     /*
      * static, NOT locals. Two 64x64 matrices are 8 KB, and a .3dsx main thread has a 32 KB stack in total,
      * several frames deep inside the demux flush path. The Takion probe's 49.6 KB local data-aborted on
-     * real hardware for the same reason (see takion_reliable_channel.h), and the 3DS build enforces
+     * real hardware for the same reason (see takion_reliable_channel.h), and the 3DS build passes
      * -Wframe-larger-than=8192.
      *
-     * THE TRADE: this makes recovery non-reentrant and single-threaded-only. That is safe today only
-     * because this port has no threads at all. If the media pipeline ever decodes on its own thread, these
-     * must become a caller-supplied scratch struct rather than quietly racing.
+     * THE TRADE: this makes recovery non-reentrant. Only one call may run at a time in the whole
+     * process, whichever demux it serves; two threads recovering at once race on these matrices. A
+     * caller that needs that must serialise its calls.
      */
     static uint8_t cauchy[MAX_MATRIX];
     static uint8_t inverse[MAX_MATRIX];

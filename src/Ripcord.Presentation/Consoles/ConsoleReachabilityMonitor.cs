@@ -57,7 +57,7 @@ public sealed class ConsoleReachabilityMonitor
     /// <param name="remotelyAvailable">
     /// The cloud ids of consoles the account service says are available for remote play, asked at most once
     /// per refresh and only when some console failed to answer locally. Null when this build has no account
-    /// tier, in which case a console that does not answer is simply offline, exactly as before.
+    /// tier, in which case a console that does not answer is simply offline.
     ///
     /// <para>
     /// A function rather than the account seam itself, because what this needs is one set of ids: taking the
@@ -155,7 +155,7 @@ public sealed class ConsoleReachabilityMonitor
     ///
     /// <para>
     /// Only silence is retried. An answer of either kind is ground truth and is taken immediately, so a
-    /// console that is awake, or resting, costs exactly one datagram as before.
+    /// console that is awake, or resting, costs exactly one datagram.
     /// </para>
     /// </summary>
     private async Task<bool?> AskUntilAnsweredAsync(ConsoleCardViewModel card, CancellationToken cancellationToken)

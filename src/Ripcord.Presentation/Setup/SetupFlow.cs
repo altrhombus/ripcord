@@ -13,7 +13,7 @@ namespace Ripcord.Presentation.Setup;
 /// The first-run setup: the picture, a console, a controller.
 ///
 /// <para>
-/// <b>Why it exists (2026-10-05).</b> The defaults are H.264 without HDR, because every PC can decode H.264. HEVC
+/// <b>Why it exists.</b> The defaults are H.264 without HDR, because every PC can decode H.264. HEVC
 /// with HDR is the better picture where the PC can decode it: the console's SDR stream clips HDR games' highlights
 /// when its own HDR is on. A setting nobody knows about is a setting nobody turns on, so the choice is put to
 /// everyone once, at the start, with the better picture preselected where the PC can show it.
@@ -40,7 +40,7 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
     private bool _hevcAvailable;
     private bool _displayHdr;
     // The better picture while the check runs, as the likely answer: the choices stay live during the check, so a
-    // quick mover is never held on a step of greyed-out options (owner, 2026-10-09). The check settles it.
+    // quick mover is never held on a step of greyed-out options. The check settles it.
     private PictureChoice _choice = PictureChoice.BestPicture;
     private bool _choiceMadeWhileChecking;
     private bool _goOnWhenChecked;
@@ -100,7 +100,7 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
             _hevcAvailable = hevc;
             _displayHdr = hdr;
 
-            // The better picture preselected wherever the PC can decode it (the owner's decision, 2026-10-05). A
+            // The better picture preselected wherever the PC can decode it. A
             // choice made during the check stands, unless it was the better picture and the PC cannot decode it;
             // the better picture is also what is shown while checking, so either way that is the one case where
             // the answer changes the choice.
@@ -268,8 +268,8 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
                 SetupStep.Console => Strings.Setup_ConsoleTitle,
                 SetupStep.Controller => Strings.Setup_ControllerTitle,
 
-                // "All set." over "Console: none yet" said the opposite of the line beneath it (visual audit,
-                // 2026-10-08). With nothing paired, the headline says what is left rather than that nothing is.
+                // "All set." over a line saying no console is paired would say the opposite of the line beneath
+                // it. With nothing paired, the headline says what is left rather than that nothing is.
                 _ when _added is null && _consolesAtStart.Count == 0 => Strings.Setup_DoneTitleNoConsole,
                 _ => Strings.Setup_DoneTitle,
             },
@@ -348,8 +348,8 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
 
     /// <summary>
     /// The exit gesture's buttons as this step should name them: the pad in hand once there is one, both
-    /// families before then. With nothing attached the family defaulted to the generic pad, so setup taught Xbox
-    /// button names to someone who might be holding a DualSense, or nothing (visual audit, 2026-10-08).
+    /// families before then. With nothing attached the family defaults to the generic pad, and naming only that
+    /// one would teach Xbox button names to someone who might be holding a DualSense, or nothing.
     /// </summary>
     private string? ExitButtons(ExitGesture gesture)
     {

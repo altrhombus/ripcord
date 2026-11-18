@@ -331,7 +331,7 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
 
     /// <summary>
     /// The account's region as a person would say it, or null when there is nothing to say. The service reports
-    /// a lowercase country code, and printing it verbatim gave "Signed in — us." (visual audit, 2026-10-08).
+    /// a lowercase country code, and printing it verbatim would give "Signed in — us.".
     /// Anything that is not a recognisable country code says nothing rather than something cryptic.
     /// </summary>
     internal static string? RegionName(string code)

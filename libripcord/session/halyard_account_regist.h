@@ -106,15 +106,12 @@ size_t halyard_account_regist_build_request(halyard_account_regist_exchange *exc
                                             uint8_t *buf, size_t buf_size);
 
 /*
- * "Is the reply complete?" is not asked here. It was, in a second copy of .NET's IsCompleteHttpMessage,
- * until the 9303 transport arrived with its own; there is one now, halyard_dgram_http_complete
- * (halyard_dgram.h), and the transport that accumulates the reply is the one that asks it.
- */
-
-/*
  * Open the console's reply: split the HTTP, require 2xx, decrypt the body under the exchange's key and
  * parse the pairing record. `out_http_status` and `out_reason` (the console's RP-Application-Reason,
  * when it gives one) are filled whenever the head parsed, success or not; either may be NULL.
+ *
+ * `response` must already be a complete reply. "Is the reply complete?" is not asked here: the
+ * transport that accumulates the reply asks it, with halyard_dgram_http_complete (halyard_dgram.h).
  *
  * A reply body longer than HALYARD_ACCOUNT_REGIST_MAX_RECORD is refused as a bad record rather than
  * truncated, because the record's fields may sit anywhere in it.

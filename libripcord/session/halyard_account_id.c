@@ -32,9 +32,10 @@ static int hex_value(char c)
 }
 
 /*
- * STANDARD BASE64 ONLY - not the URL-safe alphabet. Accepting '-' and '_' made "123-456-789" eleven
- * base64 characters, so a number typed with separators in it was reported as "that is the base64 form",
- * which is worse than saying nothing: it sends someone looking for a conversion they do not need.
+ * STANDARD BASE64 ONLY - not the URL-safe alphabet. Accepting '-' and '_' would make "123-456-789"
+ * eleven base64 characters, so a number typed with separators in it would be reported as "that is the
+ * base64 form", which is worse than saying nothing: it sends someone looking for a conversion they do
+ * not need.
  */
 static int is_base64_char(char c)
 {
@@ -105,7 +106,7 @@ halyard_account_id_status halyard_account_id_normalise(const char *in, char *out
 
     /*
      * DECIMAL WINS A TIE, and sixteen digits is the tie: it is a valid account id written out and a
-     * valid hex string at the same time. Decimal is the form the wire wants, the form this port stores
+     * valid hex string at the same time. Decimal is the form the wire wants, the form this core stores
      * and the form every id it has seen is quoted in, so reading it the other way would be choosing the
      * unlikely meaning of an ambiguous input.
      */

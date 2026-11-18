@@ -1,4 +1,4 @@
-// The HUD ladder's logic: the Windows thresholds, the verdict's order, rung 1's hysteresis, and the rates
+// The HUD ladder's logic: the dotnet client's thresholds, the verdict's order, rung 1's hysteresis, and the rates
 // taken from the engine's cumulative counters.
 
 import Foundation

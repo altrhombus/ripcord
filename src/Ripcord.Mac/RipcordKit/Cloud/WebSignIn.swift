@@ -10,20 +10,19 @@
 // https host is not ours to associate with. The system session would sign the user in and then have nothing
 // to deliver the code to us.
 //
-// SO: a WKWebView this process owns, watching each navigation for the redirect, as the Windows dialog
-// watches its WebView2. Its website data store is non-persistent, so every sign-in starts with no cookies
-// (the Windows one cannot get a throwaway profile per control and leans on `prompt=always` alone; this sends
+// SO: a WKWebView this process owns, watching each navigation for the redirect, as the dotnet client's
+// dialog watches its WebView2. Its website data store is non-persistent, so every sign-in starts with no cookies
+// (the dotnet client's cannot get a throwaway profile per control and leans on `prompt=always` alone; this sends
 // that too). The navigation to the redirect is cancelled once matched, so the user never sees the page it
 // lands on and no request is made to it.
 //
 // UNVERIFIED against the live flow: that every hop reaches decidePolicyFor (server redirects included, which
 // is why didReceiveServerRedirect is watched as well), and that the account pages work in a WKWebView
-// with passkeys. The Windows flow's passkey and QR sign-in went through WebView2; WebKit's passkey support
+// with passkeys. The dotnet client's passkey and QR sign-in go through WebView2; WebKit's passkey support
 // in an app's own web view needs the web-browser entitlement or an associated domain, so a passkey prompt
 // may not appear here and the user may need the password or QR route instead. [X]
 
-// macOS only for now: the window below is AppKit's. iPhone and iPad get the same web view in UIKit's
-// presentation later (docs/ios-plan.md), and Apple TV has no WebKit at all.
+// macOS only: the window below is AppKit's. Apple TV has no WebKit at all.
 #if os(macOS)
 import AppKit
 import WebKit
@@ -45,7 +44,7 @@ public enum WebSignInError: Error, Sendable, CustomStringConvertible {
 /// Drives one sign-in in a web view. Embed `webView` anywhere (a sheet, a window), or call
 /// `presentInWindow`, and await `run()` for the redirect URL to hand to `AccountGateway.completeSignIn`.
 ///
-/// The gateway is not called from here, on purpose and as on Windows: a window that has already closed must
+/// The gateway is not called from here, on purpose and as in the dotnet client: a window that has already closed must
 /// never be the thing awaiting a network call.
 @MainActor
 public final class WebSignInController: NSObject, WKNavigationDelegate, NSWindowDelegate {

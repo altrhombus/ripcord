@@ -11,8 +11,8 @@
  *
  * This is not a fuzzer. There is no coverage feedback, so it finds shallow bugs and nothing else. What
  * it does guarantee is that every harness builds and runs cleanly under AddressSanitizer and
- * UndefinedBehaviorSanitizer on every host, including the one the macOS client is built on. The
- * coverage-guided run is `make fuzz-run`, with a clang that has libFuzzer.
+ * UndefinedBehaviorSanitizer on every host, a Mac included. The coverage-guided run is
+ * `make fuzz-run`, with a clang that has libFuzzer.
  */
 #include <stddef.h>
 #include <stdint.h>

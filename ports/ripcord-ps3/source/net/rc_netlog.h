@@ -1,7 +1,7 @@
 /*
  * ripcord-ps3 - the log channel that does not need a filesystem.
  *
- * WHY A THIRD CHANNEL. The bring-up program already writes through newlib stdio and through raw lv2
+ * WHY A THIRD CHANNEL. The program also writes through newlib stdio and through raw lv2
  * syscalls, and both write FILES. Launched by ps3load rather than from the XMB as an installed title,
  * not one byte appears anywhere on disk: a process spawned from /dev_hdd0/tmp/ with no content id
  * plausibly has a tighter sandbox than an installed game.
@@ -9,10 +9,10 @@
  * A UDP datagram per line needs no write permission anywhere, and it arrives LIVE on the development
  * machine.
  *
- * IT ALSO CLOSES AN OPEN [X]. libripcord/platform/rc_platform.h argues at length that the core needs no
- * socket seam because both consoles expose the BSD names, and records that this was checked by compiling
- * and linking rather than by reading documentation - with the standing caveat that "it compiles" is not
- * "it works". This is the first PS3 code to open a socket.
+ * IT ALSO EXERCISES THE SOCKET NAMES. libripcord/platform/rc_platform.h argues at length that the core
+ * needs no socket seam because both consoles expose the BSD names, and records that this was checked by
+ * compiling and linking rather than by reading documentation - with the standing caveat that "it
+ * compiles" is not "it works". This is the first socket the program opens.
  *
  * FIRE AND FORGET, DELIBERATELY. No retry, no sequence numbers, no acknowledgement. Every call ignores
  * its result: a logger that can fail a program is worse than a logger that misses a line.
@@ -40,12 +40,12 @@ void rc_netlog_close(void);
 /* Whether the channel is carrying this run, for the report the program prints about its own channels. */
 int rc_netlog_is_open(void);
 
-/* Not yet attempted. Distinct from any value sendto can return. */
+/* No send attempted. Distinct from any value sendto can return. */
 #define RC_NETLOG_SEND_UNTRIED (-999L)
 
 /*
  * What the FIRST sendto returned: the byte count on success, negative on failure, UNTRIED if no line has
- * been written yet. The channel reporting itself open says only that netInitialize, socket and inet_pton
+ * been written. The channel reporting itself open says only that netInitialize, socket and inet_pton
  * all succeeded - on hardware that was true while nothing arrived at the far end, and a byte count here
  * separates "the console refused to send" from "the datagram did not survive the network".
  */

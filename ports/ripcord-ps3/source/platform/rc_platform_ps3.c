@@ -5,20 +5,20 @@
  * libripcord/platform/rc_platform.h for what each function promises; this file only says how the PPE
  * delivers it.
  *
- * *** COMPILED, RUN, AND MEASURED ON A CONSOLE. *** Until 2026-09-18 this banner said that nothing in
- * this file had been compiled and that every SDK-facing line was [X]. What the console settled, on
- * 2026-09-11 and in the runs after it:
+ * *** COMPILED, RUN, AND MEASURED ON A CONSOLE. *** What the console settled, on 2026-09-11 and in the
+ * runs after it:
  *
- *   - THE TIME BASE IS 79,800,986 Hz, measured, against the 79,800,000 this file expected - 12 parts per
- *     million. It is no longer asserted either: rc_tick_hz() asks lv2, and the constant is demoted to
+ *   - THE TIME BASE IS 79,800,986 Hz, measured, against the 79,800,000 this file expects - 12 parts per
+ *     million. It is not asserted: rc_tick_hz() asks lv2, and the constant is kept as
  *     rc_ps3_timebase_hz_expected() for main.c to cross-check the kernel's answer against.
- *   - SLEEP TAKES MICROSECONDS under the sysUsleep spelling, which was the one genuine unit risk here.
+ *   - SLEEP TAKES MICROSECONDS under the sysUsleep spelling, which is the one genuine unit risk here.
  *   - THE CSPRNG returns what the seam promises, every branch of the check exercised rather than only
  *     the passing one.
  *
- * THE SDK SURFACE IS DELIBERATELY ALMOST EMPTY. Three of the four functions here read the PowerPC time
- * base with one instruction, `mftb`, which is an architectural fact about the CPU rather than a name in
- * somebody's header. The whole file's exposure to PSL1GHT is one sleep call and one frequency constant.
+ * THE SDK SURFACE IS DELIBERATELY SMALL. rc_time_ms() and rc_tick() read the PowerPC time base with one
+ * instruction, `mftb`, which is an architectural fact about the CPU rather than a name in somebody's
+ * header. The seam's exposure to PSL1GHT is one sleep call and one frequency syscall; the XMB-quit
+ * watch at the foot of the file adds one sysutil callback.
  *
  * ONE CLOCK, NOT TWO. rc_platform.h is explicit that rc_time_ms() must never go backwards, because the
  * core is written as `while (rc_time_ms() - start <= timeout)` and on unsigned arithmetic a backwards
@@ -156,9 +156,9 @@ void rc_ps3_exit_watch(void)
     s32 rc = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT1, ps3_sysutil_event, NULL);
 
     /*
-     * Reported rather than checked: a console that will not let us hear about the quit still runs, it
-     * just goes back to behaving the way every build before this one did. Saying so is what stops the
-     * next person diagnosing the reboot from scratch.
+     * Reported rather than checked: a console that will not let us hear about the quit still runs, and
+     * an XMB quit then force-terminates the program as the header describes. Saying so is what stops
+     * the next person diagnosing the reboot from scratch.
      */
     if (rc != 0)
         rc_log("plat:  sysUtilRegisterCallback refused (0x%08X) - an XMB quit will not be clean\n",

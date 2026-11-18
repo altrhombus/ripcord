@@ -32,9 +32,9 @@ public sealed partial class PairedConsoleStore : IPairedConsoleStore
     private readonly ICredentialProtector _protector;
 
     // One read-modify-write at a time. The reachability monitor upserts several consoles at once
-    // (Task.WhenAll), account repair and pairing write too, and unserialised they lost each other's changes and
-    // shared one temp file (review, 2026-10-05). Static, because the file is one per process whatever the
-    // number of store instances.
+    // (Task.WhenAll), account repair and pairing write too, and unserialised they would lose each other's
+    // changes and share one temp file. Static, because the file is one per process whatever the number of
+    // store instances.
     private static readonly Lock WriteGate = new();
 
     public PairedConsoleStore(IPlatformPaths? paths = null, ICredentialProtector? protector = null)
@@ -107,9 +107,9 @@ public sealed partial class PairedConsoleStore : IPairedConsoleStore
 
     /// <summary>
     /// The stored list for a read-modify-write. A file that can't be read right now (another process holding it,
-    /// say) throws rather than reading as empty: that read as "no consoles", and the write after it saved a
-    /// one-console list over every pairing (review, 2026-10-05). A corrupt file still reads as empty, as Load's
-    /// does, since there is nothing in it to keep.
+    /// say) throws rather than reading as empty: read as "no consoles", the write after it would save a
+    /// one-console list over every pairing. A corrupt file reads as empty, as Load's does, since there is
+    /// nothing in it to keep.
     /// </summary>
     private List<PairedConsole> LoadForUpdate()
     {
@@ -166,10 +166,10 @@ public sealed partial class PairedConsoleStore : IPairedConsoleStore
     /// console's own host-id once discovery has supplied one, so it follows the console to a new DHCP lease.
     ///
     /// <para>
-    /// The address counts only for a record written before host-ids were stored, whose id IS its address. It
-    /// used to count for every record, so with two consoles at home, moving one onto an address the other had
-    /// held deleted the other's record and its credential (review, 2026-10-05). Matching on host alone, before
-    /// that, duplicated a console every time its address moved.
+    /// The address counts only for a record written before host-ids were stored, whose id IS its address.
+    /// Counted for every record, with two consoles at home, moving one onto an address the other had held would
+    /// delete the other's record and its credential. Matching on host alone would duplicate a console every
+    /// time its address moved.
     /// </para>
     /// </summary>
     internal static bool IsSameConsole(PairedConsole a, PairedConsole b) =>

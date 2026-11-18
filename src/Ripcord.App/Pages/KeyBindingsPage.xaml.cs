@@ -68,8 +68,8 @@ public sealed class KeyBindingRow(InputAction action, string actionName, string 
 /// <para>
 /// <b>Why this is a page and not a dialog.</b> A <c>ContentDialog</c> reserves Escape (close) and Enter (the
 /// default button), and capture-by-keypress wants every key. Enter is a <em>default binding here</em> — Start —
-/// and as a dialog its default button was "Reset to defaults", so a stray Enter while capture was not armed
-/// silently wiped every binding the user had. A page reserves nothing.
+/// and in a dialog a stray Enter while capture was not armed would press the default button. A page reserves
+/// nothing.
 /// </para>
 ///
 /// <para>

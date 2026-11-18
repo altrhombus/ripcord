@@ -72,11 +72,11 @@ void rc_log_open(const char *argv0, const char *filename)
 }
 
 /*
- * Scrollback.
+ * The format buffer and the scrollback ring.
  *
  * THE FORMAT BUFFER IS STATIC, NOT A LOCAL. rc_log is called from deep inside the connect flow -
- * including immediately before the stack-hungry P-521 SESSION_REPLY verification - and the main thread
- * gets 32 KB for everything. A 512-byte `char line[512]` on rc_log's stack frame made SESSION_REPLY
+ * including immediately before the stack-hungry P-521 SESSION_REPLY verification - and the 3DS main
+ * thread gets 32 KB for everything. A 512-byte `char line[512]` on rc_log's stack frame made SESSION_REPLY
  * fail on every attempt.
  *
  * Static is safe because logging is single-threaded. If a second thread ever logs, this needs a lock,

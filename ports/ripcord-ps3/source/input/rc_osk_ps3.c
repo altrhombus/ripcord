@@ -176,7 +176,7 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     widen(initial, s_initial, RC_OSK_MAX_CHARS + 1u);
     memset(s_result, 0, sizeof(s_result));
     /*
-     * AND THE UNLOAD'S BUFFER, which was cleared once by .bss and never again.
+     * AND THE UNLOAD'S BUFFER, on every call - .bss clears it only once.
      *
      * The teardown's copy is where the text usually arrives - see the note at the collection - and it is
      * copied over s_result wholesale, after which narrow() reads up to the first NUL. So a shorter entry
@@ -206,10 +206,9 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
         }
         /*
          * ONE REGISTRATION. b315 registered two - the plain wrapper and the Ex form with a 32-bit
-         * descriptor - to settle whether this platform's usual descriptor trap applied here. It does
+         * descriptor - to settle whether this platform's usual descriptor trap applies here. It does
          * not: every event arrived on BOTH, so PSL1GHT's wrapper adapts the pointer correctly and the
-         * A/B is finished with. It also did harm, which is the note worth keeping: two registrations
-         * meant the DONE handler ran twice, and it was a handler that tore the dialog down.
+         * plain one is enough. Two registrations also do harm: the DONE handler runs twice.
          */
     }
 

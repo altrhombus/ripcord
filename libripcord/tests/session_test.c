@@ -1,17 +1,18 @@
 /*
- * ripcord-3ds - Phase 4 self-test: the /sess/init and /sess/ctrl exchange, minus the crypto itself.
+ * libripcord - self-test of the /sess/init and /sess/ctrl exchange, minus the crypto itself.
  *
  * The control-field cipher this layer builds on is already checked byte-for-byte against the .NET side
  * in vector_runner.c/control-crypto.kat - this file does not re-litigate that. What it checks is
- * everything new in Phase 4: the binary ctrl-frame codec (against real bytes lifted from
+ * everything in session/ above that cipher: the binary ctrl-frame codec (against bytes lifted from
  * HalyardCtrlMessageTests.cs), the /sess/ctrl field plaintext constructions (against the shapes in
  * docs/protocol/ps5-remoteplay-v1-spec.md sec2.1 and the wire-confirmed HalyardSessCtrlFields.cs), the
  * HTTP-like request/response builder and parser (against hand-transcribed text), the base64 codec
- * (round-trip plus a couple of RFC 4648 test-vector-shaped cases), and the control-arm probe. One
- * end-to-end case chains field-plaintext -> control-field encrypt -> base64, exercising the whole
- * pipeline this port would actually run, even though each stage is separately verified elsewhere.
+ * (round-trip plus a couple of RFC 4648 test-vector-shaped cases), the control-arm probe, the
+ * console-direction field counter and the login-submit payload. One end-to-end case chains
+ * field-plaintext -> control-field encrypt -> base64, exercising the whole pipeline a port actually
+ * runs, even though each stage is separately verified elsewhere.
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE - see tests/Makefile.
  */
 #include "../halyard/halyard_v1.h"
 #include "../session/halyard_control_arm.h"
@@ -139,8 +140,7 @@ static void test_ctrl_message(void)
         uint8_t session_payload[17];
         uint8_t wire[8 + 17 + 8];
         /* Synthetic: 0x10 then ASCII "SyntheticSessId!" - the real frame's shape, invented content.
-         * The value here until 2026-09-11 made the same claim and was a real captured (encrypted)
-         * payload; see HalyardCtrlMessageTests.cs and CaptureProvenanceTests. */
+         * See HalyardCtrlMessageTests.cs and CaptureProvenanceTests. */
         size_t payload_len = from_hex("1053796e74686574696353657373496421", session_payload, sizeof(session_payload));
         size_t offset = 0;
 
@@ -397,14 +397,6 @@ static void test_end_to_end_field_pipeline(void)
 }
 
 /*
- * The login-submit payload, and in particular the property that cannot be seen on the wire.
- *
- * halyard_ctrl_message.h states it: the field counter is one running per-connection value, the five
- * /sess/ctrl headers consume 0-4, and every retry must advance it because reusing one reuses an IV under
- * the same key. A build that got this wrong would produce an acceptable-looking frame that the console
- * answers normally.
- */
-/*
  * The console's direction counts separately from ours, and only payload-carrying frames spend a counter.
  * Both halves matter: starting at the wrong value, or spending one on an empty heartbeat, shifts every
  * later frame onto a counter that decrypts to plausible garbage rather than to an error.
@@ -464,6 +456,14 @@ static void test_console_direction_counter(void)
     CHECK(HALYARD_CTRL_LOGIN_REJECTED == 0x01u, "rejected is 0x01, by the same experiment");
 }
 
+/*
+ * The login-submit payload, and in particular the property that cannot be seen on the wire.
+ *
+ * halyard_ctrl_message.h states it: the field counter is one running per-connection value, the five
+ * /sess/ctrl headers consume 0-4, and every retry must advance it because reusing one reuses an IV under
+ * the same key. A build that got this wrong would produce an acceptable-looking frame that the console
+ * answers normally.
+ */
 static void test_login_submit_payload(void)
 {
     static const uint8_t nonce[16] = {

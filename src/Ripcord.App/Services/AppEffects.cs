@@ -24,7 +24,7 @@ namespace Ripcord_App.Services;
 /// <para>
 /// <b>High contrast is read through Win32, not <c>AccessibilitySettings</c>.</b> Subscribing to that WinRT
 /// type's <c>HighContrastChanged</c> throws <c>0x80070490</c> in a WinUI 3 desktop app, because the event
-/// needs a <c>CoreWindow</c> and a desktop app has none; it took the process down on launch.
+/// needs a <c>CoreWindow</c> and a desktop app has none; that takes the process down on launch.
 /// <c>SystemParametersInfo</c> has no such dependency, and <see cref="UISettings.ColorValuesChanged"/> —
 /// which does work here — fires when high contrast is toggled, so the notification still arrives.
 /// </para>
@@ -57,7 +57,7 @@ internal static class AppEffects
     /// <summary>
     /// Raised when either setting changes, already marshalled onto the UI thread. One event rather than two:
     /// every consumer re-reads whatever it needs, and two events would invite handling one and forgetting the
-    /// other — which is how the app came to read neither.
+    /// other.
     /// </summary>
     public static event Action? Changed;
 

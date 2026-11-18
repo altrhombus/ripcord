@@ -4,7 +4,7 @@
 //
 // Compiled into the app and the widget extension both. When the build is not entitled to the group (an
 // ad hoc build has no team to validate one against), there is no container: the app writes nothing, and a
-// widget shows the way into the app instead of consoles. [X] until a signed build has been seen to share it.
+// widget shows the way into the app instead of consoles. [X]: that an entitled build shares the file.
 
 import Foundation
 

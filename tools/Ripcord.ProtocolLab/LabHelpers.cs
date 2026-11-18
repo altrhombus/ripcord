@@ -19,7 +19,7 @@ internal sealed class Observer<T>(Action<T> onNext, Action? onCompleted = null) 
     public void OnCompleted() => onCompleted?.Invoke();
 }
 
-/// <summary>No-op credential store for lab runs (no registration key available yet - Stage 5).</summary>
+/// <summary>No-op credential store for lab runs: saves nothing, loads nothing.</summary>
 internal sealed class NullCredentialStore : IConsoleCredentialStore
 {
     public Task SaveAsync(string consoleId, byte[] registrationKey, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -29,8 +29,8 @@ internal sealed class NullCredentialStore : IConsoleCredentialStore
 
 /// <summary>
 /// Stand-in decode pipeline for the lab: counts/prints frames instead of decoding. Stands in for the
-/// real Media Foundation + D3D12 pipeline (not yet built) so the session-to-decode wiring seam can be
-/// exercised end to end.
+/// real Media Foundation + D3D12 pipeline so the session-to-decode wiring seam can be exercised end to
+/// end from a console program.
 /// </summary>
 internal sealed class CountingDecodePipeline : IVideoDecodePipeline
 {

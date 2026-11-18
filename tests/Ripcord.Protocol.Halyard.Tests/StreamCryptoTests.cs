@@ -6,7 +6,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
 /// The v1 stream-crypto known-answer / round-trip suite — the C# counterpart of the reference
-/// <c>stream_crypto_reimpl.py</c> self-test. The layer is now [V] end-to-end (the key derivation reproduces a
+/// <c>stream_crypto_reimpl.py</c> self-test. The layer is [V] end-to-end (the key derivation reproduces a
 /// real console's keys byte-for-byte — see <c>LiveStreamKeyVectorTests</c>); these self-contained tests pin
 /// every step with synthetic keypairs: ecdhSignature construction and mutual verification, ECDH-P256 agreement,
 /// per-direction key derivation, the CTR/GMAC nonce relationship, encrypt-then-MAC round-trips,
@@ -67,9 +67,9 @@ public class StreamCryptoTests
     /// <summary>
     /// Outside the observed range this must refuse rather than answer.
     ///
-    /// <para>These cases asserted <c>NistP256</c> until 2026-09-11. The spec withdrew that default explicitly
+    /// <para>These cases do not assert <c>NistP256</c>. The spec withdrew that default explicitly
     /// - "the earlier 'v1 uses P-256, the default' was a guess" - and only the P-521 range was ever
-    /// confirmed, so a test pinning it presented an open question as a documented answer.</para>
+    /// confirmed, so a test pinning it would present an open question as a documented answer.</para>
     ///
     /// <para>0x0c and 0x12 are the two that matter, being one step outside each end of the range, which is
     /// where an off-by-one in the bound would show.</para>

@@ -70,11 +70,11 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     /// Write down which console we are about to command, and what the account says about it.
     ///
     /// <para>
-    /// <b>Because the duid is matched by NAME.</b> The flow resolves it with
-    /// <c>CloudConsoleMatch.ResolveId</c> against the console's display name, so a console whose account
-    /// record is named differently — or an account holding more than one console with similar names —
-    /// produces a command the cloud accepts, addressed to something that is not there. The symptom is
-    /// identical to a console that will not wake: nothing joins, and nothing says why.
+    /// <b>Because the duid is matched by NAME.</b> The request arrives with it already resolved: the
+    /// add-console flow matches the name the console reports for itself against the account's list
+    /// (<c>CloudConsoleMatch.Resolve</c>). A duid the account does not list produces a command the cloud
+    /// accepts, addressed to something that is not there. The symptom is identical to a console that will
+    /// not wake: nothing joins, and nothing says why.
     /// </para>
     ///
     /// <para>
@@ -135,16 +135,6 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     }
 
     /// <summary>
-    /// Where to open the control transport.
-    ///
-    /// <para>
-    /// The console's <c>LOCAL</c> candidate when it names the address we already reached it on, which is the
-    /// same-network case and the one that needs no hole-punch. Otherwise the address the caller gave us, on
-    /// the control port — a console we found by LAN discovery is reachable there whatever it advertises, and
-    /// preferring its reflexive candidate would send LAN traffic out to the internet and back.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// A UDP port nothing is currently using. Bound and released rather than held, because the socket that
     /// will use it is created later, behind the registration factory.
     /// </summary>
@@ -157,8 +147,8 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
 
     /// <summary>
     /// Where the pairing association is aimed: the same decision the ACCEPT names (HalyardConsoleCandidates).
-    /// This used to take a LOCAL candidate only when it equalled the known host, a third rule beside the
-    /// session's and the ACCEPT's, so the association and the ACCEPT could name different candidates.
+    /// One rule shared with the session and the ACCEPT, so the association and the ACCEPT cannot name
+    /// different candidates.
     /// </summary>
     private static IPEndPoint ConsoleEndpoint(HalyardAccountTransportContext context)
         => HalyardConsoleCandidates.Resolve(
@@ -205,8 +195,8 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
         }
 
         // Same reasoning as the connect path: a stored session that nothing has restored is a signed-in user,
-        // not a signed-out one. Pairing happened to work because it is reached from surfaces that had already
-        // restored, which is luck rather than design.
+        // not a signed-out one. Pairing must not depend on being reached from a surface that has already
+        // restored it.
         if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return new ConsoleRegistrationResult(false,

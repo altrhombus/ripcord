@@ -42,7 +42,7 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
         q["redirect_uri"] = _config.RedirectUri;
         q["scope"] = _config.ScopeString;
 
-        // The authorize call carries the same device identity the token exchange does. Omitting these was the
+        // The authorize call carries the same device identity the token exchange does. Omitting these is the
         // difference between a code the token endpoint accepts and one it rejects as issued to another device.
         q["device_type"] = HalyardClientConfig.DeviceType;
         q["duid"] = clientDeviceId;
@@ -145,7 +145,7 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
         }
 
         // A body that isn't JSON at all (a proxy's error page, a truncated reply) is the same failure as an empty
-        // one, and reports as one: a raw JsonException used to escape every caller's fallback.
+        // one, and reports as one: a raw JsonException would escape every caller's fallback.
         HalyardTokenResponse? parsed;
         try
         {

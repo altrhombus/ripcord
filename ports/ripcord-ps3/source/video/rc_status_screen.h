@@ -1,11 +1,11 @@
 /*
  * ripcord-ps3 - the session state, on the television.
  *
- * Separate from rc_overlay because of WHEN each is drawn. The overlay is a panel over a running picture
- * and has to be copied in behind the RSX's own blit every frame; this is what the screen shows when
- * there is no picture - before one arrives, and after one stops. Nothing is racing it, so it draws
- * into the back buffer directly and flips. Reusing the overlay would mean one piece of code with two
- * ordering rules.
+ * Separate from the diagnostics panel because of WHEN each is drawn. The panel sits over a running
+ * picture and has to be copied in behind the RSX's own blit every frame; this is what the screen shows
+ * when there is no picture - before one arrives, and after one stops. It draws a card into the
+ * overlay's bitmap, clears the back buffer behind it, queues the copy to the middle of the screen and
+ * flips.
  */
 #ifndef RC_STATUS_SCREEN_H
 #define RC_STATUS_SCREEN_H

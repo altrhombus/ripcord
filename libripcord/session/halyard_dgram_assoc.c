@@ -1,7 +1,7 @@
 /*
  * libripcord - the 9303 control association: a state machine with no I/O.
  *
- * Ported from src/Ripcord.Protocol.Halyard.Common/Control/HalyardControlAssociation.cs, which remains
+ * Ported from src/Ripcord.Protocol.Halyard.Common/Control/HalyardControlAssociation.cs, which is
  * the reference and carries the full reasoning behind each rule. Feed it a datagram, and it calls back
  * with the datagrams to send and the events that occurred.
  *
@@ -100,8 +100,8 @@ static void emit_simple(halyard_dgram_assoc *assoc, halyard_dgram_event_kind kin
 }
 
 /*
- * Reported, never dropped: the first live runs of this transport could only say "the console sent
- * nothing", which said nothing about what it HAD sent.
+ * Reported, never dropped: a run that can only say "the console sent nothing" says nothing about
+ * what it HAD sent.
  */
 static void emit_unhandled(halyard_dgram_assoc *assoc, const char *reason, const uint8_t *datagram,
                            size_t length, uint8_t chunk_type)
@@ -388,8 +388,8 @@ halyard_dgram_status halyard_dgram_assoc_send(halyard_dgram_assoc *assoc, const 
         memcpy(data + 10, payload, length);
 
     /*
-     * Each payload gets its own sequence. Without this the console took the first payload on a connection
-     * and discarded every later one as a duplicate - invisible to request/response, which sends once per
+     * Each payload gets its own sequence. Without this the console takes the first payload on a connection
+     * and discards every later one as a duplicate - invisible to request/response, which sends once per
      * connection, and fatal to the persistent control channel that follows.
      */
     assoc->sequence++;
@@ -541,7 +541,7 @@ static halyard_dgram_status on_chunk(halyard_dgram_assoc *assoc, const halyard_d
 
     case HALYARD_DGRAM_CHUNK_ACK:
     case HALYARD_DGRAM_CHUNK_ACK_EXTENDED:
-        /* Nothing is retransmitted at this layer yet, so an acknowledgement is only information. */
+        /* This layer retransmits nothing, so an acknowledgement is only information. */
         return HALYARD_DGRAM_OK;
 
     case HALYARD_DGRAM_CHUNK_CLOSE:

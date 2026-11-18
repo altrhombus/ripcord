@@ -4,10 +4,10 @@ import "VideoCapabilities.idl";
 
 namespace Ripcord.Media.Interop
 {
-    // Layer 1 of the decode pipeline: a D3D12 swap-chain-for-composition present surface. The
-    // managed side associates SwapChainPointer with a XAML SwapChainPanel (via ISwapChainPanelNative),
-    // which keeps this component free of any WinUI dependency. Clear-color present now; synthetic
-    // frame upload and real decode layer on top later.
+    // The D3D12 renderer: a swap-chain-for-composition present surface, the Media Foundation decoder
+    // that feeds it, and the present paths. The managed side associates SwapChainPointer with a XAML
+    // SwapChainPanel (via ISwapChainPanelNative), which keeps this component free of any WinUI
+    // dependency.
     [default_interface]
     runtimeclass VideoRenderer
     {
@@ -31,8 +31,8 @@ namespace Ripcord.Media.Interop
         String ActiveAdapterDescription{ get; };
 
         // True when the graphics device has been lost (driver update, TDR, eGPU unplug). Nothing will render
-        // again until the renderer is recreated; previously such a failure threw into the decode worker on
-        // every frame and the user just saw a frozen picture forever.
+        // again until the renderer is recreated; the render calls become no-ops rather than throwing into
+        // the decode worker on every frame.
         Boolean IsDeviceLost{ get; };
 
         // The HRESULT from GetDeviceRemovedReason, or 0 if the device is healthy.
@@ -41,21 +41,21 @@ namespace Ripcord.Media.Interop
         // Raw IDXGISwapChain* as an integer, for the managed side to hand to ISwapChainPanelNative.
         UInt64 SwapChainPointer{ get; };
 
-        // Layer 1 verification: clear the current back buffer to a color and present.
+        // Test hook: clear the current back buffer to a color and present.
         void RenderClear(Single red, Single green, Single blue);
 
-        // Layer 2+: upload a BGRA frame to a texture and draw it (scaled) to fill the surface, then
-        // present. This is the reusable frame sink - decode (Layer 3) converts to BGRA and calls it.
+        // Test hook: upload a BGRA frame to a texture and draw it (scaled) to fill the surface, then
+        // present. Not the live video path.
         void PresentBgra(UInt8[] bgra, UInt32 width, UInt32 height);
 
-        // Layer 3: decode one H.264 Annex-B access unit (software Media Foundation), convert to
-        // BGRA, and present any frames it produced. Convenience = DecodeH264 + PresentLatestFrame.
+        // Decode one Annex-B access unit and present the latest frame.
+        // Convenience = DecodeH264 + PresentLatestFrame.
         void SubmitH264(UInt8[] annexB);
 
-        // Decode one H.264 Annex-B access unit WITHOUT presenting. The most-recently decoded frame is
-        // retained for PresentLatestFrame. This lets the caller decode every frame (keeping the H.264
-        // reference chain intact) while presenting only the newest, so a slow present never forces a
-        // frame drop that would corrupt the stream.
+        // Decode one Annex-B access unit (H.264 or HEVC, whatever the name says) WITHOUT presenting. The
+        // most-recently decoded frame is retained for PresentLatestFrame. This lets the caller decode
+        // every frame (keeping the reference chain intact) while presenting only the newest, so a
+        // slow present never forces a frame drop that would corrupt the stream.
         // byteCount is how many leading bytes of the array are valid, so the caller can pass a pooled
         // buffer larger than the access unit (0 = the whole array). Feeding the unused tail to the
         // decoder would corrupt the bitstream.
@@ -73,7 +73,7 @@ namespace Ripcord.Media.Interop
         /// size, and how far geometry recovery got. For diagnosing "counters healthy but nothing on screen".
         String DecoderDiagnostic{ get; };
 
-        // Present the most-recently decoded frame (GPU NV12->RGB). No-op if nothing has decoded yet.
+        // Present the most-recently decoded frame. No-op if nothing has decoded.
         void PresentLatestFrame();
 
         // Active decode path: 0 = software, 1 = hardware/DXVA with CPU readback, 2 = hardware/DXVA zero-copy.
@@ -86,8 +86,7 @@ namespace Ripcord.Media.Interop
         UInt32 DecodedHeight{ get; };
 
         /// The complete colour answer in one place: matrix, transfer function and primaries, each marked
-        /// as signalled or assumed. Previously the matrix lived here and the transfer was appended to
-        /// DecoderDescription, so the overlay reported colour in two rows and neither was the whole story.
+        /// as signalled or assumed.
         String ColorMatrixDescription{ get; };
 
         /// Pixel format, e.g. "10-bit P010" or "8-bit NV12". Reported for SDR too, so the row cannot be
@@ -104,14 +103,14 @@ namespace Ripcord.Media.Interop
         Double FramePeakNits{ get; };
 
         // The HDR state as three separate facts, because they are independent and the UI needs to tell them
-        // apart. Do not infer them from DecoderDescription: it says "PQ" whenever the *stream* is PQ, even
+        // apart. Do not infer them from ColorMatrixDescription: it says "PQ" whenever the *stream* is PQ, even
         // while we are tone-mapping to SDR on an SDR display.
         //
         // IsHdrTransfer   - the stream signals an HDR transfer function (PQ or HLG). Says nothing about output.
         // IsDisplayHdr    - the display accepts HDR10. Says nothing about the stream.
         // IsHdrOutput     - both of the above, and the swap chain accepted the colour space. This is the only
         //                   one that means "you are looking at HDR"; when it is false and IsHdrTransfer is
-        //                   true, the driver is tone-mapping to SDR.
+        //                   true, the picture is tone-mapped to SDR (HdrOutputDescription says by what).
         Boolean IsHdrTransfer{ get; };
         Boolean IsDisplayHdr{ get; };
         Boolean IsHdrOutput{ get; };

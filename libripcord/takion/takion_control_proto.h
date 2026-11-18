@@ -1,13 +1,15 @@
 /*
- * ripcord-3ds - Phase 6a: the control-plane protobuf envelope, SESSION_REQUEST and SESSION_REPLY.
+ * libripcord - the control-plane protobuf envelope: SESSION_REQUEST and SESSION_REPLY, and the other
+ * ControlMessage types the client builds or reads (DISCONNECT, STREAM_INFO, the protocol-version pair,
+ * the bandwidth-probe commands, CONNECTION_QUALITY).
  *
- * Ported from the two messages of docs/protocol/stream_control.proto that the stream key agreement
- * needs, as consumed by Ripcord.Protocol.Halyard.Takion.TakionSessionNegotiator. These ride the Takion
+ * Ported from docs/protocol/stream_control.proto and docs/protocol/bandwidth_probe.proto. The session
+ * pair is as consumed by Ripcord.Protocol.Halyard.Takion.TakionSessionNegotiator; it rides the Takion
  * reliable channel (TAKION_CHANNEL_SESSION, 0x0001) after the SCTP handshake completes and before GMAC
  * sealing is switched on - see takion_session_negotiator.h for the sequence.
  *
  * HAND-ROLLED RATHER THAN GENERATED. The .NET side compiles the whole 41-message schema with
- * Google.Protobuf + Grpc.Tools; this port needs a few messages, has no malloc anywhere, and a code
+ * Google.Protobuf + Grpc.Tools; this core needs a few messages, has no malloc anywhere, and a code
  * generator in a cross-compiled C makefile would cost more than the code below. The wire contract is
  * fixed: field numbers and wire types are interoperability facts (protobuf transmits numbers, never
  * names), and the numbers here are read straight from the committed .proto, which is the authority.
@@ -47,8 +49,8 @@
 #define TAKION_CONTROL_STREAM_INFO_ACK 14u
 #define TAKION_CONTROL_BANDWIDTH_PROBE 12u
 
-/* The version negotiation pair. 31 is the value the senkusha bring-up already sends as a literal; 32 is
- * what the console answers with, and its payload names the version it actually chose. */
+/* The version negotiation pair. 31 is the request the client sends; 32 is what the console answers
+ * with, and its payload names the version it actually chose. */
 #define TAKION_CONTROL_PROTOCOL_VERSION_REQUEST 31u
 #define TAKION_CONTROL_PROTOCOL_VERSION_ACK     32u
 #define TAKION_CONTROL_IDR_REQUEST     25u
@@ -145,7 +147,7 @@ int takion_control_parse_disconnect(const uint8_t *data, size_t length,
  * well-formed protobuf and 0 otherwise.
  *
  * For checking hand-written literals, such as the senkusha PROTOCOL_VERSION_REQUEST in
- * source/connect/main.c. Field 31 length-delimited is (31 << 3) | 2 = 250, which needs a TWO-byte varint
+ * client/halyard_client.c. Field 31 length-delimited is (31 << 3) | 2 = 250, which needs a TWO-byte varint
  * tag; a one-byte tag leaves the first field readable and the remainder garbage, so peeking the type is
  * not a check. This walks to the end.
  */
@@ -257,7 +259,7 @@ size_t takion_control_build_mtu_command(uint32_t id, uint32_t mtu_req, uint32_t 
  * [X] THE UNITS OF targetBitrate ARE NOT CONFIRMED. kbps is sent to match the launch spec's bwKbpsSent,
  * and bps is equally plausible; being wrong by 1000x would have the console pick an absurd rate. The
  * .NET side carries the same caveat and gates the feature behind an opt-in for it, and callers here
- * should do the same until a capture settles it.
+ * should do the same.
  */
 size_t takion_control_build_connection_quality(uint32_t target_bitrate_kbps,
                                                double rtt_ms, double loss_percent,

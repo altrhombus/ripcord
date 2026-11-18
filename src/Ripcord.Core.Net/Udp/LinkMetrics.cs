@@ -8,9 +8,8 @@ namespace Ripcord.Core.Net.Udp;
 /// Link measurements the console is told about in the launchSpec: round-trip time and MTU.
 ///
 /// <para>
-/// The arithmetic is separated from the OS queries so it can be tested. Both values were previously hardcoded —
-/// <c>rtt: 0</c> and <c>mtu: 1454</c> — which is a claim rather than a measurement, and the console uses what we
-/// declare.
+/// The arithmetic is separated from the OS queries so it can be tested. The console uses what we declare, so a
+/// fixed <c>rtt: 0</c> and <c>mtu: 1454</c> would be a claim rather than a measurement.
 /// </para>
 /// </summary>
 public static class LinkMetrics

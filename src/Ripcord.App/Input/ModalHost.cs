@@ -61,13 +61,12 @@ public static class ModalHost
         dialog.TabFocusNavigation = KeyboardNavigationMode.Cycle;
 
         // The press that opened it has sounded, and so will the one that closes it; the dialog's own show and hide
-        // sounds made each of those two, back to back ("Sign in to PlayStation", a card's Details: owner, pad pass,
-        // 2026-10-09). B, which closes it without a press, plays Hide itself (FocusPilot).
+        // sounds would make each of those two, back to back. B, which closes it without a press, plays Hide
+        // itself (FocusPilot).
         dialog.ElementSoundMode = ElementSoundMode.Off;
         dialog.XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled;
 
-        // focusRoot so a modal remembers its own focus too — for a soft keyboard opening over a dialog, which
-        // is the next thing to land on top of one.
+        // focusRoot so a modal remembers its own focus too — for a soft keyboard opening over a dialog.
         var scope = new ShellInputScope(
             InputScopeKind.Modal, focusRoot: () => dialog.XamlRoot, prompts: prompts, readsPad: readsPad);
         App.Input.Scopes.Push(scope);

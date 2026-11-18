@@ -1,7 +1,7 @@
 // How long the stream crypto takes per A/V packet on this machine: the question the plan's "crypto
-// throughput" item asks (docs/macos-plan.md), answered by measurement rather than estimate. Phase 1
-// measured both engines from this workload (C 7.71-8.11 us, Rust 0.53-0.57 us, engine/README.md); since
-// Phase 3 the Mac links only the Rust engine, so only it is measured here.
+// throughput" item asks (docs/macos-plan.md), answered by measurement rather than estimate. Both engines
+// were measured from this workload (C 7.71-8.11 us, Rust 0.53-0.57 us, engine/README.md); the Mac links
+// only the Rust engine, so only it is measured here.
 //
 // Each iteration does what the demuxer does to every packet: verify the
 // 4-byte GMAC tag, then CTR-decrypt the payload. The keystream offset advances by the payload length times

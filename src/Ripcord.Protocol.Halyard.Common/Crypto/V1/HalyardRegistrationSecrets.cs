@@ -1,19 +1,27 @@
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
 /// <summary>
-/// The extracted, on-the-wire interoperability constants the v1 registration key derivation needs but
-/// which are deliberately NOT baked into this repository (independent-implementation discipline: same rationale as
-/// <see cref="HalyardControlSecrets"/>). They are data the client reads from its own binary — a static
-/// lookup table and the context-byte offset that selects into it — for one negotiated protocol variant,
-/// supplied as configuration from the gitignored captures folder.
+/// The extracted, on-the-wire interoperability constants the v1 registration key derivation needs. This
+/// assembly holds none of them, for the same reason as <see cref="HalyardControlSecrets"/>: an instance is
+/// built by its caller and passed in. They are data the client reads from its own binary — a static
+/// lookup table and the context-byte offset that selects into it — for one negotiated protocol variant.
 ///
 /// <para>
 /// The registration key is <c>K = Table[ context[SelectorOffset] &amp; 0x1f ]</c> with the passcode folded
 /// into the last 4 bytes (see <see cref="HalyardRegistrationKdf"/>). <see cref="Table"/> holds the 32
-/// entries of 16 bytes each, already laid out contiguously (the captures-folder loader transposes the binary's
-/// column-major storage into row order — the layout here is ours, not the binary's).
+/// entries of 16 bytes each, laid out contiguously in row order — the layout here is ours, not the
+/// binary's, which stores the table column-major.
 /// <see cref="SelectorOffset"/> is the context byte read to pick the entry (e.g. 0x18d for the
 /// RP-Version 1.0 variant).
+/// </para>
+///
+/// <para>
+/// <c>HalyardRegistrationCipherResolver</c> (Ripcord.Presentation.Halyard) populates this type. It takes the
+/// first source that can serve the requested console family: the file named by
+/// <c>RIPCORD_REGIST_FIXTURE</c>, then <c>registration_crypto_vectors.json</c> in the platform config
+/// directory, then the same file in a dev tree's captures folder, and last the constants bundled with the
+/// build (<c>src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json</c>, read by
+/// <c>HalyardInteropConstants.Registration</c>; <c>NOTICE</c> describes them).
 /// </para>
 /// </summary>
 public sealed class HalyardRegistrationSecrets

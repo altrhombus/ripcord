@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     # Each client versions independently under its own tag namespace: the PS3 port on ps3-v*, the macOS client
-    # on macos-v* (docs/macos-plan.md, step 9), the dotnet client on v*. A tag push runs this whole file, so a
-    # release passes the same checks as a pull request.
+    # on macos-v* (docs/macos-plan.md, step 9), the dotnet client on v*. A tag push runs this whole file;
+    # each release job waits only for the jobs in its own `needs`.
     tags: ['ps3-v*', 'macos-v*', 'v*']
   pull_request:
   workflow_dispatch:
@@ -122,7 +122,7 @@ jobs:
       fail-fast: false
       matrix:
         # Linux alone: it proves the portable set builds and runs off Windows, which is the whole claim. No
-        # shipping client runs .NET on macOS.
+        # client runs .NET on macOS.
         include:
           - { host: ubuntu-latest, rid: linux-x64 }
     steps:
@@ -166,7 +166,7 @@ jobs:
   # The portable C core's own gates: the host suite, `make compile`, the sanitizers and the fuzz harnesses.
   # The PS3 job cross-compiles the core but runs none of these.
   #
-  # Linux only, where the console ports are built. The engine job's ripcord-diff still builds the core under
+  # Linux only, where the console ports are built. The engine job's ripcord-diff also builds the core under
   # Apple's clang on macOS.
   libripcord:
     name: libripcord (${{ matrix.host }})
@@ -208,7 +208,7 @@ jobs:
             libripcord/tests/build/fuzz/timeout-*
           if-no-files-found: ignore
 
-  # The Rust engine (engine/, docs/engine-plan.md): the whole protocol, which the Apple clients ship on.
+  # The Rust engine (engine/, docs/engine-plan.md): the whole protocol, which the Apple clients run on.
   # Four hosts, because each one links the engine differently. The .NET harness runs its checks on each and
   # prints the per-packet cost, which is informational only on a shared runner. Miri and cargo-fuzz run in
   # engine-nightly.yml.
@@ -230,7 +230,7 @@ jobs:
       - name: Generate the known-answer vectors
         run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
       # ripcord-diff builds the C core with its own Python constants generator and runs it beside the Rust
-      # engine. The C core has never been built with MSVC, so the Windows legs leave that crate out.
+      # engine. No job builds the C core with MSVC, so the Windows legs leave that crate out.
       - name: Tests, the vector runner and the differential runs against the C core
         if: runner.os != 'Windows'
         working-directory: engine
@@ -518,7 +518,7 @@ jobs:
       # publishing the notices beside it. Anyone who wants one runs `make`.
       #
       # The .gnpdrm one rather than the plain .pkg: it is the package_finalize'd build, what tools/ship.sh
-      # uploads, what SETUP.md's loop installs, and what has been installed on hardware.
+      # uploads and what SETUP.md's loop installs.
       - uses: actions/upload-artifact@v4
         with:
           name: ripcord-ps3-b${{ github.run_number }}

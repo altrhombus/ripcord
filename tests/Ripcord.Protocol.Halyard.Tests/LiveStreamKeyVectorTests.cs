@@ -5,8 +5,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
 /// Validates the stream key derivation against a real console's dumped key material (the P-521 ECDH shared
-/// X, the handshakeKey, and the per-direction send/recv Crypt objects). These live in the gitignored dirty
-/// room, so the test loads them if present and <see cref="Skip.IfNot"/> otherwise - CI stays green, no
+/// X, the handshakeKey, and the per-direction send/recv Crypt objects). These live in the gitignored captures
+/// folder, so the test loads them if present and <see cref="Skip.IfNot"/> otherwise - CI stays green, no
 /// secrets committed. When present it proves <see cref="HalyardStreamKeySchedule.DeriveDirection"/> is [V]
 /// against hardware (the full stream key agreement, end to end).
 ///
@@ -40,8 +40,8 @@ public class LiveStreamKeyVectorTests
     {
         // Explicit override first: RIPCORD_KEYDUMP_DIR may point either straight at the directory holding the
         // dumps or at their parent (captures/ holds one subfolder per capture session). It is validated by
-        // CONTENT, not just existence: an env var aimed one level off used to return a directory with no
-        // material in it, so the test hard-failed with FileNotFoundException instead of skipping.
+        // CONTENT, not just existence: an env var aimed one level off names a directory with no material in
+        // it, and accepting that would hard-fail the test with FileNotFoundException instead of skipping.
         string? env = Environment.GetEnvironmentVariable("RIPCORD_KEYDUMP_DIR");
         if (!string.IsNullOrEmpty(env) && Directory.Exists(env))
         {

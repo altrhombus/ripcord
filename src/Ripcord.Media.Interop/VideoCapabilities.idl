@@ -49,9 +49,9 @@ namespace Ripcord.Media.Interop
         VideoCapabilities();
 
         // Whether D3D12 video decode is usable for H.264 at a typical streaming resolution on the default
-        // adapter. This now performs a real CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_SUPPORT) query;
-        // it previously only checked that ID3D12VideoDevice could be QI'd, which reports true on hardware
-        // that cannot actually decode the profile we need.
+        // adapter. This performs a real CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_SUPPORT) query;
+        // checking only that ID3D12VideoDevice can be QI'd reports true on hardware that cannot actually
+        // decode the profile we need.
         static Boolean IsD3D12VideoDecodeSupported();
 
         // Every installed adapter, in DXGI enumeration order.
@@ -64,14 +64,14 @@ namespace Ripcord.Media.Interop
         // offering it, rather than letting a session fail at connect.
         static Boolean IsCodecDecodeAvailable(VideoCodecKind codec);
 
-        // Whether the display this window is on currently accepts HDR10. Reports true only when Windows' "Use
+        // Whether the display this window is on accepts HDR10 right now. Reports true only when Windows' "Use
         // HDR" is actually on for that display, because DXGI reports the G2084 colour space only in that state
         // -- so this answers "is this display ready to show HDR right now", not "does the panel have the
         // hardware". That is the question a settings page needs: a readiness check the user can act on.
         //
-        // windowHandle is an HWND. It used to be no argument at all, and the answer was "is ANY display HDR",
-        // which on a laptop with its HDR panel on and the window on an SDR monitor said yes about a screen the
-        // video would never appear on. 0 answers for the primary monitor. PresentingDisplay.h has the match.
+        // windowHandle is an HWND: the question is about that window's display, not "is ANY display HDR",
+        // which on a laptop with its HDR panel on and the window on an SDR monitor says yes about a screen the
+        // video will never appear on. 0 answers for the primary monitor. PresentingDisplay.h has the match.
         static Boolean IsHdrDisplayAvailable(UInt64 windowHandle);
     }
 }

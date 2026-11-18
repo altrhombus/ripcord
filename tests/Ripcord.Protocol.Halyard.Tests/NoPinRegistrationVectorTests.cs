@@ -8,23 +8,22 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The account-based (no-PIN) registration route, validated against cap63 — an off-network capture of the
+/// The account-based (no-PIN) registration route, checked against cap63 — an off-network capture of the
 /// older vendor client pairing with a PS5 and a PS4 without ever showing a passcode.
 ///
 /// <para>
-/// <b>What these establish, and what they DON'T.</b> Two things are now settled from cap63, and one large
-/// thing is settled as a negative:
+/// <b>What cap63 shows, and what the tests assert.</b> The tests assert the body layout in the first item and
+/// the negative in the third; the second is an observation from the capture only.
 /// </para>
 /// <list type="bullet">
 ///   <item><description><b>The transport is the account (UDP 9303) route, and the request is unchanged.</b>
 ///   No TCP 9295 anywhere in the capture; the request body is the same 480-byte context + 107-byte field our
-///   PIN-route builder already produces. So the send-side codec is reusable as-is.</description></item>
-///   <item><description><b>The older client sends no <c>RP-Hmac</c>.</b> cap4 (a newer client) did, which had
-///   made <c>RP-Hmac</c> the leading candidate for where no-PIN authorisation lives. For this protocol
-///   version that candidate is simply absent — the request headers are exactly the PIN route's set.</description></item>
-///   <item><description><b>[X] The body key is NOT any pinless entry from the bundled table.</b> This is the
-///   negative, and the sweep below proves it rather than assuming it. So "the account route is the PIN route
-///   with passcode 0" is FALSE, and where the response key comes from is genuinely open.</description></item>
+///   PIN-route builder produces. So the send-side codec is reusable as-is.</description></item>
+///   <item><description><b>The older client sends no <c>RP-Hmac</c>.</b> cap4 (a newer client) did. In this
+///   capture the request headers are exactly the PIN route's set.</description></item>
+///   <item><description><b>[X] The body key is NOT any pinless entry from the bundled table.</b> The sweep
+///   below proves it rather than assuming it. So "the account route is the PIN route with passcode 0" is
+///   FALSE. The key the account route does use is pinned by <see cref="LiveAccountKeyPathVectorTests"/>.</description></item>
 /// </list>
 ///
 /// <para>

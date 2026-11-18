@@ -11,8 +11,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// one loses.
 ///
 /// <para>
-/// The order is user-facing behaviour: a PS5-only fixture masking a PS4-capable bundle made PS4 pairing report
-/// "unavailable" on a machine that could in fact pair. The <c>source</c> strings are shown verbatim on a
+/// The order is user-facing behaviour: a PS5-only fixture masking a PS4-capable bundle makes PS4 pairing report
+/// "unavailable" on a machine that can in fact pair. The <c>source</c> strings are shown verbatim on a
 /// pairing failure, so they are contract rather than debug output.
 /// </para>
 ///
@@ -188,7 +188,7 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
         Assert.Contains("fixture load failed", source);
 
         // Every reason names the file it is about. This branch is reachable by any I/O or parse failure, so it is
-        // the one most in need of saying which file — and the one that used to omit it.
+        // the one most in need of saying which file.
         Assert.Contains(path, source);
     }
 

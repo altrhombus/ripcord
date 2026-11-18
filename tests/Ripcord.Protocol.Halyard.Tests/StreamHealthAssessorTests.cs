@@ -40,7 +40,7 @@ public class StreamHealthAssessorTests
     [Fact]
     public void NoFramesEver_PastStartupGrace_IsCriticalNotStartingUp()
     {
-        // The regression this guards: a connect that never produced video used to read "Starting up…" forever.
+        // The regression this guards: a connect that never produces video reading "Starting up…" forever.
         var v = StreamHealthAssessor.Assess(new StreamHealthSignals(
             0, 0, 60, 0, 0, 0, 0, 2,
             HasReceivedFrames: false,
@@ -117,8 +117,8 @@ public class StreamHealthAssessorTests
     public void Loss_IsNotBlamedOnTheDeviceJustBecauseTheReceiveQueueSpiked()
     {
         // The measured failure: an instantaneous depth sampled at 2 Hz against bursty arrivals spiked to 266
-        // on a sample whose neighbours both read 0. That must no longer move the verdict at all, so this run
-        // is the network case wearing the old device tell.
+        // on a sample whose neighbours both read 0. That must not move the verdict at all, so this run is
+        // the network case with a spiked receive queue.
         StreamHealthVerdict v = StreamHealthAssessor.Assess(
             Healthy(loss: 0.05, rxq: 266, presentFps: 58, decodeFps: 60));
 
@@ -128,9 +128,10 @@ public class StreamHealthAssessorTests
     [Fact]
     public void SheddingDecodedFrames_WithoutLoss_OutranksTheReadbackNote()
     {
-        // The ordering bug: with a readback decode path and no loss, rule 4 said "This is fine" while the
-        // stream presented 4 fps out of 60 decoded. 16-17% of samples in both device-starved runs landed on a
-        // Healthy/Info verdict below 45 fps, and this is the one a player checks before giving up.
+        // The ordering this pins: with a readback decode path and no loss, the readback note must not say
+        // "This is fine" while the stream presents 4 fps out of 60 decoded. 16-17% of samples in two measured
+        // device-starved runs landed on a Healthy/Info verdict below 45 fps, and this is the one a player
+        // checks before giving up.
         StreamHealthVerdict v = StreamHealthAssessor.Assess(
             Healthy(loss: 0, presentFps: 3.9, decodeFps: 58.6, decodeMode: 1, latencyMs: 30));
 

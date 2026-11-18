@@ -15,8 +15,8 @@
     mc:Ignorable="d">
 
     <!--
-        Dark whatever the Windows theme: the stream layer is black behind video, and in Light theme its status and
-        failure text took the light theme's dark brushes, dark on black (review, 2026-10-05).
+        Dark whatever the Windows theme: the stream layer is black behind video, and in the light theme its status
+        and failure text would take that theme's dark brushes, dark on black.
     -->
 
     <Page.Resources>
@@ -31,17 +31,18 @@
 
     <Page.KeyboardAccelerators>
         <!--
-            F3 toggles the diagnostics overlay. F11 toggles fullscreen. Escape steps back one level —
+            F3 toggles the diagnostics HUD. F11 toggles fullscreen. Escape steps back one level —
             fullscreen → windowed → leave the session — so a stream is never inescapable, but a single keypress
-            also never destroys a live session outright.
+            also never destroys a live session outright. F8 saves a diagnostics report.
 
-            NOTE: these are a fallback, not the mechanism. An accelerator only fires while focus is inside its
-            scope, and focus leaves this page the moment the video is clicked — so all three used to die at the
-            first click. The live handling is TryHandleReservedKey, called from the window-root PreviewKeyDown
-            handler where focus does not matter. Change behaviour there, not here.
+            NOTE: for F3, F11 and Escape these are a fallback, not the mechanism. An accelerator only fires
+            while focus is inside its scope, and focus leaves this page the moment the video is clicked. The
+            live handling is TryHandleReservedKey, called from the window-root PreviewKeyDown handler where
+            focus does not matter. Change behaviour there, not here. F8 has no such handler and is this
+            accelerator alone.
 
             KeyboardAcceleratorPlacementMode="Hidden" on the page, because WinUI otherwise tooltips the first
-            accelerator over the whole page: "F3" appeared wherever the pointer rested on a stream.
+            accelerator over the whole page: "F3" wherever the pointer rests on a stream.
         -->
         <KeyboardAccelerator Key="F3" Invoked="ToggleDiagnostics" />
         <KeyboardAccelerator Key="F11" Invoked="FullScreenAccelerator_Invoked" />
@@ -66,12 +67,11 @@
         <SwapChainPanel x:Name="VideoPanel" />
 
         <!--
-            Connecting, reconnecting, and failing. It was a 460px acrylic card in the middle of the window with
-            a spinner on top - which read as Windows Setup, and for a good reason: it was ceremony. Setup can
-            afford ceremony because you do it once; connecting happens several times an evening, and a ceremony
-            performed daily is a chore.
+            Connecting, reconnecting, and failing. Not a card in the middle of the window with a spinner on
+            top: that reads as Windows Setup, because it is ceremony. Setup can afford ceremony because you do
+            it once; connecting happens several times an evening, and a ceremony performed daily is a chore.
 
-            So nothing here is centred, because THE CENTRE BELONGS TO THE GAME - the layout reserves the space
+            Nothing here is centred, because THE CENTRE BELONGS TO THE GAME - the layout reserves the space
             the picture is about to occupy. The console's identity sits where its card's mark sat, because the
             ConnectedAnimation lands it there and connect is the card becoming the window rather than a new
             place you navigated to. Status sits low and left, where rung 1 of the HUD also speaks, so a player
@@ -98,14 +98,14 @@
 
             <!--
                 The plate behind the words, only while a picture is behind them (StatusOverPicture): a reconnect
-                sits on the game's last frame, and white text over a frozen game was hard to read (owner,
-                2026-10-09). In-app acrylic, the material Fluent puts over media. The plate and the words share
-                a grid so it is always their size, and the words keep their place whether it shows or not. Over
-                the black of a first connect there is nothing to read against, so nothing is drawn.
+                sits on the game's last frame, and white text over a frozen game is hard to read. In-app
+                acrylic, the material Fluent puts over media. The plate and the words share a grid so it is
+                always their size, and the words keep their place whether it shows or not. Over the black of a
+                first connect there is nothing to read against, so nothing is drawn.
 
-                One width whatever it says: sized to the words, the plate grew and shrank as the status changed
-                under it, which drew the eye to the box rather than the message (owner, 2026-10-09). The column is
-                the text's full measure, or the window's when that is narrower.
+                One width whatever it says: a plate sized to the words would grow and shrink as the status
+                changes under it, which draws the eye to the box rather than the message. The column is the
+                text's full measure, or the window's when that is narrower.
             -->
             <Grid
                 Margin="12,0,12,52"
@@ -128,9 +128,9 @@
                     Spacing="{StaticResource RipcordSpacingM}">
                     <!--
                         Default is "Starting…", deliberately NOT "Connecting…": that is a real state the controller
-                        reports, and having it as the static default made a hang ANYWHERE before the network — video
+                        reports, and as the static default it would make a hang ANYWHERE before the network — video
                         device creation, for instance — indistinguishable from one during the handshake. Every phase
-                        now sets its own text.
+                        sets its own text.
                     -->
                     <TextBlock
                         x:Name="StatusHeadline"
@@ -160,12 +160,12 @@
                     <!--
                         **Fixed height, because everything inside it comes and goes.** The trail is drawn only
                         once there is a phase to draw, the bar only when there is not, and the way out appears
-                        a few seconds in - and each of those used to move the headline above it, on a panel
-                        anchored to the bottom. Reported as text that jumps around while you are reading it.
+                        a few seconds in. On a panel anchored to the bottom, each of those would move the
+                        headline above it: text that jumps around while you are reading it.
 
                         Reserving the tallest arrangement costs some empty space early in a connect and buys a
-                        message that stays where it was put. The children keep their own visibility; what they
-                        no longer have is any effect on where anything else sits.
+                        message that stays where it was put. The children keep their own visibility, and it
+                        has no effect on where anything else sits.
                     -->
                     <Grid x:Name="StatusProgressHost" Height="112">
                         <!--
@@ -206,8 +206,9 @@
                         <!--
                             The way out of a connect that has run long enough to feel stuck - quiet, and a link
                             rather than a button, because it is not what anybody came here to press. It appears
-                            after a few seconds rather than on entry: a Cancel offered the instant you press
-                            Play is the ceremony this screen was rebuilt to avoid.
+                            three seconds in (SessionViewModel.ConnectEscapeAfter) rather than on entry: a
+                            Cancel offered the instant you press Play is the ceremony this screen avoids. Its
+                            label comes from the view-model, and differs on a reconnect.
                         -->
                         <HyperlinkButton
                             x:Name="ConnectEscape"
@@ -238,8 +239,9 @@
         </Grid>
 
         <!--
-            How to leave the stream. Shown on entry and then faded out: without it the exit gesture is
-            undiscoverable, which is what made a running stream feel like a trap on a handheld.
+            How to leave the stream. Shown when the stream goes live, and when Escape drops out of full
+            screen, then hidden again after a delay: without it the exit gesture is undiscoverable, and a
+            running stream feels like a trap on a handheld.
         -->
         <Border
             x:Name="ExitHint"
@@ -257,24 +259,20 @@
         </Border>
 
         <!--
-            THE BOTTOM BAND. Four elements used to claim this edge independently, each with its own
-            bottom margin, and two of them claimed the same pixels: the touch bar occupied 20-90 from
-            the bottom and rung 2 occupied 28-84. They overlapped almost exactly. It is not a
-            handheld-only fault either - StreamSurface_PointerMoved summons the touch bar on mouse
-            movement, so a desktop with a mouse hits it too.
+            THE BOTTOM BAND. Four elements claim this edge: rung 1, rung 2, the exit progress and the
+            touch bar. They are one Grid with two rows, so none carries a hand-computed bottom margin to
+            clear another. Placed independently, the touch bar (20-90 from the bottom) and rung 2 (28-84)
+            would overlap almost exactly, and not only on a handheld: StreamSurface_PointerMoved summons
+            the touch bar on mouse movement.
 
-            The tell was ExitProgressPanel's Margin="0,0,0,104": someone had already hand-computed a
-            clearance for this collision, once, in one place, in a literal. That literal is gone, and
-            deleting it is the acceptance test for this change.
-
-            So the edge is one Grid with two rows. The shelf is reserved WHETHER OR NOT the bar is
-            showing, because the bar times out after four seconds and a row that collapsed would bounce
-            the HUD every time - worse than the 90px it costs on a desktop that never summons it.
+            The shelf is reserved WHETHER OR NOT the bar is showing, because the bar times out after four
+            seconds and a row that collapsed would bounce the HUD every time - worse than the 90px it
+            costs on a desktop that never summons it.
 
             Rung 1 and rung 2 are mutually exclusive in the portable layer, so row 0 never holds both.
 
             The whole band lifts clear of the window's button prompts when they show, which they do over the
-            stream on a pad (SetBottomInset). The touch bar sat across them otherwise, seen on hardware.
+            stream on a pad (SetBottomInset). The touch bar would sit across them otherwise.
         -->
         <Grid x:Name="BottomBand" VerticalAlignment="Bottom">
             <Grid.RowDefinitions>
@@ -283,7 +281,7 @@
                     Height is set in code from RipcordTouchShelfHeight. It CANNOT be bound here: the
                     token is an x:Double and this property is a GridLength, and XAML does not convert
                     between them - it throws at page load, which is to say when somebody opens a
-                    stream rather than when anybody builds. Found exactly that way.
+                    stream rather than when anybody builds.
                 -->
                 <RowDefinition x:Name="TouchShelfRow" />
             </Grid.RowDefinitions>
@@ -359,7 +357,7 @@
                 twenty instruments are a rung deeper, behind a control you can see.
 
                 Numbers wear colour only when they have crossed their own threshold, which is the same grammar the
-                sparklines now use. A row of four coloured numbers would say nothing; two coloured out of four say
+                sparklines use. A row of four coloured numbers would say nothing; two coloured out of four say
                 exactly where to look.
             -->
             <Border
@@ -387,7 +385,7 @@
                         The verdict, same words the panel and the rung-1 notice use.
 
                         A Grid, not a horizontal StackPanel: a StackPanel offers its children unlimited width, so
-                        nothing wrapped and MaxWidth clipped the tip mid-word ("…from the console. Ch", 2026-10-02).
+                        nothing wraps and MaxWidth clips the tip mid-word ("…from the console. Ch").
                         The tip wraps to three lines, ends in an ellipsis past that, and the tooltip holds all of it.
                     -->
                     <Grid
@@ -496,12 +494,12 @@
 
             <!--  Row 1: the reserved shelf itself.  -->
             <!--
-                On-screen controls, summoned by touch or pointer movement and hidden again after a few seconds.
+                On-screen controls, summoned by touch or pointer movement and hidden again after four seconds idle.
 
                 Two jobs in one bar. First, the buttons the current input CANNOT send: an Xbox pad has no PS button and
                 Windows claims its Guide button for the shell before we ever see it, so on an Xbox pad or the Ally's
                 built-in controller there is otherwise no way to open the PS5 UI at all. Second, the diagnostics and
-                exit affordances, which used to sit over the game permanently.
+                exit affordances, which would otherwise have to sit over the game permanently.
 
                 Bottom-centred for thumb reach on a handheld, and sized as touch targets rather than 16px icons — the
                 Ally X has no mouse and no F-row, so this is the only way to reach any of it there.
@@ -591,16 +589,15 @@
 
 
 
-        <!--  Feedback while the exit gesture is being held, so a partial hold is visible rather than silent.  -->
-
         <!--
-            Diagnostics overlay. Collapsed unless enabled in Settings; F3 or the on-screen button toggles it.
+            Rung 3 of the HUD: the full instrument panel. Up on connect when Settings asks for it; F3 or the
+            on-screen button shows and hides the HUD, and Details and Less move between this and the strip.
 
-            Structured as status → headline metrics → grouped cards, because the previous flat stack of caption
-            text made every number look equally important: "is it healthy" and "which GPU" had the same weight.
-            Each metric now owns its sparkline with its own label, current value and peak — the old shared plot
-            drew four unlabelled lines at four different scales in one anonymous box, so it could show that
-            *something* was oscillating but never which.
+            Structured as status → headline metrics → grouped cards, because a flat stack of caption text
+            makes every number look equally important: "is it healthy" and "which GPU" get the same weight.
+            Each metric owns its sparkline with its own label, current value and peak — one shared plot of
+            four unlabelled lines at four different scales can show that *something* is oscillating but
+            never which.
         -->
         <Border
             x:Name="DiagnosticsPanel"
@@ -627,7 +624,7 @@
 
                 <!--
                     Header. Names itself and how to dismiss it, so the panel is self-explaining. It is also what the
-                    panel is dragged by; its edges resize it (MovablePanel, owner, 2026-10-09).
+                    panel is dragged by; the panel's edges resize it (MovablePanel).
                 -->
                 <Grid
                     x:Name="DiagnosticsHeader"
@@ -646,10 +643,10 @@
                         Style="{StaticResource BodyStrongTextBlockStyle}"
                         x:Uid="SessionPage_StreamDiagnostics" />
                     <!--
-                        The way back to the strip, which did not exist. Details promoted rung 2 to rung 3 and
-                        nothing demoted it: F3 hides the panel and F3 again restores the rung you were on, by
-                        design, so a promotion was permanent for the rest of the session. A one-way control is
-                        the shape of the bug, and the inverse of Details belongs beside the thing it undoes.
+                        Less (DiagnosticsLessButton, the second button below): the way back to the strip.
+                        Details promotes rung 2 to rung 3, and F3 only hides the panel and restores the rung
+                        you were on, so without this a promotion would be permanent for the rest of the
+                        session. The inverse of Details belongs beside the thing it undoes.
                     -->
                     <!--  Only once the panel has been moved or resized: back to where it goes by itself.  -->
                     <Button
@@ -685,10 +682,10 @@
 
                 <!--
                     The body scrolls; the header above stays pinned. At 7 inches the content is taller than the
-                    screen — it was being cut off midway through the power row — and a ScrollViewer also gives
-                    touch panning for free, which is the only way to reach the bottom on a handheld with no
-                    keyboard. MaxHeight is applied from code on size change, because the panel is top-aligned and
-                    would otherwise grow past the window rather than scroll inside it.
+                    screen, and a ScrollViewer also gives touch panning for free, which is the only way to reach
+                    the bottom on a handheld with no keyboard. MaxHeight is applied from code on size change,
+                    because the panel is top-aligned and would otherwise grow past the window rather than scroll
+                    inside it.
                 -->
                 <ScrollViewer
                     x:Name="DiagnosticsScroll"
@@ -703,9 +700,9 @@
                     RowSpacing="14"
                     ColumnSpacing="22">
                     <!--
-                        Five groups, one set of facts, two arrangements. Declared here as the column the
-                        panel has always been; ApplyDiagnosticsLayout turns it on its side when the
-                        placement is a letterbox bar. Two copies of this markup would be two panels to
+                        Five groups, one set of facts, two arrangements. Declared here as a column;
+                        ApplyDiagnosticsLayout turns it on its side when the panel is arranged as a row,
+                        as it is in a letterbox bar. Two copies of this markup would be two panels to
                         keep in step, which is exactly what "one set of facts in two arrangements" rules out.
                     -->
                     <Grid.RowDefinitions>
@@ -740,12 +737,12 @@
 
                         <!--
                             What you are actually receiving. Three columns so the value dominates and the unit
-                            recedes; fixed column widths keep the digits from shifting as the numbers change, which
-                            is what made the old single-line readout twitch.
+                            recedes; a minimum width on the two numeric columns keeps the digits from shifting as
+                            the numbers change.
                         -->
                         <!--
                             Units live in the LABEL row, not the value. "60" beside "17.8 Mbps" with the unit inside
-                            the value read as a single number ("6017.8 Mbps"), so the unit is demoted and the columns
+                            the value reads as a single number ("6017.8 Mbps"), so the unit is demoted and the columns
                             are separated by real spacing plus a hairline divider — unambiguous at a glance.
                         -->
                         <Grid ColumnSpacing="14">
@@ -801,9 +798,9 @@
                                 <ItemsPanelTemplate>
                                     <!--
                                         A plain horizontal StackPanel, because it sizes each pill to its CONTENT.
-                                        VariableSizedWrapGrid was tried and is wrong for this: it lays out uniform
-                                        cells, so every pill got an equal share of the width and "HEVC" and
-                                        "Zero-copy" were ellipsised to "HE..." and "Ze...". Pills are short and few,
+                                        VariableSizedWrapGrid is wrong for this: it lays out uniform
+                                        cells, so every pill gets an equal share of the width and "HEVC" and
+                                        "Zero-copy" are ellipsised to "HE..." and "Ze...". Pills are short and few,
                                         so overflow is not a practical concern at this panel width; if enough are
                                         added to threaten it, shorten the labels rather than reaching for a wrap panel.
                                     -->
@@ -816,10 +813,9 @@
                 <StackPanel x:Name="DiagGroupTarget" Grid.Row="1" Spacing="14">
 
                         <!--
-                            What was asked for, versus what is allowed. This was one wrapping paragraph that ran
-                            "requested … · cap … · adaptive target … (bitrate sent to console)" and then a second
-                            sentence explaining why — everything at equal weight, so nothing could be found. Now one
-                            row per fact, with the optional rows hidden when they have nothing to say.
+                            What was asked for, versus what is allowed. One row per fact, with the optional rows
+                            hidden when they have nothing to say: run together in one wrapping paragraph,
+                            everything has equal weight and nothing can be found.
                         -->
                         <StackPanel Spacing="6">
                             <TextBlock Style="{StaticResource RipcordInstrumentGroupStyle}" Text="TARGET" />
@@ -843,7 +839,7 @@
                                 <TextBlock x:Name="AdaptiveLabel" Grid.Row="1" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="adaptive" Visibility="Collapsed" />
                                 <TextBlock x:Name="AdaptiveText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" Visibility="Collapsed" />
 
-                                <!--  Why quality moved. The controller always knows; it just was not shown.  -->
+                                <!--  Why quality moved, as the adaptive controller reports it. Only when it has a reason.  -->
                                 <TextBlock x:Name="ReasonLabel" Grid.Row="2" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="why" Visibility="Collapsed" />
                                 <TextBlock x:Name="ReasonText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" Visibility="Collapsed" />
 
@@ -853,10 +849,10 @@
                             </Grid>
 
                             <!--
-                                Headroom. Two bare numbers ("3.9" and "cap 40 Mbps") never answered the actual
+                                Headroom. Two bare numbers ("3.9" and "cap 40 Mbps") do not answer the actual
                                 question, which is how much of the budget is in use — a ratio reads instantly where
-                                arithmetic does not. This is measured throughput, NOT available bandwidth: nothing
-                                measures the latter yet (that is the senkusha probe work).
+                                arithmetic does not. This is measured throughput against the cap, NOT available
+                                bandwidth, which this row does not show.
                             -->
                             <Grid ColumnSpacing="10">
                                 <Grid.ColumnDefinitions>
@@ -868,9 +864,9 @@
 
                                 <!--
                                     Drawn as two star-weighted columns rather than a ProgressBar. ProgressBar animates
-                                    toward a new Value, so a drop from 22 to 10 Mbps read as the bar *sliding* rather
+                                    toward a new Value, so a drop from 22 to 10 Mbps reads as the bar *sliding* rather
                                     than falling — misleading on a diagnostic. Star weights are applied instantly, need
-                                    no ActualWidth, and honour the corner radius the ProgressBar template ignored.
+                                    no ActualWidth, and honour the corner radius the ProgressBar template ignores.
                                 -->
                                 <Grid
                                     Grid.Column="1"
@@ -889,9 +885,9 @@
                                 </Grid>
 
                                 <!--
-                                    Percentage only. The measured figure already appears in the hero AND in the bitrate
-                                    sparkline row, so repeating it here made three copies of one number; the ratio and
-                                    the cap are the only things this row adds.
+                                    The measured figure already appears in the hero AND in the bitrate sparkline row,
+                                    so it is not repeated here as a third copy of one number; the ratio and the cap
+                                    are the only things this row adds.
                                 -->
                                 <TextBlock
                                     x:Name="HeadroomText"
@@ -913,11 +909,10 @@
                             CornerRadius="{StaticResource RipcordCardCornerRadius}">
                             <StackPanel Spacing="8">
                                 <!--
-                                    No sample counter here. It was added to prove the RTT metric was being fed at all
-                                    when RTT read 0 ms, which is long settled; it counted since CONNECT while sitting
-                                    inside a box labelled "last 30 seconds"; and it grew without bound in a
-                                    fixed-width column, so a long session pushed the layout. The count is still on
-                                    SessionController.StatisticsSampleCount and in the ETW trace if ever needed again.
+                                    No sample counter here. A count since CONNECT does not belong inside a box
+                                    labelled "last 30 seconds", and it grows without bound in a fixed-width column,
+                                    so a long session would push the layout. The count is on
+                                    SessionController.StatisticsSampleCount.
                                 -->
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
@@ -1019,9 +1014,9 @@
                         </StackPanel>
 
                         <!--
-                            What you are actually watching, as opposed to how fast it is arriving. Split out of
-                            PIPELINE and DEVICE, which between them reported video identity in one overloaded row
-                            and colour in two different sections. One fact per row, in the order you would ask
+                            What you are actually watching, as opposed to how fast it is arriving. A group of its
+                            own, so video identity and colour are each stated once and not spread across PIPELINE
+                            and DEVICE. One fact per row, in the order you would ask
                             them: who decoded it, what shape the pixels are, what the colours mean, what the
                             display is being given.
                         -->
@@ -1091,25 +1086,26 @@
                                         Style="{StaticResource CaptionTextBlockStyle}"
                                         TextWrapping="Wrap" />
                                     <!--
-                                        The live pad state used to be here. It is a CONTROLLER diagnostic
-                                        rather than a stream one, and this was the one place it could not be
-                                        read by somebody holding the pad to test it - you have to be
-                                        streaming to open rung 3. It now sits in Settings beside the
-                                        bindings it helps check. What stays is whether a pad is attached and
-                                        which engines are running, which are facts about the session.
+                                        The live pad state is not here. It is a CONTROLLER diagnostic
+                                        rather than a stream one, and here it could not be read by somebody
+                                        holding the pad to test it - you have to be streaming to open
+                                        rung 3. It sits in Settings beside the bindings it helps check.
+                                        What is here is whether a pad is attached and which engines are
+                                        running, which are facts about the session.
                                     -->
                                 </StackPanel>
                             </Grid>
 
-                            <!--  Path of the last saved report. Shown in the panel because on a handheld there is no
-                                  other way to find out where the file went.  -->
+                            <!--  Where the session trace is being written, then the path of the last saved report or why
+                                  the save failed. Shown in the panel because on a handheld there is no other way to
+                                  find out where the file went.  -->
                             <TextBlock
                                 x:Name="DiagnosticsSavedText"
                                 Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                 Style="{StaticResource CaptionTextBlockStyle}"
                                 TextWrapping="Wrap" />
 
-                            <!--  Only non-empty when control secrets are missing.  -->
+                            <!--  Empty unless the session backend reports its control constants unavailable.  -->
                             <TextBlock
                                 x:Name="D3D12StatusText"
                                 Foreground="{ThemeResource SystemFillColorCriticalBrush}"

@@ -226,9 +226,9 @@ public class LocalizationTests
 
     /// <summary>
     /// One x:Uid, one element. A uid applies every one of its entries to every element that carries it, so a
-    /// SettingsCard and the ComboBox inside it sharing "SettingsPage_VideoCodec" both took its <c>.Header</c>:
-    /// the title printed twice, and at large text the second copy crushed the description into a column one
-    /// word wide (visual audit, 2026-10-08).
+    /// SettingsCard and the ComboBox inside it sharing "SettingsPage_VideoCodec" would both take its
+    /// <c>.Header</c>: the title prints twice, and at large text the second copy crushes the description into
+    /// a column one word wide.
     /// </summary>
     [Fact]
     public void NoUid_IsUsedTwiceInOneFile()

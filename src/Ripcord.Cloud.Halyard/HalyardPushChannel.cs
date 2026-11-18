@@ -36,7 +36,7 @@ public static class HalyardPushHeaders
 /// surface (<see cref="HalyardCloudClient.SendOfferAsync"/>); the console's OFFER — carrying the candidates the
 /// client cannot otherwise learn — comes back here, wrapped in a session-manager push notification. Every text
 /// frame is run through <see cref="HalyardSignalingMessage.TryParse"/>; the ones that are signaling are
-/// surfaced, everything else (presence, membership, customData) is dropped.
+/// surfaced, as are a <c>customData1</c> update and the console's join. Everything else is dropped.
 /// </para>
 ///
 /// <para>
@@ -76,8 +76,8 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
     public event Action<string>? CustomData1Received;
 
     /// <summary>
-    /// Raised when the console joins the session — the first moment a client may message it, and the moment
-    /// before which it has not yet started its own control association.
+    /// Raised when the console joins the session — the first moment a client may message it, and before the
+    /// console starts its own control association.
     /// </summary>
     public event Action? ConsoleJoined;
 
@@ -119,7 +119,7 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
         ArgumentException.ThrowIfNullOrEmpty(accessToken);
 
         // The upgrade request, matched field-for-field to a captured vendor handshake. The subprotocol and the
-        // X-PSN-* set are what the push front-end requires — omitting the subprotocol was a 400. Values are
+        // X-PSN-* set are what the push front-end requires — omitting the subprotocol is a 400. Values are
         // required on-wire protocol constants (see HalyardPushHeaders), not naming choices. Sec-WebSocket-Key/
         // Version/Upgrade/Connection are ClientWebSocket's own and must NOT be set here.
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

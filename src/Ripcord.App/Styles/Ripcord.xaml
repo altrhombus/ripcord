@@ -2,14 +2,13 @@
 <!--
     The app's shared visual vocabulary — the entry point, and nothing else.
 
-    Until this file existed there was nothing shared to be consistent *with*: App.xaml merged only
-    XamlControlsResources, so the same card, chip and pill were re-declared inline in AboutPage, SettingsPage
-    and SessionPage, drifting a little each time.
+    The pages take their card, chip, pill and text styles from here rather than declaring their own, so
+    there is one definition of each to be consistent with.
 
-    It is now four dictionaries rather than one, split by WHAT KIND OF DECISION each holds, because they get
-    edited for different reasons and by different people:
+    Five dictionaries rather than one, split by WHAT KIND OF DECISION each holds, because they get edited
+    for different reasons:
 
-      Tokens    values — spacing, icon sizes, radii, the vendor accents. No appearance.
+      Tokens    values — spacing, icon sizes, radii, touch targets, the vendor accents. No appearance.
       Text      the type ramp. Roles BasedOn stock styles, no sizes, no margins.
       Surfaces  the boxes, and the elevation rules about when a box is allowed to exist.
       Motion    durations and easings, aliased onto WinUI's own.
@@ -19,10 +18,6 @@
     StaticResource is a parse-time lookup, so a dictionary may only reference one merged before it. Order
     matters outside it too — App.xaml merges this AFTER XamlControlsResources, since Text's roles are BasedOn
     the stock text ramp.
-
-    Pages are migrated to these keys opportunistically, and several still carry their own copies. That is
-    tracked as its own piece of work rather than done here: changing every page at the same time as splitting
-    the dictionary would make both diffs unreadable.
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"

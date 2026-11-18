@@ -9,8 +9,8 @@ namespace Ripcord_App.Services;
 ///
 /// <para>
 /// <b>Why it is painted in code.</b> The trail says progress by dimming the steps not yet reached, and the
-/// dashes are accent-filled: in a contrast theme they disappeared outright, reached and unreached alike
-/// (visual audit, 2026-10-08). Contrast themes get the shape instead of the shade: a reached step is filled in
+/// dashes are accent-filled: left to the style, in a contrast theme they disappear outright, reached and
+/// unreached alike. Contrast themes get the shape instead of the shade: a reached step is filled in
 /// the theme's highlight colour, a step to come is an outline in its text colour, and nothing is translucent.
 /// </para>
 ///

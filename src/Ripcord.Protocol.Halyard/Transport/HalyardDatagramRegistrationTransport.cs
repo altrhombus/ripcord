@@ -15,7 +15,7 @@ namespace Ripcord.Protocol.Halyard.Transport;
 /// Why the account route cannot simply use the TCP one: a console reached through the cloud rendezvous serves
 /// its whole control plane — <c>rgst</c>, <c>init</c> and <c>ctrl</c> — on 9303, and answers a TCP 9295
 /// registration with <c>HTTP 403 / RP-Application-Reason 80108bff</c>. That was observed
-/// live before this existed.
+/// live.
 /// </para>
 ///
 /// <para>
@@ -58,12 +58,7 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
     }
 
     /// <summary>
-    /// Put our opening Init on the wire, so that when the console reacts to our ACCEPT it finds an association
-    /// we opened rather than opening its own. Does not wait for an answer — it cannot, because the answer
-    /// depends on signaling this call is meant to precede.
-    /// </summary>
-    /// <summary>
-    /// The established association, once <see cref="PrepareAsync"/> has run. Null before that.
+    /// The association's channel, once <see cref="PrepareAsync"/> has run. Null before that.
     ///
     /// <para>
     /// Exposed because a connect reuses it: the console serves <c>/sess/init</c> and <c>/sess/ctrl</c> on the
@@ -73,6 +68,11 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
     /// </summary>
     public HalyardDatagramControlChannel? Channel => _channel;
 
+    /// <summary>
+    /// Put our opening Init on the wire, so that when the console reacts to our ACCEPT it finds an association
+    /// we opened rather than opening its own. Does not wait for an answer — it cannot, because the answer
+    /// depends on signaling this call is meant to precede.
+    /// </summary>
     public async Task PrepareAsync(CancellationToken cancellationToken)
     {
         _channel ??= new HalyardDatagramControlChannel(
@@ -107,15 +107,6 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
         }
     }
 
-    /// <summary>
-    /// Which of this machine's addresses would be used to reach <paramref name="console"/>.
-    ///
-    /// <para>
-    /// Connecting a UDP socket sends nothing; it just makes the OS pick the interface it would route from,
-    /// which is more reliable than taking the first non-loopback address on a machine with a VPN or a virtual
-    /// switch. Falls back to loopback, which will fail visibly at the console rather than silently.
-    /// </para>
-    /// </summary>
     /// <summary>
     /// Whether <paramref name="address"/> sits on a network this machine is actually attached to.
     ///
@@ -163,6 +154,15 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
     private static uint ToUInt32(IPAddress address)
         => BinaryPrimitives.ReadUInt32BigEndian(address.GetAddressBytes());
 
+    /// <summary>
+    /// Which of this machine's addresses would be used to reach <paramref name="console"/>.
+    ///
+    /// <para>
+    /// Connecting a UDP socket sends nothing; it just makes the OS pick the interface it would route from,
+    /// which is more reliable than taking the first non-loopback address on a machine with a VPN or a virtual
+    /// switch. Falls back to loopback, which will fail visibly at the console rather than silently.
+    /// </para>
+    /// </summary>
     public static string LocalAddressFor(IPAddress console)
     {
         try

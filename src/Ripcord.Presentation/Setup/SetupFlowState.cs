@@ -49,7 +49,7 @@ public sealed record SetupFlowState(
     // ---- picture ----
     string PictureIntro,
     // True while the PC is being checked for HEVC and an HDR display. The choices stay live: a choice made, or
-    // Continue pressed, during the check is kept and acted on when it answers (owner, 2026-10-09).
+    // Continue pressed, during the check is kept and acted on when it answers.
     bool Checking,
     bool BestPictureAvailable,
     PictureChoice Choice,
@@ -101,9 +101,9 @@ public sealed record SetupFlowState(
 /// One thing to switch on at the console: what to turn on, and where the console keeps it.
 ///
 /// <para>
-/// A list rather than a sentence. The console-side settings are what most often stop a first pairing, and they were
-/// one run-on paragraph in small grey caption text (visual audit, 2026-10-08), so the steps are separate and the
-/// menu path sits apart from the thing to turn on.
+/// A list rather than a sentence. The console-side settings are what most often stop a first pairing, and one
+/// run-on paragraph in small grey caption text hides them, so the steps are separate and the menu path sits
+/// apart from the thing to turn on.
 /// </para>
 /// </summary>
 public sealed record PreflightStep(string TurnOn, string Where);

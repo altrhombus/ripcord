@@ -10,9 +10,9 @@ namespace Ripcord.Presentation.Tests;
 /// The connect sequence, off-device.
 ///
 /// <para>
-/// None of this was testable before the sequence left <c>SessionPage.xaml.cs</c>: it needed a window, a GPU
-/// and a console. The cases that matter are the refusals — every one of them used to be a path that could
-/// only be exercised by unplugging something.
+/// The sequence lives outside the page, so none of this needs a window, a GPU or a console. The cases that
+/// matter are the refusals — on hardware, every one of them is a path that can only be exercised by
+/// unplugging something.
 /// </para>
 /// </summary>
 public class ConnectFlowTests
@@ -285,7 +285,7 @@ public class ConnectFlowTests
     public async Task Hdr_IsStillAskedFor_OnAnSdrDisplay_WhenRipcordCanToneMapIt()
     {
         // The console's SDR stream clips its highlights when its HDR is on (2026-10-02); Ripcord's tone-map of the
-        // HDR stream keeps them, so an SDR display is no longer a reason to ask for SDR.
+        // HDR stream keeps them, so an SDR display is not a reason to ask for SDR.
         var settings = new RipcordSettings { Codec = VideoCodec.Hevc, RequestHdr = true };
 
         (ConnectPlan? plan, _) = await RunAsync(
@@ -360,8 +360,8 @@ public class ConnectFlowTests
     [Fact]
     public async Task TheVideoPipeline_IsPreparedOnTheCallersContext_AfterTheHevcCheck()
     {
-        // The real preparer builds XAML, which only the UI thread may touch. The HEVC check answers on a worker; the
-        // flow resumed there and the connect failed with RPC_E_WRONG_THREAD (2026-10-05).
+        // The real preparer builds XAML, which only the UI thread may touch. The HEVC check answers on a worker; a
+        // flow that resumes there fails the connect with RPC_E_WRONG_THREAD.
         var context = new MarkingContext();
         var video = new StubVideo();
         SynchronizationContext? previous = SynchronizationContext.Current;
@@ -383,8 +383,8 @@ public class ConnectFlowTests
     [Fact]
     public async Task AWakeThatThrows_EndsOnAStageThatSaysSo()
     {
-        // The flow runs fire-and-forget from the page: an exception that escaped it left "Waking" on screen with
-        // nothing to say why (review, 2026-10-05).
+        // The flow runs fire-and-forget from the page: an exception that escapes it leaves "Waking" on screen with
+        // nothing to say why.
         (ConnectPlan? plan, Stages stages) = await RunAsync(
             new StubSessions(), new StubWake(fault: new InvalidOperationException("probe socket closed")), new StubVideo(), Ps5());
 

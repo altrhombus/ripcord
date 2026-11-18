@@ -70,9 +70,8 @@ public sealed partial class AccentRoleToColorConverter : IValueConverter
 /// A status tone as a brush, using the system fill colours rather than literals.
 ///
 /// <para>
-/// These specific keys matter: they are the high-contrast-aware system tokens. A previous version of the
-/// diagnostics overlay used LimeGreen/Orange literals, which were wrong in light theme and invisible in high
-/// contrast — the same trap this converter exists to keep shut for the console cards.
+/// These specific keys matter: they are the high-contrast-aware system tokens. Literals such as LimeGreen or
+/// Orange are wrong in light theme and invisible in high contrast.
 /// </para>
 /// </summary>
 public sealed partial class StatusToneToBrushConverter : IValueConverter
@@ -133,14 +132,6 @@ public sealed partial class ActionGlyphIsConverter : IValueConverter
 
 /// <summary>
 /// Inverts a bool, for the bindings whose natural reading is the negative of the state's.
-///
-/// <para>
-/// A <em>wash</em> converter used to sit here: one accent tint at 0.10 and 0.22 opacity served as both the
-/// hover and the focus appearance of a console card. The tint delta was not legible on a real screen, high
-/// contrast suppressed it to zero, and a pad user could not tell where focus was. Hover and focus are now
-/// different kinds of mark - a wash, and a ring drawn outside the card. Do not reintroduce a single
-/// "highlighted" appearance shared by both.
-/// </para>
 /// </summary>
 public sealed partial class NotConverter : IValueConverter
 {
@@ -177,23 +168,10 @@ public sealed partial class ReachableOpacityConverter : IValueConverter
 }
 
 /// <summary>
-/// The card's density, turned into the handful of things that actually vary with it.
-///
-/// <para>
-/// One converter with a <c>ConverterParameter</c> rather than five converters, because these are five answers
-/// to one question. The parameter names which answer is wanted: <c>Wedge</c>, <c>Margin</c>,
-/// <c>NameStyle</c>, <c>ActionLabel</c>, <c>OneLine</c>.
-/// </para>
-///
-/// <para>
-/// This is what lets the hero and the grid card be one template whose parts vary. As separate markup the two
-/// drifted (the hero could not show the "checking" spinner, and its overflow button was under the touch
-/// minimum); three <c>DataTemplate</c>s chosen by a selector would drift the same way.
-/// </para>
-/// </summary>
-/// <summary>
 /// A card's <see cref="CardGeometry"/> as the values its template needs. The arithmetic is CardMetrics'; this only
-/// turns its numbers into thicknesses and its type steps into the platform's own styles.
+/// turns its numbers into thicknesses and its type steps into the platform's own styles. The
+/// <c>ConverterParameter</c> names which value is wanted: <c>Wedge</c>, <c>Margin</c>, <c>NameStyle</c>,
+/// <c>StatusStyle</c>, <c>MarkHeight</c>, <c>MarkWidth</c>, <c>ActionLabelWidth</c>.
 /// </summary>
 public sealed partial class CardGeometryConverter : IValueConverter
 {
@@ -227,14 +205,28 @@ public sealed partial class CardGeometryConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>
+/// The card's density, turned into the visibilities that vary with it.
+///
+/// <para>
+/// One converter with a <c>ConverterParameter</c> rather than one per answer, because these are answers to one
+/// question. The parameter names which answer is wanted: <c>ActionLabel</c>, <c>OneLine</c>, <c>Stacked</c>.
+/// </para>
+///
+/// <para>
+/// With <see cref="CardGeometryConverter"/>, this is what lets the hero and the grid card be one template whose
+/// parts vary. Separate markup for the two drifts apart; three <c>DataTemplate</c>s chosen by a selector would
+/// drift the same way.
+/// </para>
+/// </summary>
 public sealed partial class CardDensityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language)
     {
         CardDensity density = value is CardDensity d ? d : CardDensity.Grid;
 
-        // Sizes, insets and type steps moved to CardGeometryConverter when the hero began following the window:
-        // a density alone no longer says how big a card is. What is left here is what the density decides.
+        // Sizes, insets and type steps are CardGeometryConverter's: the hero follows the window, so a density
+        // alone does not say how big a card is. Here is what the density decides.
         return (parameter as string) switch
         {
             // "Wake & play" versus "Play" is worth saying where there is room for it. On a dense card the
@@ -242,7 +234,7 @@ public sealed partial class CardDensityConverter : IValueConverter
             "ActionLabel" => density == CardDensity.Hero ? Visibility.Visible : Visibility.Collapsed,
 
             // At hero density the status and the last-played caption share a line; below it they stack, because
-            // the dense card's text column cannot hold both and clipped one for a release.
+            // the dense card's text column cannot hold both without clipping one.
             "OneLine" => density == CardDensity.Hero ? Visibility.Visible : Visibility.Collapsed,
             "Stacked" => density == CardDensity.Hero ? Visibility.Collapsed : Visibility.Visible,
 

@@ -140,7 +140,7 @@ public static class PowerThermalMonitor
     ///
     /// <para>
     /// Lives here rather than on the Windows implementation because it is entirely platform-independent — a
-    /// future libupower or IOKit monitor wants exactly the same rule — and because consumers re-evaluate stream
+    /// libupower or IOKit monitor wants exactly the same rule — and because consumers re-evaluate stream
     /// quality on every report, so a battery reading ticking 61 to 60 must not trigger one.
     /// </para>
     /// </summary>

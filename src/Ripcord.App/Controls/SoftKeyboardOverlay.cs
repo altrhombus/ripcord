@@ -36,8 +36,8 @@ namespace Ripcord_App.Controls;
 ///
 /// <para>
 /// Writes go through <see cref="IValueProvider"/> rather than to <c>TextBox.Text</c>, so the validation the
-/// pairing flow already hangs off <c>TextChanged</c> keeps working untouched, and so a future non-TextBox
-/// target needs no change here. Keys are ≥56×56, which makes this the touch keyboard on a handheld as well.
+/// pairing flow hangs off <c>TextChanged</c> keeps working untouched, and so a non-TextBox target needs no
+/// change here. Keys are ≥56×56, which makes this the touch keyboard on a handheld as well.
 /// </para>
 /// </summary>
 public sealed class SoftKeyboardOverlay
@@ -56,9 +56,9 @@ public sealed class SoftKeyboardOverlay
     /// Put the keyboard up for <paramref name="target"/>. Returns whether it went up.
     ///
     /// <para>
-    /// Synchronous on purpose. As a <c>Task&lt;bool&gt;</c> completing on dismissal, every caller discarded the
-    /// task, so a failure to open, including a thrown exception, vanished into an unobserved Task while the
-    /// caller still reported the press as handled. Opening a popup is not asynchronous work.
+    /// Synchronous on purpose. A <c>Task&lt;bool&gt;</c> completing on dismissal is one callers discard, so a
+    /// failure to open, including a thrown exception, would vanish into an unobserved Task while the caller
+    /// reported the press as handled. Opening a popup is not asynchronous work.
     /// </para>
     ///
     /// <para>
@@ -136,9 +136,9 @@ public sealed class SoftKeyboardOverlay
     /// Which keyboard a field wants, taken from the <c>InputScope</c> it already declares.
     ///
     /// <para>
-    /// <c>LoginPinDialog</c> declares <c>NumericPin</c> today, purely as a hint to the OS touch keyboard, so it
-    /// selects the keypad here with no change to that file. A field that wants a keypad should say so the same
-    /// way rather than by being named in this class.
+    /// <c>LoginPinDialog</c> declares <c>NumericPin</c> as a hint to the OS touch keyboard, and that selects the
+    /// keypad here. A field that wants a keypad should say so the same way rather than by being named in this
+    /// class.
     /// </para>
     /// </summary>
     private static bool WantsKeypad(Control target)
@@ -405,11 +405,11 @@ public sealed class SoftKeyboardOverlay
     /// How to edit a control's text, preferring the automation pattern and falling back to the property.
     ///
     /// <para>
-    /// The fallback must stay: requiring <see cref="IValueProvider"/> made an automation-peer detail a gate on
-    /// the keyboard appearing at all, and on hardware the keyboard silently did not appear. Writing to
-    /// <c>TextBox.Text</c> raises <c>TextChanged</c> exactly as the pattern does, so the validation the pairing
-    /// flow hangs off keeps working either way. The pattern stays preferred because it is the general path a
-    /// non-TextBox target would need.
+    /// The fallback must stay: requiring <see cref="IValueProvider"/> makes an automation-peer detail a gate on
+    /// the keyboard appearing at all, and where the pattern is missing the keyboard silently does not appear.
+    /// Writing to <c>TextBox.Text</c> raises <c>TextChanged</c> exactly as the pattern does, so the validation the
+    /// pairing flow hangs off keeps working either way. The pattern stays preferred because it is the general
+    /// path a non-TextBox target would need.
     /// </para>
     /// </summary>
     private static TextTarget? TargetFor(Control control)

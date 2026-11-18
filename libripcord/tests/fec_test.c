@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - video FEC self-test: GF(2^8) field laws + systematic Cauchy Reed-Solomon round-trips.
+ * libripcord - video FEC self-test: GF(2^8) field laws + systematic Cauchy Reed-Solomon round-trips.
  *
  * Ground truth: GaloisField256_MatchesConsoleInverseTable below is the vendor client's own GF(2^8)
  * division table, dumped from its live field object 2026-08-02 (breakpoint at 0x101036db in the
@@ -9,12 +9,12 @@
  * is a meaningful check rather than a tautology.
  *
  * Everything else here is self-consistency, exactly as the .NET reference's own FecTests.cs documents for
- * its equivalent cases: it proves this port's decoder inverts this port's encoder, over the field and
+ * its equivalent cases: it proves the core's decoder inverts the core's encoder, over the field and
  * matrix form that are independently pinned to the console (field by the vector above, matrix form [C] by
  * decompilation - see fec_reed_solomon.h). No capture in the captures folder pairs A/V traffic with usable
  * stream keys, so there is no console-produced parity unit available to compare against directly.
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE - see tests/Makefile.
  */
 #include "../stream/fec_galois.h"
 #include "../stream/fec_reed_solomon.h"
@@ -81,7 +81,7 @@ static void test_galois_matches_console_inverse_table(void)
             "inverse(%d) != console tail byte 0x%02x", (int)(248 + i), tail[i]);
     }
 
-    /* Division by zero is undefined in this field - the console stores a 0xff sentinel where this port
+    /* Division by zero is undefined in this field - the console stores a 0xff sentinel where this core
      * reports failure instead; nothing in fec_reed_solomon.c ever indexes it (see that header). */
     CHECK(!fec_galois_inverse(0, &inv), "inverse(0) should fail, not silently succeed");
 }

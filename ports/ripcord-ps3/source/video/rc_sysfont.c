@@ -59,14 +59,14 @@ static const char *s_face_name = "?";
 #define RC_SF_LAST    126
 #define RC_SF_COUNT   (RC_SF_LAST - RC_SF_FIRST + 1)
 /*
- * THREE SIZES NOW: body, heading, and a display size for the shell's wordmark and console names, which
+ * THREE SIZES: body, heading, and a display size for the shell's wordmark and console names, which
  * have to read from a sofa rather than from a desk. The third costs its own arena and its own pass over
  * printable ASCII at open - see the note on why they are all built there and never on demand.
  */
 #define RC_SF_SIZES   3
 /*
- * Raised with the third size. A 56-pixel face is roughly 35x55 of coverage per glyph across 95 of them,
- * which is 183 KB - inside 192 by a margin too thin to be a decision. build_size refuses rather than
+ * Per size. A 56-pixel face is roughly 35x55 of coverage per glyph across 95 of them, which is 183 KB -
+ * inside 192 by a margin too thin to be a decision, hence 384. build_size refuses rather than
  * overruns, so this being wrong is a loud failure, but a loud failure at start-up is still a failure.
  */
 #define RC_SF_ARENA   (384u * 1024u)
@@ -86,8 +86,8 @@ static int s_px[RC_SF_SIZES];
  * THE WIDEST DIGIT'S ADVANCE, per size, which is what makes proportional numerals hold still.
  *
  * A proportional face gives '1' a narrower advance than '8', so a figure that ticks from 11 to 88
- * changes width and drags everything after it - which is the whole reason the panel was setting
- * numbers in a second, monospaced face. It does not have to: a digit drawn into a fixed cell the width
+ * changes width and drags everything after it - which is the usual reason for setting numbers in a
+ * second, monospaced face. That is not needed: a digit drawn into a fixed cell the width
  * of the widest digit, centred in it, is a tabular figure, and real faces ship exactly this as a
  * separate set. Synthesising it costs one number per size and lets the panel be set in one typeface.
  */
@@ -98,8 +98,8 @@ static int s_ascent_px[RC_SF_SIZES];
  *
  * The ascent is where the baseline sits below the top of the LINE, and a line reserves room for accents
  * and for descenders that a word like "START" does not have. Centring a run by its line box therefore
- * hangs it high inside a pill or a row by exactly the space those unused parts take - which is what it
- * did, and it reads as the text having slipped upwards rather than as a metric being the wrong one.
+ * hangs it high inside a pill or a row by exactly the space those unused parts take, and it reads as
+ * the text having slipped upwards rather than as a metric being the wrong one.
  *
  * Capitals are what these labels are made of, so the height of a capital is what gets centred. Measured
  * off 'H' rather than taken as a fraction of the em, for the same reason the ascent is.
@@ -118,8 +118,8 @@ static int fail(const char *step, int rc)
 /*
  * The faces worth having, in order. Rodin Regular first because it IS the XMB's Latin face; New Rodin
  * JP after it because that set carries Latin too and is present on firmware where the Latin-only file
- * might not be. Swept rather than assumed for the reason the fontset sweep existed: which files a given
- * firmware carries is not knowable from here, and a missing one opens exactly like a corrupt one.
+ * might not be. Swept rather than assumed: which files a given firmware carries is not knowable from
+ * here, and a missing one opens exactly like a corrupt one.
  */
 static const struct {
     const char *what;
@@ -229,15 +229,14 @@ int rc_sysfont_open(float body_px, float heading_px, float display_px)
     }
 
     /*
-     * The two sizes the panel uses. They are built here rather than on demand because on demand means
-     * on the decode thread, and that is what b256 cost a session to establish.
-     */
-    /*
-     * BOTH SIZES ARE GIVEN, not one and a ratio. The caller derives them from the display - a panel
+     * ALL THREE SIZES ARE BUILT HERE rather than on demand, because on demand means on the decode
+     * thread, and that is what b256 cost a session to establish.
+     *
+     * THE SIZES ARE GIVEN, not one and a ratio. The caller derives them from the display - a panel
      * designed at 1080p is set at two thirds of that on a 720p screen - and a multiplier here would
-     * have quietly ignored the second of them. b265 built its atlas at a hardcoded 26 and 37 while the
-     * layout asked for 24 and 34, which happened to work at 1080p and would have left the type at full
-     * size on every smaller display.
+     * quietly ignore that. b265 built its atlas at a hardcoded 26 and 37 while the layout asked for 24
+     * and 34, which happened to work at 1080p and would have left the type at full size on every
+     * smaller display.
      */
     if (!build_size(0, (int)body_px) || !build_size(1, (int)heading_px) ||
         !build_size(2, (int)display_px)) {
@@ -302,10 +301,8 @@ void rc_sysfont_set_size(float pixels)
      * NEAREST OF THE SIZES ACTUALLY BUILT, rather than rebuilding: a size that was not prepared cannot
      * be drawn without going back to FreeType, which is the thing this exists to avoid.
      *
-     * It used to compare against the midpoint of the first TWO and so could only ever return 0 or 1 -
-     * which meant the third size, built at open and paid for in arena, was unreachable, and the shell's
-     * display type was quietly set at the heading size. A midpoint test does not generalise past two
-     * options; a nearest-of-all search does, and does not have to be revisited for a fourth.
+     * A nearest-of-all search rather than a midpoint test, which does not generalise past two sizes
+     * and would leave the third unreachable.
      */
     for (i = 0; i < s_sizes_built && i < RC_SF_SIZES; i++) {
         int d = (int)pixels - s_px[i];
@@ -339,9 +336,9 @@ int rc_sysfont_render(unsigned char *cov, int cov_w, int cov_h, int x, int basel
         g = &s_glyph[s_slot][c - RC_SF_FIRST];
 
         /*
-         * A NULL buffer MEASURES, and measuring is now free. In b256 it went through FT_LOAD_RENDER
-         * like everything else, so every right-aligned run was rasterised twice and half of it thrown
-         * away - which is half of why a rebuild took 1,483 ms.
+         * A NULL buffer MEASURES, and measuring is free: it reads advances out of the atlas. In b256
+         * measuring went through FT_LOAD_RENDER, so every right-aligned run was rasterised twice and
+         * half of it thrown away - which is half of why a rebuild took 1,483 ms.
          */
         {
             int cell = 0;

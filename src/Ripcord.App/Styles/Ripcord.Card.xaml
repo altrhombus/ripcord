@@ -2,19 +2,19 @@
 <!--
     The card's material: the gradient, the stroke, the top highlight, and the focus ring.
 
-    Split from Surfaces because this is the first dictionary in the app with THEME DICTIONARIES. Everything
+    Split from Surfaces because this is the one shared dictionary with THEME DICTIONARIES. Everything
     else resolves theme through {ThemeResource} onto a system brush; the card cannot, because the gradient is
     Ripcord's own and Windows has no stock brush for it.
 
     > The gradient's direction and its ratio are Ripcord's; its lightness belongs to the theme.
 
-    In dark theme the card runs deeper than the Mica ground (#23272E to #12151A). These were the app tile's own
-    values until the tile was lifted to #303743 to #1B1F26 on 2026-09-24. The card deliberately did not follow:
-    the wedge facet below is defined as the card lifted, and its values are almost exactly the new tile's, so
-    moving the card would erase the facet. Whether the card and tile rejoin is an open item in ROADMAP.md.
+    In dark theme the card runs deeper than the Mica ground (#23272E to #12151A), and deeper than the app
+    tile (#303743 to #1B1F26). The card deliberately does not take the tile's values: the wedge facet below is
+    defined as the card lifted, and its values are almost exactly the tile's, so a card at the tile's values
+    would erase the facet.
     In light theme it runs LIGHTER than the ground, so it reads as raised paper rather than a hole cut in the
-    page. A dark card on a light desktop was drawn, considered and rejected: it overrules a preference the
-    user stated to the operating system, which is not a thing an app gets to do for style.
+    page. A dark card on a light desktop is not offered: it overrules a preference the user stated to the
+    operating system, which is not a thing an app gets to do for style.
 
     High contrast takes neither. Every brush below falls back to a system colour there, because a gradient is
     decoration and high contrast is the one theme where decoration is not permitted to carry meaning. What
@@ -27,7 +27,7 @@
 
     <ResourceDictionary.ThemeDictionaries>
 
-        <!--  Dark. The tile's original two values, in the tile's own direction. See the note above.  -->
+        <!--  Dark. Deeper than the app tile, in the tile's own direction. See the note above.  -->
         <ResourceDictionary x:Key="Default">
             <LinearGradientBrush x:Key="RipcordCardFillBrush" StartPoint="0,0" EndPoint="1,1">
                 <GradientStop Offset="0" Color="#23272E" />
@@ -91,8 +91,8 @@
 
             These alias the STOCK card brushes rather than naming SystemColor* keys directly. WinUI already
             remaps CardBackgroundFillColorDefaultBrush and CardStrokeColorDefaultBrush to the right system
-            colours under high contrast, so aliasing gets the same result through a key this repository has
-            used for a year. Naming a system colour by hand buys nothing and risks a key that resolves
+            colours under high contrast, so aliasing gets the same result through keys the rest of the app
+            already uses. Naming a system colour by hand buys nothing and risks a key that resolves
             nowhere - which in a theme dictionary is a crash in the one theme nobody can casually test.
         -->
         <ResourceDictionary x:Key="HighContrast">
@@ -103,9 +103,9 @@
 
             <!--
                 Transparent, so the wedge is its rim and nothing else. This is the case the whole facet idea
-                is built to satisfy: strip every decorative colour and the diagonal must still be there. The
-                version this replaced filled the zone with the accent, which in high contrast resolved to the
-                TEXT colour - a third of the card became a solid slab of it, with the play mark lost inside.
+                is built to satisfy: strip every decorative colour and the diagonal must still be there. A
+                zone filled with the accent would not do: in high contrast the accent resolves to the TEXT
+                colour, and a third of the card becomes a solid slab of it with the play mark lost inside.
             -->
             <SolidColorBrush x:Key="RipcordWedgeFacetBrush" Color="Transparent" />
             <SolidColorBrush x:Key="RipcordWedgeButtonFacetBrush" Color="Transparent" />
@@ -121,24 +121,23 @@
         and form... That is also what survives high contrast, where decorative colour must disappear entirely
         and only shape is left."
 
-        The first build inverted that. It filled the zone with the vendor accent at full strength, so the
-        wedge was a field of colour that happened to be diagonal - which reads as loud (a third of the card
-        shouting) while being weak in the way that matters, because removing the colour left nothing behind.
-        In high contrast, where AccentResources resolves the accent to the TEXT brush, that became a solid
-        slab of text colour with the play mark invisible inside it.
+        A zone filled with the vendor accent at full strength inverts that. The wedge becomes a field of
+        colour that happens to be diagonal - which reads as loud (a third of the card shouting) while being
+        weak in the way that matters, because removing the colour leaves nothing behind. In high contrast,
+        where AccentResources resolves the accent to the TEXT brush, it is a solid slab of text colour with
+        the play mark invisible inside it.
 
-        So the zone is now a FACET: the card's own gradient, shifted, so it reads as a plane cut into the same
-        material. The accent survives as a RIM along the diagonal - a line, not a field - which is what makes
-        the diagonal the loud thing rather than the area, and what lets high contrast keep the shape while
+        So the zone is a FACET: the card's own gradient, shifted, so it reads as a plane cut into the same
+        material. The accent is a RIM along the diagonal - a line, not a field - which is what makes the
+        diagonal the loud thing rather than the area, and what lets high contrast keep the shape while
         dropping the colour.
 
-        The mark takes the ordinary foreground brush for the same reason. It was fixed white when the zone
-        behind it was always a saturated accent; on a facet it is a glyph on a surface like any other, and a
-        fixed colour would be a contrast bug waiting for the first theme that disagrees.
+        The mark takes the ordinary foreground brush for the same reason. On a facet it is a glyph on a
+        surface like any other, and a fixed white would be a contrast bug in the first theme that disagrees.
 
         The mark and label brushes are deliberately NOT aliased into this dictionary. Two StaticResource
         entries at this dictionary's root, pointing at TextFillColorPrimaryBrush and
-        TextFillColorSecondaryBrush, rendered the ENTIRE WINDOW BLACK. StaticResource is a parse-time lookup,
+        TextFillColorSecondaryBrush, render the ENTIRE WINDOW BLACK. StaticResource is a parse-time lookup,
         and while this dictionary is being built it cannot reliably see XamlControlsResources even though
         App.xaml merges that first. Nothing throws and no crash is logged - the page simply comes up empty,
         which is the worst possible failure mode for a resource dictionary.
@@ -152,12 +151,9 @@
     <!--
         The focus ring, and why it is these numbers.
 
-        Hover and focus were the same picture until 2026-09-20: both ran through one IsHighlighted flag onto
-        one accent wash, moving it from 0.10 to 0.22 opacity on a gradient that fades out at 90%. That is a
-        tint delta rather than an outline, it was invisible on a real screen, and in high contrast the wash
-        was suppressed to zero, leaving nothing at all. A pad user could not tell where focus was.
-
-        So the two states are now different KINDS of thing, not two strengths of one thing:
+        Hover and focus are different KINDS of thing, not two strengths of one wash. A stronger tint is a
+        delta rather than an outline: it is invisible on a real screen, and in high contrast a wash is
+        suppressed to zero, so a pad user could not tell where focus was.
 
           hover  a wash over the card - pointer feedback, low stakes, and it follows the mouse
           focus  a ring drawn outside the card - the keyboard and pad answer to "where am I?"
@@ -172,20 +168,20 @@
         and read as one thick edge, which is the failure mode that makes a focus ring easy to miss on a
         surface that already has a border.
 
-        It has to clear BOTH lines of the ring, and -4 did not: 3px primary outside 2px secondary put the
+        It has to clear BOTH lines of the ring, and -4 does not: 3px primary outside 2px secondary puts the
         secondary from 1px outside the card's edge to 1px inside it, on top of the card's own 1px stroke. On
-        the straight runs it painted the stroke out; at the rounded corners it missed, so in high contrast a
-        focused card showed four stray corner arcs inside the ring (visual audit, 2026-10-08). At -6 the
-        secondary ends a pixel short of the card, and the card's whole border shows inside the ring.
+        the straight runs it paints the stroke out; at the rounded corners it misses, so in high contrast a
+        focused card shows four stray corner arcs inside the ring. At -6 the secondary ends a pixel short of
+        the card, and the card's whole border shows inside the ring.
     -->
     <Thickness x:Key="RipcordFocusPrimaryThickness">3</Thickness>
     <Thickness x:Key="RipcordFocusSecondaryThickness">2</Thickness>
     <Thickness x:Key="RipcordFocusMargin">-6</Thickness>
 
     <!--
-        THE WEDGE BUTTON: the primary action where something launches, outside the console card. design.md
+        THE WEDGE BUTTON: the primary action where something launches, outside the console card. docs/design.md
         allows a wedge in three places - the card's play action, first run's primary action and the pairing
-        celebration's - and this is the form of the other two (showcase plan, part 4).
+        celebration's - and this is the form of the other two.
 
         An accent button with a wedge cut into its trailing end. The body is Windows' own accent button, by its
         own resources, so it reads as the primary action to anyone who knows Windows, follows the user's accent
@@ -230,8 +226,8 @@
 
                         <!--
                             HighContrastAdjustment None: the label's colours are already the contrast theme's own
-                            (AccentButtonForeground on AccentButtonBackground), and with the adjustment Windows put
-                            a black backplate behind it, white text in a box inside the button (showcase review, H2).
+                            (AccentButtonForeground on AccentButtonBackground), and with the adjustment Windows puts
+                            a black backplate behind it, white text in a box inside the button.
                         -->
                         <ContentPresenter
                             x:Name="ContentPresenter"
@@ -247,8 +243,8 @@
                         <!--
                             The facet, at the console card's angle, and its edge drawn as a line. The line's Width
                             is the slant's run (0.16 of the 56 px column): Stretch fills a path's own bounds, and
-                            a lone diagonal stretched across the whole column ran corner to corner, off the facet's
-                            edge (owner, 2026-10-09).
+                            a lone diagonal stretched across the whole column would run corner to corner, off the
+                            facet's edge.
                         -->
                         <Path
                             Grid.Column="1"

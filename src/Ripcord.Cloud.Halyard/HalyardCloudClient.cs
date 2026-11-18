@@ -82,7 +82,8 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
 
     /// <summary>
     /// Send the wake/trigger command to the console (targeted by duid) that starts a streaming
-    /// session. The seed bytes are handed to the console to bootstrap the direct session's crypto.
+    /// session. <c>Data1</c>/<c>Data2</c> are the ephemeral values the console encrypts the registration
+    /// seed with before publishing it as <c>customData1</c>. Returns the command id.
     /// </summary>
     public async Task<string> SendConnectCommandAsync(
         string consoleDuid,
@@ -136,7 +137,7 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     /// third client ephemeral — the stream companion / K16), <c>supportCmd</c> and <c>protocolVer</c>. Field order
     /// and comma spacing match our own single-session v2 capture exactly (accountId, roomId, sessionId,
     /// clientType, data1, data2, supportCmd, protocolVer, data3); the
-    /// v1 path is left untouched because its two-field form is the one three pairing captures settle. accountId is
+    /// v1 method keeps its two-field form, which is the one three pairing captures settle. accountId is
     /// a bare JSON number for the same wire-faithfulness reason documented on the v1 method.
     /// </summary>
     public async Task<string> SendRemotePlayCommandV2Async(
@@ -221,7 +222,7 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
 
                 // Sent when the caller supplies one, empty otherwise. The 9303 control prelude names both peers
                 // by the ids they published here, so a client that omits it announces a transport peer the
-                // console never heard of. The vendor's own derivation is still [X] (see HalyardLocalHashedId);
+                // console never heard of. The vendor's own derivation is [X] (see HalyardLocalHashedId);
                 // what matters on the wire is that this value and the prelude's agree.
                 LocalHashedId: localHashedId.IsEmpty ? string.Empty : Convert.ToBase64String(localHashedId.Span)));
         string offerBody = JsonSerializer.Serialize(offer, HalyardCloudJsonContext.Default.OfferBody);
@@ -339,8 +340,7 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
 
     /// <summary>
     /// A post whose reply is not read: the session-message posts, which answer with nothing or with nothing we use.
-    /// It used to parse whatever came back as JSON when the body was not empty, so an unexpected non-JSON reply
-    /// failed the send; the reply is now left unread, as it is not needed.
+    /// The reply is left unread, so an unexpected non-JSON one cannot fail the send.
     /// </summary>
     private Task PostWithoutReplyAsync<TRequest>(
         string url, TRequest body, JsonTypeInfo<TRequest> requestInfo, CancellationToken cancellationToken)

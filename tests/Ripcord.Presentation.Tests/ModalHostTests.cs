@@ -8,8 +8,8 @@ namespace Ripcord.Presentation.Tests;
 ///
 /// <para>
 /// A dialog shown without a Modal input scope leaves whatever is underneath still holding the pad, so on a
-/// handheld with no keyboard the user is looking at a prompt they cannot answer. Seven call sites showed a
-/// dialog and exactly one pushed the scope, so this is a test and not a convention, as with
+/// handheld with no keyboard the user is looking at a prompt they cannot answer. A convention does not hold
+/// that across every call site that shows a dialog, so this is a test, as with
 /// <c>PageStyleTests</c> and <c>PresentationPortabilityTests</c>.
 /// </para>
 ///
@@ -64,7 +64,7 @@ public class ModalHostTests
     /// <c>FocusFirstContentElement</c>, which focuses the content BEHIND the modal. The symptom is a PSN
     /// password box that deselects the instant it is clicked, because a WebView2's native focus reads as no
     /// XAML focus at all. Guarding callers one at a time is how one gets missed; the check belongs at the
-    /// chokepoint, and this asserts it is still there.
+    /// chokepoint, and this asserts it is there.
     /// </para>
     /// </summary>
     [Fact]

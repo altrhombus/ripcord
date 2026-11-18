@@ -157,9 +157,7 @@ public sealed partial class AboutPage : Page
 
     /// <summary>
     /// Ask the shared capability probe, which is the only thing in the app allowed to touch the native queries
-    /// — and which marshals them off this thread, because doing otherwise kills the process outright. This page
-    /// used to call them directly and got away with it only because it wrapped them in <c>Task.Run</c> itself;
-    /// the settings page made the same calls without that and crashed on every open.
+    /// — and which marshals them off this thread, because doing otherwise kills the process outright.
     /// </summary>
     private static async Task<GraphicsProbe> RunGraphicsProbeAsync()
     {

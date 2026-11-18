@@ -42,7 +42,7 @@ public class WakeCoordinatorTests
     /// <para>
     /// With a real clock the budget, not the script, decides the outcome.
     /// <c>Standby_WakesThenReportsAwake</c> scripts three probe answers and needs the third one, so it needs
-    /// two polls; with a 1 ms interval and a 50 ms budget it failed on <c>osx-arm64</c>, where
+    /// two polls; with a 1 ms interval and a 50 ms budget it fails on <c>osx-arm64</c>, where
     /// <c>Task.Delay(1)</c> does not cost anything like 1 ms. Every test in this class is decided by its
     /// script alone.
     /// </para>

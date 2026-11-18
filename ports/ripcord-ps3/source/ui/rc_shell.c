@@ -28,8 +28,8 @@
 
 /* ------------------------------------------------------------------------------------------------
  * LAYOUT, in design pixels against a 1920x1080 screen, converted by sx()/sy() for whatever the
- * television actually is. Nothing here is a real pixel count: b265 shipped a panel measured in real
- * pixels and it was wider than a 480p screen.
+ * television actually is. Nothing here is a real pixel count: a panel measured in real pixels is
+ * wider than a 480p screen (b265).
  *
  * Both axes are scaled, which the diagnostics panel's rc_overlay_px does not do - it scales by height
  * alone, which is right for a panel that keeps its shape and wrong for a layout that fills the screen.
@@ -99,9 +99,9 @@ static int s_found_count;
 static int s_searched;              /* a broadcast has been run at least once this session */
 
 /*
- * THE WHOLE LIST, not one console. The file used to hold exactly one, so pairing a second destroyed the
- * first one's keys - see halyard_pairing_file.h. `s_settings` is a record of its own because a PS3 with
- * nothing paired still has settings to hold and no entry to hold them in.
+ * THE WHOLE LIST, not one console: the file holds every paired console, and writing one record over
+ * it would destroy the others' keys - see halyard_pairing_file.h. `s_settings` is a record of its own
+ * because a PS3 with nothing paired still has settings to hold and no entry to hold them in.
  */
 static halyard_pairing_set s_set;
 static halyard_pairing_record s_settings;
@@ -247,9 +247,9 @@ static void read_enter_button(void)
  * Negative inside, zero on the edge, and correct in the corners because the corner is a circle by
  * construction. Coverage comes straight off it as a one-pixel ramp, which depends only on the geometry:
  * the same pixel gets the same coverage on every frame no matter what is behind it. Counting nine
- * sub-positions per pixel, which this replaced, gave a stepped edge, a wedge at forty-five degrees in
- * the corners, and a shimmer as the background moved. The distance is also cheaper: one square root
- * per corner pixel and none on the straight edges.
+ * sub-positions per pixel gives a stepped edge, a wedge at forty-five degrees in the corners, and a
+ * shimmer as the background moves. The distance is also cheaper: one square root per corner pixel and
+ * none on the straight edges.
  *
  * It depends on isqrt_i being exact, and isqrt_i's seed must be a power of four: 1<<30 is the largest
  * that fits an int. Seeded at 1<<15 (b360) it answered sqrt(2v) and saturated at 510 above 65535, so a
@@ -328,14 +328,11 @@ static void note_ink(int y, int x0, int x1);
 static void blend_one(uint32_t *p, uint32_t rgb, unsigned a);
 
 /*
- * INSIDE THE DRAWING, because "drawing is 67 ms" names a half and not a cause. The estimate for these
- * parts came to about ten milliseconds all told; being wrong by six times means something here is doing
- * work nobody has accounted for, and the only way to find out which is to time the pieces separately.
- */
-/*
- * The glow and the card shapes are timed inside draw_card, which now runs for the layer's cards AND for
- * the sprite - so dividing them by the LAYER's rebuild count reported figures several times the truth.
- * They are per card drawn, and counted as such.
+ * TIMERS INSIDE THE DRAWING, one per part, because "drawing is 67 ms" names a half and not a cause.
+ *
+ * The glow and the card shapes are timed inside draw_card, which runs for the layer's cards AND for
+ * the sprite - so dividing them by the LAYER's rebuild count would report figures several times the
+ * truth. They are per card drawn, and counted as such (s_cards_drawn).
  */
 static uint64_t s_sum_glow, s_sum_shape, s_sum_text, s_sum_cards, s_sum_header;
 static unsigned s_cards_drawn;
@@ -350,11 +347,10 @@ static unsigned us_since(uint64_t t)
  * A bounds-checked single pixel, for the glyphs - which are drawn by testing every pixel of a small box
  * rather than by walking spans, so there is nothing to hoist.
  *
- * IT FORCED THE ALPHA TO 255 UNTIL b387, and that was wrong the moment the shapes started drawing into
- * a transparent layer instead of onto an opaque screen: every partially-covered pixel of a cross, a
- * triangle or a pill's outline came out fully opaque, so each glyph carried a dark box the width of its
- * own antialiasing. Missed because the other two blends were converted together and this one is called
- * from one place.
+ * THE ALPHA IS COMPUTED, NOT FORCED TO 255, because the shapes draw into a transparent layer as well
+ * as onto an opaque screen. Forced, every partially-covered pixel of a cross, a triangle or a pill's
+ * outline comes out fully opaque, and each glyph carries a dark box the width of its own antialiasing
+ * (b387).
  */
 static void blend_at(int x, int y, uint32_t rgb, unsigned a)
 {
@@ -417,25 +413,6 @@ static int rrect_dist(const sh_rrect *s, int col, int dy)
     return isqrt_i(dx * dx + dy * dy) - s->r;
 }
 
-/*
- * One rounded rectangle, filled when `t` is 0 and outlined otherwise.
- *
- * A SPAN AT A TIME, NOT A PIXEL AT A TIME.
- *
- * b370 timed the parts of the drawing: of 67,199 us, the text is 2,629 and the rounded rectangles are
- * 63,695. The fill took 42,029 us for roughly 620,000 pixels, about 217 cycles each, because it
- * computed the distance function for every pixel.
- *
- * Inside the straight vertical band, which for a 360-wide card with a 22-pixel radius is 87 percent of
- * every row, the horizontal term is clamped to zero and the distance is dy - r: a function of the row
- * alone. So each row is three pieces: a left edge, a flat middle, and a right edge. The middle is one
- * constant coverage and a tight blend with the multiply-by-alpha hoisted out; only the edges - about
- * twenty pixels a side, where the corner arc lives - pay for a distance and a square root.
- *
- * This holds for the outline as well as the fill: an outline's coverage in that band is min of two
- * functions of the same dy, which is still constant across the span.
- */
-
 /* Exact division by 255 for a value already in 0..65535 - what a blend of two eight-bit terms produces.
  * The compiler turns / 255u into a multiply and a shift anyway; this says so once, where it is read. */
 static unsigned div255(unsigned v)
@@ -445,20 +422,11 @@ static unsigned div255(unsigned v)
 }
 
 /*
- * TRIED AND REJECTED: dcbt.
+ * THE BLEND, BY TABLE RATHER THAN BY MULTIPLY.
  *
- * b371 took roughly ninety percent of the arithmetic out of this loop and the shapes fell by 2.5x,
- * leaving about 170 cycles a blended pixel. b373 prefetched four cache lines ahead and it changed
- * nothing: glow 8,972 to 9,045 us, card shapes 16,582 to 16,619. dcbz on the write path in rc_wave.c
- * had done nothing either.
- *
- * The multiplies were tried next. The PPE's integer multiply is slow and poorly pipelined, and a blend
- * does three of them per pixel - one per channel - each feeding a dependent chain. See blend_span:
- * they are now a table.
- */
-
-/*
- * THE BLEND, WITH THE MULTIPLIES REPLACED BY A TABLE.
+ * The PPE's integer multiply is slow and poorly pipelined, and a blend does three of them per pixel -
+ * one per channel - each feeding a dependent chain. Prefetching instead (dcbt, four cache lines ahead)
+ * changed nothing: glow 8,972 to 9,045 us, card shapes 16,582 to 16,619 (b373).
  *
  * For one span the source colour and the alpha are constant, so a channel's result - (src*a + dst*inv)
  * / 255 - depends on nothing but that channel's DESTINATION byte, of which there are 256 possible
@@ -499,11 +467,6 @@ static void blend_lut_for(uint32_t rgb, unsigned a)
 }
 
 /*
- * One horizontal run at a single alpha. The globals are read ONCE here rather than per pixel: s_px and
- * s_pitch are file-scope, the loop stores through s_px, and the compiler has to assume a store might
- * reach them.
- */
-/*
  * ONE PIXEL AT AN ALPHA OF ITS OWN, which is what the table cannot do.
  *
  * The table above is keyed on the colour AND the alpha, so it is only free where a run shares both. A
@@ -511,8 +474,7 @@ static void blend_lut_for(uint32_t rgb, unsigned a)
  * pixel, a 768-entry table was rebuilt two hundred thousand times a frame, and the glow went from
  * 9,045 us to 43,227.
  *
- * So varying alpha keeps the multiplies, three per pixel. The glow is now small enough - see
- * rounded_glow - that it no longer matters.
+ * So varying alpha keeps the multiplies, three per pixel.
  */
 static void blend_one(uint32_t *p, uint32_t rgb, unsigned a)
 {
@@ -541,6 +503,11 @@ static void blend_one(uint32_t *p, uint32_t rgb, unsigned a)
        |  div255((rgb & 0xffu) * a + (d & 0xffu) * inv);
 }
 
+/*
+ * One horizontal run at a single alpha. The globals are read ONCE here rather than per pixel: s_px and
+ * s_pitch are file-scope, the loop stores through s_px, and the compiler has to assume a store might
+ * reach them.
+ */
 static void blend_span(uint32_t *row, int x0, int x1, uint32_t rgb, unsigned a)
 {
     int x;
@@ -566,6 +533,24 @@ static void blend_span(uint32_t *row, int x0, int x1, uint32_t rgb, unsigned a)
     }
 }
 
+/*
+ * One rounded rectangle, filled when `t` is 0 and outlined otherwise.
+ *
+ * A SPAN AT A TIME, NOT A PIXEL AT A TIME.
+ *
+ * b370 timed the parts of the drawing: of 67,199 us, the text is 2,629 and the rounded rectangles are
+ * 63,695. The fill took 42,029 us for roughly 620,000 pixels, about 217 cycles each, because it
+ * computed the distance function for every pixel.
+ *
+ * Inside the straight vertical band, which for a 360-wide card with a 22-pixel radius is 87 percent of
+ * every row, the horizontal term is clamped to zero and the distance is dy - r: a function of the row
+ * alone. So each row is three pieces: a left edge, a flat middle, and a right edge. The middle is one
+ * constant coverage and a tight blend with the multiply-by-alpha hoisted out; only the edges - about
+ * twenty pixels a side, where the corner arc lives - pay for a distance and a square root.
+ *
+ * This holds for the outline as well as the fill: an outline's coverage in that band is min of two
+ * functions of the same dy, which is still constant across the span.
+ */
 static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t argb)
 {
     unsigned alpha = (argb >> 24) & 0xffu;
@@ -785,7 +770,7 @@ static void rounded_edge(int x, int y, int w, int h, int r, int t, uint32_t argb
  * THE BUTTON GLYPHS, on the same principle: an exact distance to the shape's outline, so the diagonals
  * of a cross come out as clean lines and the triangle's edges stop where they meet instead of running
  * past each other. Returns the width consumed, so a row of hints is laid out by chaining rather than by
- * hand-measured offsets - which is how the last one ended up off-centre.
+ * hand-measured offsets, which end up off-centre.
  */
 static int glyph(uint32_t button, int x, int y, int size, uint32_t argb)
 {
@@ -998,7 +983,6 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
         }
     }
 
-    /* A pip and one word. Green is ready, amber is asleep, grey is a console that did not answer. */
     /*
      * A PIP ONLY WHEN IT MEANS SOMETHING. Green is ready and amber is asleep; a console that did not
      * answer gets no dot at all, because a grey circle beside the word "paired" is a thing somebody has
@@ -1133,9 +1117,6 @@ static void draw_list(void)
 }
 
 /*
- * WHAT WAS ON THE SCREEN LAST TIME, so a menu nobody is touching costs only its background.
- */
-/*
  * TWO WAYS TO SHOW ONE MODEL. The home screen is a row of cards because choosing a destination is a
  * different act from choosing a setting - and a settings screen laid out as cards would be four
  * enormous tiles saying "30 fps". rc_menu does not know or care which of these is drawing it.
@@ -1202,9 +1183,8 @@ static rc_thermal_record s_thermal;
 
 static uint32_t *s_layer;              /* premultiplied ARGB - the interface, with no background */
 /*
- * ONE SPAN A ROW. b382 split each row into two runs so a header row would not composite the empty
- * middle of the screen between the wordmark and the build id; it measured no difference at all, so the
- * second run and its gap search are gone again rather than kept for the story they tell.
+ * ONE SPAN A ROW. Two runs a row, so that a header row does not composite the empty middle of the
+ * screen between the wordmark and the build id, measured no difference at all (b382).
  */
 static short s_lrow_lo[SH_MAX_H], s_lrow_hi[SH_MAX_H];
 static int s_layer_fresh;
@@ -1227,9 +1207,8 @@ static int s_layer_valid;
 static uint64_t s_sum_layer;
 static unsigned s_layer_builds;
 /*
- * The two halves of the frame's pass, kept apart. b380 folded the background's expansion, a line copy
- * and the composite into one number and it went the wrong way; having to guess which third was
- * responsible is what that cost.
+ * The two halves of the frame's pass - the background's rows and the composite - timed apart, so a
+ * number that goes the wrong way says which half moved (b380 had one figure for all of it).
  */
 static uint64_t s_ticks_rows, s_ticks_comp;
 /* Set while the cursor is still settling - the log reports it so "it looked smooth" has a number. */
@@ -1246,9 +1225,9 @@ static int layer_ensure(void)
     s_layer = (uint32_t *)memalign(128, (size_t)s_scr_w * (size_t)s_scr_h * 4u);
     if (s_layer == NULL) {
         /*
-         * SAID, AND THEN LIVED WITH. Without the layer the shell still draws - build_layer simply
-         * aims at the surface as every build before this one did - so a console short of memory gets
-         * the old frame rate rather than no menu.
+         * SAID, AND THEN LIVED WITH. Without the layer the shell still draws - draw() paints the
+         * interface straight onto the surface every frame - so a console short of memory gets a
+         * lower frame rate rather than no menu.
          */
         rc_log("shell: no memory for the interface layer - drawing straight to the screen\n");
         s_layer_w = s_layer_h = 0;
@@ -1291,11 +1270,6 @@ static void layer_note_ink(int y, int x0, int x1)
     if (x1 > s_lrow_hi[y]) s_lrow_hi[y] = (short)x1;
 }
 
-/*
- * Everything the interface is made of, painted into whatever s_px and rc_overlay's target currently
- * point at. Split out so the layer and the no-layer fallback below are the same drawing rather than two
- * that have to be kept in step.
- */
 /* ------------------------------------------------------------------------------------------------
  * THE SELECTED CARD, AS A SPRITE THAT MOVES
  *
@@ -1365,13 +1339,6 @@ static void sprite_note_ink(int y, int x0, int x1)
     if (x1 > s_sprow_hi[y]) s_sprow_hi[y] = (short)x1;
 }
 
-/*
- * The sprite is the card PLUS the room its glow needs on every side, and the card is drawn inset by
- * that much - so the glow, which is captured in whatever coordinates the card was drawn in, lands
- * inside the buffer instead of being clipped to the card's own edge. It also means one number moves
- * both: the glow's mask is offset by the sprite's position each frame and stays with the card that
- * casts it.
- */
 static void note_ink(int y, int x0, int x1)
 {
     if (s_sprite_building)
@@ -1380,6 +1347,13 @@ static void note_ink(int y, int x0, int x1)
         layer_note_ink(y, x0, x1);
 }
 
+/*
+ * The sprite is the card PLUS the room its glow needs on every side, and the card is drawn inset by
+ * that much - so the glow, which is captured in whatever coordinates the card was drawn in, lands
+ * inside the buffer instead of being clipped to the card's own edge. It also means one number moves
+ * both: the glow's mask is offset by the sprite's position each frame and stays with the card that
+ * casts it.
+ */
 static void sprite_capture(const rc_menu_item *item, int cw, int chl, int pad)
 {
     uint32_t *keep_px = s_px;
@@ -1537,7 +1511,11 @@ static int sprite_where(uint64_t now, int *ox, int *oy)
 static int cards_geometry(int n, int *cw, int *ch, int *gap, int *x0);
 static int sprite_rebuild_from_menu(void);
 
-/* The hint row used to be drawn here and takes `can_forget` with it - see paint_live. */
+/*
+ * Everything the interface is made of, painted into whatever s_px and rc_overlay's target currently
+ * point at. Split out so the layer and the no-layer fallback below are the same drawing rather than two
+ * that have to be kept in step.
+ */
 static void paint_ui(void)
 {
     int i;
@@ -1563,11 +1541,11 @@ static void paint_ui(void)
     (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_WORD_Y), 3, RC_OV_TEXT, "%s", "Ripcord");
     rc_overlay_blend_rect(sx(SH_MARGIN), sy(SH_RULE_Y), sx(112), sy(3), s_accent);
     /*
-     * THE VERSION, SAID THE WAY THE MACHINE SAYS IT. This read "b448" - our own build counter - while
-     * the XMB showed 4.48 for the same binary, so the one place somebody checks whether the thing they
-     * just installed is the thing running disagreed with the place they installed it from. Both come
-     * from the same counter now and are formatted the same way; the raw id survives in the log, where
-     * a run is found by grepping for it.
+     * THE VERSION, SAID THE WAY THE MACHINE SAYS IT. The XMB shows 4.48 for the binary our own build
+     * counter calls b448, and this is the one place somebody checks whether the thing they just
+     * installed is the thing running - so it must agree with the place they installed it from. Both
+     * come from the same counter and are formatted the same way; the raw id is in the log, where a run
+     * is found by grepping for it.
      */
     rc_overlay_text_right(s_scr_w - sx(SH_MARGIN), sy(SH_WORD_Y + 22), 1, RC_OV_LABEL, "%s",
                           RC_PS3_VERSION);
@@ -1622,8 +1600,7 @@ static void paint_ui(void)
 
     /*
      * WHAT EACH HALF COSTS, kept apart. "The menu is slow" is not a finding; "the background is 7 ms and
-     * the cards are 19" names which one to fix, and the first version of this measured only the
-     * background and drew the conclusion about the wrong half.
+     * the cards are 19" names which one to fix.
      */
 
 }
@@ -1632,9 +1609,9 @@ static void paint_ui(void)
  * EVERY PIXEL DRAWN MUST BE INSIDE THE BOUNDS ITS DRAWER REPORTED.
  *
  * The composite walks the recorded bounds and nothing else, so a primitive that draws without saying
- * where does not lose its pixels - it loses the composite's permission to read them. rounded_glow did
- * that before b391: a glow with square corners, present on the side facing the other card and absent
- * on the outside. The host tests cannot catch this class of fault - the drawing is correct and the
+ * where does not lose its pixels - it loses the composite's permission to read them. A glow drawn
+ * that way (b391) had square corners, present on the side facing the other card and absent on the
+ * outside. The host tests cannot catch this class of fault - the drawing is correct and the
  * bookkeeping beside it is not - so this invariant is the only check.
  *
  * Checked on the first couple of rebuilds and then never again: a layout fault is there from the first
@@ -1663,15 +1640,6 @@ static void layer_verify(void)
         rc_log("shell: the layer's ink is inside the bounds it reported\n");
 }
 
-/*
- * WHAT CHANGES WITH THE CURSOR BUT DOES NOT MOVE WITH IT, drawn straight onto the screen every frame.
- *
- * The description line and the hint row both read the SELECTION, so leaving them in the cached layer
- * meant every cursor move rebuilt it - the better part of twenty milliseconds landing on exactly the
- * frame an animation is starting. Drawn live they are a line of text and a row of glyphs, about one and
- * a half milliseconds a frame. With them out, the card row's layer depends on the LIST and not on which
- * of it is chosen, so moving the cursor rebuilds the sprite alone.
- */
 /*
  * The row's measurements, in one place, because two callers need them and a layout they disagreed about
  * would put the sprite somewhere the card underneath it is not.
@@ -1734,8 +1702,8 @@ static int sprite_rebuild_from_menu(void)
  * already has: how many consoles replied, that a pairing took, that a console somebody is looking at
  * has woken up. Otherwise they go only to the log, which is on another machine.
  *
- * SHELL-DESIGN.md groups this with the title sequence under "the moment". The title sequence is
- * dropped; this stayed because it is the machine answering a question somebody asked.
+ * SHELL-DESIGN.md groups this with the title sequence under "the moment". There is no title sequence
+ * here; this is kept because it is the machine answering a question somebody asked.
  *
  * IT IS DRAWN LIVE, like everything else here that moves. A rounded panel and one line of text is about
  * a millisecond and a half, and it is on screen for three seconds at a time.
@@ -1811,6 +1779,15 @@ static void draw_toast(uint64_t now)
                           s_toast[0].text);
 }
 
+/*
+ * WHAT CHANGES WITH THE CURSOR BUT DOES NOT MOVE WITH IT, drawn straight onto the screen every frame.
+ *
+ * The description line and the hint row both read the SELECTION, so in the cached layer they would make
+ * every cursor move rebuild it - the better part of twenty milliseconds landing on exactly the frame an
+ * animation is starting. Drawn live they are a line of text and a row of glyphs, about one and a half
+ * milliseconds a frame. With them out, the card row's layer depends on the LIST and not on which of it
+ * is chosen, so moving the cursor rebuilds the sprite alone.
+ */
 static void paint_live(int can_forget)
 {
     /*
@@ -1853,17 +1830,13 @@ static void build_layer(int can_forget)
     /*
      * CLEARED IN FULL.
      *
-     * b386 cleared only the rows and columns the previous build had recorded ink on, which is sound
-     * only while every write really is inside its recorded bounds, across two files and seven drawing
-     * primitives. What was reported from hardware was the previous screen's glow showing faintly
-     * through the next one.
+     * Clearing only the rows and columns the previous build recorded ink on is sound only while every
+     * write really is inside its recorded bounds, across two files and seven drawing primitives. b386
+     * did that, and the previous screen's glow showed faintly through the next one.
      *
      * A full clear costs about seven milliseconds on a rebuild, and a rebuild is not in the frame
      * budget. The ink bounds are still recorded and still used - they are what stops the COMPOSITE
      * walking the whole screen sixty times a second.
-     *
-     * If the smearing survives this, it is not the bookkeeping: it is the RSX reading main memory that
-     * the PPE has written, and that is a different fix in a different file.
      */
     memset(s_layer, 0, (size_t)s_layer_w * (size_t)s_layer_h * 4u);
     s_layer_fresh = 0;
@@ -1983,16 +1956,15 @@ static void draw(int can_forget)
         uint64_t wait_at = rc_tick();
 
         /*
-         * PUMPED BEFORE THE TEST, NOT ONLY INSIDE IT. While the frame cost 40 ms the flip was never
-         * ready and this loop always ran, so the pad got looked at; the moment the frame fits in a
-         * refresh the loop stops running and the ONLY poll left in the pass is the one at the top of
-         * rc_shell_run. Making the menu fast would have made it less responsive, which is not a
-         * trade-off anybody would choose on purpose.
+         * PUMPED BEFORE THE TEST, NOT ONLY INSIDE IT. When the frame fits in a refresh the flip is
+         * already ready and the loop below never runs, which would leave the poll at the top of
+         * rc_shell_run as the only one in the pass - a fast menu that is less responsive than a slow
+         * one.
          */
         pump_input();
         while (!rc_video_present_ready() && rc_time_ms() < give_up) {
             /* The wait is the best place in the loop to be watching the pad: it is time this thread
-             * has nothing else to do with, and it is most of the gap a press used to fall into. */
+             * has nothing else to do with, and it is most of the gap a press could fall into. */
             pump_input();
             usleep(1000);
         }
@@ -2008,14 +1980,12 @@ static void draw(int can_forget)
         return;
 
     /*
-     * REBUILT ONLY WHEN THE INTERFACE ITSELF CHANGED, which is a cursor move rather than a frame. The
-     * menu's revision counts every mutation INCLUDING the selection moving, so it answers this on its
-     * own; the other two are state the menu does not know about.
-     */
-    /*
+     * REBUILT ONLY WHEN THE INTERFACE ITSELF CHANGED, never per frame.
+     *
      * THE CARD ROW'S LAYER DOES NOT DEPEND ON WHICH CARD IS SELECTED - every card is in it unselected,
-     * and the chosen one is the sprite. So a cursor move rebuilds nothing here. A LIST is different: its
-     * selected row carries a panel, so there the menu's own revision is the key it has always been.
+     * and the chosen one is the sprite. Its key is s_content_rev, so a cursor move rebuilds only the
+     * sprite. A LIST is different: its selected row carries a panel, so there the key is the menu's own
+     * revision, which counts every mutation INCLUDING the selection moving.
      */
     if (!s_layer_valid || can_forget != s_layer_hint || s_cards != s_layer_cards ||
         s_layer_w != s_scr_w || s_layer_h != s_scr_h ||
@@ -2025,8 +1995,8 @@ static void draw(int can_forget)
         rebuild_sprite();
 
     /*
-     * WHAT MOVES THIS FRAME. Three numbers, read once here so every part of the frame agrees about
-     * where in its breath it is - and so the periods are visible together rather than scattered.
+     * THE GLOW'S BREATH FOR THIS FRAME, read once here so every row of the frame agrees about where
+     * in its breath it is.
      */
     glow_scale = breathe(now, 4200u, 172u, 255u);
 
@@ -2082,7 +2052,7 @@ static void draw(int can_forget)
     /*
      * AND AGAIN HERE, because a button pressed and released while this thread is busy would otherwise
      * leave no trace - rc_pad_read reports the pad's state now, not what it did in between. See the
-     * note above poll_edges.
+     * note on s_pending.
      */
     pump_input();
 
@@ -2104,29 +2074,18 @@ static void draw(int can_forget)
          * counter is added up here and turned into microseconds when the shell closes.
          */
         /*
-         * TRIED AND REVERTED: EXPANDING THE BACKGROUND ON THE BORROWED SPE SCALER.
+         * THE BACKGROUND IS EXPANDED ON THE PPE, NOT ON rc_spu_yuv's SPE SCALER.
          *
-         * rc_spu_yuv already holds three SPE threads, up before this shell runs and kept for the
-         * decoder; since the decoder began producing RGB they do nothing but scale, which is what
-         * expanding the wave's quarter-size buffer is. Borrowing them rather than making a group was
-         * the right shape - that group is deliberately never destroyed (destroying it locked this
-         * console in b105 and again in b107), so a second one would be SPEs the decoder never gets
-         * back.
+         * That scaler is general: it computes a source coordinate and a pair of weights per output
+         * pixel, for any ratio. rc_spu_yuv_job.h records mode 2 - interpolate in both directions,
+         * which a smooth background needs - at 21,038 us an SPE for a frame. This expansion is a FOUR
+         * times ratio, so its only weights are 0, 1/4, 1/2 and 3/4 and every one is reachable by
+         * halving twice; the PPE does the whole screen in 11,343 us doing exactly that.
          *
-         * THE COST KILLS IT. That scaler is general: it computes a source coordinate and a pair of
-         * weights per output pixel, for any ratio. rc_spu_yuv_job.h records mode 2 - interpolate in
-         * both directions, which a smooth background needs - at 21,038 us an SPE for a frame, while the
-         * streaming path's measured 2,992 us is mode 0, nearest. This expansion is a FOUR times ratio,
-         * so its only weights are 0, 1/4, 1/2 and 3/4 and every one is reachable by halving twice; the
-         * PPE does the whole screen in 11,343 us doing exactly that.
-         *
-         * AND IT BROKE THE DECODER'S SCALER. Missing the 25 ms deadline five times in a row sets
-         * s_ready = 0 inside rc_spu_yuv, for the rest of the process - so a menu that asked for the
-         * scaler and did not get it left the DECODER without one too.
-         *
-         * The SPE route is still open, and it needs a kernel written for a 4x expansion rather than a
-         * borrowed general one. rc_wave_small exists for that: aligned, padded to a multiple of 16
-         * bytes a row, and ready to be handed to an MFC.
+         * Borrowing it also puts the decoder at risk: missing the 25 ms deadline five times in a row
+         * sets s_ready = 0 inside rc_spu_yuv, for the rest of the process, which leaves the DECODER
+         * without a scaler. An SPE expansion would need a kernel written for 4x; rc_wave_small hands
+         * out the buffer in the shape an MFC requires.
          */
         for (y = 0; y < s_scr_h; y++) {
             uint32_t *row = pixels + (size_t)y * (size_t)pitch;
@@ -2148,9 +2107,9 @@ static void draw(int can_forget)
         }
     } else {
         /*
-         * NO LAYER - the console refused the memory for it. This is the way every build before b376
-         * worked: the background straight into the surface, then the interface blended over it. Slower,
-         * correct, and the reason layer_ensure reports rather than fails.
+         * NO LAYER - the console refused the memory for it. The background goes straight into the
+         * surface, then the interface is blended over it. Slower, correct, and the reason layer_ensure
+         * reports rather than fails.
          */
         s_px = pixels;
         s_pitch = pitch;
@@ -2256,18 +2215,11 @@ static void draw(int can_forget)
  */
 
 /*
- * Buttons that went down since the last poll, with auto-repeat on the directions.
- *
- * EDGES RATHER THAN STATE because the loop runs at whatever rate it runs at: a menu driven by "is Cross
- * held" opens six things per press. Repeat is on the d-pad only - a held Cross must never fire twice,
- * which is how a confirmation gets past somebody.
- */
-/*
  * EDGES ARRIVING BETWEEN DRAWS ARE KEPT.
  *
  * rc_pad_read reports the pad's state right now, not what it did in between, and drawing waits for the
- * flip and then fills the screen. With one poll per draw the pad was read about ten times a second,
- * and a press and release inside one of those gaps left no trace at all.
+ * flip and then fills the screen. With one poll per draw the pad is read about ten times a second,
+ * and a press and release inside one of those gaps leaves no trace at all.
  *
  * So polling is separated from drawing. pump_input runs while waiting for the flip, at whatever rate
  * the loop can manage, and ORs every edge it sees into a pending mask that the next pass consumes.
@@ -2289,6 +2241,13 @@ static uint32_t take_edges(void)
     return edges;
 }
 
+/*
+ * Buttons that went down since the last poll, with auto-repeat on the directions.
+ *
+ * EDGES RATHER THAN STATE because the loop runs at whatever rate it runs at: a menu driven by "is Cross
+ * held" opens six things per press. Repeat is on the d-pad only - a held Cross must never fire twice,
+ * which is how a confirmation gets past somebody.
+ */
 static uint32_t poll_edges(void)
 {
     const uint32_t directions = HALYARD_PAD_DPAD_UP | HALYARD_PAD_DPAD_DOWN |
@@ -2400,8 +2359,8 @@ static void adopt_names(void)
 /* ------------------------------------------------------------------------------------------------
  * THE QUIET REFRESH
  *
- * Asked once, at launch, the cards went stale: a console woken from another room went on saying
- * "standby" until somebody went into the options and asked again.
+ * Asked only once, at launch, the cards go stale: a console woken from another room goes on saying
+ * "standby" until somebody goes into the options and asks again.
  *
  * So it re-asks on an interval (SH_REFRESH_MS, below), and does it WITHOUT STOPPING: rc_discover blocks
  * for its whole window, which would freeze the shell for a second and a half every time, so this
@@ -2417,10 +2376,10 @@ static void build_home(void);   /* defined below; the refresh rebuilds the cards
 /*
  * FIVE SECONDS, AND THE ANSWER IS TAKEN AS SOON AS IT IS COMPLETE.
  *
- * Ten seconds plus a 900 ms window meant a change could take eleven seconds to appear, reported from
- * hardware as "longer than ten seconds". Two datagrams every five seconds is nothing on a LAN and
- * nothing on this CPU. The window no longer has to expire before the cards move, provided at least as
- * many consoles have answered as answered last time.
+ * A ten-second interval plus a 900 ms window lets a change take eleven seconds to appear. Two
+ * datagrams every five seconds is nothing on a LAN and nothing on this CPU. The window does not have
+ * to expire before the cards move, provided at least as many consoles have answered as answered last
+ * time.
  *
  * THAT PROVISO MATTERS. Acting on the first reply would silently drop a second console that was merely
  * slower - a card vanishing for five seconds and coming back. When FEWER have replied than before, the
@@ -2483,7 +2442,7 @@ static void refresh_tick(void)
     /*
      * NOTHING ANSWERED IS NOT NEWS. A broadcast that comes back empty means this datagram went
      * unanswered, not that the console has gone - a single dropped reply would otherwise blank the card
-     * every ten seconds. Only what DID answer is taken.
+     * until the next refresh. Only what DID answer is taken.
      */
     if (s_scan_found == 0)
         return;
@@ -2493,7 +2452,7 @@ static void refresh_tick(void)
     /*
      * ANNOUNCED ONLY WHEN A CONSOLE WAKES, which is the one change somebody is plausibly waiting for.
      * A console going to sleep, or a name being learned, is not news worth a panel sliding across the
-     * screen every ten seconds - and the card itself already says both.
+     * screen on a refresh - and the card itself already says both.
      */
     {
         int i, j;
@@ -2622,7 +2581,7 @@ static void build_home(void)
     /* Anything on the network this PS3 has no keys for. */
     for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
         /*
-         * THE FAMILY IS WORTH SAYING HERE, now that both can appear. The search asks a PS5's port and a
+         * THE FAMILY IS WORTH SAYING HERE, because both can appear. The search asks a PS5's port and a
          * PS4's, so this list can hold either, and the two are paired by different means - which the
          * flow handles for itself, but somebody looking at two cards should still be able to tell which
          * machine is which. The tag stays NEW because "not paired" is the more useful distinction on a
@@ -2656,8 +2615,8 @@ static void build_home(void)
  * ADDS A ROW AND CHECKS ITS DESCRIPTION FITS.
  *
  * The descriptions are drawn at scale 2 across one line with no wrapping and no ellipsis, so one that
- * is too long is simply cut - "...opens the menu that togg" sat on this screen for several builds,
- * because the only way to notice is to select that row on a television and read it.
+ * is too long is simply cut ("...opens the menu that togg"), and the only other way to notice is to
+ * select that row on a television and read it.
  *
  * rc_overlay_text returns the width it would consume and draws nothing when the run is off-surface, so
  * the question can just be ASKED at build time. It costs one measurement per row, once per screen.
@@ -2783,7 +2742,7 @@ typedef struct { int w, h; } sh_resolution;
 static const sh_resolution SH_RESOLUTIONS[] = { { 640, 360 }, { 960, 540 }, { 1280, 720 } };
 /*
  * STOPS AT 20 Mbps, which is where this decoder stops rather than where the console does. Asking for
- * more made cellVdec drop whole pictures, so the higher rungs were a way to make the picture worse by
+ * more makes cellVdec drop whole pictures, so higher rungs would be a way to make the picture worse by
  * asking for better - a control whose top end is a trap is worse than one that does not go there.
  *
  * A record that already says 25000 or 30000 keeps that figure until somebody presses left or right:
@@ -3179,8 +3138,8 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
      * A BASELINE BEFORE THE MENU HAS DRAWN ANYTHING, and its pair is taken at close. rc_thermal.h is
      * explicit that this costs about 14 ms a read and must never be called from a frame path; these are
      * the two calls it describes, one on either side of everything being measured. The question it
-     * answers is the one that decides how far this shell is allowed to go: whether a menu that redraws
-     * the screen sixty times a second is a thing somebody's living room can hear.
+     * answers is whether a menu that redraws the screen sixty times a second is a thing somebody's
+     * living room can hear.
      */
     rc_thermal_reset(&s_thermal);
     rc_thermal_sample(&s_thermal);

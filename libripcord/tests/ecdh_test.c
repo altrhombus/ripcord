@@ -1,13 +1,13 @@
 /*
- * ripcord-3ds - stream key-agreement known-answer runner (ECDH -> per-direction stream keys).
+ * libripcord - stream key-agreement known-answer runner (ECDH -> per-direction stream keys).
  *
  * Reads tests/vectors/session-crypto.kat, produced by
  *
  *     dotnet run --project tools/Ripcord.ProtocolLab -- vectors
  *
- * and checks this port's ECDH seam (rc_ecdh) and the chain hanging off it against the .NET
+ * and checks the core's ECDH seam (rc_ecdh) and the chain hanging off it against the .NET
  * implementation's answers (HalyardStreamKeySchedule). Same cross-language method as vector_runner.c and
- * stream_crypto_test.c; what is new here is that the thing being checked is a *delegated* primitive.
+ * stream_crypto_test.c; what differs here is that the thing being checked is a *delegated* primitive.
  *
  * WHY CHECK A LIBRARY WE DID NOT WRITE. rc_ecdh.c hands the point arithmetic to mbedtls, so this tests
  * the ~150 lines of ours around it: curve selection, uncompressed-point layout, whether the shared X is
@@ -19,7 +19,7 @@
  * scalar -> shared secret -> KDF -> keys with no intermediate handed over, so a port that gets ECDH
  * wrong cannot pass the half it can still do.
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE - see tests/Makefile.
  */
 #include "../crypto/rc_crypto.h"
 #include "../crypto/rc_ecdh.h"
@@ -370,7 +370,7 @@ static size_t put_varint_field(uint8_t *buf, unsigned field, uint64_t value)
 /*
  * Hand-encodes a SESSION_REPLY, standing in for the console.
  *
- * Deliberately NOT built with takion_control_build_*: this port has no reply builder (it never sends
+ * Deliberately NOT built with takion_control_build_*: the core has no reply builder (it never sends
  * one), and using its request builder here would mean the parser was only ever fed bytes its own
  * encoder produced - which proves the two agree with each other and nothing about the schema. These
  * bytes are laid out from docs/protocol/stream_control.proto directly. The .kat vectors cover the same

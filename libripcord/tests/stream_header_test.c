@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - stream_header self-test.
+ * libripcord - stream_header self-test.
  *
  * No captured A/V vector exists in the captures folder (no capture pairs A/V traffic with usable stream keys -
  * same gap fec_test.c's header documents for FEC), and HalyardStreamHeader.cs itself has no direct unit
@@ -7,7 +7,7 @@
  * is a round-trip self-test (build, then parse, then compare fields) against the bit layout in
  * stream_header.h, transcribed from HalyardStreamHeader.cs's TryParse.
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE - see tests/Makefile.
  */
 #include "../stream/stream_header.h"
 

@@ -83,10 +83,9 @@ public enum HalyardControlAddressing
     /// Word count 1: no port words at all, so the receiver matches on the peer address record alone.
     ///
     /// <para>
-    /// <b>[X] Never observed on the wire — this is an experiment.</b> Every hello Ripcord has sent used
-    /// <see cref="PortPair"/> and the console ignored all of them in silence, which is exactly what a port
-    /// lookup miss does. This shape sidesteps the port lookup, so if the console holds any connection object
-    /// for our address — and it must, since it dialled us — a hello addressed this way reaches it.
+    /// <b>[X] Never observed on the wire.</b> A hello the console's port lookup misses is ignored in
+    /// silence. This shape sidesteps the port lookup, so if the console holds any connection object
+    /// for our address — and it must, when it dialled us — a hello addressed this way reaches it.
     /// </para>
     /// </summary>
     PeerAddressOnly = 1,
@@ -166,8 +165,8 @@ public sealed class HalyardControlAssociation
     /// <summary>
     /// The value we put in the token field. <b>Almost certainly a microsecond timestamp</b>: a live console's
     /// rose by ~500,190 between Inits sent half a second apart, across every probe. Ours is a fixed random
-    /// value, which is structurally fine — the peer only echoes it back — but if a console measures round
-    /// trips from it, this is the field to make real. <b>[X]</b>
+    /// value, which is structurally fine — the peer only echoes it back — but a console that measured round
+    /// trips from it would get nothing meaningful. <b>[X]</b>
     /// </summary>
     private uint _ourToken;
     private bool _weSentEcho;
@@ -544,7 +543,7 @@ public sealed class HalyardControlAssociation
 
             case HalyardControlChunkType.Ack:
             case HalyardControlChunkType.AckExtended:
-                // Nothing is retransmitted at this layer yet, so an acknowledgement is only information.
+                // This layer retransmits no data chunk, so an acknowledgement is only information.
                 return HalyardControlAction.None;
 
             case HalyardControlChunkType.Close:
@@ -611,7 +610,8 @@ public sealed class HalyardControlAssociation
         return new HalyardControlAction([ack], [new HalyardControlEvent.DataReceived([.. _inbound])]);
     }
 
-    /// <summary>Everything after this connection's payload has been delivered, reset for the next message.</summary>
+    /// <summary>Discard the payload accumulated so far. Each <c>DataReceived</c> carries everything since the
+    /// last call, so a caller that has taken a whole message calls this before the next one.</summary>
     public void ClearInbound() => _inbound.Clear();
 
     // ---- wire helpers --------------------------------------------------------------------------

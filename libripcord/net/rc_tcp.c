@@ -109,8 +109,8 @@ int rc_tcp_connect_timeout(const char *host, unsigned short port, unsigned timeo
         return -1;
 
     /*
-     * A socket that cannot be made non-blocking cannot be given a deadline, and falling back to the
-     * blocking connect would quietly reintroduce the hang this exists to remove. Refuse instead.
+     * A socket that cannot be made non-blocking cannot be given a deadline, and falling back to a
+     * blocking connect would bring back the unbounded wait the deadline exists to prevent. Refuse instead.
      */
     if (!rc_socket_set_nonblocking(sock)) {
         close(sock);
@@ -120,9 +120,9 @@ int rc_tcp_connect_timeout(const char *host, unsigned short port, unsigned timeo
     /*
      * errno is NOT consulted when connect() does not complete at once, and that is the PS3's lesson rather
      * than an oversight: lv2 sockets report through net_errno, so "EINPROGRESS" cannot be relied on to
-     * appear. The pre-flight this replaces went straight to select() on any non-zero return, and SO_ERROR
-     * afterwards separates a refusal from a success on every platform. An immediate hard failure at worst
-     * costs the deadline.
+     * appear. Like the PS3 port's pre-flight (tcp_port_accepts), this goes straight to select() on any
+     * non-zero return, and SO_ERROR afterwards separates a refusal from a success on every platform. An
+     * immediate hard failure at worst costs the deadline.
      */
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0)
         connected = 1;

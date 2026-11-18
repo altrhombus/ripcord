@@ -1,11 +1,11 @@
 /*
- * ripcord-3ds - small text helpers shared by the wire formats that are HTTP-shaped but hand-parsed
+ * libripcord - small text helpers shared by the wire formats that are HTTP-shaped but hand-parsed
  * (SRCH discovery, the /sess/init and /sess/ctrl exchanges). No protocol knowledge here - just the
  * trim/case-insensitive-match logic every one of those parsers needs for "is this line the header named
  * X, and what's its value with the whitespace stripped."
  *
- * Factored out once a second module needed the exact same dozen lines source/discovery/halyard_discovery.c
- * already had as private statics, not written ahead of any real use.
+ * Shared by discovery/halyard_discovery.c and session/halyard_sess_request.c, which need the exact same
+ * dozen lines.
  */
 #ifndef RC_TEXT_H
 #define RC_TEXT_H
@@ -13,7 +13,7 @@
 #include <stddef.h>
 
 /* Case-insensitive, fixed-length compare. Avoids depending on strncasecmp (POSIX <strings.h>, not
- * guaranteed present in every C99 environment this port might be compiled in) for one small check. */
+ * guaranteed present in every C99 environment this core might be compiled in) for one small check. */
 int rc_text_equals_ci(const char *a, const char *b, size_t length);
 
 /* Narrows [*start, *end) by advancing/retreating past leading/trailing ASCII whitespace. */

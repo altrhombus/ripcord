@@ -3,23 +3,24 @@
  * ever logged - only how many digits went out.
  *
  * HOW IT IS ORGANISED. connect() is a straight line of stage functions, each ported from one block of
- * the PS3's rc_connect() (ports/ripcord-ps3/source/connect/rc_connect.c, cited by line below) and checked
- * against the .NET reference (HalyardStreamingSession.cs, HalyardTakionStream.cs):
+ * the PS3's rc_connect() (ports/ripcord-ps3/source/connect/rc_connect.c, cited below by the function the
+ * ported code is in) and checked against the .NET reference (HalyardStreamingSession.cs,
+ * HalyardTakionStream.cs):
  *
- *   connect_control      3694-3705   ARM, /sess/init, /sess/ctrl
- *   connect_signin       3707-3863   the sign-in gate, SESSION_ID
- *   connect_senkusha     3880-3890   9297, its handshake and the two legs the console gates on
- *   connect_takion       3893-3897   9296, the stream's own association
- *   connect_keys         2467-2649   protocol version, launch spec, SESSION_REQUEST/REPLY
- *   connect_stream_info  2653-2882   sealing, verification, STREAM_INFO and its ack, the demuxer
+ *   connect_control      rc_connect               ARM, /sess/init, /sess/ctrl
+ *   connect_signin       rc_connect               the sign-in gate, SESSION_ID
+ *   connect_senkusha     rc_connect               9297, its handshake and the two legs the console gates on
+ *   connect_takion       rc_connect               9296, the stream's own association
+ *   connect_keys         stream_session_exchange  protocol version, launch spec, SESSION_REQUEST/REPLY
+ *   connect_stream_info  stream_session_exchange  sealing, verification, STREAM_INFO and its ack, the demuxer
  *
- * pump() is the PS3's hold loop (2884-3100) with its body split into drain_av (1469-1558),
- * poll_stream_control (3051-3074) and send_periodic (1302-1407). client_end() is its teardown
- * (4262-4328).
+ * pump() is the PS3's hold loop (the tail of stream_session_exchange) with its body split into drain_av
+ * (drain_av), poll_stream_control (inline in that loop) and send_periodic (send_periodic). client_end()
+ * is the teardown at the end of rc_connect.
  *
  * WHAT A WAIT DOES. Every wait in connect() goes through client_tick(): it services the control session
  * (the console resets a session 15-30 s after heartbeat replies stop, and the Takion waits alone are
- * longer than that - rc_connect.c 377-386) and pulls the host's commands. Anything that must end the
+ * longer than that - rc_connect.c, service_control_tick) and pulls the host's commands. Anything that must end the
  * session is recorded with end_request() and every loop checks it, so a cancel, a console that closes
  * the control session, and a console that says DISCONNECT all leave by the same road.
  *
@@ -33,14 +34,14 @@
  *   connect_stream_ready new: PROBE_REPORT, then up to 10 s for STREAM_READY (SendProbeReportAsync)
  *   connect_takion       on the A/V leg's socket, reading only the console's endpoint
  *
- * WHAT IS NOT HERE, deliberately (the PS3's own concerns, or later slices):
+ * WHAT IS NOT HERE, deliberately:
  *   - discovery, wake and re-addressing: the host supplies an address for an awake console
  *   - senkusha's echo and MTU probes: the declared rtt falls back to the PROTOCOL_VERSION round trip,
- *     which is the PS3's own fallback (rc_connect.c 886-893), and the MTU to the declared 1454
- *   - CORRUPT_FRAME feedback (.NET sends it on loss; the core has no builder yet)
+ *     which is the PS3's own fallback (rc_connect.c, senkusha_echo_probe), and the MTU to the declared 1454
+ *   - CORRUPT_FRAME feedback (.NET sends it on loss; the core has no builder for it)
  *   - CONNECTION_QUALITY: the PS3's trigger is a cellVdec slice count, and the units are [X]
- *   - the 720p cap and the ECDH "control experiment" (rc_connect.c 2513-2534, 2600-2647): cellVdec and a
- *     PS3 stack question respectively, not protocol
+ *   - the 720p cap and the ECDH "control experiment" (rc_connect.c, stream_session_exchange): cellVdec
+ *     and a PS3 stack question respectively, not protocol
  *   - the stall policy: the host reads both clocks in halyard_client_stats and decides
  */
 #include "halyard_client.h"
@@ -71,24 +72,24 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-/* The two UDP ports, in the order the console requires them (rc_connect.c 343-351). */
+/* The two UDP ports, in the order the console requires them (rc_connect.c, RC_SENKUSHA_PORT). */
 #define CLIENT_SENKUSHA_PORT 9297u
 #define CLIENT_STREAM_PORT   9296u
 
 /*
  * Senkusha's whole budget, handshake and legs together: .NET's 8 s box (RunSenkushaAsync). The PS3
- * bounded only the handshake (10 x 300 ms) and each reply (5 s), which on a console that answers the
- * handshake and then goes quiet cost two further five-second waits before a non-fatal step gave up.
+ * bounds only the handshake (10 x 300 ms) and each reply (5 s), which on a console that answers the
+ * handshake and then goes quiet costs two further five-second waits before a non-fatal step gives up.
  */
 #define CLIENT_SENKUSHA_BUDGET_MS 8000u
 
 /* One control reply on a Takion channel, and STREAM_INFO, which answers nothing and arrives when the
- * console's encoder is ready (rc_connect.c 423-434). */
+ * console's encoder is ready (rc_connect.c, RC_TAKION_REPLY_MS and RC_STREAM_INFO_WAIT_MS). */
 #define CLIENT_TAKION_REPLY_MS   5000u
 #define CLIENT_STREAM_INFO_MS   10000u
 
-/* The sign-in gate: five attempts, eight seconds each (rc_connect.c 3258-3266, and .NET's
- * MaxSignInAttempts/SignInAttemptTimeout, which the PS3 took them from). */
+/* The sign-in gate: five attempts, eight seconds each (rc_connect.c, RC_SIGNIN_ATTEMPTS and
+ * RC_SIGNIN_WAIT_MS, and .NET's MaxSignInAttempts/SignInAttemptTimeout, which the PS3 took them from). */
 #define CLIENT_SIGNIN_ATTEMPTS 5
 #define CLIENT_SIGNIN_WAIT_MS  8000u
 
@@ -97,13 +98,13 @@
  * because the two answer different questions: that one is "did the console hear the passcode", this one
  * is "how long does a signed-in console take to offer a session", and the second depends on how awake it
  * was. Measured on a PS5 over the internet on 2026-09-25: woken from rest by the account's command, it
- * sent nothing for 8.5 s after accepting, and the 8 s this used to share failed the session. The same
+ * sent nothing for 8.5 s after accepting, which the 8 s per-attempt wait would fail. The same
  * console, already awake, sent SESSION_ID 1 s after accepting. The wait ends the moment SESSION_ID
  * arrives, so a longer budget costs only a failure's time, never a success's.
  */
 #define CLIENT_SESSION_AFTER_LOGIN_MS 30000u
 
-/* The stream channel's loss-report cadence (rc_connect.c 725-732; HalyardTakionStream LossReportInterval).
+/* The stream channel's loss-report cadence (rc_connect.c, RC_LOSS_REPORT_INTERVAL_MS; HalyardTakionStream LossReportInterval).
  * The report window is also the stats window. */
 #define CLIENT_LOSS_REPORT_MS  200u
 
@@ -113,24 +114,21 @@
 #define CLIENT_PUMP_ROUNDS    8
 
 /* Control-session events handled per service: enough to drain a burst without letting a flood own the
- * thread (signin_pump's 32, rc_connect.c 3369-3375). */
+ * thread (signin_pump's 32, in rc_connect.c). */
 #define CLIENT_CONTROL_STEPS 32
 
 /*
- * The longest pump() tells a host to wait. The PS3 slept 2 ms when idle (rc_connect.c 3088-3090); a host
+ * The longest pump() tells a host to wait. The PS3 sleeps 2 ms when idle (rc_connect.c, stream_session_exchange); a host
  * waiting on halyard_client_fds() is woken by traffic anyway, and one that merely sleeps must not sleep
  * past a burst's worth of socket buffer.
  */
 #define CLIENT_MAX_WAIT_MS 10u
 
 /*
- * The declared MTU (rc_connect.c 761-767, and .NET's LinkMetrics.VendorMtu). Senkusha's MTU legs can
- * confirm it; they are a later slice, so the figure every implementation has always declared stands.
+ * The declared MTU (rc_connect.c, RC_DECLARED_MTU, and .NET's LinkMetrics.VendorMtu). Senkusha's MTU
+ * legs can confirm it; this client does not run them, so it declares the figure unmeasured.
  */
 #define CLIENT_DECLARED_MTU 1454
-
-/* The PS3's pre-flight bound for the control port, now inside rc_tcp_connect (slice 0). Stated for the
- * log line only. */
 
 /*
  * The rendezvous route's two waits on the console, both non-fatal, as HalyardStreamingSession has them:
@@ -202,7 +200,7 @@ struct halyard_client {
     uint64_t video_frames, audio_frames, keyframes;
 
     /* Scratch, here rather than on a stack: the launch spec, its base64 and the request built from them
-     * are ~8 KB together, which breaches a console port's frame limit (rc_connect.c 982-986). */
+     * are ~8 KB together, which breaches a console port's frame limit (rc_connect.c, g_launch_spec). */
     char launch_spec[HALYARD_LAUNCH_SPEC_MAX];
     char launch_spec_b64[HALYARD_LAUNCH_SPEC_B64_MAX];
     uint8_t request[HALYARD_LAUNCH_SPEC_B64_MAX + 512];
@@ -306,7 +304,7 @@ static void answer_heartbeat(halyard_client *c)
 /* ---- The control session, and the host's commands ---------------------------------------------------- */
 
 /*
- * What the control session said, absorbed. Ported from signin_absorb (rc_connect.c 3271-3326), minus
+ * What the control session said, absorbed. Ported from signin_absorb (rc_connect.c), minus
  * its per-frame logging of every heartbeat.
  */
 static void absorb(halyard_client *c, const halyard_control_event *ev)
@@ -492,8 +490,8 @@ static int await_control(halyard_client *c, takion_reliable_channel *ch, int is_
 /* ---- Stage 1: the control session -------------------------------------------------------------------- */
 
 /*
- * rc_connect.c 3694-3705. The PS3's TCP pre-flight (282-321) is gone: it was a workaround for
- * rc_tcp_connect having no deadline, and that deadline now lives in rc_tcp_connect itself.
+ * The control-session block of rc_connect (rc_connect.c). The PS3's TCP pre-flight (tcp_port_accepts)
+ * is not ported: rc_tcp_connect has a deadline of its own.
  *
  * [X] halyard_control_session_open returns only a bool, so a console refusing /sess and a socket that
  * failed are the same ending here - CHANNEL_ERROR - and its log lines are what tell them apart.
@@ -520,7 +518,7 @@ static int connect_control(halyard_client *c)
 /* ---- Stage 2: the sign-in gate ----------------------------------------------------------------------- */
 
 /* Services until the console says something that ends the wait. verdict_new is one of those things, so
- * THE CALLER MUST CLEAR IT when it reads it, or the next wait returns at once (rc_connect.c 3346-3362). */
+ * THE CALLER MUST CLEAR IT when it reads it, or the next wait returns at once (rc_connect.c, signin_wait). */
 static void signin_wait(halyard_client *c, uint64_t until)
 {
     while (rc_time_ms() < until && !c->session_ready && !c->verdict_new) {
@@ -534,7 +532,7 @@ static void signin_wait(halyard_client *c, uint64_t until)
 
 /*
  * Asks the host for a passcode, servicing the session for as long as the person takes - the PS3's
- * keyboard pump hook (rc_connect.c 3242-3255, 3369-3375) without the keyboard. No timeout of its own:
+ * keyboard pump hook (rc_connect.c, signin_pump) without the keyboard. No timeout of its own:
  * the console's heartbeats are answered throughout, and the host can cancel. Returns 1 with digits in
  * `out`, 0 having requested an end.
  */
@@ -566,7 +564,7 @@ static int ask_passcode(halyard_client *c, int retry, char *out, size_t out_size
 }
 
 /*
- * The passcode loop, rc_connect.c 3743-3858, which follows HalyardStreamingSession.EnsureSignedInAsync.
+ * The passcode loop of rc_connect (rc_connect.c), which follows HalyardStreamingSession.EnsureSignedInAsync.
  * The stored passcode stands in for the first attempt when the record has one, so a rig that carries one
  * never asks anybody. A refusal asks the host again with `retry` counting refusals; silence re-submits
  * the same digits (the PS3's choice: "the same passcode may simply not have landed"), each submit at a
@@ -649,13 +647,13 @@ static int signin_passcode(halyard_client *c)
 }
 
 /*
- * rc_connect.c 3707-3863. Waits for SESSION_ID or a LOGIN_PROMPT, whichever comes first, inside
+ * The sign-in block of rc_connect (rc_connect.c). Waits for SESSION_ID or a LOGIN_PROMPT, whichever comes first, inside
  * signin_prompt_window_ms (the PS3's 20 s: b36). A console that never asks has "signed in" by not
  * asking.
  *
  * SESSION_ID IS REQUIRED BY DEFAULT, because on hardware a console that has not sent it silently drops
  * every Takion INIT, so trying anyway turns an authorisation failure into what looks like a transport one
- * (rc_connect.c 3865-3875, the 3DS port's same finding). .NET's claim that a LAN console streams without
+ * (rc_connect.c, rc_connect; the 3DS port's same finding). .NET's claim that a LAN console streams without
  * it is [X]; require_session_ready < 0 follows .NET instead.
  */
 static int connect_signin(halyard_client *c)
@@ -689,11 +687,11 @@ static int connect_signin(halyard_client *c)
             reach(c, HALYARD_CLIENT_STAGE_SESSION_READY);
         /*
          * AFTER A PASSCODE, SESSION_ID MAY STILL WAIT FOR THE A/V LEG. .NET fails the session here, and an
-         * awake console justified it by sending SESSION_ID 1 s after the passcode. A console woken from
+         * awake console bears it out by sending SESSION_ID 1 s after the passcode. A console woken from
          * rest by the account's command did not, on 2026-09-25: it accepted the passcode, and 30 s later
          * had still sent nothing. An unlocked console on this route sends SESSION_ID only after the A/V
-         * prelude, and connect_media already waits for it there without insisting. So a woken console is
-         * given the same chance rather than failed. [X] until a stream from rest proves it.
+         * prelude, and connect_media waits for it there without insisting. So a woken console is
+         * given the same chance rather than failed. [X] that a stream from rest then comes up.
          */
         if (c->login_prompt && !c->session_ready)
             client_log(c, HALYARD_CLIENT_LOG_WARN,
@@ -717,12 +715,12 @@ static int connect_signin(halyard_client *c)
 /* ---- Stage 3: senkusha ------------------------------------------------------------------------------- */
 
 /*
- * The legs the console GATES ON (rc_connect.c 2348-2422, from ports/ripcord-3ds): PROTOCOL_VERSION, then
- * a keyless SESSION exchange whose whole purpose is to have happened. The echo and MTU legs (2424-2437)
- * are a later slice.
+ * The legs the console GATES ON (rc_connect.c, senkusha_legs, from ports/ripcord-3ds): PROTOCOL_VERSION,
+ * then a keyless SESSION exchange whose whole purpose is to have happened. The echo and MTU legs
+ * (senkusha_echo_probe and senkusha_mtu_probe there) are not run here.
  *
  * The version round trip is timed: answering it asks the console for essentially no work, so it is nearly
- * all path time - the PS3's fallback RTT sample, and the one declared until the echo leg arrives.
+ * all path time - the PS3's fallback RTT sample, and the one this client declares.
  */
 static void senkusha_legs(halyard_client *c, uint64_t box)
 {
@@ -759,8 +757,8 @@ static void senkusha_legs(halyard_client *c, uint64_t box)
     request.launch_spec_json = "";
     request.launch_spec_json_length = 0;
     /* Present and empty, as the vendor sends it: its keyless senkusha SESSION_REQUEST carries encryptedKey
-     * as `22 00` in every instance in cap53 (frames 10030, 14662, 42854) and cap54 (3808). This sent four
-     * zero bytes, the stream request's value, until 2026-09-26. */
+     * as `22 00` in every instance in cap53 (frames 10030, 14662, 42854) and cap54 (3808). The stream's
+     * own request carries a different value (takion_session_negotiator.c); do not copy it here. */
     request.encrypted_key = (const uint8_t *)"";
     request.encrypted_key_length = 0;
 
@@ -775,7 +773,7 @@ static void senkusha_legs(halyard_client *c, uint64_t box)
         c->result.senkusha_ok = 1;
 }
 
-/* rc_connect.c 3876-3890 and takion_bring_up (399-418). Non-fatal throughout, as in both references: a
+/* The senkusha block of rc_connect, and takion_bring_up (rc_connect.c). Non-fatal throughout, as in both references: a
  * failed senkusha leaves the stream to be attempted, and its own failure is the one that ends things. */
 static int connect_senkusha(halyard_client *c)
 {
@@ -828,7 +826,8 @@ static int connect_senkusha(halyard_client *c)
 
 /* ---- Stage 4: the stream's Takion -------------------------------------------------------------------- */
 
-/* rc_connect.c 3893-3897, with .NET's budget (100 x 300 ms per phase, cap55) and receive buffer. */
+/* The stream-association block of rc_connect (rc_connect.c), with .NET's budget (100 x 300 ms per phase,
+ * cap55) and receive buffer. */
 static int connect_takion(halyard_client *c)
 {
     struct sockaddr_in peer;
@@ -872,7 +871,7 @@ static int connect_takion(halyard_client *c)
 /* ---- Stage 5: the key agreement ---------------------------------------------------------------------- */
 
 /*
- * stream_session_exchange, rc_connect.c 2467-2651.
+ * The key-agreement half of stream_session_exchange (rc_connect.c).
  *
  * The version is negotiated on THIS channel first and the console's choice used, because the ECDH curve
  * follows the negotiated version (b51: a key on a curve the console had not picked, whose signature
@@ -883,7 +882,7 @@ static int connect_takion(halyard_client *c)
  */
 static int connect_keys(halyard_client *c)
 {
-    /* TakionSessionNegotiator.cs's list; 12 is absent there and here (rc_connect.c 2453-2457). */
+    /* TakionSessionNegotiator.cs's list; 12 is absent there and here (rc_connect.c, stream_session_exchange). */
     static const uint32_t kSupportedVersions[] = { 9u, 10u, 11u, 13u, 14u, 15u, 16u, 17u };
     halyard_launch_spec_params params;
     uint8_t version_message[64];
@@ -924,7 +923,7 @@ static int connect_keys(halyard_client *c)
     params.fps = c->config.fps;
     params.bitrate_kbps = c->config.bitrate_kbps;
     params.mtu = CLIENT_DECLARED_MTU;
-    /* The PS3's fallback (rc_connect.c 889-891); .NET declares 0 until its echo probe measures. b115 is
+    /* The PS3's fallback (rc_connect.c, senkusha_echo_probe); .NET declares 0 until its echo probe measures. b115 is
      * why a measured figure beats 0: the console plans its rate against it. */
     params.rtt_ms = c->result.version_rtt_ms;
     params.is_hevc = c->config.allow_hevc;
@@ -979,7 +978,7 @@ static int connect_keys(halyard_client *c)
     ok = 1;
 
 done:
-    /* The handshake key does not outlive this function, whatever happened (rc_connect.c 3234-3238), and
+    /* The handshake key does not outlive this function, whatever happened (rc_connect.c, stream_session_exchange), and
      * nor does the launch spec that carried it. */
     memset(c->handshake_key, 0, sizeof(c->handshake_key));
     memset(c->launch_spec, 0, sizeof(c->launch_spec));
@@ -1002,7 +1001,7 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
     if (is_keyframe) {
         c->keyframes++;
         /* Cleared on arrival, not when the request went out: a request that produced nothing has not
-         * fixed anything (rc_connect.c 2104-2109). */
+         * fixed anything (rc_connect.c, on_video_frame). */
         halyard_client_idr_keyframe(&c->idr);
     }
     c->cb.video_frame(c->cb.user, data, length, is_keyframe);
@@ -1022,7 +1021,7 @@ static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
 }
 
 /* Loss breaks the reference chain until the next keyframe, which the console sends only when asked
- * (b90). Arm the latch and ask now, throttled (rc_connect.c 2324-2346). */
+ * (b90). Arm the latch and ask now, throttled (rc_connect.c, on_video_loss). */
 static void on_video_loss(void *userdata, int first_frame_index, int last_frame_index)
 {
     halyard_client *c = (halyard_client *)userdata;
@@ -1034,17 +1033,18 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
 }
 
 /*
- * rc_connect.c 2653-2882.
+ * The rest of stream_session_exchange (rc_connect.c), from sealing to the demuxer; each parenthesis
+ * below names that function.
  *
  * SEALING ON BEFORE ANYTHING ELSE GOES OUT: from here the console authenticates every control packet, SACKs
  * included, and the channel routes all of them through one callback, so arming it here makes the SACKs
  * right by construction. VERIFICATION ENFORCED from the start: b70 checked 14 of 14 incoming packets, and
- * the PS3 has enforced since (2682-2690). INPUT SENDABLE only now, at exactly the moment the sealer is
- * armed (2665-2665).
+ * the PS3 has enforced since (stream_session_exchange). INPUT SENDABLE only now, at exactly the moment the
+ * sealer is armed (stream_session_exchange).
  *
- * STREAM_INFO is acked whether or not it parsed - the ack says "received" (2879-2881) - and the demuxer is
- * built only now, because the parameter sets arrive here and not in the video stream. It is built even
- * when STREAM_INFO did not parse, where the PS3 left it unbuilt: a stream with no parameter sets is still
+ * STREAM_INFO is acked whether or not it parsed - the ack says "received" (stream_session_exchange) - and
+ * the demuxer is built here, because the parameter sets arrive here and not in the video stream. It is built
+ * even when STREAM_INFO did not parse, where the PS3 leaves it unbuilt: a stream with no parameter sets is still
  * audio, and a host that cannot decode the video can say so.
  *
  * THE ACK GOES ON CHANNEL 9, which the .NET reference records as wire-confirmed (TakionDataChunk
@@ -1129,7 +1129,8 @@ static void begin_streaming(halyard_client *c)
 {
     uint64_t now = rc_time_ms();
 
-    /* ARMED AT THE START, because at the start we are blind by definition (b141, rc_connect.c 2730-2739). */
+    /* ARMED AT THE START, because at the start we are blind by definition (b141; rc_connect.c,
+     * stream_session_exchange). */
     halyard_client_idr_reset(&c->idr);
     halyard_client_idr_arm(&c->idr);
 
@@ -1142,7 +1143,7 @@ static void begin_streaming(halyard_client *c)
     c->streaming = 1;
 }
 
-/* request_idr, rc_connect.c 2312-2324. */
+/* request_idr (rc_connect.c). */
 static void send_idr(halyard_client *c, uint64_t now)
 {
     if (!c->streaming)
@@ -1152,10 +1153,10 @@ static void send_idr(halyard_client *c, uint64_t now)
 }
 
 /*
- * send_input, rc_connect.c 1130-1300, without the PS3's in-session menu and synthesised PS press: those
+ * send_input (rc_connect.c), without the PS3's in-session menu and synthesised PS press: those
  * are a front end's, and a host that wants one neutralises the state before handing it over. Nothing is
  * sent when poll_input says no controller - neutral is a position, and absence is a different statement
- * (1139-1146). The sealer encrypts and tags input together, at the sealer's shared keystream offset.
+ * (send_input there). The sealer encrypts and tags input together, at the sealer's shared keystream offset.
  */
 static void send_input(halyard_client *c, uint64_t now)
 {
@@ -1208,21 +1209,21 @@ static void report_stats(halyard_client *c, uint64_t now)
 }
 
 /*
- * send_periodic, rc_connect.c 1302-1407: the things owed to the console on a clock, checked wherever
+ * send_periodic (rc_connect.c): the things owed to the console on a clock, checked wherever
  * there is a moment - including between drained packets, which is what lets the drain bound be sized
- * for a burst alone (1108-1112).
+ * for a burst alone.
  */
 static void send_periodic(halyard_client *c)
 {
     uint64_t now = rc_time_ms();
 
     /* Input is a wall-clock activity, not tied to how much video is arriving
-     * (1121-1124). */
+     * (rc_connect.c, send_input). */
     if (c->cb.poll_input != NULL && halyard_client_timer_due(&c->next_input_ms, now, HALYARD_CLIENT_INPUT_POLL_MS))
         send_input(c, now);
 
     /* Loss reports: what arrived and what did not. take_packet_stats RESETS on read, so each
-     * report covers its own window (1314-1340). The stats window rides the same tick. */
+     * report covers its own window (rc_connect.c, send_periodic). The stats window rides the same tick. */
     if (halyard_client_timer_due(&c->next_loss_report_ms, now, CLIENT_LOSS_REPORT_MS)) {
         long got = 0, missed = 0;
         uint8_t report[TAKION_LOSS_REPORT_SIZE];
@@ -1243,14 +1244,15 @@ static void send_periodic(halyard_client *c)
         report_stats(c, now);
     }
 
-    /* Still blind? Ask again (1391-1397): the request is a demand for the repair, not an acknowledgement. */
+    /* Still blind? Ask again (rc_connect.c, send_periodic): the request is a demand for the repair, not an
+     * acknowledgement. */
     send_idr(c, now);
 }
 
 /*
- * drain_av, rc_connect.c 1469-1558. PEEK, because one socket carries the control association and A/V
+ * drain_av (rc_connect.c). PEEK, because one socket carries the control association and A/V
  * both: base type 0 is control and belongs to takion_channel_poll, anything else is taken here. The
- * probe's second GMAC pass is not ported (1512-1524): the demuxer verifies and decrypts through its own
+ * probe's second GMAC pass (in drain_av there) is not ported: the demuxer verifies and decrypts through its own
  * crypto seam, and b137 measured what paying twice cost.
  */
 static int drain_av(halyard_client *c)
@@ -1305,7 +1307,7 @@ static int drain_av(halyard_client *c)
     return drained;
 }
 
-/* The control half of the hold loop, rc_connect.c 3051-3074, plus the console's DISCONNECT. Returns 1 if
+/* The control half of the hold loop (rc_connect.c, stream_session_exchange), plus the console's DISCONNECT. Returns 1 if
  * a whole message arrived. */
 static int poll_stream_control(halyard_client *c)
 {
@@ -1351,7 +1353,7 @@ static int poll_stream_control(halyard_client *c)
 /* ---- Ending ------------------------------------------------------------------------------------------ */
 
 /*
- * GOODBYE, rc_connect.c 3901-3946: REST_MODE on the control channel first, and only when asked - cap52
+ * GOODBYE (rc_connect.c, rc_connect): REST_MODE on the control channel first, and only when asked - cap52
  * isolated it as the one difference between a rest-on and a rest-off disconnect - then the Takion
  * DISCONNECT, which is byte-identical either way. Both best-effort: a console that never sees them is no
  * worse off, so nothing is checked and nothing waits. Each is sent at most once.
@@ -1375,7 +1377,7 @@ static void say_goodbye(halyard_client *c)
     }
 }
 
-/* Teardown, once: goodbye, keys wiped, sockets closed (rc_connect.c 4312-4328), ENDED announced. */
+/* Teardown, once: goodbye, keys wiped, sockets closed (rc_connect.c, rc_connect), ENDED announced. */
 static void client_end(halyard_client *c)
 {
     if (c->ended)
@@ -1610,7 +1612,8 @@ static int connect_media(halyard_client *c)
          * the control service, and the console waiting for a passcode nobody sent. Widening the window is
          * not the answer, because SESSION_ID only comes after the A/V leg here, so an unlocked console
          * would make every connect wait it out. So a late prompt is answered where it lands, with the same
-         * gate, and the wait for the media OFFER starts again from there. [X] until a late prompt is seen.
+         * gate, and the wait for the media OFFER starts again from there. [X] that the prompt arrives late:
+         * none has been observed.
          */
         if (c->login_prompt && !c->session_ready && c->result.login_attempts == 0) {
             client_log(c, HALYARD_CLIENT_LOG_WARN,
@@ -1684,7 +1687,7 @@ static void put_be32(uint8_t *out, uint32_t value)
  * the console never sends STREAM_READY and answers SESSION_REQUEST with no key); its slots are .NET's
  * [bitrate, declared MTU, 0, rtt] and **[X]** which slot means what - the console was indifferent to all
  * values tried. The rtt here is senkusha's PROTOCOL_VERSION round trip, the figure the launch spec declares
- * too; .NET's is its echo probe's, which this core does not run yet.
+ * too; .NET's is its echo probe's, which this client does not run.
  */
 static int connect_stream_ready(halyard_client *c)
 {

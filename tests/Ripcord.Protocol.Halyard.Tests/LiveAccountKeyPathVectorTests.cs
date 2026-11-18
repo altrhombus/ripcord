@@ -37,8 +37,8 @@ public class LiveAccountKeyPathVectorTests
     public void RecoverMaterial_ReproducesTheMaterialTheCapturedClientUsed()
     {
         // The PIN-route vectors carry the material explicitly alongside the context that wraps it, so this is
-        // a direct check of the unwrap with nothing else in the way. It had never been asserted: every other
-        // vector passes the material in rather than recovering it.
+        // a direct check of the unwrap with nothing else in the way. Every other vector passes the material in
+        // rather than recovering it.
         string path = Path.Combine(
             RepoRoot(), "docs", "protocol", "captures", "registration_crypto_vectors.json");
         Skip.IfNot(File.Exists(path), $"Captures-folder fixture not present: {path}");
@@ -58,13 +58,13 @@ public class LiveAccountKeyPathVectorTests
     [SkippableFact]
     public void TheSeedFromTheCloud_DerivesTheKeyThatDecryptsTheSameSessionsRequest()
     {
-        // THE assertion this suite exists for, and it now holds: the seed recovered from the console's
-        // customData1 derives a key that correctly decrypts the same session's captured request field.
+        // THE assertion this suite exists for: the seed recovered from the console's customData1 derives a key
+        // that correctly decrypts the same session's captured request field.
         //
-        // Asserted from offset 16 rather than 0 on purpose. The field cipher is AES-128-CFB128, where the
-        // first plaintext block depends on the IV and every block after it depends on the key alone. So this
-        // is exactly the statement "the key derivation is right", isolated from the IV — and the IV is
-        // separately known to be wrong (see TheFieldIvIsNotYetDerivable below). Three independent sessions.
+        // Asserted over the whole field, from offset 0. The field cipher is AES-128-CFB128, where the first
+        // plaintext block depends on the IV and every block after it depends on the key alone. So the first
+        // header line checks the IV (see TheFieldIvNowMatchesTheOneTheCapturedSenderUsed below) and the rest
+        // checks the key derivation. Three independent sessions.
         Fixture fx = LoadOrSkip();
         HalyardRegistrationCipher cipher = CipherOrSkip(out var bundled);
 
@@ -74,9 +74,9 @@ public class LiveAccountKeyPathVectorTests
             byte[] plain = DecryptCapturedField(cipher, bundled, v);
             string text = Encoding.ASCII.GetString(plain);
 
-            // The whole field, first block included. Until the account route's material wrap was separated
-            // from the PIN route's, bytes 0..15 decrypted to noise -- which is what a 403 / 80108b09 looks
-            // like from the console's side.
+            // The whole field, first block included. With the PIN route's material wrap in place of the
+            // account route's, bytes 0..15 decrypt to noise -- which is what a 403 / 80108b09 looks like from
+            // the console's side.
             Assert.StartsWith("Client-Type: " + HalyardRegistrationMessage.ClientTypeHex + CRLF, text);
             Assert.Contains("Np-AccountId: ", text);
             Assert.EndsWith(CRLF, text);
@@ -88,8 +88,8 @@ public class LiveAccountKeyPathVectorTests
     {
         // The IV each captured sender actually used was solved algebraically from C0 = P0 XOR E_K(IV), with
         // P0 known because the field always begins "Client-Type: ". Those values are in the fixture, and our
-        // derivation must now reproduce them exactly -- which it does only with the account route's own
-        // material wrap.
+        // derivation must reproduce them exactly -- which it does only with the account route's own material
+        // wrap. Skips a vector whose fixture carries no solvedFieldIv.
         Fixture fx = LoadOrSkip();
         HalyardRegistrationCipher cipher = CipherOrSkip(out var bundled);
 

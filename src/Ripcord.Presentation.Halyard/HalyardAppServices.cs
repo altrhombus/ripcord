@@ -65,8 +65,8 @@ public static class HalyardAppServices
 
         IPlatformPaths resolvedPaths = paths ?? new DefaultPlatformPaths();
 
-        // **One sink for the whole graph, not one per consumer.** Pairing and the session source each built
-        // their own, so a trace opened with two headers and every line had two clocks to be measured against.
+        // **One sink for the whole graph, not one per consumer.** With one each for pairing and the session
+        // source, a trace would open with two headers and every line would have two clocks to be measured against.
         // Null unless RIPCORD_TRACE_PAIRING asks, and passed on as a plain Action so nothing below has to
         // know what a trace is.
         Action<string>? sharedTrace = HalyardPairingTrace.SinkIfEnabled(resolvedPaths);
@@ -96,9 +96,9 @@ public static class HalyardAppServices
         {
             Account = resolvedAccount,
 
-            // Built here rather than by the streaming surface, which is where it used to be: the page loaded
-            // the control secrets and constructed the session factory itself, so the one front end that
-            // streams named the PlayStation backend directly. Choosing between the local and account routes
+            // Built here rather than by the streaming surface: a page that loaded the control secrets and
+            // constructed the session factory itself would name the PlayStation backend directly. Choosing
+            // between the local and account routes
             // needs the account tier as well, and a page deciding that for itself would be the second place in
             // the app with an opinion about what "signed in" means.
             Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway, sharedTrace),
@@ -108,8 +108,8 @@ public static class HalyardAppServices
             AccountPairing = accountPairing
                 ?? (Gateway() is { } forPairing
                     // The trace sink is null unless RIPCORD_TRACE_PAIRING says otherwise. The rendezvous
-                    // narrates its own stages and the app was throwing that away, which left an account
-                    // pairing that failed saying only what it had been waiting for.
+                    // narrates its own stages; without the sink, an account pairing that fails says only
+                    // what it had been waiting for.
                     ? new HalyardAccountConsolePairing(
                         forPairing,
                         options: new HalyardAccountPairingOptions { Log = sharedTrace })
@@ -122,10 +122,10 @@ public static class HalyardAppServices
             VideoCapabilities = videoCapabilities,
             Paths = resolvedPaths,
 
-            // Both stores are handed the SAME paths instance, which was not true when each surface built its
-            // own: three settings stores over one file each re-read it at a different moment and each held its
-            // own idea of the current settings, so a change made on one page was invisible to another until the
-            // app restarted.
+            // Both stores are handed the SAME paths instance, and each is built once. A settings store per
+            // surface would be several stores over one file, each re-reading it at a different moment and each
+            // holding its own idea of the current settings, so a change made on one page would be invisible to
+            // another until the app restarted.
             Settings = settings ?? new SettingsStore(resolvedPaths),
             Consoles = resolvedConsoles,
 
@@ -133,30 +133,14 @@ public static class HalyardAppServices
             Registrar = registrar ?? new HalyardConsoleRegistrar(),
             ReachabilityProbe = reachabilityProbe ?? new HalyardReachabilityProbe(),
             // The local wake only. A console that is not on this network is woken by the account route's own
-            // connect command, which is the command the console has to answer anyway. A separate remote wake used
-            // to go first: it created a session of its own and sent the console a connect command for it, and the
-            // console joined that one, so the route's messages to it were refused as "Member not joined session."
-            // from rest and even awake (traced from a phone hotspot, 2026-10-10).
+            // connect command, which is the command the console has to answer anyway. A separate remote wake going
+            // first creates a session of its own and sends the console a connect command for it; the console
+            // joins that one, and the route's messages to it are refused as "Member not joined session." from
+            // rest and even awake (traced from a phone hotspot, 2026-10-10).
             WakeCoordinator = wakeCoordinator ?? new HalyardConsoleWakeCoordinator(),
         };
     }
 
-    /// <summary>
-    /// The account service gateway, or null when this build or this machine cannot reach the account tier at
-    /// all.
-    ///
-    /// <para>
-    /// Decided once, here, rather than inside each seam: the graph is the place to say "this capability is
-    /// absent". It also means the machine's device id is resolved only when it will be used —
-    /// <see cref="HalyardClientDeviceId"/> throws on a host that cannot supply one, and a build that will
-    /// never sign in should not fail to start over it.
-    /// </para>
-    ///
-    /// <para>
-    /// Null feeds two null objects, because two capabilities ride on this and are absent together: signing
-    /// in, and pairing through the account.
-    /// </para>
-    /// </summary>
     /// <summary>
     /// The session source: the local route always, the account route when this build has a gateway.
     ///
@@ -217,6 +201,23 @@ public static class HalyardAppServices
         };
     }
 
+    /// <summary>
+    /// The account service gateway, or null when this build or this machine cannot reach the account tier at
+    /// all: the client configuration holds no OAuth client credential, or the host cannot supply a stable
+    /// device id.
+    ///
+    /// <para>
+    /// Decided once, here, rather than inside each seam: the graph is the place to say "this capability is
+    /// absent". It also means the machine's device id is resolved only when it will be used —
+    /// <see cref="HalyardClientDeviceId"/> throws on a host that cannot supply one, and a build that cannot
+    /// sign in should not fail to start over it.
+    /// </para>
+    ///
+    /// <para>
+    /// Null feeds two null objects, because two capabilities ride on this and are absent together: signing
+    /// in, and pairing through the account. The session source's account route is absent with them.
+    /// </para>
+    /// </summary>
     private static HalyardAccountGateway? TryBuildGateway(
         IPlatformPaths paths, IAccountTokenStore? tokens, IDeviceIdentity? deviceIdentity)
     {

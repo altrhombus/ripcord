@@ -36,10 +36,10 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         InitializeComponent();
 
         // Choosing a picture is the step's whole question, so a choice pressed goes on: a click, Space, or a pad's
-        // A, the last through FocusPilot. Continue stays for anyone who would rather look first (owner,
-        // 2026-10-09). The Checked handlers have recorded the choice by the time the command runs.
+        // A, the last through FocusPilot. Continue stays for anyone who would rather look first. The Checked
+        // handlers have recorded the choice by the time the command runs.
         // Only from the picture step: a pad's A can arrive here twice for one press (the peer's select can click as
-        // well as FocusPilot running the command), and a second Next went past the console step (owner, 2026-10-09).
+        // well as FocusPilot running the command), and a second Next would go past the console step.
         var chooseAndGoOn = new ContinueCommand(() =>
         {
             if (_flow?.State.Step == SetupStep.Picture)
@@ -160,7 +160,7 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         CompatibleDetailText.Text = s.CompatibleDetail;
 
         // Named for a screen reader. Their content is a panel of text, which a RadioButton does not read as its
-        // name, so Narrator said "radio button, 1 of 2" and nothing else (visual audit, 2026-10-08). The label is
+        // name, so Narrator would say "radio button, 1 of 2" and nothing else. The label is
         // the name, the pill joins it when shown, and the detail line is the help text.
         AutomationProperties.SetName(
             BestRadio, s.BestPictureAvailable ? $"{s.BestPictureLabel}, {s.RecommendedLabel}" : s.BestPictureLabel);
@@ -233,7 +233,7 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
             return;
         }
 
-        // Welcome can render before the page loads, when the assembly cannot start yet; keep the lockup hidden
+        // Welcome can render before the page loads, when the assembly cannot start; keep the lockup hidden
         // until it does rather than paint it finished and take it away again.
         if (!IsLoaded)
         {
@@ -253,9 +253,8 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
             _ => PrimaryButton,
         };
 
-        // Focusing a disabled control fails and focus falls to the gear: that was the picture choices, disabled
-        // during the decoder check (owner, 2026-10-09). They are live now; should a target ever be disabled, the
-        // step is seeded by the render that enables it.
+        // Focusing a disabled control fails and focus falls to the gear. The picture choices stay live during
+        // the decoder check; should a target be disabled, the step is seeded by the render that enables it.
         if (!target.IsEnabled)
         {
             return;
@@ -275,8 +274,8 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     ///
     /// <para>
     /// The step that was showing collapses with focus inside it, and Windows then moves focus to the next control it
-    /// finds, which is the gear in the title bar. Focusing the new step only from a queued callback lost that race
-    /// now and then, with the decoder check long finished (owner, 2026-10-09). So focus moves at once, and again
+    /// finds, which is the gear in the title bar. Focusing the new step only from a queued callback loses that race
+    /// now and then. So focus moves at once, and again
     /// after the layout that processes the collapse if it is anywhere but the target: the fallback lands inside the
     /// page too ("Continue", in an automated run), and one layout pass is too short for anyone to have moved it.
     /// </para>
@@ -284,7 +283,7 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     private void SeedFocus(Control target)
     {
         // Keyboard, never Programmatic, as everywhere else that seeds focus: Programmatic draws no focus ring, and a
-        // pad went through every step not seeing where it was (owner, pad pass, 2026-10-09).
+        // pad would go through every step not seeing where it is.
         target.Focus(FocusState.Keyboard);
 
         void Recheck(object? sender, object e)

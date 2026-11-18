@@ -28,10 +28,10 @@
 #define RC_SPU_YUV_MAX_DST_WIDTH 1920u
 
 /*
- * The strip is now described in OUTPUT rows, and the planes are given at row zero rather than
- * pre-offset. With scaling there is no longer a fixed relationship between a strip's first output row
- * and a source row - the SPE computes it - so offsetting the pointers on the PPE would be doing the same
- * arithmetic in two places and getting to disagree about it.
+ * The strip is described in OUTPUT rows, and the planes are given at row zero rather than pre-offset.
+ * With scaling there is no fixed relationship between a strip's first output row and a source row -
+ * the SPE computes it - so offsetting the pointers on the PPE would be doing the same arithmetic in two
+ * places and getting to disagree about it.
  *
  * 96 bytes, a multiple of 16, which the MFC requires of a transfer size. Anything added must keep it so.
  */
@@ -72,10 +72,10 @@ typedef struct {
      *
      * A user-facing choice rather than a better default: bilinear costs several times what nearest does
      * and softens as well as smooths, and at 1280x720 into 1920x1080 which looks better is a matter of
-     * taste. Nearest stays the default.
+     * taste. Nearest is the default.
      *
      * Only the packed-RGB path honours it. The plane path would need two CONVERTED lines rather than two
-     * fetched ones, and it is no longer the path the stream takes.
+     * fetched ones.
      *
      * MODE 2 DOES NOT FIT 60 fps. Measured at 21,038 us an SPE for a frame against a 16,667 us budget,
      * so it halves the frame rate; it fits inside 63% of a 30 fps budget and is kept for that. Mode 1
@@ -87,11 +87,10 @@ typedef struct {
 } rc_spu_yuv_job;
 
 /*
- * THE MULTIPLE-OF-16 RULE, ENFORCED RATHER THAN ASKED FOR. The block went 64 -> 80 -> 96 bytes with
- * nothing checking it. An MFC transfer of a size that is not 1, 2, 4, 8 or a multiple of 16 does not
- * fail loudly on this hardware - it is where a hang comes from - so the check belongs in the compiler.
- * The negative-array-size form is used because both toolchains compile this as C89 and neither has
- * _Static_assert there.
+ * THE MULTIPLE-OF-16 RULE, ENFORCED RATHER THAN ASKED FOR. The block grows whenever a field is added.
+ * An MFC transfer of a size that is not 1, 2, 4, 8 or a multiple of 16 does not fail loudly on this
+ * hardware - it is where a hang comes from - so the check belongs in the compiler. The
+ * negative-array-size form is used because it compiles under any C dialect either toolchain is given.
  */
 typedef char rc_spu_yuv_job_size_is_a_multiple_of_16[(sizeof(rc_spu_yuv_job) % 16u) == 0u ? 1 : -1];
 

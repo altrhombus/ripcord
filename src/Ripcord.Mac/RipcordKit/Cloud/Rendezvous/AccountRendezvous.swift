@@ -491,8 +491,8 @@ public final class AccountRendezvous<Transport: AccountRouteTransport>: Sendable
 
     /// Answers a console message with a RESULT carrying its reqId, the moment it arrives.
     ///
-    /// **The thing that was missing** on the .NET side: Ripcord acked the OFFER and nothing else, and five
-    /// captures show the vendor client acking the console's ACCEPT too, within about 1.5 s. Fired from its
+    /// **Every console message, not the OFFER alone:** five captures show the vendor client acking the
+    /// console's ACCEPT too, within about 1.5 s. Fired from its
     /// own task rather than awaited in the flow, because by the time the ACCEPT comes the flow has moved on
     /// to the transport, and the console gives up about a second later. Deduplicated because the push channel
     /// delivers duplicates routinely (each OFFER arrives twice).

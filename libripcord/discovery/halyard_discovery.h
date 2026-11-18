@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - Phase 3 LAN discovery (the SRCH broadcast/response).
+ * libripcord - LAN discovery (the SRCH broadcast/response).
  *
  * Ported from Ripcord.Protocol.Halyard.Common.Discovery.HalyardSearchClient, and checked in
  * tests/discovery_test.c against docs/protocol/ps5-local-discovery.md's own worked examples - if this
@@ -30,9 +30,8 @@
  * The wake itself is halyard_wake.h: this parser reports `is_awake == 0`, and that file acts on it.
  *
  * PLAIN ASCII, HTTP-STATUS-LINE-LIKE BUT NOT FULL HTTP: no header-section framing beyond the trailing
- * blank line, no Host:/User-Agent:. Only PS5 is a build target for this port (README's "Can the
- * hardware actually do this?" - HEVC-only-decoder New 3DS story), but the PS4 profile is included
- * because the wire format is otherwise identical, as on the .NET side.
+ * blank line, no Host:/User-Agent:. The PS5 and PS4 profiles differ in host type, port and protocol
+ * version only; the wire format is otherwise identical, as on the .NET side.
  */
 #ifndef HALYARD_DISCOVERY_H
 #define HALYARD_DISCOVERY_H

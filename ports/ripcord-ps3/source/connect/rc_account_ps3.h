@@ -26,7 +26,7 @@
 #include <stddef.h>
 
 /*
- * ANSWERED, b335: /dev_hdd0/home/<user>/np_cache.dat, 248 bytes, the account id as a BIG-endian
+ * WHERE IT IS (b335): /dev_hdd0/home/<user>/np_cache.dat, 248 bytes, the account id as a BIG-endian
  * uint64 at offset 0. The search below found it by looking for a number the pairing record already
  * had, which is why there is no hypothesis here to be wrong about.
  *

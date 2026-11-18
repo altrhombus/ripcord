@@ -1,22 +1,21 @@
 /*
- * ripcord-3ds - Phase 4 on-device probe: the /sess/init -> /sess/ctrl exchange against a real console.
+ * ripcord-3ds - on-device probe: the /sess/init -> /sess/ctrl exchange against a real console.
  *
  * Orchestrates, in order, the same sequence as HalyardStreamingSession.ConnectAsync: arm the console's
  * control listener (halyard_control_arm), connect over TCP,
  * GET /sess/init (plaintext RP-Registkey), derive the control key from the returned RP-Nonce plus the
- * pairing record's companion (halyard_control_field_init - the first end-to-end use of the crypto from
- * Phase 0), reconnect fresh, GET /sess/ctrl with the five encrypted RP-* fields, then answer the
- * console's HEARTBEAT_REQ on the persistent binary channel that follows - missing that is what makes a
- * real console RST the session ~15-30s in.
+ * pairing record's companion (halyard_control_field_init), reconnect fresh, GET /sess/ctrl with the
+ * five encrypted RP-* fields, then answer the console's HEARTBEAT_REQ on the persistent binary channel
+ * that follows - missing that is what makes a real console RST the session ~15-30s in. On that channel
+ * Y requests rest mode and START exits; a sign-in prompt is logged and not answered.
  *
  * PAIRING RECORD: read from "pairing.txt" beside this .3dsx - see halyard_pairing_file.h for the format,
  * and for why that loader is shared rather than living here.
  *
  * RUN AND CONFIRMED against a real PS5 on 2026-08-12: /sess/init -> 200, /sess/ctrl -> 200, session
- * ready (17-byte session id), and rest mode round-tripped. This program is the validated half of the
- * connect sequence and is kept as-is for exactly that reason - it is the known-good reference for the
- * control plane. source/connect/main.c carries the same sequence forward into the stream plane; when the
- * two disagree about the control plane, this one is right.
+ * ready (17-byte session id), and rest mode round-tripped. This file writes the sequence out call by
+ * call; source/connect/main.c runs the same control sequence through halyard_control_session and
+ * continues into the stream plane.
  */
 #include "../net/rc_soc.h"
 #include "net/rc_tcp.h"

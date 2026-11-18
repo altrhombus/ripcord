@@ -6,6 +6,17 @@ using System.Security.Cryptography;
 namespace Ripcord.Core.Net;
 
 /// <summary>
+/// A reflexive address, and what the NAT's behaviour was measured to be.
+/// </summary>
+/// <param name="Reflexive">The address a peer must be told about.</param>
+/// <param name="EndpointIndependent">
+/// True when two different destinations saw the same mapping, so the address is usable by anyone. False when
+/// they did not — a per-destination (symmetric) NAT, where no advertised address can work. Null when only one
+/// server answered and there was nothing to compare.
+/// </param>
+public sealed record StunMapping(IPEndPoint Reflexive, bool? EndpointIndependent);
+
+/// <summary>
 /// Discovers this machine's reflexive (public) address for a given local UDP port, by asking a STUN server:
 /// one RFC 5389 Binding Request, one <c>XOR-MAPPED-ADDRESS</c> back.
 ///
@@ -21,17 +32,6 @@ namespace Ripcord.Core.Net;
 /// and nothing else.
 /// </para>
 /// </summary>
-/// <summary>
-/// A reflexive address, and what the NAT's behaviour was measured to be.
-/// </summary>
-/// <param name="Reflexive">The address a peer must be told about.</param>
-/// <param name="EndpointIndependent">
-/// True when two different destinations saw the same mapping, so the address is usable by anyone. False when
-/// they did not — a per-destination (symmetric) NAT, where no advertised address can work. Null when only one
-/// server answered and there was nothing to compare.
-/// </param>
-public sealed record StunMapping(IPEndPoint Reflexive, bool? EndpointIndependent);
-
 public static class StunReflexiveAddress
 {
     private const int BindingRequest = 0x0001;

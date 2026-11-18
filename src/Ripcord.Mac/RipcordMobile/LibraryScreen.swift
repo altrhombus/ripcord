@@ -1,5 +1,5 @@
-// The paired consoles, and the way to pair one. Plain lists for now: the tiles, the launch and the rest of the
-// Mac's DESIGN.md wait for the mobile design pass (docs/ios-plan.md).
+// The paired consoles, and the way to pair one, as plain lists: none of the Mac's DESIGN.md (the tiles, the
+// launch) applies here (docs/ios-plan.md).
 
 import SwiftUI
 import RipcordKit

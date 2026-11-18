@@ -195,7 +195,7 @@ int rc_stun_address_equal(const rc_stun_address *a, const rc_stun_address *b);
  *
  * THE SERVERS SHOULD BE ON DIFFERENT OPERATORS. The comparison turns on two genuinely different
  * destinations; two names of one provider can resolve to one host, and a symmetric NAT would then look
- * endpoint-independent. Which servers is the caller's (and the Mac's DNS resolver's) business.
+ * endpoint-independent. Which servers is the caller's (and its DNS resolver's) business.
  *
  * DELIBERATE DIFFERENCE: .NET binds a throwaway socket on the chosen port, asks, closes it, and binds the
  * real one afterwards, leaving a window where something else can take the port. This asks on the socket

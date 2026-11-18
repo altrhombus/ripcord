@@ -18,8 +18,8 @@
  * copied into an aligned linear staging buffer and GSPGPU_FlushDataCache'd before the call. Feeding it a
  * pointer into an ordinary heap or stack buffer produces silence or garbage rather than an error.
  *
- * VERIFIED ON HARDWARE: MVD has decoded video from a real PS5 on a real console, and six defects were
- * found in this path by building an offline replay harness and measuring. The .c records them.
+ * VERIFIED ON HARDWARE: MVD has decoded video from a real PS5 on a real console. source/mvdreplay
+ * replays a captured stream through this module with no console attached.
  */
 #ifndef RC_MVD_H
 #define RC_MVD_H
@@ -53,9 +53,9 @@ typedef struct {
 } rc_mvd;
 
 /*
- * Brings up MVD for H.264 decode at `input_width` x `input_height`. Returns 1 on success, 0 on failure
- * (not a New 3DS, service unavailable, or no linear memory), having left `out` unusable but safe to
- * pass to the other calls.
+ * Brings up MVD for H.264 decode at `input_width` x `input_height`. `rgb565` non-zero selects RGB565
+ * output, zero BGR565. Returns 1 on success, 0 on failure (not a New 3DS, service unavailable, or no
+ * linear memory), having left `out` unusable but safe to pass to the other calls.
  */
 int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565);
 
@@ -82,7 +82,7 @@ void rc_mvd_signal_loss(rc_mvd *mvd);
  * hardware measurement that made 'correct' the wrong trade here. */
 void rc_mvd_set_skip_until_keyframe(int enabled);
 
-/* 800x240 top-screen mode. 640-wide source then UPSCALES horizontally instead of losing 61% of its
+/* 800x240 top-screen mode. 640-wide source then UPSCALES horizontally instead of losing 37.5% of its
  * columns, which is the single biggest lever on text legibility. See the .c. Call before streaming. */
 void rc_mvd_set_widescreen(int enabled);
 
@@ -94,8 +94,10 @@ int rc_mvd_start_scale_thread(unsigned core_mask);
 
 /*
  * Scale-and-present, split so the caller never blocks on it:
- *   rc_mvd_scale_begin    - 1 if a new picture was handed to the scaler (or drawn inline), else 0
- *   rc_mvd_scale_complete - 1 once the framebuffer is written and flushed; the caller then swaps
+ *   rc_mvd_scale_begin    - 1 when a scaled picture is ready: inline, one was drawn since the last call
+ *                           and is now flushed; threaded, a worker blit has finished. Else 0.
+ *   rc_mvd_scale_complete - inline, always 1; threaded, 1 if the worker's done event is set, which
+ *                           this call consumes. The caller then swaps.
  * Call at DISPLAY rate, not decode rate - the decoder outruns a 60 Hz screen whenever it is keeping up.
  */
 int rc_mvd_scale_begin(rc_mvd *mvd);
@@ -103,7 +105,7 @@ int rc_mvd_scale_begin(rc_mvd *mvd);
 /*
  * Percentage of the last blitted frame that differs from its own mean luminance. A real picture is
  * mostly detail (typically 40-80%); a cleared buffer with motion painted into it is a few percent, and
- * crucially still shows a large min-to-max SPREAD - which is why spread was the wrong thing to measure.
+ * crucially still shows a large min-to-max SPREAD - which is why spread is not what this measures.
  */
 unsigned rc_mvd_last_detail(void);
 int rc_mvd_scale_complete(void);

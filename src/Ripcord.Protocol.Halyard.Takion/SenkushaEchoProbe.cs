@@ -124,7 +124,7 @@ internal static class SenkushaEchoProbe
     /// Whether a received datagram is an echo of one of our pings, and if so which sequence it carries.
     ///
     /// <para>
-    /// Matched on the sequence byte rather than by comparing the whole packet: the console echoes verbatim today,
+    /// Matched on the sequence byte rather than by comparing the whole packet: the console echoes verbatim,
     /// but keying off one field we know the meaning of is more robust than depending on every byte we do not.
     /// </para>
     /// </summary>

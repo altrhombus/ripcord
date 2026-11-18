@@ -1,12 +1,10 @@
 /*
  * ripcord-ps3 - find a console on the LAN, from the console.
  *
- * The first thing in this port that talks to a PS5 rather than to a file or to itself.
- *
- * IT ALSO SETTLES AN OPEN [X]. libripcord/platform/rc_platform.h argues that the core needs no socket
- * seam because both consoles expose the BSD names, and singles out one idiom it could not check by
- * compiling: "Whether bind() to port 0 is accepted. The 3DS SOC service rejects it outright, which is
- * correct on .NET and on Unix and cost a hardware run to find. No documentation was found either way."
+ * IT ALSO ANSWERS A PER-PLATFORM QUESTION. libripcord/platform/rc_platform.h argues that the core needs
+ * no socket seam because both consoles expose the BSD names, and singles out one idiom that compiling
+ * cannot check: whether bind() to port 0 is accepted. The 3DS SOC service rejects it outright, though
+ * it is correct on .NET and on Unix.
  * Discovery needs a bound socket to receive unicast replies, so the question is asked here, and
  * reported separately from whether discovery worked because the two failures look identical from the
  * outside.
@@ -32,9 +30,8 @@ typedef struct {
     /*
      * DOES sin_len ACTUALLY HAVE TO BE SET? source/net/rc_netlog.c sets it on every sockaddr because
      * PSL1GHT's networktest sample does, and that was copied rather than tested. libripcord builds
-     * sockaddr_in in three places - session/halyard_control_session.c and net/rc_tcp.c - and sets
-     * sin_family without sin_len, so if the field is genuinely required then the shared core cannot
-     * open a control session on this platform.
+     * sockaddr_in in net/rc_tcp.c and net/rc_udp.c and sets sin_family without sin_len, so if the
+     * field is genuinely required then the shared core cannot open a control session on this platform.
      *
      * Answered by broadcasting the same SRCH probe twice, once with the field zeroed and once with it
      * set.

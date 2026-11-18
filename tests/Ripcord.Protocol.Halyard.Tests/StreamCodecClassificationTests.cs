@@ -10,7 +10,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// This decides which NAL type means "IDR", which in turn decides whether the parameter sets get prepended to a
 /// keyframe at all. Getting it wrong is silent and total: an HEVC decoder handed slices with no VPS/SPS/PPS
 /// accepts every packet and returns MF_E_TRANSFORM_NEED_MORE_INPUT forever — full decode and present counters,
-/// black screen, no error anywhere. That is precisely what happened, so the boundary cases are pinned here.
+/// black screen, no error anywhere. So the boundary cases are pinned here.
 /// </para>
 /// </summary>
 public class StreamCodecClassificationTests

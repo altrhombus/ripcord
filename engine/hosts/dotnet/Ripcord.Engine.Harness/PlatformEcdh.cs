@@ -1,7 +1,6 @@
 // The Rust engine's key agreement on Windows: .NET's ECDiffieHellman, which is CNG (BCrypt) there, behind the
-// RipcordEcdhBackend table (docs/engine-plan.md, "Dependencies"). Phase 4 moves it into
-// Ripcord.Protocol.Halyard.Native unchanged; it lives in the harness until then, so the harness's run of
-// session-crypto.kat through it is the check the plan requires before a backend is used on its platform.
+// RipcordEcdhBackend table (docs/engine-plan.md, "Dependencies"). The harness runs session-crypto.kat
+// through it, which is the check the plan requires before a backend is used on its platform.
 // On macOS and Linux the same code runs on .NET's own backends there, which is a useful cross-check but
 // not the one that counts: CNG is only exercised on the Windows legs.
 //

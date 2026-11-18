@@ -8,8 +8,7 @@
  * working one.
  *
  * It has its own file because that argument belongs with entropy rather than in rc_platform_ps3.c,
- * which is about clocks. Until the call was confirmed the function was deliberately absent, so that a
- * caller failed to link rather than got a stub.
+ * which is about clocks.
  *
  * WHAT WAS CONFIRMED, AND HOW - 2026-09-11, against ps3dev nightly-2026-07-26.
  *
@@ -46,7 +45,7 @@
 
 /* Set once rc_random_init() has seen the generator actually produce bytes. Everything below refuses to
  * hand out key material until it is, because "the call exists" and "the call works" are not the same
- * thing on a platform nobody here has booted. */
+ * thing. */
 static int s_ready;
 
 /*
@@ -156,8 +155,8 @@ int rc_random_bytes(uint8_t *out, size_t length)
 int rc_random_rng_callback(void *ctx, uint8_t *out, size_t length)
 {
     (void)ctx;
-    /* Inverted on purpose: mbedtls treats 0 as success. rc_platform.h now spells out that the two
-     * conventions in this seam meet here and nowhere else - it used to describe them the wrong way
-     * round, which is a mistake that makes every failure look like a success. */
+    /* Inverted on purpose: mbedtls treats 0 as success. rc_platform.h spells out that the two
+     * conventions in this seam meet here and nowhere else; getting them the wrong way round makes
+     * every failure look like a success. */
     return rc_random_bytes(out, length) ? 0 : -1;
 }

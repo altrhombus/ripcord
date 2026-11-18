@@ -69,8 +69,8 @@ void halyard_dgram_control_pipe_init(halyard_dgram_control_pipe *p, halyard_dgra
 /*
  * .NET's HostHeader(): the address right-aligned in three columns, then the port - "Host: 192.  0.  2.104:9303",
  * shown with a documentation address - the "%3d.%3d.%3d.%3d" form every captured vendor request writes.
- * A LAN console accepts the plain form; the account route once refused /sess/init while this was one of
- * two remaining differences from the capture, so the datagram route sends the byte-faithful one. A host
+ * A LAN console accepts the plain form; the account route refused /sess/init on a request that differed
+ * from the capture in this and one other place, so the datagram route sends the byte-faithful one. A host
  * that is not a dotted quad is written as is. Returns the length, or 0 if it does not fit.
  */
 size_t halyard_dgram_host_header(const char *host, unsigned port, char *out, size_t out_size);

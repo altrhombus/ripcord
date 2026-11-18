@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - the senkusha RTT echo packet.
+ * libripcord - the senkusha RTT echo packet.
  *
  * Ported from src/Ripcord.Protocol.Halyard.Takion/SenkushaEchoProbe.cs, which is this project's own
  * reference implementation and carries the provenance for every field below. That file cites
@@ -46,8 +46,8 @@ size_t senkusha_echo_build(uint8_t sequence, uint64_t microseconds, size_t paylo
  * Is this datagram an echo of one of our pings, and if so which sequence?
  *
  * Matched on the marker bytes and the sequence rather than by comparing the whole packet: the console
- * echoes verbatim today, but keying off the fields we know the meaning of is more robust than depending
- * on every byte we do not.
+ * echoed verbatim in both captures, but keying off the fields we know the meaning of is more robust than
+ * depending on every byte we do not.
  */
 int senkusha_echo_is_echo(const uint8_t *datagram, size_t length, uint8_t *out_sequence);
 

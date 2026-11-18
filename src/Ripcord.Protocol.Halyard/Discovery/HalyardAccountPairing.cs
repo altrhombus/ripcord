@@ -45,11 +45,6 @@ public sealed record HalyardAccountPairingRequest(
 /// The address the caller already had for the console, from LAN discovery. Preferred over a candidate when
 /// the two agree, because it is the one we know is reachable from here.
 /// </param>
-/// <param name="LocalEndpoint">
-/// The address and UDP port our control transport will speak from, advertised as our <c>LOCAL</c> candidate.
-/// The vendor's OFFER lists the very port its 9303 traffic then originates from, so the console can correlate
-/// the peer that offered with the peer that opens a transport. Null omits the candidate.
-/// </param>
 /// <param name="LocalHashedId">Our own signaling id, as announced in our OFFER.</param>
 /// <param name="ConsoleHashedId">The console's, from its OFFER.</param>
 public sealed record HalyardAccountTransportContext(
@@ -58,15 +53,6 @@ public sealed record HalyardAccountTransportContext(
     ReadOnlyMemory<byte> LocalHashedId,
     ReadOnlyMemory<byte> ConsoleHashedId);
 
-/// <summary>Tunables for account pairing.</summary>
-/// <summary>
-/// A live account-route association, ready for the session control plane, or the reason there is not one.
-///
-/// <para>
-/// <see cref="Channel"/> is the association the whole session runs on -- <c>/sess/init</c>, <c>/sess/ctrl</c>
-/// and the control frames after them. The caller owns it: disposing it ends the session.
-/// </para>
-/// </summary>
 /// <summary>
 /// What the shared rendezvous hands to whatever finishes it: the negotiated context, the seed if one was
 /// required, the cloud session it all runs in, and a way to await the console's <em>next</em> OFFER.
@@ -87,6 +73,14 @@ public sealed record RendezvousOutcome(
 /// <summary>Where the console's A/V leg is, once its second candidate exchange has been answered.</summary>
 public sealed record HalyardMediaEndpoint(string Address, int Port, byte[] ConsoleHashedId);
 
+/// <summary>
+/// A live account-route association, ready for the session control plane, or the reason there is not one.
+///
+/// <para>
+/// <see cref="Channel"/> is the association the whole session runs on -- <c>/sess/init</c>, <c>/sess/ctrl</c>
+/// and the control frames after them. The caller owns it: disposing it ends the session.
+/// </para>
+/// </summary>
 public sealed record HalyardAccountConnection(
     HalyardDatagramControlChannel? Channel,
     HalyardAccountTransportContext? Context,
@@ -99,6 +93,7 @@ public sealed record HalyardAccountConnection(
     public static HalyardAccountConnection Failed(string reason) => new(null, null, reason);
 }
 
+/// <summary>Tunables for account pairing.</summary>
 public sealed class HalyardAccountPairingOptions
 {
     /// <summary>How long to wait for the console to publish <c>customData1</c> (the seed) after the command.</summary>
@@ -126,8 +121,8 @@ public sealed class HalyardAccountPairingOptions
     public TimeSpan MembershipPollInterval { get; init; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// How long to wait for that before messaging the console anyway, as the route did before it waited at all. The
-    /// vendor's first message follows the console's OFFER by 3 to 9 s in every captured session.
+    /// How long to wait for that before messaging the console anyway. The vendor's first message follows the
+    /// console's OFFER by 3 to 9 s in every captured session.
     /// </summary>
     public TimeSpan MembershipTimeout { get; init; } = TimeSpan.FromSeconds(12);
 
@@ -154,7 +149,7 @@ public sealed class HalyardAccountPairingOptions
 /// </list>
 ///
 /// <para>
-/// The push channel is passed in not-yet-running (the caller built it over a real or fake WebSocket), which is
+/// The push channel is passed in before it is started (the caller built it over a real or fake WebSocket), which is
 /// what lets the whole flow be driven from captured/scripted frames in tests. Its socket remains the caller's
 /// to dispose; this type only runs and then stops the receive loop.
 /// </para>
@@ -180,10 +175,10 @@ public sealed class HalyardAccountPairing(
     private readonly HalyardAccountPairingOptions _options = options ?? new HalyardAccountPairingOptions();
 
     /// <summary>
-    /// Pair an account console. <paramref name="pushChannel"/> is a not-yet-running channel over a WebSocket
-    /// the caller owns; <paramref name="pushServer"/> and <paramref name="accessToken"/> drive its upgrade.
+    /// Pair an account console: the seed arrives over the cloud and drives a <c>/sess/rgst</c>.
+    /// <paramref name="pushChannel"/> is a channel that has not been started, over a WebSocket the caller owns;
+    /// <paramref name="pushServer"/> and <paramref name="accessToken"/> drive its upgrade.
     /// </summary>
-    /// <summary>Pair with the console: the seed arrives over the cloud and drives a <c>/sess/rgst</c>.</summary>
     public Task<HalyardRegistrationResult> PairAsync(
         HalyardAccountPairingRequest request,
         HalyardPushChannel pushChannel,
@@ -571,7 +566,7 @@ public sealed class HalyardAccountPairing(
         // rest (2026-10-10), and the route ended. In our captures the vendor client reads its session back on a
         // two-second rhythm and sends its first message 3 to 9 s after the console's OFFER, never a 404 in about
         // 150 (captures folder, away-2026-10-10/NOTES.md). That it waits for exactly this read is inferred from
-        // the timing and the read's size, [X]. Bounded: past MembershipTimeout it goes on as it did before.
+        // the timing and the read's size, [X]. Bounded: past MembershipTimeout it messages the console anyway.
         async Task WaitForConsoleMembershipAsync()
         {
             var waited = System.Diagnostics.Stopwatch.StartNew();
@@ -851,7 +846,7 @@ public sealed class HalyardAccountPairing(
                 // This position is where the captured vendor client's Init actually sits, measured from its
                 // TLS streams: one POST at t+18.85, its Init at t+20.33, two more POSTs at t+20.34. Its
                 // console then answered by adopting its tag pair 148ms later and never raced it. **[X]** why
-                // the console tolerates the wait there and not here is still unexplained.
+                // the console tolerates the wait there and not here is unexplained.
                 try
                 {
                     await openAssociation(context, cancellationToken).ConfigureAwait(false);
@@ -944,11 +939,6 @@ public sealed class HalyardAccountPairing(
     }
 
     /// <summary>
-    /// Our stream id, and the request id of our ACCEPT. Both are small constants because we open exactly one
-    /// connection per pairing — the captured client uses 1 and 2 for its first, and only counts up when it
-    /// negotiates a second stream for the media port.
-    /// </summary>
-    /// <summary>
     /// The cloud half of a connect: the session membership and the push loop, kept alive for as long as the
     /// stream runs.
     ///
@@ -987,17 +977,16 @@ public sealed class HalyardAccountPairing(
         }
     }
 
+    /// <summary>
+    /// Our stream id for the control connection, and below it the request ids of our OFFER and ACCEPT. The
+    /// captured client uses 1 and 2 for its first connection and counts up when it negotiates a second stream
+    /// for the media port; the media leg here does the same (stream id + 1, request ids + 2).
+    /// </summary>
     private const int OurStreamId = 1;
 
     private const int OurOfferReqId = 1;
 
     private const int OurAcceptReqId = 2;
-
-    /// <summary>
-    /// Which of the console's candidates to accept: the one naming the address we already reached it on, so a
-    /// same-network pairing keeps its traffic on the LAN rather than going out to the reflexive address and
-    /// back. Falls back to the first offered.
-    /// </summary>
 
     /// <summary>
     /// The candidates we offer for one connection, in the order and with the labels the captured client uses.

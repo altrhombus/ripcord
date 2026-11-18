@@ -25,6 +25,13 @@ public enum StreamingRoute
 /// </param>
 public sealed record StreamingRouteChoice(StreamingRoute Route, string Reason);
 
+/// <summary>Whether this build can stream at all, and if not, what to tell the user.</summary>
+/// <param name="Detail">
+/// Shown verbatim. Names what is missing and where to put it, because that is answerable by the person
+/// reading it — the same contract <c>AccountPairingAvailability</c> keeps.
+/// </param>
+public sealed record StreamingAvailability(bool Available, string Detail);
+
 /// <summary>
 /// Opens a streaming session against a paired console, by whichever route can reach it.
 ///
@@ -41,13 +48,6 @@ public sealed record StreamingRouteChoice(StreamingRoute Route, string Reason);
 /// would make the decision untestable without a console.
 /// </para>
 /// </summary>
-/// <summary>Whether this build can stream at all, and if not, what to tell the user.</summary>
-/// <param name="Detail">
-/// Shown verbatim. Names what is missing and where to put it, because that is answerable by the person
-/// reading it — the same contract <c>AccountPairingAvailability</c> keeps.
-/// </param>
-public sealed record StreamingAvailability(bool Available, string Detail);
-
 public interface IStreamingSessionSource
 {
     /// <summary>

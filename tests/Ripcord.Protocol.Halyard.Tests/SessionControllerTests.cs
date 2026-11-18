@@ -126,9 +126,9 @@ public class SessionControllerTests
     /// <para>
     /// Delays record their requested duration and then yield briefly for real, so the controller's loops make
     /// progress without pegging a core. Crucially they do NOT advance the clock — only <see cref="Advance"/>
-    /// does. An earlier version advanced time by the requested duration, which let the 1 ms watchdog loop race
-    /// virtual time forward by minutes in a fraction of a real second and blow straight past thresholds the
-    /// test was trying to sit between. Explicit advancement makes every threshold crossing deliberate.
+    /// does. Advancing time by the requested duration would let the 1 ms watchdog loop race virtual time
+    /// forward by minutes in a fraction of a real second and blow straight past thresholds a test is trying
+    /// to sit between. Explicit advancement makes every threshold crossing deliberate.
     /// </para>
     /// </summary>
     private sealed class VirtualTime
@@ -257,8 +257,7 @@ public class SessionControllerTests
     public async Task ASessionTheConsoleRefuses_IsNotTriedAgain()
     {
         // The account route registers its session while the session is being built, so a console's 403 arrives as
-        // the factory throwing. It was retried twice, with a wake before each, before the same refusal was shown
-        // (visual audit, 2026-10-08).
+        // the factory throwing. Retrying it, with a wake before each attempt, only shows the same refusal later.
         var time = new VirtualTime();
         int attempts = 0;
 
@@ -465,7 +464,7 @@ public class SessionControllerTests
 
     /// <summary>
     /// A cancelled, impossible or thrice-wrong login passcode stops the connect: a retry only asks the same person
-    /// the same question again. Cancelling the prompt used to bring it straight back.
+    /// the same question again. Cancelling the prompt must not bring it straight back.
     /// </summary>
     [Theory]
     [InlineData("Sign-in cancelled: no login passcode entered.")]
@@ -542,8 +541,8 @@ public class SessionControllerTests
     [Fact]
     public async Task AFirstConnectThatFails_SaysConnectingNotReconnecting_AndHasTheSmallerBudget()
     {
-        // Six tries, with backoff and a wake before each, under "Reconnecting…", for a stream that never was
-        // (review, 2026-10-05).
+        // Not six tries, with backoff and a wake before each, under "Reconnecting…", for a stream that never
+        // was.
         var time = new VirtualTime();
         int created = 0;
         var gate = new Lock();
@@ -733,8 +732,8 @@ public class SessionControllerTests
     }
 
     /// <summary>
-    /// Rest applies to the disconnect a person asks for, never to replacing a session. It used to apply to
-    /// every teardown, so a stalled session replaced by a reconnect put the console to sleep under the new one.
+    /// Rest applies to the disconnect a person asks for, never to replacing a session. Applied to every
+    /// teardown, a stalled session replaced by a reconnect would put the console to sleep under the new one.
     /// </summary>
     [Fact]
     public async Task RestConsoleOnDisconnect_OnlyRestsOnAStopNotOnAReplacement()
@@ -852,12 +851,11 @@ public class SessionControllerTests
     [Fact]
     public async Task ASessionThatLastsResetsTheRetryBudget()
     {
-        // The original intent, which still holds: a long session with occasional blips must not slowly exhaust
-        // its retries and then refuse to reconnect for a reason that has nothing to do with the current
-        // problem.
+        // A long session with occasional blips must not slowly exhaust its retries and then refuse to
+        // reconnect for a reason that has nothing to do with the current problem.
         //
-        // What changed is the test for "successful". This assertion used to be made about a session that
-        // merely CONNECTED, and that is what made the reconnect loop unbounded on hardware — see
+        // "Successful" means a session that lasted, not one that merely CONNECTED: resetting the budget on a
+        // bare connect makes the reconnect loop unbounded on hardware — see
         // AConsoleThatConnectsAndDropsImmediately_EventuallyGivesUp below. Duration is the honest measure.
         var time = new VirtualTime();
         var sessions = new List<FakeSession>();
@@ -898,9 +896,9 @@ public class SessionControllerTests
     }
 
     /// <summary>
-    /// A session that closes itself says why, and the reconnect repeats it. Before 2026-09-26 a console that
-    /// hung up left no account of it: the .NET session ran on until the watchdog saw silence, and the reconnect
-    /// that followed said nothing about what it was reconnecting from.
+    /// A session that closes itself says why, and the reconnect repeats it. Without that a console that hangs
+    /// up leaves no account of it: the session runs on until the watchdog sees silence, and the reconnect
+    /// that follows says nothing about what it is reconnecting from.
     /// </summary>
     [Fact]
     public async Task ASessionThatEndsItself_HasItsReasonInTheReconnect()
@@ -940,7 +938,7 @@ public class SessionControllerTests
         sessions[0].EndReason = "The control connection failed: connection reset";   // a network fault
         sessions[0].State = SessionState.Closed;
 
-        // In the status's Reason, apart from its sentence, so a screen can show it small (2026-10-08).
+        // In the status's Reason, apart from its sentence, so a screen can show it small.
         await WaitFor(() => controller.CurrentStatus.Reason?.Contains("connection reset", StringComparison.Ordinal) == true,
             "the reconnect to name why the session ended");
         Assert.Equal(SessionLifecycle.Reconnecting, controller.Lifecycle);
@@ -948,7 +946,7 @@ public class SessionControllerTests
 
     /// <summary>
     /// A console that ends the stream itself, by going into rest from its own power menu or by its own timer,
-    /// stays ended. The reconnect wakes the console first, so reconnecting woke it straight back up (2026-10-05).
+    /// stays ended. The reconnect wakes the console first, so reconnecting would wake it straight back up.
     /// </summary>
     [Theory]
     [InlineData("The console ended the session: Server shutting down")]
@@ -992,8 +990,8 @@ public class SessionControllerTests
     }
 
     /// <summary>
-    /// A session's typed kind wins over its words: matching English text decided retries, and rewording a message
-    /// changed what happened (review, 2026-10-05). Each reason here reads the opposite way to its kind.
+    /// A session's typed kind wins over its words: if matching English text decided retries, rewording a message
+    /// would change what happens. Each reason here reads the opposite way to its kind.
     /// </summary>
     [Fact]
     public async Task AFailureKind_DecidesOverTheReasonsText()
@@ -1061,7 +1059,7 @@ public class SessionControllerTests
     };
 
     /// <summary>
-    /// A lost first keyframe used to leave the picture black for good: every later frame is predicted, nothing
+    /// A lost first keyframe would otherwise leave the picture black for good: every later frame is predicted, nothing
     /// decodes, the decoder's backlog trigger never fires, and the console is still talking, so the stall
     /// watchdog does not either. The latch asks after the grace, and again each interval, until one arrives.
     /// </summary>

@@ -1,5 +1,5 @@
 // The two rendezvous timelines, driven entirely by fakes: a scripted push socket, a signaling client that
-// records every call in order and plays the console's part, and a transport standing in for the C side.
+// records every call in order and plays the console's part, and a transport standing in for the engine.
 // Ported from HalyardWanRendezvousTests.cs, HalyardAccountPairingTests.cs and AccountCandidateTests.cs,
 // plus the ordering the .NET tests leave implicit and the account route depends on: our datagram Init after
 // our OFFER and before our ACCEPT.
@@ -125,9 +125,9 @@ final class FakeSignaling: SignalingClient {
     func leaveSession(id sessionID: String) async throws { record("leave") }
 }
 
-/// The C side's stand-in. Its "seed crypto" is a XOR under data1, which is enough for the timeline: what is
+/// The engine's stand-in. Its "seed crypto" is a XOR under data1, which is enough for the timeline: what is
 /// tested here is that the value published after the command is the one registration receives, not the
-/// cipher (libripcord's tests own that).
+/// cipher (the engine's tests own that).
 final class FakeAccountTransport: AccountRouteTransport {
     typealias Registration = [UInt8]
 
@@ -624,8 +624,8 @@ struct AccountCandidateTests {
         }
     }
 
-    /// The case that used to diverge: nothing parses. The ACCEPT named the unparseable candidate while the
-    /// transport fell back to the known host; now both get the known host on 9303.
+    /// Nothing parses: the transport and the ACCEPT both get the known host on 9303, never the unparseable
+    /// candidate in one and the known host in the other.
     @Test("with nothing parseable, the association and the ACCEPT fall back to the known host together")
     func fallback() {
         let unparseable = [SignalingCandidate(type: "STATIC", address: "console.local", port: 1234)]

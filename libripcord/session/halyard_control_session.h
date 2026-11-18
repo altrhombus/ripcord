@@ -1,17 +1,15 @@
 /*
- * ripcord-3ds - the control-plane session, as a reusable object.
+ * libripcord - the control-plane session, as a reusable object.
  *
- * This is the orchestration that source/session/main.c proved against a real PS5 on 2026-08-12 (arm ->
- * /sess/init -> /sess/ctrl -> the persistent binary channel), lifted out so the connect flow in
- * source/connect/ can run the same sequence and then keep going into the stream plane.
- *
- * source/session/main.c remains the known-good reference program; if it and source/connect/ ever
- * disagree about the control plane, that one is right.
+ * The orchestration arm -> /sess/init -> /sess/ctrl -> the persistent binary channel, as one object, so
+ * a connect flow (libripcord/client, or a port's own) can run the sequence and then keep going into the
+ * stream plane. The same sequence, written out in ports/ripcord-3ds/source/session/main.c, ran against
+ * a real PS5 on 2026-08-12.
  *
  * SINGLE-THREADED AND NON-BLOCKING BY DESIGN. Everything here polls: the socket is non-blocking from the
  * moment it connects, and service() does at most one unit of work per call. That lets one thread hold
  * this channel open - answering HEARTBEAT_REQ, which a console requires or it resets the session
- * ~15-30 s in - while driving the UDP senkusha/Takion work that follows. This port creates no threads.
+ * ~15-30 s in - while driving the UDP senkusha/Takion work that follows. Nothing here creates a thread.
  *
  * THE COUNTER. The control-field cipher runs one counter per CONNECTION, not per field or per message
  * type: the five /sess/ctrl headers consume 0-4 (halyard_sess_fields.h), and anything encrypted later
@@ -35,7 +33,7 @@
  *
  * Every payload-carrying frame SPENDS a counter whether or not this decrypts it - the console's sequence
  * does not care what we can hold - so a payload larger than this advances the counter and arrives with
- * plaintext_length 0 rather than desynchronising everything after it. The frames anyone reads today are
+ * plaintext_length 0 rather than desynchronising everything after it. The frames the callers read are
  * far smaller than this: the login verdict is one byte.
  */
 #define HALYARD_CONTROL_PLAINTEXT_MAX 256
@@ -68,7 +66,7 @@
  *   name      for log lines only ("TCP", "datagram").
  *
  * The TCP pipe below wraps rc_tcp_connect + rc_socket_set_nonblocking, rc_tcp_send_all, rc_tcp_recv and
- * close, unchanged and in the same order as before the seam.
+ * close.
  */
 typedef struct {
     const char *name;
@@ -96,8 +94,8 @@ extern const halyard_control_pipe halyard_control_pipe_tcp;
  *   connection_path      RP-ConPath: 1 LOCAL, 3 RENDEZVOUS ([W] both seen on the wire; 2 unclaimed). The
  *                        console runs a different A/V bring-up for each, so this is not decoration.
  *   host_header          .NET's HostHeader(): the address right-aligned in three columns with the port
- *                        (halyard_dgram_host_header). A LAN console accepts the plain form this file has
- *                        always sent, so the TCP path keeps it.
+ *                        (halyard_dgram_host_header). A LAN console accepts the plain form, the
+ *                        record's host as written, so the TCP path sends that.
  *   init_version_header  .NET sends "Rp-Version" on /sess/init (as the captured client does) and
  *                        "RP-Version" on /sess/ctrl. The TCP path's "RP-Version" is hardware-validated and
  *                        stays; the datagram route follows the capture.
@@ -173,7 +171,7 @@ typedef struct {
     long recv_would_block;
 
     /* Control-frame resynchronisations, and how many bytes they threw away. Should be zero; a non-zero
-     * count means the desync described in the .c is still happening and has merely been survived. */
+     * count means the desync described in the .c happened and was survived. */
     long resyncs;
     long resync_discarded;             /* set once SESSION_ID has been seen */
 
@@ -196,8 +194,8 @@ typedef struct {
     size_t buffered;
 
     /* The transport `sock` belongs to - see halyard_control_pipe. Set by open; NULL reads as TCP, so a
-     * session some older caller zeroed by hand behaves as it always did. Last, so the fields above keep
-     * their offsets. */
+     * session a caller zeroed by hand uses the TCP pipe. Last, so the fields above keep their
+     * offsets. */
     const halyard_control_pipe *pipe;
 } halyard_control_session;
 
@@ -237,8 +235,8 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
  * and never reaches SESSION_ID.
  *
  * PORTED FROM THE REFERENCE, NOT FROM ANOTHER PORT. src/Ripcord.Protocol.Halyard/Session/
- * HalyardStreamingSession.cs is what this follows; ports/ripcord-3ds treats the prompt as fatal, which
- * is that port's limitation rather than the protocol's.
+ * HalyardStreamingSession.cs is what this follows. A port may still treat the prompt as fatal; that is
+ * the port's choice rather than the protocol's.
  *
  * THE COUNTER ADVANCES ON EVERY CALL, INCLUDING RETRIES. It is one running per-connection value: the
  * five /sess/ctrl headers consumed 0-4, so the first submit is 5, and the reference is explicit that

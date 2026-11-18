@@ -4,8 +4,8 @@ namespace Ripcord.Media.Audio;
 /// Adapts the decoder's 48 kHz stereo float PCM to the WASAPI endpoint's mix format (sample rate + channel
 /// count). The common case (48 kHz stereo device) is a straight passthrough. Rate mismatches use a stateful
 /// linear resampler (continuous across calls, so no per-frame click); channel counts are mapped simply
-/// (stereo → mono downmix, or stereo into the first two of N with the rest silent). Higher-quality resampling
-/// is a later refinement. Stateful — call from a single thread (the audio submit path).
+/// (stereo → mono downmix, or stereo into the first two of N with the rest silent).
+/// Stateful — call from a single thread (the audio submit path).
 /// </summary>
 public sealed class AudioFormatConverter
 {
@@ -21,7 +21,7 @@ public sealed class AudioFormatConverter
     private bool _primed;
 
     // Reusable de-interleave/resample scratch. This runs ~50x/second for the life of a session, so allocating
-    // per call handed the GC a steady stream of short-lived arrays on the audio path — and a GC pause there is
+    // per call would hand the GC a steady stream of short-lived arrays on the audio path — and a GC pause there is
     // audible (and also what the 4 MB UDP receive buffer elsewhere exists to survive). Grown on demand, never
     // shrunk. Single-threaded by contract, like the rest of this class.
     private float[] _left = [];
@@ -89,7 +89,7 @@ public sealed class AudioFormatConverter
         int total = outSamples * _targetChannels;
         EnsureCapacity(ref destination, total);
 
-        // Channels 2..N-1 must be silent rather than whatever the buffer held last call, now that it is reused.
+        // Channels 2..N-1 must be silent rather than whatever the buffer held last call: the buffer is reused.
         if (_targetChannels > SourceChannels)
         {
             destination.AsSpan(0, total).Clear();
@@ -108,7 +108,7 @@ public sealed class AudioFormatConverter
             {
                 destination[baseIdx] = l;
                 destination[baseIdx + 1] = r;
-                // channels 2..N-1 left silent (front L/R only) — surround upmix is a later refinement
+                // channels 2..N-1 left silent (front L/R only): there is no surround upmix
             }
         }
 

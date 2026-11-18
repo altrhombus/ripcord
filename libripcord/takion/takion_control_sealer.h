@@ -93,7 +93,6 @@ void takion_control_sealer_seal_loss_report(takion_control_sealer *sealer,
 void takion_control_sealer_seal_input(takion_control_sealer *sealer,
                                       uint8_t *packet, size_t length, size_t payload_offset);
 
-/* Wipes the key material. */
 /*
  * Builds one loss report: 15 bytes, base type 5, carrying the A/V units received and lost
  * since the last one. Returns the length written, or 0 if the buffer is too small.
@@ -108,8 +107,8 @@ void takion_control_sealer_seal_input(takion_control_sealer *sealer,
  * VERSION CAVEAT: this 15-byte form is what that
  * capture shows. An older capture shows a 23-byte variant of the same base type with a sequence at 1, a
  * 90 kHz timestamp at 3, GMAC at 15 and keystream offset at 19. The size is protocol-version-specific rather
- * than universal. This port only negotiates the version the 15-byte capture used; if a console ever
- * rejects these, that variant is the first thing to look at.
+ * than universal. This core only negotiates the version the 15-byte capture used; if a console rejects
+ * these, that variant is the first thing to look at.
  *
  * The counts SATURATE at 65535 rather than wrap.
  */
@@ -118,6 +117,7 @@ void takion_control_sealer_seal_input(takion_control_sealer *sealer,
 size_t takion_loss_report_build(unsigned long received, unsigned long lost,
                                uint8_t *buf, size_t buf_size);
 
+/* Wipes the key material. */
 void takion_control_sealer_reset(takion_control_sealer *sealer);
 
 /*

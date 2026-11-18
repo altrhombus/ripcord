@@ -85,8 +85,8 @@ public sealed class TakionReliableChannel : IAsyncDisposable
 
     /// <summary>
     /// Process one control packet (a SACK or a DATA chunk) received by the caller's loop. Never throws for a bad
-    /// packet: three receive loops feed this, and one of them carries the whole session's control and A/V, so a
-    /// packet that threw here used to end the session (the 2026-09-30 review).
+    /// packet: three receive loops feed this, and one of them carries the whole session's control and A/V, so an
+    /// exception escaping here would end the session. A bad packet is counted in <see cref="DroppedPacketCount"/>.
     /// </summary>
     public async Task HandlePacketAsync(ReadOnlyMemory<byte> packet, CancellationToken cancellationToken)
     {
@@ -228,8 +228,8 @@ public sealed class TakionReliableChannel : IAsyncDisposable
 
             // Remove everything acknowledged up to and including the cumulative TSN. Every outstanding chunk is
             // compared by serial number: the dictionary is ordered numerically, so across a TSN wrap the lowest
-            // key is not the oldest chunk, and stopping at the first key above the ack left 0xFFFFFFFF
-            // outstanding behind 0x00000000 and resent every retransmit interval for the rest of the session.
+            // key is not the oldest chunk, and stopping at the first key above the ack would leave 0xFFFFFFFF
+            // outstanding behind 0x00000000, resent every retransmit interval for the rest of the session.
             // The C core and the Rust engine compare the same way.
             List<uint>? acked = null;
             foreach (uint tsn in _unacked.Keys)
@@ -284,7 +284,7 @@ public sealed class TakionReliableChannel : IAsyncDisposable
 
             // Delivered before the SACK goes out, not after. The TSN has already advanced, so if the SACK send
             // throws the console retransmits and that copy is re-acked as old, never redelivered: a message
-            // handed on after a failed SACK was simply lost (the second 2026-10-01 review).
+            // handed on only after the SACK would be lost whenever that send failed.
             if (complete is not null && TryParseControlMessage(complete, out ControlMessage? message))
             {
                 _inbound.Writer.TryWrite(message!);
@@ -336,8 +336,9 @@ public sealed class TakionReliableChannel : IAsyncDisposable
                     }
                 }
 
-                // Per packet: one failed send ended retransmission for the session, so anything lost after a
-                // moment with no route was never resent (review, 2026-10-05). Still unacked, it goes again next time.
+                // Caught per packet: a catch around the loop would let one failed send end retransmission for the
+                // session, and anything lost after a moment with no route would never be resent. Still unacked,
+                // it goes again next time.
                 foreach (byte[] packet in toResend)
                 {
                     try

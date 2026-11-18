@@ -1,6 +1,6 @@
-// A session's whole life: connect, watch, reconnect with backoff, give up honestly. Ported from the .NET
-// client's Ripcord.Client.SessionController and SessionLifecycle, which the Windows app ships. Every rule
-// here answers something observed on hardware:
+// A session's whole life: connect, watch, reconnect with backoff, give up honestly. Ported from the dotnet
+// client's Ripcord.Client.SessionController and SessionLifecycle. Every rule here answers something
+// observed on hardware:
 //
 //   - Only a session that LASTED resets the retry budget (MinimumHealthySession, 10 s). A console on its
 //     way into rest completes the handshake and drops it at once; counting that as success would reset

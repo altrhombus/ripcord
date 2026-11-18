@@ -78,7 +78,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     // A picture has been shown, so a frozen frame is what any later status sits on; see StatusOverPicture.
     private bool _hasShownPicture;
 
-    // The session is reconnecting, which is when the way out reads "Stop trying" (design.md; owner, 2026-10-09).
+    // The session is reconnecting, which is when the way out reads "Stop trying" (design.md).
     private bool _reconnecting;
 
     // When the current wake began, for the one line a long wake earns; see TickConnect.
@@ -224,7 +224,6 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         }
     });
 
-    /// <summary>Go one rung deeper, from the summary strip to the full instrument panel.</summary>
     /// <summary>
     /// Tell the surface how the player is driving. Called from the front end's input-mode tracker, which
     /// already exists and already debounces — this layer takes the answer rather than deciding it.
@@ -248,6 +247,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _ => AlertHint.Key,
     };
 
+    /// <summary>Go one rung deeper, from the summary strip to the full instrument panel.</summary>
     public void ShowDiagnosticsDetail() => Mutate(() => _rung = DiagnosticsRung.Full);
 
     /// <summary>Come back up to the summary strip.</summary>
@@ -261,15 +261,15 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     }
 
     /// <summary>
-    /// Say what is happening. <paramref name="terminal"/> means the session will not leave this state on its
-    /// own, so the busy indicator goes away and the user is offered something to do.
-    /// </summary>
-    /// <summary>
     /// Something this connect changed from what the user chose (<see cref="ConnectPlan.Notice"/>), or null. Call it
     /// before the session starts: the session's first status replaces the flow's last stage, which carried it.
     /// </summary>
     public void SetConnectNotice(string? notice) => _connectNotice = notice;
 
+    /// <summary>
+    /// Say what is happening. <paramref name="terminal"/> means the session will not leave this state on its
+    /// own, so the busy indicator goes away and the user is offered something to do.
+    /// </summary>
     public void ShowStatus(string headline, string detail, bool terminal) => Mutate(() =>
     {
         _statusVisible = true;
@@ -321,8 +321,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         }
 
         // One line, once, on a wake that has run long: the headline stays "Waking your console…" and the
-        // detail says the wait is expected. It used to change the headline to "Waiting for the console to
-        // wake…", which said nothing new and read as a different, worse state (visual audit, 2026-10-08).
+        // detail says the wait is expected. Changing the headline to another wording of the same wait would
+        // say nothing new and read as a different, worse state.
         string note = Strings.Connect_WakeTakesAWhile;
         if (_phase == ConnectPhase.Waking
             && !_statusTerminal
@@ -412,9 +412,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         ArgumentNullException.ThrowIfNull(status);
 
         // The controller has the screen from its first real status on, so the flow's last stage leaves the gate.
-        // Left there, TickConnect handed it back twice a second over anything with a different headline: a
-        // cancelled passcode prompt read "Couldn't connect" for one tick and "Connecting to your console" after
-        // it (2026-10-02).
+        // Left there, TickConnect hands it back twice a second over anything with a different headline: a
+        // cancelled passcode prompt reads "Couldn't connect" for one tick and "Connecting to your console" after
+        // it.
         if (status.Lifecycle != SessionLifecycle.Idle)
         {
             _gate.Reset();
@@ -440,7 +440,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             case SessionLifecycle.Connecting:
             case SessionLifecycle.Reconnecting:
                 // A fresh attempt starts with nothing sustained, so the previous session's notice cannot
-                // survive into a stream that has not been measured yet.
+                // survive into a stream that has not been measured.
                 Mutate(() =>
                 {
                     _alertGate.Reset();
@@ -448,8 +448,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 });
                 // The controller's sentence leads; its raw reason, when it gives one, is kept small for a bug
                 // report. And when the reason is that this PC has no network, say that instead of the socket's
-                // words: "A socket operation was attempted to an unreachable host" was what a dropped Wi-Fi read
-                // as (visual audit, 2026-10-08).
+                // words: "A socket operation was attempted to an unreachable host" is what a dropped Wi-Fi reads
+                // as otherwise.
                 string detail = IsOffline(status.Reason)
                     ? Strings.Session_Offline
                     : status.Detail;
@@ -461,9 +461,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _connectNotice is null ? detail : $"{detail} {_connectNotice}".Trim(),
                     terminal: false);
                 // The trail stays up, at its third dash, breathing: the session's own "Connecting" is the
-                // handshake the connect sequence was leading to, and a reconnect is that handshake again. It used
-                // to drop to an indeterminate bar here, so one connect changed composition halfway (visual audit,
-                // 2026-10-08, C2).
+                // handshake the connect sequence was leading to, and a reconnect is that handshake again. An
+                // indeterminate bar here would change one connect's composition halfway.
                 bool reconnecting = status.Lifecycle == SessionLifecycle.Reconnecting;
                 Mutate(() =>
                 {
@@ -497,8 +496,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 // As a failure, with its actions, but not called one: the console chose this, and most often
                 // because the player just put it into rest mode. So the screen says so in plain words, keeps the
                 // console's own reason ("Server shutting down") small for a bug report, and leads with going back
-                // rather than with a retry that would wake the console they had just put to sleep (visual audit,
-                // 2026-10-08).
+                // rather than with a retry that would wake the console they had just put to sleep.
                 Mutate(() =>
                 {
                     _isStreamLive = false;
@@ -617,10 +615,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             // "frames over the interval" is a second chance to disagree with the panel.
             //
             // Written AFTER the recompose above, and that ordering is the whole point: reading
-            // _diagnostics.HealthLevel before it was recomposed put the PREVIOUS tick's verdict next to this
-            // tick's numbers, so every trace disagreed with itself by one row - a sample logging 11.48% loss
-            // carried the verdict from the calm sample half a second earlier. Found by noticing a row whose
-            // health could not be derived from the rest of the row.
+            // _diagnostics.HealthLevel before it is recomposed puts the PREVIOUS tick's verdict next to this
+            // tick's numbers, so every trace disagrees with itself by one row - a sample logging 11.48% loss
+            // carries the verdict from the calm sample half a second earlier.
             if (telemetry.HasSession)
             {
                 _traceStartedAt ??= now;
@@ -678,9 +675,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 ? $"{s.Decoder}\n{s.DecoderDiagnostic}"
                 : s.Decoder;
 
-        // The controller's recommendation is not shown for 1.0: nothing acts on it, and the console's own target
-        // beside the cap answers the same question for real. It returns with ROADMAP's "make a reconnect start
-        // from the recommendation", when it would describe something Ripcord does.
+        // The controller's recommendation is not shown: nothing acts on it, and the console's own target
+        // beside the cap answers the same question for real.
         const string adaptive = "";
         const bool adaptiveVisible = false;
         string reason = ComposeReason(s);
@@ -789,9 +785,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     /// Which capabilities the picture currently has.
     ///
     /// <para>
-    /// Real flags, never substring matches. A previous version tested the decoder description for "PQ", which is
-    /// present whenever the <em>stream</em> is PQ — so the HDR pill lit even while the driver was tone-mapping to
-    /// SDR on an SDR display, claiming a capability that was not in effect.
+    /// Real flags, never substring matches. The decoder description contains "PQ" whenever the
+    /// <em>stream</em> is PQ — so a pill driven by it would light even while the picture is tone-mapped to SDR
+    /// on an SDR display, claiming a capability that is not in effect.
     /// </para>
     /// </summary>
     private void UpdatePills(VideoPipelineSnapshot s)
@@ -830,8 +826,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
     /// <summary>
     /// Why the picture is not what was asked for: the console choosing a lower rung to fit the bitrate budget, or
-    /// the decoder failing to report a frame size at all. (The controller's own reason went with its
-    /// recommendation, 2026-10-02.)
+    /// the decoder failing to report a frame size at all.
     /// </summary>
     private string ComposeReason(VideoPipelineSnapshot s)
     {
@@ -909,10 +904,6 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private static string Dash(string? value) => string.IsNullOrEmpty(value) ? "—" : value;
 
     /// <summary>
-    /// The peak row: what the tone-map's curve starts from, and what this frame measured. The two differ while the
-    /// curve is catching up, and a curve that disagrees with the frame for long is the thing to notice.
-    /// </summary>
-    /// <summary>
     /// Whether a retry's reason is the network itself being unreachable: Windows' socket wording for no route to
     /// the host or the network, or a network that is down. That is the case worth naming plainly, because it is
     /// the one the player can do something about.
@@ -925,6 +916,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                || reason.Contains("dead network", StringComparison.OrdinalIgnoreCase)
                || reason.Contains("No route to host", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// The peak row: what the tone-map's curve starts from, and what this frame measured. The two differ while the
+    /// curve is catching up, and a curve that disagrees with the frame for long is the thing to notice. Empty
+    /// when there is no tone-map peak.
+    /// </summary>
     internal static string ToneMapPeak(VideoPipelineSnapshot s) => s.ToneMapPeakNits > 0
         ? string.Create(CultureInfo.InvariantCulture, $"{s.ToneMapPeakNits:F0} nits · this frame {s.FramePeakNits:F0}")
         : string.Empty;
@@ -947,13 +943,12 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         // situation, and two notices about one problem read as two problems.
         //
         // And suppressed once the HUD itself is open, for the same reason one layer down. Rung 2 leads with
-        // the verdict, in the same words, so leaving rung 1 up stacked the identical sentence twice against
-        // the bottom edge — under the touch bar, on a handheld, at the moment the stream was already unwell.
+        // the verdict, in the same words, so leaving rung 1 up would stack the identical sentence twice against
+        // the bottom edge — under the touch bar, on a handheld, at the moment the stream is already unwell.
         AlertVisible: _alertRaised && !_statusVisible && _rung == DiagnosticsRung.Hidden,
 
-        // Which hint the notice may offer, given how the player is actually driving. The notice used to end
-        // in a bare "F3" pill whatever was in their hands, which on a handheld names a key the device does
-        // not have.
+        // Which hint the notice may offer, given how the player is actually driving. A bare "F3" pill
+        // whatever is in their hands would, on a handheld, name a key the device does not have.
         AlertHint: HintFor(_inputMode),
         Rung: _rung,
         Phase: _phase,

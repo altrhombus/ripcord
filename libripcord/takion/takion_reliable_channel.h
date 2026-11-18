@@ -1,17 +1,17 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport: the reliable channel.
+ * libripcord - Takion transport: the reliable channel.
  *
  * Ported from Ripcord.Protocol.Halyard.Takion.TakionAssociation + TakionReliableChannel, combined into
  * one socket-facing object: drives the SCTP 4-way handshake (see takion_handshake.h) to ESTABLISHED,
  * then sends/receives DATA chunks with a minimal in-order-accept + fixed-interval-retransmit +
  * cumulative-SACK policy - "sufficient for a clean-LAN first picture" per
  * docs/protocol/ps5-remoteplay-v1-spec.md sec8.2, which explicitly declares RTO/window tuning
- * unspecified and unnecessary for that. No RTT estimation, no Karn's algorithm, no GMAC sealing (that
- * needs the stream cipher, a separate, later phase) - all deliberately deferred, not overlooked.
+ * unspecified and unnecessary for that. No RTT estimation and no Karn's algorithm. GMAC sealing and
+ * verification are the caller's, through takion_seal_fn / takion_verify_fn below.
  *
- * Unlike every other Takion module, this one is 3DS-only (like source/net/rc_soc.c and rc_tcp.c): it
- * owns a UDP socket and a libctru clock, so it has no host-side test - source/takion/main.c is its only
- * exercise, the same position rc_soc.c/rc_tcp.c are in.
+ * Unlike the other Takion modules, which are pure byte codecs, this one does I/O: it reads and writes a
+ * caller-owned UDP socket with sendto/recvfrom and takes its clock and sleep from platform/rc_platform.h
+ * (rc_tick, rc_time_ms, rc_sleep_ms).
  */
 #ifndef TAKION_RELIABLE_CHANNEL_H
 #define TAKION_RELIABLE_CHANNEL_H
@@ -37,16 +37,9 @@ typedef struct {
 } takion_unacked_chunk;
 
 /*
- * ~49.6 KB (TAKION_MAX_UNACKED x TAKION_MAX_PACKET dominates). NEVER DECLARE ONE AS A LOCAL: libctru
- * gives a .3dsx's main thread a 32 KB stack by default, so an ordinary local overflows it in the
- * function prologue and data-aborts before the body runs. Real crash, real hardware, 2026-08-12 - and it
- * logged nothing at all, because the function never started. Use file scope, `static`, or the heap.
- * The 3DS build passes -Wframe-larger-than=8192 so this fails at compile time now rather than on device.
- */
-/*
  * Seals one outgoing packet in place - writes its keystream offset and GMAC tag. Supplied by the caller
  * rather than implemented here on purpose: this layer is pure transport and knows nothing about the
- * stream cipher (that is source/stream's business, and Phase 5 was built deliberately without it). The
+ * stream cipher (takion_control_sealer.h builds on stream/stream_packet_crypto.h for that). The
  * callback owns the keystream-offset counter, because control DATA and SACKs share one advancing sequence.
  */
 typedef void (*takion_seal_fn)(void *ctx, uint8_t *packet, size_t length);
@@ -57,6 +50,13 @@ typedef void (*takion_seal_fn)(void *ctx, uint8_t *packet, size_t length);
  */
 typedef int (*takion_verify_fn)(void *ctx, const uint8_t *packet, size_t length);
 
+/*
+ * ~49.6 KB (TAKION_MAX_UNACKED x TAKION_MAX_PACKET dominates). NEVER DECLARE ONE AS A LOCAL: libctru
+ * gives a .3dsx's main thread a 32 KB stack by default, so an ordinary local overflows it in the
+ * function prologue and data-aborts before the body runs. Real crash, real hardware, 2026-08-12 - and it
+ * logged nothing at all, because the function never started. Use file scope, `static`, or the heap.
+ * The 3DS and PS3 builds pass -Wframe-larger-than=8192, which turns a local into a compile-time warning.
+ */
 typedef struct {
     int sock;                      /* caller-owned, non-blocking, not connect()ed (we use sendto/recvfrom) */
     struct sockaddr_in peer;
@@ -76,9 +76,9 @@ typedef struct {
     unsigned long verify_dropped;
 
     /*
-     * Opt-in peer filtering; see takion_channel_connect_filtered. 0 (every existing caller) reads any
-     * source, exactly as before. `stray_dropped` counts datagrams from anyone else that were taken off the
-     * socket and thrown away.
+     * Opt-in peer filtering; see takion_channel_connect_filtered. 0 reads datagrams from any source.
+     * `stray_dropped` counts datagrams from anyone but the peer that were taken off the socket and thrown
+     * away.
      */
     int filter_peer;
     unsigned long stray_dropped;
@@ -178,13 +178,6 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
                         const uint8_t *payload, size_t payload_length);
 
 /*
- * Services the channel: retransmits anything unacked past TAKION_RETRANSMIT_INTERVAL_MS, and processes
- * one pending incoming packet if there is one. Returns 1 and fills *out_channel, *out_message and
- * *out_length if a complete reliable message was just reassembled (valid until the next call - copy it
- * out before calling again), 0 if nothing completed this call (the common case - call this in a loop),
- * -1 on a socket error.
- */
-/*
  * Waits for a reliable control message of `want_type` to arrive on `ch`, calling `tick` (may be NULL)
  * while it waits so a single-threaded caller can keep something else alive - in practice the Halyard
  * control channel, which the console resets a session over if its heartbeats go unanswered.
@@ -201,6 +194,16 @@ int takion_channel_await_control(takion_reliable_channel *ch, uint32_t want_type
                                  takion_tick_fn tick, void *tick_ctx,
                                  const uint8_t **out_message, size_t *out_length);
 
+/*
+ * Services the channel: retransmits anything unacked past TAKION_RETRANSMIT_INTERVAL_MS, and processes
+ * one pending incoming packet if there is one. Returns 1 and fills *out_channel, *out_message and
+ * *out_length if a complete reliable message was just reassembled (valid until the next call - copy it
+ * out before calling again), 0 if nothing completed this call (the common case - call this in a loop),
+ * -1 on a socket error.
+ *
+ * Takes a datagram off the socket only when the low nibble of its first byte is
+ * TAKION_BASE_TYPE_CONTROL; any other is left queued for the socket's other reader.
+ */
 int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
                         const uint8_t **out_message, size_t *out_length);
 

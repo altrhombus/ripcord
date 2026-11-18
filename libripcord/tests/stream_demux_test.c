@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - stream_demux self-test.
+ * libripcord - stream_demux self-test.
  *
  * Uses the passthrough crypto seam (stream_demux_passthrough_crypto - identity, matching the .NET
  * reference's own PassthroughHalyardSessionCrypto) so packets can be built directly in plaintext; this
@@ -7,7 +7,7 @@
  * reference's HalyardStreamDemuxer*Tests.cs files do, end to end against synthetic packets rather than a
  * captured session (no capture in the captures folder pairs A/V traffic with usable stream keys).
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE - see tests/Makefile.
  */
 #include "../stream/stream_demux.h"
 #include "../stream/fec_galois.h"
@@ -209,11 +209,11 @@ static void test_single_unit_keyframe(void)
 }
 
 /*
- * A FRAME WITH MORE UNITS THAN THE OLD CAP ALLOWED.
+ * A FRAME WITH MORE UNITS THAN FEC_MAX_TOTAL_UNITS.
  *
- * Before STREAM_DEMUX_MAX_UNITS_PER_FRAME, a frame wanting more than FEC_MAX_TOTAL_UNITS units was
- * refused outright. Once reachable, on hardware they decoded to black at 15 Mbps (frames of about 90
- * units) while the same build at 8 Mbps (about 21) was perfect.
+ * A frame may occupy up to STREAM_DEMUX_MAX_UNITS_PER_FRAME units, which is more than the 64 of
+ * FEC_MAX_TOTAL_UNITS. On hardware such frames decoded to black at 15 Mbps (frames of about 90 units)
+ * while the same build at 8 Mbps (about 21) was perfect.
  *
  * 96 source units, each carrying a distinct byte pattern, checked back in order. If the assembly walks
  * its units wrongly past 64 this fails on the bytes rather than on the count.

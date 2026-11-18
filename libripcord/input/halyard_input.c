@@ -86,9 +86,9 @@ size_t halyard_input_build_state_payload(const halyard_input_state *state, uint8
 
     /*
      * Six u16 LE motion fields: three gyro then three accelerometer, the split established in cap48 by
-     * their resting medians (gyro rests at exactly 0x7fff, accelerometer off-centre under gravity). The
-     * 3DS has no motion sensor to report, and the spec is explicit that a pad without one may send the
-     * resting values - so all six go out neutral rather than zero, which would be a real reading.
+     * their resting medians (gyro rests at exactly 0x7fff, accelerometer off-centre under gravity).
+     * halyard_input_state carries no motion, and the spec is explicit that a pad without a sensor may send
+     * the resting values - so all six go out neutral rather than zero, which would be a real reading.
      */
     write_u16_le(buf + 0x01, SENSOR_REST);
     write_u16_le(buf + 0x03, SENSOR_REST);

@@ -33,7 +33,7 @@ public sealed record HalyardSignalingCandidate(string Type, string Address, int 
 /// <param name="Candidates">The peer's advertised candidates. Empty for RESULT/ACCEPT acknowledgements.</param>
 /// <param name="SessionKey">
 /// The <c>skey</c> — 16 bytes when the peer has filled it in (the console's OFFER carries a real one; an
-/// all-zero <c>skey</c> is the not-yet-populated placeholder our own OFFER sends). Null when absent.
+/// all-zero <c>skey</c> is what our own OFFER sends). Null when absent.
 /// </param>
 /// <param name="LocalHashedId">The <c>localHashedId</c> — 20 bytes in the console's OFFER. Null when absent.</param>
 /// <param name="Sid">
@@ -141,7 +141,7 @@ public sealed record HalyardSignalingMessage(
         catch (InvalidOperationException)
         {
             // A well-formed document with an element of the wrong kind: GetString on a number, TryGetProperty on
-            // an array. Malformed all the same (found by the Mac port, 2026-09-26).
+            // an array. Malformed all the same.
             return null;
         }
         catch (FormatException)

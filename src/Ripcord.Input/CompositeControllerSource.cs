@@ -8,16 +8,16 @@ namespace Ripcord.Input;
 /// Runs every input engine at once and merges their frames, instead of choosing one at start-up.
 ///
 /// <para>
-/// Choosing once (DualSense raw HID when a DualSense was present, GameInput otherwise) meant a swap from a
-/// DualSense to an Xbox pad mid-session was never noticed until the session was reopened.
+/// Choosing once (DualSense raw HID when a DualSense is present, GameInput otherwise) would mean a swap from a
+/// DualSense to an Xbox pad mid-session is not noticed until the session is reopened.
 /// </para>
 ///
 /// <para>
 /// Running both engines does not by itself let an Xbox pad work beside a DualSense. Measured on hardware
-/// 2026-08-06: with both attached, not one Xbox frame with a button set reached this class, because
-/// <see cref="GameInputControllerSource"/> read "the most recent reading from any gamepad", which a Bluetooth
-/// DualSense wins essentially always. It now reads every GameInput pad from its own device and merges them
-/// before they get here (2026-09-30), since this class keeps one frame per engine, not per device.
+/// 2026-08-06: with both attached and GameInput asked for "the most recent reading from any gamepad", not one
+/// Xbox frame with a button set reached this class, because a Bluetooth DualSense wins essentially always.
+/// <see cref="GameInputControllerSource"/> therefore reads every GameInput pad from its own device and merges
+/// them before they get here, since this class keeps one frame per engine, not per device.
 /// </para>
 ///
 /// <para>
@@ -72,7 +72,7 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     /// Connection events, with every already-connected device replayed to a new subscriber.
     ///
     /// <para>
-    /// Without the replay a controller attached before the UI subscribed was never reported, which showed up as a
+    /// Without the replay a controller attached before the UI subscribed is never reported, which shows up as a
     /// working pad described as "none attached" — and only on hardware whose controller is present from boot.
     /// </para>
     /// </summary>
@@ -81,8 +81,8 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     public IObservable<ControllerStateFrame> StateChanges(string controllerId) => _frames;
 
     /// <summary>
-    /// Extended features from whichever engine offers them. Only the raw-HID engine can (adaptive triggers,
-    /// haptics, lightbar), so this resolves to it when a DualSense is attached and to null otherwise.
+    /// Extended features (adaptive triggers, haptics, lightbar) from the first engine that offers them for
+    /// <paramref name="controllerId"/>, or null when none does.
     /// </summary>
     public IHapticsAndExtendedFeatures? GetExtendedFeatures(string controllerId)
     {
@@ -114,8 +114,8 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
             {
                 _connected.Remove(key);
 
-                // The engine's last device went, so its last frame goes too: kept, it was merged into every frame
-                // after, and whatever was held when the pad was pulled stayed held (see EngineFrames).
+                // The engine's last device went, so its last frame goes too: kept, it would be merged into every
+                // frame after, and whatever was held when the pad was pulled would stay held (see EngineFrames).
                 string prefix = sourceName + "|";
                 if (!_connected.Keys.Any(k => k.StartsWith(prefix, StringComparison.Ordinal)))
                 {

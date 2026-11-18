@@ -1,9 +1,8 @@
 /*
  * ripcord-ps3 - the screen a person actually starts at.
  *
- * It replaces the bring-up harness, which ran a fixed list of checks, read its one console's address
- * out of a text file put there over FTP, and reported to a log: no way to choose a console, change a
- * setting, or find out what went wrong without fetching a file from the machine afterwards.
+ * The start-up checks in source/app/main.c report to a log; this is where somebody chooses a console,
+ * changes a setting, and finds out what went wrong without fetching a file from the machine.
  *
  * WHAT THIS OWNS AND WHAT IT DOES NOT. It owns the home screen, the settings screen, and the loop that
  * turns a d-pad into a cursor. It owns none of the drawing primitives (rc_overlay), none of the list
@@ -13,8 +12,7 @@
  * IT DRAWS ONTO THE OVERLAY'S SURFACE rather than into the back buffer, for the reason that file gives
  * at length: antialiased text has to be blended, blending means reading what is already there, and
  * reads from RSX memory on this machine are about a hundred times slower than writes. The surface is
- * in main memory with one queued copy per change - which also means the menu costs nothing at all on
- * the frames where nobody pressed anything.
+ * in main memory and is copied to video memory once a frame.
  */
 #ifndef RC_SHELL_H
 #define RC_SHELL_H

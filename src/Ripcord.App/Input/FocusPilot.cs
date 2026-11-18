@@ -78,9 +78,9 @@ public sealed class FocusPilot(
         // pressing against the end of a row still leaves focus where it is.
         //
         // A container is not an answer either. Under RectilinearDistance (Add a console, Settings) the
-        // ScrollViewer that encloses the page is at distance zero from everything in it, and the engine returned
-        // it: focus went into the scroller, which draws no focus visual, so Up from "Search again" put the caret
-        // nowhere visible and the discovered console above it could never be reached with a pad (2026-10-08).
+        // ScrollViewer that encloses the page is at distance zero from everything in it, and the engine returns
+        // it: focus goes into the scroller, which draws no focus visual, so Up from "Search again" puts the caret
+        // nowhere visible and the discovered console above it cannot be reached with a pad.
         UIElement? engine = FocusManager.FindNextElement(winrtDirection, options) as UIElement;
 
         if (engine is not null && !IsStop(engine, FocusManager.GetFocusedElement(searchRoot.XamlRoot)))
@@ -89,15 +89,15 @@ public sealed class FocusPilot(
         }
 
         // Up and Down go one row at a time. The engine ranks by alignment, so from a control at one end of a row
-        // it passed over a nearer row whose controls sat at the other end: on About, Down from "Protocol spec"
-        // skipped "Copy details" and "Open"; on Settings, Up from Configure skipped every row above the
-        // controller test (which has nothing to press) and left the page for the gear (owner, with a pad,
-        // 2026-10-09). The engine's answer stands when it is in the nearest row.
+        // it passes over a nearer row whose controls sit at the other end: on About, Down from "Protocol spec"
+        // skips "Copy details" and "Open"; on Settings, Up from Configure skips every row above the
+        // controller test (which has nothing to press) and leaves the page for the gear. The engine's answer
+        // stands when it is in the nearest row.
         //
         // And the page before the title bar. A row scrolled out of sight above is farther away than the gear,
-        // so Up from Configure, with the rows above it scrolled under the title bar, still went to the gear
-        // (owner, 2026-10-09). While the page has a row in that direction, focus stays in the page and the page
-        // scrolls to it; the title bar is for when there is none.
+        // so by distance Up from Configure, with the rows above it scrolled under the title bar, goes to the
+        // gear. While the page has a row in that direction, focus stays in the page and the page scrolls to it;
+        // the title bar is for when there is none.
         if (direction is NavDirection.Up or NavDirection.Down
             && NearestRowCandidate(searchRoot, direction) is { } row
             && (engine is null
@@ -107,8 +107,8 @@ public sealed class FocusPilot(
             engine = row.Control;
         }
 
-        // Left and Right stay in the row while the row has something that way. On Welcome, Right from "Skip setup"
-        // went to the gear, up in the title bar, past "Get started" beside it (owner, with a pad, 2026-10-09).
+        // Left and Right stay in the row while the row has something that way. On Welcome, the engine's Right from
+        // "Skip setup" is the gear, up in the title bar, past "Get started" beside it.
         if (direction is NavDirection.Left or NavDirection.Right
             && StraightLineCandidate(searchRoot, direction) is { } inRow
             && (engine is null || !SharesRow(searchRoot, engine)))
@@ -133,10 +133,7 @@ public sealed class FocusPilot(
         }
 
         // Nothing in that direction. Usually that is correct and focus should stay put — pressing against the
-        // end of a row should not teleport the caret somewhere else.
-        //
-        // A range control is the exception, handled below. (Up/Down once would not leave the bitrate slider for
-        // a different reason: DirectionalRoot was handing the search a TOOLTIP as its root; see NavigablePopups.)
+        // end of a row should not teleport the caret somewhere else. With nothing focused at all, seed.
         object? focused = FocusManager.GetFocusedElement(searchRoot.XamlRoot);
 
         if (focused is null)
@@ -145,13 +142,9 @@ public sealed class FocusPilot(
             return;
         }
 
-        // Nothing in that direction, and that is almost always correct: pressing against the end of a row
-        // should leave focus where the user is pushing.
-        //
-        // No special case for range controls here. A Slider does release focus vertically; what looked
-        // otherwise was the tooltip bug (see NavigablePopups) and the settings page's own geometry — its
-        // sliders end at x=996 and its toggles begin at x=1008, so they never overlap and the default XY rule
-        // cannot see one from the other. That is handled with an XY focus strategy on the page.
+        // No special case for range controls here: a Slider releases focus vertically. The settings page's
+        // sliders and toggles do not overlap across, so the default XY rule cannot see one from the other;
+        // that is handled with an XY focus strategy on the page.
         if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
         {
             seedFocus();
@@ -490,7 +483,7 @@ public sealed class FocusPilot(
 
     public void ActivateFocusedElement()
     {
-        // The pilot no longer owns a window, so the root comes from the same callback everything else uses.
+        // The pilot owns no window; the root comes from the same callback everything else uses.
         XamlRoot? xamlRoot = contentRoot()?.XamlRoot;
         if (xamlRoot is null)
         {
@@ -503,7 +496,7 @@ public sealed class FocusPilot(
         }
 
         // A text field first, because it is the one control where activation cannot mean "press it". A TextBox
-        // exposes no Invoke pattern, so before this the accept button did nothing whatsoever on a text field —
+        // exposes no Invoke pattern, so without this the accept button does nothing on a text field —
         // and four of them stand between a user and a paired console. Handled by the host, which owns the
         // keyboard overlay; the pilot only knows that something answered.
         if (focused is Control control && IsTextEntry(control) && openTextEntry?.Invoke(control) == true)
@@ -527,7 +520,7 @@ public sealed class FocusPilot(
             selectionProvider.Select();
 
             // A choice that carries a command runs it, as a click on it would: setup's picture choices are "choose
-            // and go on", and selecting through the peer raises no Click (owner, 2026-10-09).
+            // and go on", and selecting through the peer raises no Click.
             if (focused is ButtonBase { Command: { } command } button && command.CanExecute(button.CommandParameter))
             {
                 command.Execute(button.CommandParameter);
@@ -537,8 +530,8 @@ public sealed class FocusPilot(
         {
             toggleProvider.Toggle();
         }
-        // A ComboBox exposes ExpandCollapse and no Invoke, so without this the accept button did nothing at
-        // all on the six ComboBoxes in Settings — the page was reachable by pad but not operable by it. Once
+        // A ComboBox exposes ExpandCollapse and no Invoke, so without this the accept button does nothing at
+        // all on the ComboBoxes in Settings — the page would be reachable by pad but not operable by it. Once
         // the dropdown is open it becomes the topmost popup, so DirectionalRoot() lets focus move inside it.
         else if (peer?.GetPattern(PatternInterface.ExpandCollapse) is IExpandCollapseProvider expandProvider)
         {
@@ -612,7 +605,7 @@ public sealed class FocusPilot(
                 // Seed focus onto the first item once the menu is up. Without this the menu opens with nothing
                 // selected and the first Down is spent relative to the CARD underneath — which is outside the
                 // popup and above it, so the search lands on the menu's SECOND item and the first press reads
-                // as having been eaten. Reported from hardware exactly that way.
+                // as having been eaten.
                 void SeedFirstItem(object? sender, object args)
                 {
                     flyout.Opened -= SeedFirstItem;
@@ -644,14 +637,13 @@ public sealed class FocusPilot(
     /// </summary>
     private const double MaxScrollPixelsPerFrame = 26;
 
-    /// <summary>The closest ancestor that can actually scroll, so nested lists behave the way the eye expects.</summary>
     /// <summary>
     /// When focus reaches the first or last control a page can focus, scroll the page all the way to that end.
     ///
     /// <para>
     /// Bringing a control into view scrolls only as far as the control, so whatever sits above the first one or
-    /// below the last one — a page title, a hero, a table of facts with nothing to press — was out of reach
-    /// with a pad: on About there was no way back to the top of the page (owner, with a pad, 2026-10-08).
+    /// below the last one — a page title, a hero, a table of facts with nothing to press — would be out of reach
+    /// with a pad: on About there would be no way back to the top of the page.
     /// </para>
     /// </summary>
     private static void RevealPageEdge(UIElement focused)
@@ -681,6 +673,7 @@ public sealed class FocusPilot(
                 || (BoundsIn(focused, root) is { } a && BoundsIn(edge, root) is { } b
                     && Math.Abs(a.Top - b.Top) <= RowTolerance));
 
+    /// <summary>The closest ancestor that can actually scroll, so nested lists behave the way the eye expects.</summary>
     private static ScrollViewer? NearestScrollViewer(DependencyObject from)
     {
         for (DependencyObject? node = from; node is not null; node = VisualTreeHelper.GetParent(node))
@@ -694,16 +687,14 @@ public sealed class FocusPilot(
         return null;
     }
 
-    /// <summary>Diagnostic: which ancestor, if any, carries a ContextFlyout.</summary>
-
     /// <summary>
     /// Close the topmost open popup, if there is one.
     ///
     /// <para>
     /// Back has to mean "close this" before it means "leave this page". A pad has no Escape, so with a context
-    /// menu open and Back wired straight to frame navigation, the only pressable dismissal was gone — the menu
-    /// stayed up and Back appeared dead. Returns true when it handled the press, so the caller knows not to
-    /// navigate.
+    /// menu open and Back wired straight to frame navigation, there would be no pressable dismissal — the menu
+    /// would stay up and Back would appear dead. Returns true when it handled the press, so the caller knows
+    /// not to navigate.
     /// </para>
     /// </summary>
     public bool TryDismissPopup()
@@ -715,9 +706,7 @@ public sealed class FocusPilot(
 
         IReadOnlyList<Popup> popups = NavigablePopups(xamlRoot);
 
-        // The topmost popup only. A loop here read as "close them all" and could never do that - the
-        // body returned on its first pass, leaving the decrement unreachable. One press dismisses one
-        // layer, which is what Back means everywhere else.
+        // The topmost popup only. One press dismisses one layer, which is what Back means everywhere else.
         if (popups.Count == 0)
         {
             return false;
@@ -726,11 +715,10 @@ public sealed class FocusPilot(
         Popup top = popups[^1];
 
         // A dialog is closed through the dialog, never by shutting the popup it lives in. Shutting the popup
-        // removed the prompt but not the dialog: ShowAsync never completed, the smoke layer stayed over the
-        // window, and the Modal scope ModalHost pushed was never popped - so the shell, which keeps its hands
-        // off while a modal owns focus, ignored every press after it. Found with a pad on 2026-10-08 as "B on
-        // the Details dialog leaves the app dark and unresponsive"; Esc never did it, because Esc goes through
-        // the dialog. Hide() is what Esc does: ShowAsync returns None, the same answer as the close button.
+        // removes the prompt but not the dialog: ShowAsync never completes, the smoke layer stays over the
+        // window, and the Modal scope ModalHost pushed is never popped - so the shell, which keeps its hands
+        // off while a modal owns focus, ignores every press after it and the app is left dark and unresponsive.
+        // Hide() is what Esc does: ShowAsync returns None, the same answer as the close button.
         ElementSoundPlayer.Play(ElementSoundKind.Hide);
 
         if (FindDialog(top.Child) is { } dialog)
@@ -784,12 +772,12 @@ public sealed class FocusPilot(
     /// <para>
     /// A TOOLTIP is a popup. So is the dimmed smoke layer behind a ContentDialog. Neither contains anything
     /// focusable, and both are frequently the topmost popup on the XamlRoot. With a tooltip as the search
-    /// root, directional focus found nothing and did nothing, so hovering the mouse over a button with a
-    /// tooltip killed controller navigation until the tooltip faded (found on hardware).
+    /// root, directional focus finds nothing and does nothing, so hovering the mouse over a button with a
+    /// tooltip would kill controller navigation until the tooltip faded.
     /// </para>
     ///
     /// <para>
-    /// The same list drives dismissal: unfiltered, Back closed the smoke layer rather than the dialog.
+    /// The same list drives dismissal: unfiltered, Back would close the smoke layer rather than the dialog.
     /// </para>
     ///
     /// <para>
@@ -821,7 +809,7 @@ public sealed class FocusPilot(
     /// Null is the obvious case, but not the only one. Clicking empty space in the window leaves focus on a
     /// CONTAINER — a ScrollViewer, a panel, the page itself — and a container that encloses every candidate has
     /// nothing above, below or beside it, so directional search finds nothing in any direction. To a user that
-    /// is indistinguishable from the pad being dead, which is exactly how it was reported.
+    /// is indistinguishable from the pad being dead.
     /// </para>
     /// </summary>
     public bool NeedsFocusSeed()

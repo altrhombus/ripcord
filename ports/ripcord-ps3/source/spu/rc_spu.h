@@ -4,14 +4,12 @@
  * Step 6 of BRINGUP.md's order of work. This is the PPU half; spu/rc_spu_probe.c is the program that
  * actually runs on the SPE, and it explains why the job is a memory copy rather than anything useful.
  *
- * WHAT THIS IS FOR. The PS3's decoder has to live on the SPEs - the PPE alone will not decode 720p
- * H.264 and there is no fixed-function block to fall back on. The number needed first is the cost of
- * handing an SPE a unit of work: a large per-job overhead forces the decoder to batch coarsely, whole
- * slices at a time; a small one allows a pipeline at macroblock-row granularity. DECODE.md's staging
- * cannot be settled without it, and it has to be measured on a console.
+ * WHAT THIS IS FOR. The number wanted is the cost of handing an SPE a unit of work: a large per-job
+ * overhead forces work to be batched coarsely; a small one allows a fine-grained pipeline. It has to be
+ * measured on a console, and DECODE.md section 3 records the result.
  *
- * NOT A JOB MODEL. One thread group, one SPE, one job, synchronous. The real decoder will want several
- * SPEs and a queue; this is the baseline that is compared against.
+ * NOT A JOB MODEL. One thread group, one SPE, one job, synchronous. rc_spu_yuv.c is the code that keeps
+ * several SPEs running and hands them work by mailbox; this is the baseline it is compared against.
  */
 #ifndef RC_SPU_H
 #define RC_SPU_H
@@ -21,8 +19,7 @@
 
 /*
  * Brings up the SPU subsystem and imports the embedded probe image. Returns 1 on success, 0 on failure -
- * the same convention as rc_random_init, and deliberately NOT the 0-on-success lv2 convention, because
- * libripcord/platform/rc_platform.h having documented that backwards once is enough.
+ * the same convention as rc_random_init, and deliberately NOT the 0-on-success lv2 convention.
  *
  * Call once. Safe to call again; the second call is a no-op that reports the first call's result.
  */
@@ -58,18 +55,18 @@ int rc_spu_run(const void *src, void *dst, size_t size, uint64_t *ticks,
                uint32_t *phase, uint32_t *heartbeat, uint64_t *spu_args,
                uint32_t *join_cause, uint32_t *join_status);
 
-/*
- * What lv2 made of the embedded image, and what the linker actually built. Valid after rc_spu_init.
- * REPORTING ONLY - see the implementation. PSL1GHT's sysSpuImage declaration does not match what lv2
- * writes on a 64-bit process, so these values are fragments of the real structure and must not be used
- * to conclude anything. They are logged because raw numbers are worth keeping.
- */
 /* The effective address the SPE is told to signal completion at. For the caller's own report. */
 uint64_t rc_spu_done_ea(void);
 
 /* The address of the job block handed to the SPE as its single argument. Also for the report. */
 uint64_t rc_spu_job_ea(void);
 
+/*
+ * What lv2 made of the embedded image, and what the linker actually built. Valid after rc_spu_init.
+ * REPORTING ONLY - see the implementation. PSL1GHT's sysSpuImage declaration does not match what lv2
+ * writes on a 64-bit process, so these values are fragments of the real structure and must not be used
+ * to conclude anything. They are logged because raw numbers are worth keeping.
+ */
 void rc_spu_image_info(uint32_t *entry, uint32_t *segments, uint32_t *expected_entry);
 
 /* Releases the imported image. Safe whether or not init succeeded. */

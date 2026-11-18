@@ -13,8 +13,8 @@ namespace Ripcord_App.Services;
 ///
 /// <para>
 /// Not a method on the settings page: sign-in is a modal over whatever surface asked for it. Navigating to
-/// Settings to sign in halfway through pairing left the pairing flow abandoned behind the user, and the way
-/// back was to start pairing again from the beginning.
+/// Settings to sign in halfway through pairing would leave the pairing flow abandoned behind the user, and the
+/// way back would be to start pairing again from the beginning.
 /// </para>
 /// </summary>
 public static class AccountSignIn

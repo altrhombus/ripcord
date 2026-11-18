@@ -37,8 +37,8 @@
 #define RC_AUDIO_FRAME_SAMPLES 480
 
 /*
- * Ring capacity in samples per channel, and the depth the rate loop steers towards. The ring decouples
- * Opus's 10 ms frames from NDSP's wave buffers - see rc_audio.c for why tying them together did not work.
+ * Ring capacity in samples per channel. The ring decouples Opus's 10 ms frames from NDSP's wave
+ * buffers - see rc_audio.c for why one wave buffer per Opus frame clicks.
  */
 #define RC_AUDIO_RING_SAMPLES 8192
 

@@ -5,14 +5,14 @@ namespace Ripcord.Core.Input;
 ///
 /// <para>
 /// <b>It forgets an engine.</b> <see cref="Forget"/> drops a disconnected engine's last frame, so a pad pulled
-/// mid-press does not keep OR-ing that press into every merged frame. The merge must not depend on an engine
-/// sending a neutral frame on disconnect: the DualSense never did (the 2026-09-30 review).
+/// mid-press does not keep OR-ing that press into every merged frame. The merge does not depend on an engine
+/// sending a neutral frame on disconnect.
 /// </para>
 ///
 /// <para>
 /// <b>And it knows which engine is in use.</b> <see cref="Active"/> is the engine that last showed a deliberate
-/// press, so with two pads attached the prompts can name the one in hand rather than the one that connected last
-/// (2026-10-02). One pad can reach two engines (GameInput enumerates a DualSense that raw HID also reads), so a
+/// press, so with two pads attached the prompts can name the one in hand rather than the one that connected
+/// last. One pad can reach two engines (GameInput enumerates a DualSense that raw HID also reads), so a
 /// press another engine already holds goes to whichever of them comes first in the composite's precedence,
 /// not to whichever report landed second.
 /// </para>
@@ -56,12 +56,6 @@ public sealed class EngineFrames
     }
 
     /// <summary>
-    /// Whether going from <paramref name="previous"/> to <paramref name="current"/> is someone using the pad: a
-    /// button newly down, or a stick or trigger newly past <see cref="DeliberateTravel"/>. Not any change, because
-    /// a pad at rest still reports: sticks drift and a DualSense streams its motion sensors, and either would
-    /// claim the pad was in use while it sat on the table.
-    /// </summary>
-    /// <summary>
     /// Who a press on <paramref name="engine"/> belongs to: that engine, unless another engine already holds the same
     /// press and comes before it in the precedence, in which case it is one pad seen twice and that engine has it.
     /// </summary>
@@ -96,6 +90,12 @@ public sealed class EngineFrames
         return index < 0 ? int.MaxValue : index;
     }
 
+    /// <summary>
+    /// Whether going from <paramref name="previous"/> to <paramref name="current"/> is someone using the pad: a
+    /// button newly down, or a stick or trigger newly past <see cref="DeliberateTravel"/>. Not any change, because
+    /// a pad at rest still reports: sticks drift and a DualSense streams its motion sensors, and either would
+    /// claim the pad was in use while it sat on the table.
+    /// </summary>
     public static bool IsDeliberate(ControllerStateFrame? previous, ControllerStateFrame current)
     {
         ControllerStateFrame before = previous ?? default;

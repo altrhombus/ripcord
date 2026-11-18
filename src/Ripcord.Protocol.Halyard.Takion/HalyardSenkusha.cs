@@ -25,18 +25,19 @@ public sealed record SenkushaResult(bool Succeeded, double? RoundTripTimeMs, int
 /// before opening the stream on 9296; skipping it leaves the stream's SESSION exchange unanswered.
 ///
 /// <para>
-/// This implements the minimal bring-up wire-confirmed against a full vendor session (cap22): Takion
+/// The bring-up, wire-confirmed against a full vendor session (cap22): Takion
 /// connection handshake → <c>PROTOCOL_VERSION_REQUEST{[9]}</c> (channel 0x15) → keyless
 /// <c>SESSION_REQUEST</c> (empty sessionKey/launchSpec/encryptedKey, clientVersion 9; channel 0x01) →
-/// <c>SESSION_REPLY</c> → <c>DISCONNECT</c>. The full senkusha additionally runs RTT (echo) and MTU probes
-/// on channel 0x08 to measure the link; those feed only tuning defaults (see <see cref="RunAsync"/>).
+/// <c>SESSION_REPLY</c> → <c>DISCONNECT</c>. Between the reply and the disconnect this also runs the RTT
+/// (echo) and MTU probes, commanded on channel 0x08, to measure the link; those feed only tuning defaults
+/// (see <see cref="RunAsync"/>).
 /// </para>
 ///
 /// <para>
 /// <b>Provenance.</b> The probe sequence, packet layout and field meanings are <b>[W]</b> — decoded from our own
 /// capture <c>session8-wireshark.pcapng</c>, frames 154-189, with frame numbers cited at each step. The decision to
-/// treat probe failure as NON-FATAL is a design choice of ours (fall back to MTU 1454). It is supported by the
-/// capture — the
+/// treat probe failure as NON-FATAL is a design choice of ours (the result then carries no confirmed MTU, and
+/// the caller keeps its own estimate). It is supported by the capture — the
 /// vendor's own bring-up proceeds regardless — and by the plain engineering argument that a tuning probe must never
 /// be the reason a stream fails to start.
 /// </para>
@@ -87,16 +88,15 @@ public sealed class HalyardSenkusha : IAsyncDisposable
     /// <para>
     /// A handshake-derived RTT is the floor this returns when the echo probe declines to produce one: it costs no
     /// extra wire traffic and cannot disturb a handshake the console is known to accept.
+    /// </para>
     ///
-    /// <para>The ECHO and MTU probes are implemented below (<see cref="RunEchoProbeAsync"/>,
-    /// <see cref="RunMtuProbeAsync"/>) and byte-verified against two of our own captures. Only the <b>BANDWIDTH</b>
-    /// leg remains outstanding: it has never been observed on any capture we hold, so there is nothing to write it
-    /// against.</para>
+    /// <para>The ECHO and MTU probes (<see cref="RunEchoProbeAsync"/>, <see cref="RunMtuProbeAsync"/>) are
+    /// byte-verified against two of our own captures. There is no <b>BANDWIDTH</b> leg: it has never been
+    /// observed on any capture we hold, so there is nothing to write it against.</para>
     ///
     /// <para>Because the handshake RTT is used as a fallback, a non-null round-trip time does <b>not</b> mean the
     /// echo probe succeeded. <see cref="SenkushaResult.ConfirmedMtu"/> has no such ambiguity, being null exactly
     /// when the MTU probe did not confirm.</para>
-    /// </para>
     /// </summary>
     /// <param name="candidateMtu">
     /// The MTU to verify, normally the interface-derived estimate. The probe confirms or refutes it rather than
@@ -151,7 +151,7 @@ public sealed class HalyardSenkusha : IAsyncDisposable
         // MINIMUM, so a slow sample can only be ignored, never inflate the result.
         samples.Add(Stopwatch.GetElapsedTime(requestSentAt).TotalMilliseconds);
 
-        // Echo probe: a real RTT measurement, replacing the estimate derived from handshake round trips. Ordered
+        // Echo probe: a real RTT measurement; when it yields one, the handshake round trips are discarded. Ordered
         // exactly as the capture shows — after SESSION_REPLY, before DISCONNECT.
         double? echoRtt = await RunEchoProbeAsync(cancellationToken).ConfigureAwait(false);
         if (echoRtt is double measured)

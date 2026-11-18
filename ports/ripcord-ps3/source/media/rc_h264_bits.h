@@ -1,9 +1,9 @@
 /*
  * ripcord-ps3 - H.264 RBSP bit reader (Exp-Golomb, emulation-prevention aware).
  *
- * The PS3 has no fixed-function H.264 decoder, so unlike ripcord-3ds - which hands Annex-B NAL units to
- * the New 3DS's MVD block and gets pictures back - this port has to read the bitstream itself. This is
- * the bottom of that: the thing every syntax parser above it is written against.
+ * The bottom of this port's H.264 syntax reading: the parameter-set, slice-header and access-unit
+ * parsers above it are all written against this. Decoding is the console's own decoder's job (cellVdec)
+ * or openh264's; these parsers read what a caller needs to know about a stream before handing it over.
  *
  * EMULATION PREVENTION IS HANDLED HERE, ON THE FLY, AND THAT IS A DELIBERATE CHOICE.
  *
@@ -12,10 +12,9 @@
  * followed by one of those, and a decoder removes it again. Copying the payload into a scratch buffer
  * with the 0x03 bytes stripped would be fine for a 30-byte parameter set.
  *
- * It is not fine for slice data on this target. An SPE has 256 KB of local store and no cache, so every
- * byte is DMA'd in deliberately; a decode that first copies each slice has doubled its DMA traffic and
- * spent local store it does not have. Reading through the bytes in place costs one counter and one
- * branch per byte boundary. The parameter-set parsers above get the same reader for free.
+ * A slice is not 30 bytes, and a slice header is read out of every one. Reading through the bytes in
+ * place costs one counter and one branch per byte boundary and needs no scratch buffer. The
+ * parameter-set parsers above get the same reader for free.
  *
  * ERRORS ARE STICKY AND THE VALUE IS ALWAYS DEFINED. Every read returns 1 on success and 0 on running
  * off the end of the buffer, and once a read has failed every subsequent one fails too. Callers may

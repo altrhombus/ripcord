@@ -4,7 +4,7 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// Gamepad navigation timing, which used to be observable only by holding a real pad and counting.
+/// Gamepad navigation timing, driven by a clock the test owns rather than by holding a real pad and counting.
 ///
 /// <para>
 /// Every case here corresponds to a complaint the code was written for: focus moving once and stopping,
@@ -165,8 +165,8 @@ public class NavIntentReaderTests
     [InlineData(ControllerButtons.Start)]
     public void YAndMenuBothOpenTheContextMenu(ControllerButtons button)
     {
-        // Menu is the Windows and Xbox convention for "the menu for this", and it is what somebody reached for
-        // first on the console card; only Y worked (2026-10-08).
+        // Menu is the Windows and Xbox convention for "the menu for this", and it is what somebody reaches for
+        // first on the console card, so it opens the context menu as Y does.
         var reader = new NavIntentReader();
 
         Assert.True(reader.Read(Frame(button), T0).Context);

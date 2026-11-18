@@ -1,9 +1,9 @@
 /*
  * ripcord-ps3 - the two-button chord state machine, exercised on the host.
  *
- * The chord that opens the in-session menu has had two bugs, each a wrong answer to a particular
- * sequence of (buttons, time): a lone tap that was withheld and then never sent, and a stray press left
- * on the console when the two buttons were released a moment apart. rc_chord.c is that logic with
+ * The chord that opens the in-session menu has two failure modes, each a wrong answer to a particular
+ * sequence of (buttons, time): a lone tap that is withheld and then never sent, and a stray press left
+ * on the console when the two buttons are released a moment apart. rc_chord.c is that logic with
  * nothing else attached - a mask in, a mask out, the clock an argument - so those sequences run here.
  *
  * The buttons are named as the wire sees them (Options/Create); on the pad they are START/SELECT. The
@@ -29,7 +29,7 @@ static int g_failed;
 #define B HALYARD_PAD_CREATE    /* SELECT on the pad */
 
 /*
- * A LONE TAP MUST STILL REACH THE CONSOLE - the bug that made START seem to need holding.
+ * A LONE TAP MUST STILL REACH THE CONSOLE - otherwise START seems to need holding.
  *
  * Press one button, hold it a moment inside the window, release it before the window closes. While held
  * it is withheld (it might yet be a chord); once released as a tap it is replayed briefly, because
@@ -72,10 +72,10 @@ static void test_chord_fires_and_swallows(void)
 }
 
 /*
- * RELEASING THE CHORD ONE THUMB AT A TIME LEAVES NO STRAY PRESS - the second bug.
+ * RELEASING THE CHORD ONE THUMB AT A TIME LEAVES NO STRAY PRESS.
  *
  * After the chord fires, lifting one button before the other must not let the remaining one look like a
- * fresh press. The latch swallows both until both are up; without it a stray START opened the options
+ * fresh press. The latch swallows both until both are up; without it a stray START opens the options
  * menu behind the in-session menu every single time.
  */
 static void test_staggered_release_leaves_nothing(void)

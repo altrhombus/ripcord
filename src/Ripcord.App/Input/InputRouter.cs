@@ -13,8 +13,7 @@ namespace Ripcord_App.Input;
 /// <para>
 /// <b>One source for one pad.</b> Menu navigation and session forwarding both read this router's
 /// <c>ControllerSourceFactory.Create()</c> composite. The composite includes the DualSense raw-HID path, so
-/// a DualSense works in the menus as well as in a stream, and the same physical device is never read
-/// through two APIs at once, which the factory's own comment warns against.
+/// a DualSense works in the menus as well as in a stream, and each engine has one reader for the whole app.
 /// </para>
 ///
 /// <para>
@@ -28,7 +27,7 @@ namespace Ripcord_App.Input;
 /// <para>
 /// <b>Cost.</b> The DualSense HID source polls for its device for the life of the app rather than only
 /// during a session — one idle thread at 2 Hz. If it ever shows up on a handheld battery trace the lever is
-/// <see cref="Stop"/>/<see cref="Start"/> on window activation, not going back to two sources.
+/// <see cref="Stop"/>/<see cref="Start"/> on window activation, not a second source.
 /// </para>
 /// </summary>
 public sealed class InputRouter : IDisposable
@@ -142,7 +141,7 @@ public sealed class InputRouter : IDisposable
     /// <para>
     /// <b>Why it cannot be read off <see cref="PadFamily"/>.</b> That has no "none": it is Generic or Vendor,
     /// and Generic is also what it reports before any pad has identified itself. So a surface asking "is
-    /// there a pad" got "Generic" whether or not one existed.
+    /// there a pad" would get "Generic" whether or not one existed.
     /// </para>
     /// </summary>
     public bool PadAttached { get; private set; }
@@ -231,7 +230,7 @@ public sealed class InputRouter : IDisposable
 
     /// <summary>
     /// Someone picked up a pad from the other engine. With both attached, the prompts follow the one in use rather
-    /// than the one that connected last (2026-10-02). A connection still sets the family too, so a pad that has
+    /// than the one that connected last. A connection still sets the family too, so a pad that has
     /// only just been plugged in is named before anyone presses it.
     /// </summary>
     private void OnActiveEngine(string engine) => UseFamilyOf(engine);

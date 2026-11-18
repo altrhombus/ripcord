@@ -1,9 +1,9 @@
 /*
  * SHA-256 (FIPS 180-4) and HMAC-SHA-256 (RFC 2104).
  *
- * The control plane needs these for exactly one thing - halyard_field_iv_derive() in
- * halyard/halyard_control_crypto.c - but that one thing runs on every encrypted header field of every
- * connect, so it is worth having rather than pulling in a TLS stack for.
+ * HMAC keys the control plane's per-field IV (halyard_field_iv_derive() in
+ * halyard/halyard_control_crypto.c), the stream key schedule and the session negotiator's handshake
+ * MAC; the stream packet cipher hashes with plain SHA-256.
  */
 #include "rc_crypto.h"
 
@@ -31,8 +31,8 @@ static void sha256_compress(uint32_t state[8], const uint8_t block[RC_SHA256_BLO
     uint32_t a, b, c, d, e, f, g, h;
     int i;
 
-    /* Message schedule. Big-endian load, explicitly: the 3DS ARM11 is little-endian, so a memcpy here
-     * would be wrong on the target and right on nothing. */
+    /* Message schedule. Big-endian load, explicitly: a memcpy here would be wrong on every little-endian
+     * target. */
     for (i = 0; i < 16; i++) {
         w[i] = ((uint32_t)block[i * 4] << 24)
              | ((uint32_t)block[i * 4 + 1] << 16)
@@ -154,9 +154,9 @@ void rc_hmac_sha256(const uint8_t *key, size_t key_length,
     rc_sha256 ctx;
     size_t i;
 
-    /* RFC 2104: keys longer than the block size are hashed first; shorter ones are zero-padded. Every key
-     * this port passes is 16 bytes, so only the padding branch is exercised in practice - the long-key
-     * branch is here so the primitive is not quietly wrong for the next caller. */
+    /* RFC 2104: keys longer than the block size are hashed first; shorter ones are zero-padded. The
+     * longest key the core passes is a 66-byte P-521 shared secret (stream_key_schedule.c), which exceeds
+     * the 64-byte block, so both branches are reached. */
     memset(padded_key, 0, sizeof(padded_key));
     if (key_length > RC_SHA256_BLOCK_SIZE)
         rc_sha256_hash(key, key_length, padded_key);

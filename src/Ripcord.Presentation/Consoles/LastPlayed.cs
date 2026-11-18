@@ -7,8 +7,8 @@ namespace Ripcord.Presentation.Consoles;
 ///
 /// <para>
 /// A separate static with the clock passed in, rather than a property reading <c>DateTimeOffset.UtcNow</c>:
-/// every boundary in the ladder below is a place this can be off by one unit, and none of them were testable
-/// while "now" was ambient. The thresholds themselves are unchanged from the original.
+/// every boundary in the ladder below is a place this can be off by one unit, and none of them is testable
+/// while "now" is ambient.
 /// </para>
 /// </summary>
 public static class LastPlayed

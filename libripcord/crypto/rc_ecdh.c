@@ -355,7 +355,7 @@ int rc_ecdh_derive_shared_diag(const rc_ecdh_keypair *pair,
 
     /*
      * Written as a sequence rather than a single && chain so that the step and the backend's own error
-     * code survive. The chain was shorter to read and told a console-side failure nothing it could use.
+     * code survive: a failure on a console is diagnosed from those two values.
      */
     do {
         rc = mbedtls_ecp_group_load(&grp, id);
@@ -486,9 +486,9 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
 }
 
 /*
- * The fifth entry point, which this stub was missing: the header names five, and without this one any
- * backend-less build that links takion_session_negotiator.c (its precheck calls it) fails to link at all.
- * Found when libripcord/client's host test became the first such build. Fails closed like the rest.
+ * The fifth backend entry point the header names. A backend-less build that links
+ * takion_session_negotiator.c needs it to link at all: that file's precheck reaches it through the _diag
+ * variant below, as libripcord/client's host test does. Fails closed like the rest.
  */
 int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length)
 {

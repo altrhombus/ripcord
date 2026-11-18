@@ -20,8 +20,8 @@ public enum HdrCheckState
 /// </summary>
 /// <param name="Label">
 /// Names the REQUIREMENT and stays constant; the state carries whether it is met. Phrasing these as findings
-/// instead ("Display is not in HDR mode") made the text and the icon restate each other, and read oddly against
-/// a tick — a row cannot both assert a state and be marked true or false.
+/// instead ("Display is not in HDR mode") makes the text and the icon restate each other, and reads oddly
+/// against a tick — a row cannot both assert a state and be marked true or false.
 /// </param>
 /// <param name="Hint">The remedy, or null when the row is met and there is nothing to do.</param>
 public sealed record HdrCheck(HdrCheckState State, string Label, string? Hint);
@@ -31,8 +31,8 @@ public sealed record HdrCheck(HdrCheckState State, string Label, string? Hint);
 ///
 /// <para>
 /// Flat and long, because the page is. What matters is that it is <em>one value</em>: the page projects it whole,
-/// so there is no ordering in which half the controls reflect the new settings and half the old — which is what
-/// the codec/HDR pair used to get wrong when a change handler updated one and left the other for the next visit.
+/// so there is no ordering in which half the controls reflect the new settings and half the old — as the
+/// codec/HDR pair would if a change handler updated one and left the other for the next visit.
 /// </para>
 /// </summary>
 public sealed record SettingsViewState(

@@ -8,9 +8,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// The MTU and round-trip values declared to the console in the launchSpec.
 ///
 /// <para>
-/// Both were hardcoded before — <c>mtu: 1454</c> and <c>rtt: 0</c> — so the console was told the link was an
-/// ordinary Ethernet path with instantaneous latency regardless of what it actually was. These pin the arithmetic
-/// that replaced them, including the clamps that stop a measurement being worse than the old constant.
+/// Hardcoded values — <c>mtu: 1454</c> and <c>rtt: 0</c> — would tell the console the link is an ordinary
+/// Ethernet path with instantaneous latency regardless of what it actually is. These pin the arithmetic that
+/// derives them from measurements, including the clamps that stop a measurement being worse than those constants.
 /// </para>
 /// </summary>
 public class LinkMetricsTests

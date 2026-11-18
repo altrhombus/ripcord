@@ -11,7 +11,7 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 /// RP-Auth=0, RP-Did=1, RP-OSType=2, RP-StartBitrate=3, RP-StreamingType=4.
 ///
 /// The plaintext constructions (registkey zero-padding, the RP-Did length prefix, the "WinX.Y" string) are
-/// the confirmed [V] shapes; the RP-StartBitrate / RP-StreamingType integer encodings are tentative (they
+/// the confirmed [V] shapes; the RP-StartBitrate / RP-StreamingType integer encodings are [X] (they
 /// don't appear in our verified vectors).
 /// </summary>
 public static class HalyardSessCtrlFields
@@ -34,7 +34,7 @@ public static class HalyardSessCtrlFields
     /// The counter the login passcode is encrypted at, by family: 5 for a PS5 (five <c>/sess/ctrl</c>
     /// headers, 0-4) and 4 for a PS4 (four headers, 0-3 - RP-StreamingType is not a PS4 header, it is sent
     /// as a binary frame after the passcode). Both are capture facts from a Frida hook on our own vendor
-    /// client (5.5.0.08250); a PS4 passcode submitted at 5 is refused, which cost b469/b470 to find.
+    /// client (5.5.0.08250); a PS4 passcode submitted at 5 is refused (b469/b470).
     /// </summary>
     public static ulong LoginPinCounter(HalyardConsolePlatform platform)
         => platform == HalyardConsolePlatform.Ps4 ? CounterStreamingType : CounterLoginPin;
@@ -102,8 +102,9 @@ public static class HalyardSessCtrlFields
     }
 
     /// <summary>
-    /// Build all five encrypted field header (name, value) pairs, in counter order, using an established
-    /// control-plane crypto. The caller adds them to the <c>/sess/ctrl</c> request.
+    /// Build the encrypted field header (name, value) pairs, in counter order, using an established
+    /// control-plane crypto: five for a PS5, four for a PS4 (no RP-StreamingType). The caller adds them to
+    /// the <c>/sess/ctrl</c> request.
     /// </summary>
     public static IReadOnlyList<KeyValuePair<string, string>> Build(
         IHalyardSessionCrypto crypto,

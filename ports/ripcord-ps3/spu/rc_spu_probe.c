@@ -1,16 +1,16 @@
 /*
- * ripcord-ps3 - the SPU side of step 6: one SPE, doing the most trivial useful thing, so the cost of
- * asking it can be measured.
+ * ripcord-ps3 - the SPU side of the SPE probe: one SPE, doing the most trivial useful thing, so the cost
+ * of asking it can be measured.
  *
  * This runs on an SPE, not on the PPE. Different compiler (spu-gcc), different instruction set, no
  * access to main memory except by DMA, and 256 KB of local store for code, data and stack together.
  * Nothing in libripcord can be included here and nothing here may call into the PPU side.
  *
  * WHAT IT DOES. It copies `size` bytes from one main-memory address to another, 16 KB at a time, then
- * writes a flag the PPE is watching. The point of step 6 is to find out what it COSTS to hand an SPE a
- * job at all, because that number decides the shape of the decoder: if per-job overhead is large, the
- * decoder must batch whole slices; if it is small, it can pipeline at macroblock-row granularity.
- * README.md's step 7 cannot be designed without it.
+ * writes a flag the PPE is watching. The point is to find out what it COSTS to hand an SPE a job at
+ * all, because that number decides how work is divided: if per-job overhead is large, work must be
+ * batched coarsely; if it is small, it can be pipelined finely. Step 6 of BRINGUP.md's order of work
+ * records what was measured.
  *
  * SINGLE-BUFFERED ON PURPOSE. Issue a get, wait, issue a put, wait. Double-buffering - fetching chunk
  * n+1 while chunk n is being written - roughly doubles the achievable rate, and is left out so that
@@ -52,20 +52,17 @@ static void wait_for_dma(void)
     (void)spu_mfcstat(MFC_TAG_UPDATE_ALL);
 }
 
-/*
- * Arguments arrive as four 64-bit values from sysSpuThreadInitialize. They are effective addresses in
- * the PPE's address space, which is the only way this program can refer to main memory at all.
- *
- * A size of zero is legitimate and is how the PPU side measures pure overhead: the loop does not run,
- * the flag is still written, and what the PPE times is start-to-finish with no DMA in it.
- */
 /* The job block, fetched into local store. 128-byte aligned so the MFC is happy with it either way. */
 static rc_spu_job job __attribute__((aligned(128)));
 
 /*
  * ONE ARGUMENT, and it is an address. See rc_spu_phase.h: lv2 delivered arg3 as zero on b10, and the
  * SDK's own samples never populate anything past arg1, so only the first slot has evidence behind it.
- * Everything else arrives in the block this points at.
+ * Everything else arrives in the block this points at: effective addresses in the PPE's address space,
+ * which is the only way this program can refer to main memory at all.
+ *
+ * A size of zero is legitimate and is how the PPU side measures pure overhead: the loop does not run,
+ * the flag is still written, and what the PPE times is start-to-finish with no copy in it.
  */
 int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
 {
@@ -89,7 +86,7 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
     /* The address we were given, before anything can go wrong with it. */
     g_rc_spu_args[0] = job_ea;
 
-    /* Fetch the job. This is now the first DMA the program performs, so a fault here means the one
+    /* Fetch the job. This is the first DMA the program performs, so a fault here means the one
      * argument that IS delivered did not arrive either - a different and much worse finding. */
     mfc_get(&job, job_ea, (uint32_t)sizeof(job), TAG, 0, 0);
     wait_for_dma();
@@ -101,17 +98,15 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
     size    = job.size;
     done_ea = job.done_ea;
 
-    /* Mirrored so the PPE can confirm the block survived the round trip, exactly as it confirmed the
-     * arguments before. The check that found this bug is worth keeping pointed at its replacement. */
+    /* Mirrored so the PPE can confirm the block survived the round trip. */
     g_rc_spu_args[1] = src_ea;
     g_rc_spu_args[2] = size;
     g_rc_spu_args[3] = done_ea;
 
     /*
-     * A PROGRESS MARKER, WRITTEN BEFORE ANY WORK. The first version of this program signalled only at
-     * the end, and the PPE spun on that signal with no timeout - so when the SPE did not finish, the
-     * console hung on a blank screen and the run produced no information at all beyond "something in
-     * here". One flag with two values costs one extra DMA and splits that into two very different
+     * A PROGRESS MARKER, WRITTEN BEFORE ANY WORK. A signal only at the end says nothing when the SPE
+     * does not finish: the run produces no information at all beyond "something in here". One flag
+     * with two values costs one extra DMA and splits that into two very different
      * findings: nothing at all means the SPE never got here, and ENTERED means it ran and then died or
      * stalled in the copy. Those point at completely different bugs.
      */

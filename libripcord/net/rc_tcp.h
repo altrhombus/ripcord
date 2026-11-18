@@ -1,11 +1,11 @@
 /*
- * ripcord-3ds - a minimal TCP client, built on rc_soc's SOC bring-up.
+ * libripcord - a minimal TCP client.
  *
  * Plain BSD sockets, nothing PlayStation-specific - the control channel needs a plain-TCP connection to
- * a console's port 9295 (docs/protocol/ps5-local-discovery.md); this is the seam between that and
- * libctru's socket support, same role rc_soc.c plays for UDP. Unlike rc_soc.c/discovery/linktest,
- * rc_tcp_send_all()'s retry-with-timeout does depend on libctru (osGetTime/svcSleepThread) - the price of
- * tolerating a non-blocking socket without a caller-supplied event loop.
+ * a console's port 9295 (docs/protocol/ps5-local-discovery.md). Bringing the platform's network stack up
+ * is the port's job and happens before any call here. The connect deadline and rc_tcp_send_all()'s
+ * retry-with-timeout read the clock and sleep through the platform seam (rc_time_ms, rc_sleep_ms) - the
+ * price of tolerating a non-blocking socket without a caller-supplied event loop.
  */
 #ifndef RC_TCP_H
 #define RC_TCP_H
@@ -14,10 +14,10 @@
 #include <sys/types.h>
 
 /* Opens a TCP connection to host:port and returns it as a BLOCKING socket - callers that want a
- * non-blocking socket for what follows set it themselves afterward, same as source/linktest and
- * source/discovery already do for UDP. Returns the socket descriptor, or -1 on failure (including
- * resolution failure - `host` must be a dotted-quad IPv4 address; this port never needs DNS, since
- * consoles are only ever addressed by an IP a discovery/pairing step already resolved).
+ * non-blocking socket for what follows set it themselves afterward with rc_socket_set_nonblocking.
+ * Returns the socket descriptor, or -1 on failure (including resolution failure - `host` must be a
+ * dotted-quad IPv4 address; the core never needs DNS here, since consoles are only ever addressed by an
+ * IP a discovery/pairing step already resolved).
  *
  * BOUNDED BY RC_TCP_CONNECT_TIMEOUT_MS. A plain blocking connect() to a console that does not accept on
  * the port waits for the platform's own TCP timeout - on the PS3 indefinitely, which is the b31 lockup.
@@ -38,10 +38,10 @@ int rc_tcp_connect(const char *host, unsigned short port);
  * As rc_tcp_connect, with an explicit deadline in milliseconds (0 takes RC_TCP_CONNECT_TIMEOUT_MS).
  *
  * The connect is issued on a non-blocking socket and its completion awaited with select(), then SO_ERROR
- * says whether it succeeded; the socket is switched back to blocking before it is returned, so every
- * existing caller sees exactly the socket it used to. select() rather than poll() because select is what
- * the PS3 pre-flight ran on hardware, and poll has no caller in the core. [X] select() has not been run on
- * the 3DS or the Vita; both SDKs declare it.
+ * says whether it succeeded; the socket is switched back to blocking before it is returned, so the
+ * caller gets the blocking socket rc_tcp_connect promises. select() rather than poll() because select is
+ * what the PS3 pre-flight ran on hardware, and poll has no caller in the core. [X] select() has not been
+ * run on the 3DS or the Vita; both SDKs declare it.
  */
 int rc_tcp_connect_timeout(const char *host, unsigned short port, unsigned timeout_ms);
 

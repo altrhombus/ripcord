@@ -4,7 +4,7 @@
 
 #define CHUNK_HEADER_SIZE 4
 #define FIRST_VALUE_PREFIX 9      /* seq(4) + channel(2) + reserved(3) */
-#define CONTINUATION_VALUE_PREFIX 8 /* seq(4) + reserved(4) */
+#define CONTINUATION_VALUE_PREFIX 8 /* seq(4) + channel(2) + reserved(2) */
 
 static void write_be16(uint8_t *p, uint16_t value)
 {

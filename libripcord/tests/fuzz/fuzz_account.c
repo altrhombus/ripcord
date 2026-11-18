@@ -8,8 +8,7 @@
  *     to get right whatever arrives;
  *   - the /sess/rgst reply over 9303: the completeness check the transport runs on a partial stream
  *     (halyard_dgram_http_complete, the one check there is),
- *     then the HTTP split, the decrypt and the pairing-record parse - which the PIN route shares, and
- *     which had no harness before this one.
+ *     then the HTTP split, the decrypt and the pairing-record parse - which the PIN route shares.
  *
  * The exchange the reply is read against is built from fixed inputs with the real registration tables
  * (the fuzz core links the registration build of the constants). A build without them falls back to a

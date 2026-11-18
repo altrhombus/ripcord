@@ -31,9 +31,9 @@ public sealed record HalyardPairingRecord(
     /// The v2 rolled session token (the stored type-11 token): the 16-byte <c>RP-VerifyKey</c> a previous v2
     /// session minted and the console accepted, used as <b>this</b> session's K16. Empty until the first v2
     /// session rolls one — the first session after pairing bootstraps from the bundled <c>K16_reg</c> instead.
-    /// It is a non-positional <c>init</c> property so the registration call sites that build a record need no
-    /// change, and a session rolls it forward with <c>record with { RolledToken = … }</c> only once the console
-    /// has accepted the new token. v1 (PS4 / HalyardLegacy) never sets it.
+    /// It is a non-positional <c>init</c> property: registration builds a record without it, and a session
+    /// rolls it forward with <c>record with { RolledToken = … }</c> only once the console has accepted the new
+    /// token. A v1 session never sets it.
     /// </summary>
     public byte[] RolledToken { get; init; } = [];
 

@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - GF(2^8) arithmetic for the video FEC (spec sec6.2 / GaloisField256.cs).
+ * libripcord - GF(2^8) arithmetic for the video FEC (spec sec6.2 / GaloisField256.cs).
  *
  * Primitive polynomial 0x11d (x^8+x^4+x^3+x^2+1) - confirmed [V] two independent ways against the
  * vendor binary (a literal immediate in its table-builder, and a live dump of its inverse table), and a

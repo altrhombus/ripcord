@@ -86,9 +86,7 @@ public class TakionSessionNegotiatorTests
 
     /// <summary>
     /// The keyless senkusha SESSION_REQUEST carries encryptedKey present and empty, the vendor's `22 00` in every
-    /// instance in cap53 and cap54. An engine comparison once took this for a bug beside the C core's four zero
-    /// bytes; the captures showed it was the one that matched the wire, and the C core and the Rust engine
-    /// changed instead (2026-09-26).
+    /// instance in cap53 and cap54. Four zero bytes in its place would not match the wire.
     /// </summary>
     [Fact]
     public void TheKeylessSenkushaRequest_CarriesEncryptedKeyPresentAndEmpty()
@@ -103,8 +101,8 @@ public class TakionSessionNegotiatorTests
     public void ReplyProblem_AcceptsAWellFormedReply() => Assert.Null(TakionSessionNegotiator.ReplyProblem(GoodReply()));
 
     /// <summary>
-    /// A refused version is reported as a refusal. Before 2026-09-26 it went on to signature verification and
-    /// failed there, reading like a crypto bug.
+    /// A refused version is reported as a refusal. Carried on to signature verification it would fail there,
+    /// reading like a crypto bug.
     /// </summary>
     [Fact]
     public void ReplyProblem_ARefusedVersion_IsReportedAsARefusal()
@@ -163,11 +161,9 @@ public class TakionSessionNegotiatorTests
     /// <summary>
     /// The version the mock console picks: 17 (0x11), the one our own capture negotiated.
     ///
-    /// <para>It was 9 until 2026-09-11. No console has ever been observed speaking version 9, and
-    /// <c>CurveForVersion</c> answered P-256 for any version it did not recognise, so this whole end-to-end
-    /// path — negotiate, agree an ECDH key, derive stream keys, decrypt a server packet — ran on a curve the
-    /// project had never validated while the curve real hardware uses went untested here. That fallback now
-    /// throws, so the mock has to name a version that means something.</para>
+    /// <para><c>CurveForVersion</c> throws for any version it does not recognise, so the mock has to name a
+    /// version that means something. With 17, this whole end-to-end path — negotiate, agree an ECDH key,
+    /// derive stream keys, decrypt a server packet — runs on the curve real hardware uses.</para>
     /// </summary>
     private const uint MockConsoleVersion = 17;
 

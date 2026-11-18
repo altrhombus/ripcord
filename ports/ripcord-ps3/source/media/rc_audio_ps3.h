@@ -3,8 +3,7 @@
  *
  * WHAT THE CONSOLE SENDS. 48 kHz stereo Opus in 10 ms frames - 480 samples per channel each, ~100 a
  * second. Those numbers are not this port's: src/Ripcord.Media.Audio/OpusAudioDecoder.cs fixes the rate
- * and ripcord-3ds reaches the same frame size independently. The stream carried 2,997 of them in every
- * thirty-second run through this port and discarded all of them until now.
+ * and ripcord-3ds reaches the same frame size independently. A thirty-second run carries 2,997 of them.
  *
  * WHAT THE CONSOLE WANTS. PSL1GHT's audio port takes interleaved 32-bit FLOAT in fixed blocks of 256
  * samples per channel, in a ring of 8, 16 or 32 blocks that the hardware walks continuously. So there
@@ -53,8 +52,8 @@
  * trim set near the normal fluctuation discards the buffering that absorbs the bursts.
  *
  * So the lead is six blocks, and the trim is a runaway guard rather than a target: it fires only past
- * 100 ms, which normal jitter does not reach and genuine clock drift eventually would. The counters
- * stay, because a trim that fires regularly is still the signal that the two clocks disagree.
+ * 100 ms, which normal jitter does not reach and genuine clock drift eventually would. The trims are
+ * counted because a trim that fires regularly is the signal that the two clocks disagree.
  */
 #define RC_AUDIO_BLOCKS_AHEAD  6u
 #define RC_AUDIO_TARGET_SAMPLES 4800u   /* 100 ms - a ceiling, not a target */

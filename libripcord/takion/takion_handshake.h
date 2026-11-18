@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport: the SCTP 4-way handshake.
+ * libripcord - Takion transport: the SCTP 4-way handshake.
  *
  * Ported from Ripcord.Protocol.Halyard.Takion.TakionHandshake. Chunk type values are SCTP's own
  * (RFC 4960), and the handshake is the standard SCTP association setup, client active-open only - this

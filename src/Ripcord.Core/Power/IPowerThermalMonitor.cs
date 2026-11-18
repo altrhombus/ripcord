@@ -4,8 +4,8 @@ namespace Ripcord.Core.Power;
 
 /// <summary>
 /// Reports the host's power source, battery level, and thermal pressure. This is the signal that
-/// <see cref="IBandwidthController.ReportThermalPowerState"/> has always accepted and nothing ever supplied —
-/// which is why the app streamed identically on a plugged-in desktop and a throttling handheld on 20% battery.
+/// <see cref="IBandwidthController.ReportThermalPowerState"/> accepts — without it the app would stream
+/// identically on a plugged-in desktop and a throttling handheld on 20% battery.
 ///
 /// <para>
 /// On a handheld (the ROG Ally X class of target) this is not a nicety: sustained 1080p60 decode on battery is
