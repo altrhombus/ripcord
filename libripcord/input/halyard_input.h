@@ -15,19 +15,18 @@
  *   off 8..11  u32   GMAC tag                                        [written at seal]
  *   off 0xc..        AES-CTR encrypted payload
  *
- * TWO DECRYPTION FACTS THAT EACH COST A DEBUGGING PASS on the .NET side, recorded in the spec so this
- * port did not have to repeat them: the keystream offset is a u32 at offset 4 (not where control puts it),
- * and the CTR counter increments LITTLE-endian - a stock big-endian CTR decodes only the first 16-byte
- * block correctly and produces noise after it.
+ * TWO DECRYPTION FACTS, both in the spec: the keystream offset is a u32 at offset 4 (not where control
+ * puts it), and the CTR counter increments LITTLE-endian - a stock big-endian CTR decodes only the
+ * first 16-byte block correctly and produces noise after it.
  *
  * STATE (type 6) is a periodic analog snapshot, fixed 0x1c bytes. HISTORY (type 1) carries button
  * transitions only when something changes, newest event first.
  *
- * WHAT A GIVEN PAD CANNOT SEND is the front end's business, not this file's. The six motion fields go out
- * at their captured resting values and orientation at a fixed identity unless a caller supplies better -
- * the spec notes a pad without a motion sensor may do exactly this. Everything else
- * HalyardInputPacketWriter.cs can express is expressible here: every button it knows about has a bit,
- * including the stick clicks, and L2/R2 carry a level rather than a boolean.
+ * WHAT A GIVEN PAD CANNOT SEND is the front end's business. The six motion fields go out at their
+ * captured resting values and orientation at a fixed identity unless a caller supplies better - the
+ * spec notes a pad without a motion sensor may do exactly this. Every button
+ * HalyardInputPacketWriter.cs knows about has a bit, including the stick clicks, and L2/R2 carry a
+ * level rather than a boolean.
  */
 #ifndef HALYARD_INPUT_H
 #define HALYARD_INPUT_H

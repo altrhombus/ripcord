@@ -6,15 +6,12 @@
  * docs/protocol/captures/session8-wireshark.pcapng frames 155-175 by number: ten pings, each returned by
  * the console BYTE-IDENTICALLY, in two independent captures.
  *
- * WHY A CLIENT CAN BUILD ONE OF THESE AT ALL. Bytes 22-26 hold a monotonic counter whose deltas matched
- * the capture's own inter-packet timing to within a few microseconds - a send timestamp, not a checksum.
- * Because the console returns the packet unchanged, only WE ever read that field, so any monotonic value
- * is as good as the vendor's. Had it been a checksum over the payload, generating a valid ping would have
- * required reversing it first.
+ * Bytes 22-26 hold a monotonic counter whose deltas matched the capture's own inter-packet timing to
+ * within a few microseconds - a send timestamp, not a checksum. Because the console returns the packet
+ * unchanged, only WE ever read that field, so any monotonic value will do.
  *
- * RTT is still measured with our own clock across the send/receive pair rather than by reading the echoed
- * timestamp back, for the same reason the .NET side does: the field is a convenience, the stopwatch is
- * the measurement.
+ * RTT is measured with our own clock across the send/receive pair, as the .NET side does, not by
+ * reading the echoed timestamp back.
  */
 #ifndef SENKUSHA_ECHO_H
 #define SENKUSHA_ECHO_H

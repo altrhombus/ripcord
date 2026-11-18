@@ -14,10 +14,10 @@
  * derived wake credential, not the host address. The report says whether a field was present and what
  * happened, never what it was.
  *
- * WAKE FIRST, BECAUSE STANDBY IS THE ORDINARY STATE. halyard_wake.h describes the exchange and the two
- * traps in it: nothing ever acknowledges the WAKEUP, so readiness is observed by polling SRCH until
- * is_awake flips; and the datagram may have to originate from a specific SOURCE port, which is a socket
- * concern and therefore this file's job rather than the core's.
+ * Wake first, because standby is the ordinary state. halyard_wake.h describes the exchange: nothing
+ * ever acknowledges the WAKEUP, so readiness is observed by polling SRCH until is_awake flips; and the
+ * datagram may have to originate from a specific SOURCE port, which is a socket concern and therefore
+ * this file's job rather than the core's.
  */
 #ifndef RC_CONNECT_H
 #define RC_CONNECT_H
@@ -165,14 +165,8 @@ typedef struct {
      * per-direction key/IV values exist. The byte counts are recorded because a reply that arrives
      * and fails to verify is a different problem from one that never arrives.
      */
-    /*
-     * HOW FAR THE REQUEST GOT BEFORE IT DID NOT GET BUILT.
-     *
-     * b48 reported "the request was never built - launch spec, base64 or the ECDH backend", which named
-     * three possibilities and distinguished none of them, and the same sequence with the same parameters
-     * and the same buffer sizes succeeds on the host. A message that lists the suspects is not a
-     * diagnosis; this records which step actually returned 0.
-     */
+    /* How far the request got: which build step actually returned 0 (launch spec, base64 or the ECDH
+     * backend), so the report names one step rather than the candidates, as b48's did. */
     int  stream_build_step;      /* see RC_STREAM_STEP_* below - the last step that SUCCEEDED */
     unsigned launch_spec_bytes;  /* plaintext JSON length, before encryption and base64       */
     unsigned launch_spec_b64_bytes;
@@ -444,14 +438,8 @@ typedef struct {
 } rc_connect_result;
 
 /*
- * PROGRESS, REPORTED AS IT HAPPENS RATHER THAN AT THE END.
- *
- * The first version of this returned a result and let the caller log it afterwards, which is worthless
- * the moment something blocks: b31 hung on hardware and the log simply stopped after discovery, with
- * nothing at all from this module. That is the same failure the SPU probe had - a program that reports
- * only on completion has nothing to say about not completing - and the fix is the same shape. The
- * callback is invoked before each step that can block, so the last line in the log names the call that
- * did not return.
+ * Progress, reported as it happens. The callback is invoked before each step that can block, so if
+ * one hangs (b31 did, on hardware) the last line in the log names the call that did not return.
  */
 typedef void (*rc_connect_log_fn)(const char *stage_text);
 
@@ -475,17 +463,12 @@ const char *rc_connect_stage_name(rc_connect_stage stage);
 const rc_session_state *rc_connect_session_state(void);
 
 /*
- * Turns the stage rc_connect returned into something a viewer can read, and puts it on the screen.
- * `stalled` suppresses it, because a stream that stopped mid-session has already said something more
- * specific than any stage name could.
- */
-/*
- * Puts the outcome on the television. Takes the whole result rather than the stage alone, because
- * several of the ways a session can end are indistinguishable by stage and are the opposite of each
- * other to a viewer: a person choosing Disconnect and a console refusing to start both leave from
- * RC_CONNECT_STREAM_READY, and a cancelled sign-in leaves from RC_CONNECT_SESSION_OPEN looking exactly
- * like a console that would not talk. Anything that has already said something more specific is left
- * alone - see the flags it reads.
+ * Turns the stage rc_connect returned into something a viewer can read, and puts it on the television.
+ * Takes the whole result rather than the stage alone, because several of the ways a session can end
+ * are indistinguishable by stage: a person choosing Disconnect and a console refusing to start both
+ * leave from RC_CONNECT_STREAM_READY, and a cancelled sign-in leaves from RC_CONNECT_SESSION_OPEN
+ * looking like a console that would not talk. Anything that has already said something more specific
+ * (a stream that stalled mid-session, a blocked sign-in) is left alone - see the flags it reads.
  */
 void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *result);
 

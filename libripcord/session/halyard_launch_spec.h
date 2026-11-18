@@ -7,19 +7,18 @@
  * `"psnId"` and friends are not placeholders this port failed to fill in, they are what the capture
  * contains and what the console accepts.
  *
- * THIS IS HOW handshakeKey REACHES THE CONSOLE, which is the only reason it is on the critical path.
- * The 16 random bytes that authenticate the ECDH exchange travel as the base64 `"handshakeKey"` member
- * of this document, encrypted under the CONTROL plane's key - so the stream plane's security depends on
- * a control-plane cipher, and a console that cannot decrypt this will simply never answer
- * SESSION_REQUEST. See takion_session_negotiator.h.
+ * THIS IS HOW handshakeKey REACHES THE CONSOLE. The 16 random bytes that authenticate the ECDH exchange
+ * travel as the base64 `"handshakeKey"` member of this document, encrypted under the CONTROL plane's
+ * key - so a console that cannot decrypt this will never answer SESSION_REQUEST. See
+ * takion_session_negotiator.h.
  *
- * THE CIPHER IS OFB AT COUNTER 0, WHICH DESERVES A WARNING. The document is encrypted with
- * halyard_control_streaminfo_crypt (AES-128-OFB under out1) at counter **0** - the same counter
- * `RP-Auth` already used with the CFB field cipher, so the two share an IV and their first keystream
- * blocks are identical. That is what the .NET reference does and what spec sec4.3 describes, but the
- * .NET side flags the counter value as NOT pinned by any captured vector. If a console accepts
- * /sess/ctrl and then silently never answers SESSION_REQUEST, this counter is a prime suspect and
- * trying the running counter instead is the first experiment.
+ * THE CIPHER IS OFB AT COUNTER 0. The document is encrypted with halyard_control_streaminfo_crypt
+ * (AES-128-OFB under out1) at counter **0** - the same counter `RP-Auth` already used with the CFB
+ * field cipher, so the two share an IV and their first keystream blocks are identical. That is what the
+ * .NET reference does and what spec sec4.3 describes, but the .NET side flags the counter value as NOT
+ * pinned by any captured vector. If a console accepts /sess/ctrl and then silently never answers
+ * SESSION_REQUEST, this counter is a prime suspect and trying the running counter instead is the first
+ * experiment.
  *
  * KNOWN DIVERGENCE FROM THE CAPTURE: the vendor's own launch spec carries
  * `"adaptiveStreamMode":"resize"` as the last key of `requestGameSpecification`; both this port and the

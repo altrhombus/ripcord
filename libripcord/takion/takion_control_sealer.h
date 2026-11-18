@@ -1,10 +1,9 @@
 /*
  * GMAC sealing for outgoing Takion CONTROL packets - DATA chunks and SACKs alike.
  *
- * takion_reliable_channel takes a takion_seal_fn rather than doing this itself, deliberately: that layer
- * is pure transport and knows nothing about the stream cipher. But every port that reaches this point
- * needs the identical callback, and ports/ripcord-3ds already grew one. Rather than have the PS3 grow a
- * second copy of a keystream-offset counter and a pair of magic offsets, it lives here once.
+ * takion_reliable_channel takes a takion_seal_fn rather than doing this itself: that layer is pure
+ * transport and knows nothing about the stream cipher. Every port needs the identical callback, so it
+ * lives here once.
  *
  * WHAT IT WRITES, and both halves are confirmed against captures on the .NET side
  * (src/Ripcord.Protocol.Halyard.Common/Crypto/V1/HalyardV1SessionCrypto.cs states the evidence in full):
@@ -18,9 +17,8 @@
  *
  * A/V packets zero only the tag and sit at different offsets; this is the control rule and is not it.
  *
- * SACKS ARE SEALED TOO. Forgetting that is a specific, documented failure - see
- * takion_channel_enable_sealing. Because the channel routes every outgoing control packet through one
- * callback, this gets it right by construction rather than by remembering.
+ * SACKS ARE SEALED TOO (see takion_channel_enable_sealing): the channel routes every outgoing control
+ * packet through this one callback.
  */
 #ifndef TAKION_CONTROL_SEALER_H
 #define TAKION_CONTROL_SEALER_H
@@ -58,11 +56,9 @@ void takion_control_sealer_seal(void *ctx, uint8_t *packet, size_t length);
 /*
  * LOSS REPORTS, which is a different packet at different offsets and MUST use this sealer.
  *
- * Not a convenience: the outgoing keystream offset is a single advancing sequence shared by control DATA,
- * SACKs and loss reports alike, so a loss-report path with a counter of its own would repeat a
- * position that control had already spent - and a repeated position is a repeated GMAC nonce under one
- * key. That is a key-recovery bug, not an inefficiency, and it is the reason this lives on the sealer
- * rather than beside the code that builds the packet.
+ * The outgoing keystream offset is a single advancing sequence shared by control DATA, SACKs and loss
+ * reports alike. A loss-report path with a counter of its own would repeat a position control had
+ * already spent - a repeated GMAC nonce under one key, which is a key-recovery bug.
  *
  * The offsets differ from control's and from A/V's, and all three are [V] against captures on the .NET
  * side: control tag@5 keystream_offset@9 (2528 packets), loss-report tag@7 keystream_offset@11 (474 packets), A/V tag@10
@@ -85,14 +81,11 @@ void takion_control_sealer_seal_loss_report(takion_control_sealer *sealer,
  *
  * Its offsets are keystream offset at 4 and tag at 8 - both different from control's and the loss report's -
  * and its AAD rule matches A/V rather than control: only the TAG is zeroed, not the keystream-offset
- * field. Three shapes, three rules, and nothing about any of them is inferable from the others.
+ * field.
  *
  * IT ALSO ENCRYPTS, which the other two do not. Spec 6.3 is explicit that input payloads are AES-CTR
- * encrypted, and the .NET side and ripcord-3ds both learned it the same expensive way: a plaintext
- * payload is faithfully DECRYPTED by the console into noise, so a button press arrives as something
- * else entirely, at an unpredictable moment, having passed authentication the whole way. Encrypting
- * here rather than at the call site means the tag is computed over the ciphertext that actually goes on
- * the wire - sealing first would authenticate a payload nobody will ever see.
+ * encrypted: the console decrypts a plaintext payload into noise, which still passes authentication.
+ * The payload is encrypted first, so the tag is computed over the ciphertext that goes on the wire.
  *
  * `payload_offset` is where the encrypted part begins (HALYARD_INPUT_HEADER_LENGTH for both packet
  * types).
@@ -105,21 +98,20 @@ void takion_control_sealer_seal_input(takion_control_sealer *sealer,
  * Builds one loss report: 15 bytes, base type 5, carrying the A/V units received and lost
  * since the last one. Returns the length written, or 0 if the buffer is too small.
  *
- * LAYOUT AND ITS PROVENANCE, which differ in confidence and should not be blurred. Derived on the .NET
+ * LAYOUT, and the confidence of each part. Derived on the .NET
  * side from 474 loss reports in one capture: type at 0; bytes 1-2 zero in every packet **[V]**;
  * received at 3 as a big-endian u16 **[V]**, observed between 2 and 351 per interval; lost at 5, also
  * u16 big-endian - its POSITION is confirmed but its MEANING is **[X]**, because that session had no
  * loss and every one of those 474 packets carried zero there. GMAC at 7 and keystream offset at 11 are
  * written by the sealer, not here.
  *
- * VERSION CAVEAT, recorded because a future firmware will make it matter: this 15-byte form is what that
+ * VERSION CAVEAT: this 15-byte form is what that
  * capture shows. An older capture shows a 23-byte variant of the same base type with a sequence at 1, a
  * 90 kHz timestamp at 3, GMAC at 15 and keystream offset at 19. The size is protocol-version-specific rather
  * than universal. This port only negotiates the version the 15-byte capture used; if a console ever
  * rejects these, that variant is the first thing to look at.
  *
- * The counts SATURATE rather than wrap. A u16 cannot carry more than 65535 and an interval that busy is
- * a reporting problem, not a reason to tell the console a small number.
+ * The counts SATURATE at 65535 rather than wrap.
  */
 #define TAKION_LOSS_REPORT_SIZE 15u
 
@@ -131,13 +123,12 @@ void takion_control_sealer_reset(takion_control_sealer *sealer);
 /*
  * THE RECEIVE HALF.
  *
- * Sealing without verifying is half a mechanism: GMAC authenticates without encrypting, so a control
- * message from anyone at all parses perfectly well, and a client that only seals is protected in one
- * direction while accepting whatever arrives in the other. That is the gap this closes.
+ * GMAC authenticates without encrypting, so without verification a control message from anyone at all
+ * parses perfectly well.
  *
- * The keystream offset is taken FROM THE PACKET rather than from a local counter. A receiver has no business
- * predicting where the sender is in its own byte sequence - it is told, and the tag is what makes being
- * told safe. A forged position simply produces a tag that does not verify.
+ * The keystream offset is taken FROM THE PACKET rather than from a local counter: the receiver does not
+ * predict where the sender is in its own byte sequence, and a forged position produces a tag that does
+ * not verify.
  */
 typedef struct {
     stream_packet_crypto crypto;

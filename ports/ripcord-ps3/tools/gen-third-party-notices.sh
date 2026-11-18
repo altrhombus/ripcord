@@ -61,14 +61,10 @@ section() { printf '\n\n%s\n%s\n\n' "$1" "$(echo "$1" | tr '[:print:]' '-')"; }
 # The PSL1GHT revision the linked binary was actually built from, as " (f649a08)", or nothing at all.
 #
 # The archive carries no licence file but it DOES carry build.txt, which names the exact ps3dev, PSL1GHT
-# and ps3libraries commits it was built from - so the notice can say which PSL1GHT it describes rather
-# than leaving a reader to assume. That is the part of "the licence of the version actually linked" that
-# is recoverable here, and it is worth recovering: the MIT text has not changed since 2011, but a notice
-# that names its subject can be checked and one that does not cannot.
+# and ps3libraries commits it was built from - so the notice can say which PSL1GHT it describes.
 #
 # Degrades to an unlabelled heading rather than failing. A missing build.txt makes the notice less
-# precise; it does not make the licence any less required, and refusing to emit it would invert the whole
-# point of this change.
+# precise; it does not make the licence any less required.
 psl1ght_version() {
     [ -f "$PS3DEV/build.txt" ] || return 0
     awk '$1 == "PSL1GHT" { printf " (%s)", substr($2, 1, 7); exit }' "$PS3DEV/build.txt" 2>/dev/null || true
@@ -95,16 +91,11 @@ HEADER
     section "Opus $(basename "$OPUS_DIR" | sed 's/^opus-//') - BSD-3-Clause"
     cat "$OPUS_DIR/COPYING"
 
-    # MBED TLS IS DUAL-LICENSED, and this section used to say "Apache-2.0" over a file that carries both
-    # arms in full - 553 lines, of which about 250 are the GNU General Public License. A reader of the
-    # shipped notices saw a GPL text under an Apache heading with nothing joining the two, and the
-    # available readings were "this package contains GPL code" and "somebody pasted the wrong file".
-    # Neither is true; what was missing is that a CHOICE WAS MADE.
-    #
-    # Reproducing upstream's file verbatim stays - it is the text that ships with the version actually
-    # linked, which is the property this generator exists for. What is added is the sentence naming the
-    # arm, in the same shape the FreeType election below already uses, because this project had a house
-    # style for exactly this case and applied it to one of the two components that needed it.
+    # MBED TLS IS DUAL-LICENSED, and upstream's file carries both arms in full - 553 lines, of which
+    # about 250 are the GNU General Public License. Under a bare "Apache-2.0" heading that read as GPL
+    # code in the package. Reproducing upstream's file verbatim stays - it is the text that ships with
+    # the version actually linked - and the sentence below names the arm chosen, in the same shape the
+    # FreeType election below uses.
     section "Mbed TLS $(basename "$MBEDTLS_DIR" | sed 's/^mbedtls-//') - Apache-2.0 (elected)"
     cat <<'MBEDTLS_ELECTION'
 Mbed TLS is offered under a dual licence - Apache-2.0 or GPL-2.0-or-later - at
@@ -152,27 +143,24 @@ FREETYPE
     # MANDATORY rather than a courtesy. MIT requires "the above copyright notice and this permission
     # notice" in all copies, and every .self and .pkg this port produces is a copy.
     #
-    # EMITTED UNCONDITIONALLY, FROM TEXT HELD HERE, and that is the correction rather than a shortcut.
-    # An earlier revision read it from candidate paths under $PS3DEV and said nothing when none matched -
-    # which is what happened on every build, because the ps3dev prebuilt archive ships no licence file
-    # for anything. A find across the whole 577 MB unpacked tree returns exactly one, belonging to a
-    # PolarSSL this port does not link. So the loop was not unlucky; it could never have succeeded, and
-    # it failed silently for as long as it existed.
+    # EMITTED UNCONDITIONALLY, FROM TEXT HELD HERE. The ps3dev prebuilt archive ships no licence file
+    # for anything - a find across the whole 577 MB unpacked tree returns exactly one, belonging to a
+    # PolarSSL this port does not link - so reading it from candidate paths under $PS3DEV could never
+    # have succeeded, and failed silently.
     #
     # This is the same decision #7 made for FreeType's mandatory disclaimer and for the same reason: an
     # obligation that only ships when an optional file happens to be present is an obligation that does
     # not ship. It is a checked-in copy of somebody else's licence, which this project otherwise avoids -
     # but the argument against that is drift from the version actually linked, and there is no local copy
-    # to drift from. The commit below closes that gap instead.
+    # to drift from.
     #
     # Provenance: https://github.com/ps3dev/PSL1GHT/blob/master/LICENSE, checked 2026-09-18 and found
     # byte-identical at master and at the commit $PS3DEV/build.txt names for the pinned nightly - so the
     # text below is right for the revision this toolchain links, not merely right for the project.
     #
     # The digest is deliberately NOT quoted here. A 64-character hex run in a comment is prose to the
-    # published-tree sweep, which cannot tell a licence digest from key material and should not try; the
-    # build scripts get away with theirs because those live in code. Re-verify by diffing this heredoc
-    # against that file rather than against a number somebody pasted, which is the stronger check anyway.
+    # published-tree sweep, which cannot tell a licence digest from key material. Re-verify by diffing
+    # this heredoc against that file.
     section "PSL1GHT$(psl1ght_version) - MIT"
     cat <<'PSL1GHT_MIT'
 Copyright (c) 2011 PSL1GHT Development Team

@@ -211,11 +211,9 @@ static void test_single_unit_keyframe(void)
 /*
  * A FRAME WITH MORE UNITS THAN THE OLD CAP ALLOWED.
  *
- * Until STREAM_DEMUX_MAX_UNITS_PER_FRAME existed, a frame wanting more than FEC_MAX_TOTAL_UNITS units was
- * refused outright, so no test ever built one and no console ever delivered one this code assembled.
- * Raising the cap made them reachable for the first time, and on hardware the first thing they did was
- * decode to black at 15 Mbps while the same build at 8 Mbps was perfect - the difference being frames of
- * about 90 units against about 21.
+ * Before STREAM_DEMUX_MAX_UNITS_PER_FRAME, a frame wanting more than FEC_MAX_TOTAL_UNITS units was
+ * refused outright. Once reachable, on hardware they decoded to black at 15 Mbps (frames of about 90
+ * units) while the same build at 8 Mbps (about 21) was perfect.
  *
  * 96 source units, each carrying a distinct byte pattern, checked back in order. If the assembly walks
  * its units wrongly past 64 this fails on the bytes rather than on the count.

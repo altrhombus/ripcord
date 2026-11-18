@@ -51,11 +51,10 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
 /*
  * THE SHARED FIELDS, COPIED FROM ONE ENTRY TO ANOTHER.
  *
- * Written out by name rather than by memcpy-with-holes, because the alternative was a struct copy
- * followed by restoring the per-console fields - and a field added later would then be shared or
- * per-console by accident of where it sat in the struct rather than by anybody deciding. The two lists
- * below ARE the decision, and a new field that appears in neither is a compile-clean mistake, so keep
- * them together with the header's note on what is shared.
+ * Written out by name rather than as a struct copy followed by restoring the per-console fields, so
+ * that a field added later is shared or per-console by decision, not by where it sits in the struct. A
+ * new field that appears in neither list below compiles cleanly and is a mistake; keep the lists
+ * together with the header's note on what is shared.
  */
 static void copy_shared_settings(halyard_pairing_record *dst, const halyard_pairing_record *src)
 {

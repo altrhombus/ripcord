@@ -2,19 +2,15 @@
  * ripcord-3ds - a stage timer, and a probe for which CPU cores this port may use.
  *
  * WHY BOTH LIVE IN ONE FILE. They answer the same question from two sides: what does a frame cost, and
- * how many cores are there to spend it on. Phase 1 measured the control plane at ~25 us per field and
- * said in as many words that a real per-packet A/V benchmark "is still owed before treating software AES
- * on the A/V path as settled". It stayed owed through every phase since, and the Phase 6d resolution
- * probe made it load-bearing: the console will only ever send 640x360, MVD will not scale, so a
- * per-frame resample is now a permanent fixed cost sitting on the same core as the packet crypto and the
- * decoder feed. Nobody has measured any of those three.
+ * how many cores are there to spend it on. Phase 1 measured the control plane at ~25 us per field, and
+ * the Phase 6d resolution probe made the A/V cost load-bearing: the console will only ever send 640x360,
+ * MVD will not scale, so a per-frame resample is a permanent fixed cost sitting on the same core as the
+ * packet crypto and the decoder feed.
  *
  * ON MEASURING WITH svcGetSystemTick. Reading it is cheap (a coprocessor read, no syscall), which
- * matters when the thing being timed is a few microseconds - a timer that costs as much as the work
- * would report nonsense. But the RATE IS NOT THE LIBCTRU CONSTANT: this header previously claimed the
- * tick counts at SYSCLOCK_ARM11 whether or not the New 3DS is at its higher clock, and that is false.
+ * matters when the thing being timed is a few microseconds. But the RATE IS NOT THE LIBCTRU CONSTANT:
  * osSetSpeedupEnable(true) triples the ARM11 clock (os.h: SYSCLOCK_ARM11_LGR2 == SYSCLOCK_ARM11 * 3)
- * and the tick with it, so every reported figure was 3x too large until rc_profile_calibrate landed.
+ * and the tick with it, so every reported figure is 3x too large without rc_profile_calibrate.
  *
  * ON THE CORE PROBE. libctru documents the rules but not what a .3dsx actually gets: core 0 is always
  * available, core 1 needs APT_SetAppCpuTimeLimit, core 2 is New3DS-only and requires exheader kernel

@@ -58,17 +58,10 @@
 #include <arpa/inet.h>
 
 /*
- * A DIRECTORY, NOT A FILENAME, and the distinction is the whole point of this comment.
- *
- * halyard_pairing_file_load takes a path, runs rc_program_dir over it to get the directory part, and
- * then appends the fixed name "pairing.txt" - the same shape rc_log_open has, because on the 3DS both
- * are handed argv[0] and asked to find something beside the executable. A path ending in '/' names
- * itself as its own directory, which is what makes this work.
- *
- * An earlier revision defined this as "/dev_hdd0/ripcord-pairing.txt" and called it a PATH. The loader
- * would have taken the directory part and looked for /dev_hdd0/pairing.txt, found nothing, and the
- * probe would have reported "no pairing record - skipping" with the record sitting on the console. The
- * constant's own name was the misleading part; it is a directory and now says so.
+ * A directory, not a filename. halyard_pairing_file_load runs rc_program_dir over the path it is given
+ * to get the directory part and appends the fixed name "pairing.txt" (the same shape as rc_log_open).
+ * A path ending in '/' names itself as its own directory, so the trailing slash is required: a file
+ * path here would make the loader look for /dev_hdd0/pairing.txt and report no record.
  */
 #ifndef RC_CONNECT_PAIRING_DIR
 #define RC_CONNECT_PAIRING_DIR "/dev_hdd0/"
@@ -94,33 +87,20 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
  * avoids waking the question of which console replied.
  */
 /*
- * Broadcast SRCH, for the console that has moved since the record was written.
+ * Broadcast SRCH, for the console whose address has changed since the record was written (a DHCP lease
+ * outliving a pairing record is ordinary, and looks the same as an absent console otherwise).
  *
- * A DHCP lease outliving a pairing record is ordinary - this project's own PS3 changed address twice in
- * a week - and the symptom is identical to an absent console unless something asks the wider question.
- * This began as that question alone: it told the two failures apart and then gave up either way, which
- * named the problem accurately and left somebody to fix it by re-pairing a console that was sitting
- * there working, keys and all.
- *
- * SO IT NOW ANSWERS "WHICH ONE", NOT JUST "IS THERE ONE". `want_id` is the console's own id out of the
- * record; when it is set, replies are read until one carries that id rather than the first one being
- * taken. That distinction is the whole of what makes acting on the answer safe - on a network with two
- * consoles the first to reply is a coin toss, and re-pointing a record at the wrong console would swap
- * somebody's two entries and look like the keys had broken.
+ * `want_id` is the console's own id out of the record; when it is set, replies are read until one
+ * carries that id rather than the first one being taken. On a network with two consoles the first to
+ * reply is arbitrary, and re-pointing a record at the wrong console must not happen.
  *
  * `found_addr` receives the address that answered and `found_id` its id, so the caller can compare
  * both with the record's WITHOUT either of them being logged.
  */
 /*
- * WHICH FAMILY'S DISCOVERY PROFILE, from the record.
- *
- * The ports and the protocol version differ between the families, so a PS4 sent a PS5 SRCH never hears
- * it - the datagram goes to a port it is not listening on. Every site below used the PS5 profile
- * outright, which made a paired PS4 unreachable at the wake and at every liveness probe even once
- * pairing itself had been fixed.
- *
- * The record is the authority because pairing already established the family and wrote it down; nothing
- * on this path needs to ask again.
+ * Which family's discovery profile, from the record. The ports and the protocol version differ between
+ * the families, so a PS4 sent a PS5 SRCH never hears it. The record is the authority: pairing already
+ * established the family and wrote it down.
  */
 static const halyard_discovery_profile *profile_for(int is_ps5)
 {
@@ -290,17 +270,14 @@ static int send_wakeup(const halyard_pairing_record *rec, rc_connect_result *out
 }
 
 /*
- * A TCP CONNECT WITH A DEADLINE, which libripcord's does not have.
+ * A TCP connect with a deadline, which libripcord's does not have.
  *
  * rc_tcp_connect calls connect() on a BLOCKING socket and only sets O_NONBLOCK afterwards, so a console
- * that does not accept on the control port leaves halyard_control_session_open stuck inside it with no
- * way out. That is what locked the console on b31. The core is otherwise careful - it polls everywhere
- * and uses timed windows - and this one call predates that discipline.
- *
- * Rather than change a file every port shares on the strength of one hardware run, this pre-flights the
- * same port from the port layer: non-blocking connect, select with a deadline, then close. If it does
- * not accept, open() is never entered and the probe reports why instead of hanging. Fixing rc_tcp.c
- * itself is the better long-term answer and belongs with evidence from more than one platform.
+ * that does not accept on the control port leaves halyard_control_session_open stuck inside it (b31
+ * locked the console this way). This pre-flights the same port from the port layer: non-blocking
+ * connect, select with a deadline, then close. If it does not accept, open() is never entered. Fixing
+ * rc_tcp.c itself is the better long-term answer; it is shared by every port and this rests on one
+ * hardware run.
  */
 static int tcp_port_accepts(const char *host, unsigned short port, unsigned timeout_ms)
 {
@@ -378,16 +355,11 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
 #define RC_STREAM_ATTEMPT_MS  300u
 
 /*
- * The receive cushion, which is not about this probe at all - the handshake's datagrams are tiny. It is
- * set now because the socket this opens is the one the A/V stream will later arrive on, and a keyframe
- * arrives as a burst of ~20 back-to-back datagrams that the stack drops the tail of if the buffer is
- * smaller than the burst.
- */
-/*
- * The receive cushion. Raised from 256 KB after real content showed 12.9% unit loss where a static
- * screen showed none: a keyframe under motion is ~50 KB arriving back-to-back, IDR requests make those
- * frequent, and anything the socket cannot hold while the PPE is inside an 18.9 ms decode is gone before
- * any amount of draining can reach it. Loss that does not respond to CPU is not caused by CPU.
+ * The receive cushion. Not for the handshake, whose datagrams are tiny: the socket this opens is the
+ * one the A/V stream later arrives on, and a keyframe arrives as a burst of ~20 back-to-back datagrams
+ * (~50 KB under motion) that the stack drops the tail of if the buffer is smaller than the burst.
+ * Raised from 256 KB after real content showed 12.9% unit loss where a static screen showed none:
+ * anything the socket cannot hold while the PPE is inside an 18.9 ms decode is gone.
  */
 #define RC_UDP_RCVBUF (1024 * 1024)
 
@@ -462,15 +434,8 @@ static int g_stream_rcvbuf;
 #define RC_STREAM_INFO_WAIT_MS 10000u
 
 /*
- * HOW LONG THE SESSION RAN, measured. There is no constant above it any more and that is the point.
- *
- * This was RC_STREAM_HOLD_MS, thirty seconds, chosen when the session was a bring-up probe that had to
- * finish by itself: six seconds gave a clean set of numbers and read on a television as a glimpse, so
- * thirty was "long enough to watch". Neither figure is a streaming duration, and a stream is what this
- * is now - so the timer is gone and only the measurement of it remains. See the hold loop.
- *
- * Every rate in the summary divides by this, so it is read from the clock at both ends rather than
- * assumed from an intention somebody may have cut short.
+ * How long the session ran, measured. The hold loop has no fixed duration; every rate in the summary
+ * divides by this, so it is read from the clock at both ends. See the hold loop.
  */
 static unsigned g_hold_ms;
 
@@ -511,16 +476,9 @@ const rc_session_state *rc_connect_session_state(void)
 }
 
 /*
- * THE SAME OUTCOME, FOR SOMEONE WHO IS NOT READING A LOG.
- *
- * rc_connect_stage_name says what happened and is written for whoever is debugging this. That is the
- * wrong register for a television: "senkusha channel up, stream channel did not follow" is precise and
- * tells a viewer nothing they can act on.
- *
- * So each stage also gets a headline, a detail and - the part that matters - a HINT. Where a stage has
- * no useful hint that is said plainly rather than filled with advice that sounds helpful and is not;
- * "try again" on a fault nobody can influence is worse than silence, because it implies the fault is
- * the viewer's to fix.
+ * The same outcome as rc_connect_stage_name, worded for the television rather than the log: each stage
+ * gets a headline, a detail and a hint. A stage with nothing the viewer can act on gets no hint rather
+ * than a "try again".
  */
 void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *result)
 {
@@ -583,14 +541,8 @@ void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *
 static int g_stream_is_hevc;
 
 /*
- * Input cadences, and the two are answering different questions.
- *
- * THE POLL is 4 ms - 250 Hz - which is deliberately FASTER than any pad reports. A gate of G ms adds
- * G/2 of latency on average and G at worst, entirely on top of whatever the pad and the network cost,
- * and it buys nothing once it is quicker than the source: a poll that finds nothing new is two
- * syscalls. Sampling above the pad's rate means the only delay left is the pad's own, which is the
- * definition of as fast as this can go. It is cheap to make it faster and it is not cheap to notice
- * that it was not.
+ * Input cadences. The poll is 4 ms (250 Hz), deliberately faster than any pad reports: a gate of G ms
+ * adds G/2 of latency on average and G at worst, and a poll that finds nothing new is two syscalls.
  *
  * The send cadence is cap48's: state every 15 ms, history on a transition and again every 200 ms.
  */
@@ -622,33 +574,18 @@ static void draw_overlay(void);
 /* ------------------------------------------------------------------------------------------------
  * THE IN-SESSION MENU
  *
- * WHY IT IS OURS AND NOT THE XMB'S. The obvious home for "send the PS button to the console" is the
- * menu the PS button already opens, and that menu belongs to the system. PS3 has exactly one custom
- * menu API - sceNpCustomMenu - and its constants (SELECTED_TYPE_ME, _FRIEND, _PLAYER) give it away: it
- * attaches actions to a PERSON in the friend list, not to the in-game menu's top level, which retail
- * games never added to. On custom firmware a VSH plugin could, but that is a second binary living in
- * vsh.self, tied to firmware revisions, talking to this process over some channel of its own - a great
- * deal of system-level surface in the trust path of a client that holds a console's pairing keys, to
- * save one button press. webMAN, which can write VSH plugins, still offers button COMBOS for this.
+ * Ours rather than the XMB's: the system's in-game menu cannot be extended. The one custom menu API,
+ * sceNpCustomMenu, attaches actions to a person in the friend list (SELECTED_TYPE_ME, _FRIEND,
+ * _PLAYER), not to the menu's top level, and a VSH plugin would put a second, firmware-tied binary in
+ * the trust path of a client that holds a console's pairing keys.
  *
- * AND THE PS PRESS NEVER REACHES US ANYWAY. The system consumes it before any application sees it, so
- * nothing here could forward a real one; what is sent is synthesised either way.
- *
- * So the chord that already opened the diagnostics overlay opens a short menu instead, and the overlay
- * becomes one of its entries. Same gesture, same number of presses, and it can do things the system's
- * menu could not.
+ * The system also consumes the PS press before any application sees it, so the one sent to the console
+ * is synthesised. The chord that opened the diagnostics overlay opens this menu instead, and the
+ * overlay is one of its entries.
  */
 /*
- * THE MENU'S TWO PAGES, AND THEIR ROWS.
- *
- * At file scope because the count and the text have to agree and they were in different places: the
- * cursor asked a function how many rows there were while the drawing read a local array, so adding a
- * row to one without the other would have walked off the end of it. One table each, and the count is
- * taken from the table.
- *
- * There is no Resume entry: Circle backs out of every page, which is what Circle does everywhere else
- * on this machine, and a row that duplicates a button somebody already knows is a row they read past to
- * reach the ones that do something.
+ * The menu's two pages and their rows. One table each, with the count taken from the table, so the
+ * cursor and the drawing cannot disagree. There is no Resume entry: Circle backs out of every page.
  */
 static const char *const kMenuRows[] = {
     "Send the PS button to the console",
@@ -674,16 +611,12 @@ static int g_menu_open;
 static int g_menu_page;
 
 /*
- * WHAT THE MENU LAST DREW, so it is rasterised when it CHANGES rather than when a frame goes past.
+ * What the menu last drew, so it is rasterised when it CHANGES rather than every frame.
  *
- * b455 found this from the outside: with the menu up, pictures were dropped for queue overrun and
- * keyframes re-requested - 12 overruns and 31 IDR requests across four openings, with zero loss events,
- * so nothing was lost on the network. The diagnostics overlay, which is a busier panel, cost nothing at
- * all. The difference is the throttle: rc_overlay_begin gates a rebuild to a few a second and returns 0
- * in between, while rc_overlay_begin_now never does - it is for a caller drawing because something
- * changed. This one was calling it every frame, so every frame cleared the whole panel and re-ran every
- * text run and the glyph's per-pixel square root, on the thread that also drains the socket and feeds
- * the decoder.
+ * rc_overlay_begin_now is unthrottled (unlike rc_overlay_begin, which gates a rebuild to a few a
+ * second), and rebuilding the panel every frame runs on the thread that also drains the socket and
+ * feeds the decoder. b455: 12 queue overruns and 31 IDR requests across four menu openings, with zero
+ * loss events.
  *
  * The blit still happens every frame, because the picture underneath is redrawn and would otherwise
  * wipe the menu; only the drawing is skipped. rc_overlay_end_now already declines to copy a bitmap
@@ -696,12 +629,9 @@ static uint64_t g_ps_until;
 static unsigned g_ps_sent;
 
 /*
- * DISCONNECT, ASKED FOR FROM INSIDE THE STREAM. Read by the hold loop, which ends when it is set.
- *
- * This row is not a convenience. The session used to stop on a thirty-second timer, so there was always
- * a way out whether anyone wanted one or not; with the timer gone the only remaining exits were Quit
- * from the PS menu - which leaves the program altogether - and the console giving up. Removing a timer
- * without adding this would have left somebody holding a controller with no way back to the menu.
+ * Disconnect, asked for from inside the stream. Read by the hold loop, which ends when it is set. The
+ * hold loop has no timer, so this is the only way back to the menu short of Quit from the PS menu
+ * (which leaves the program) or the console giving up.
  */
 static int g_menu_quit;
 
@@ -716,12 +646,10 @@ static int g_menu_rest;
 static int g_rest_pref;
 
 /*
- * Whether to stop showing pictures after a loss until a clean one arrives. Off by default, and the
- * description on the settings row says why that is the right default here: this port ALREADY asks the
- * console for a fresh picture the moment a chain breaks, and repeats until one comes. That repairs the
- * stream; this only decides what is on the television in the meantime - a second or two of artefacts,
- * or a second or two of nothing. Neither is obviously better and the answer is a matter of taste, which
- * is what makes it a setting rather than a fix.
+ * Whether to stop showing pictures after a loss until a clean one arrives. Off by default: this port
+ * already asks the console for a fresh picture the moment a chain breaks, and repeats until one comes.
+ * This only decides what is on the television in the meantime - artefacts or nothing - which is a
+ * matter of taste, hence a setting.
  */
 static int g_skip_until_keyframe;
 
@@ -742,17 +670,10 @@ static int menu_rows(void)
 static uint64_t g_overlay_t0;
 
 /*
- * A THIRTY-SECOND WINDOW, because a running total stops being information.
- *
- * The first overlay showed cumulative frames, bytes and audio frames since the session began. Twenty
- * seconds in, every one of those is a large number that changes slowly and says nothing about now -
- * and "now" is the entire reason to put numbers on the screen rather than in the log. The .NET client
- * reports its live figures as `latest / peak` over the last thirty seconds and this matches it, so a
- * fault described against one client reads the same way on the other.
- *
- * One bucket a second, thirty of them, oldest overwritten. The totals are kept too: cumulative is the
- * right shape for FAULTS - an IDR request or an overrun that happened and stopped mattering is still
- * something you want to know happened - and the wrong shape for rates.
+ * A thirty-second window for the overlay's rates: one bucket a second, thirty of them, oldest
+ * overwritten. The .NET client reports its live figures as `latest / peak` over the last thirty seconds
+ * and this matches it. Cumulative totals are kept too, for faults (IDR requests, overruns), where
+ * "it happened" is what matters.
  */
 #define RC_OVERLAY_WINDOW 30u
 
@@ -870,18 +791,15 @@ static int g_measured_mtu;
 static int g_version_rtt_ms;
 
 /*
- * THE RTT PROBE. Ten pings, each timed against its own echo, and the MINIMUM taken.
+ * The RTT probe. Ten pings, each timed against its own echo, and the MINIMUM taken: a sample can only
+ * be inflated by delay, so the smallest round trip is the closest to the true path time.
  *
- * The minimum rather than the mean, because a sample can only be inflated by delay and never deflated:
- * the smallest round trip observed is the closest thing to the true path time, and an average would
- * report the queue rather than the link.
- *
- * A MAJORITY IS ENOUGH, and that is not defensive padding. The 3DS port's captures show a real loss and
- * retry - one ping unanswered for ~200 ms, eleven sent for ten echoes - so a probe demanding all ten
- * would fail a perfectly healthy session. Five of ten and the result stands.
+ * A majority is enough (five of ten). The 3DS port's captures show a real loss and retry - one ping
+ * unanswered for ~200 ms, eleven sent for ten echoes - so demanding all ten would fail a healthy
+ * session.
  *
  * Each echo is matched to ITS OWN ping by sequence. Crediting a late echo of an earlier ping to a later
- * one would report a round trip shorter than it was, which is the one direction this must not be wrong in.
+ * one would report a round trip shorter than it was.
  */
 static void senkusha_echo_probe(halyard_control_session *session, rc_connect_result *out)
 {
@@ -973,24 +891,19 @@ static void senkusha_echo_probe(halyard_control_session *session, rc_connect_res
 }
 
 /*
- * THE MTU LEGS, downstream then upstream, in the capture's order.
+ * The MTU legs, downstream then upstream, in the capture's order.
  *
- * DOWNSTREAM: ask the console for one datagram of the candidate size. ITS ARRIVAL IS THE ENTIRE RESULT -
- * a datagram that size reaching us intact is what "this MTU works" means, so the contents are never
- * inspected. The console's reply reports what it SENT, which is a different question.
+ * Downstream: ask the console for one datagram of the candidate size. Its arrival intact is the entire
+ * result, so the contents are never inspected (the console's reply reports what it SENT).
  *
- * UPSTREAM: put the console into echo mode for one large packet and send it, padded with 0x47 rather
- * than zeros. A zero-filled payload is trivially compressible, and a link doing compression would let
- * this pass at a size the path cannot actually carry.
+ * Upstream: put the console into echo mode for one large packet and send it, padded with 0x47 rather
+ * than zeros, so a link doing compression cannot pass a size the path cannot carry.
  *
- * THE CLOSE IS UNCONDITIONAL. Past the open the console IS in client-MTU mode with no other way of being
- * cleared, so state=false goes out on every exit path including failure. The .NET side records that this
- * was once a plain sequential send a timeout could unwind past, leaving the console stuck - a mistake
- * worth not repeating in a third implementation.
+ * The close is unconditional. Past the open the console is in client-MTU mode with no other way of
+ * being cleared, so state=false goes out on every exit path including failure.
  *
  * Only the value we intend to DECLARE is tested. The vendor probes a smaller size upstream than
- * downstream, but it has reason to know its own uplink and this port does not, so verifying the figure
- * that will go in the launch spec is more useful than reproducing theirs.
+ * downstream; this port verifies the figure that will go in the launch spec instead.
  */
 static void senkusha_mtu_probe(halyard_control_session *session, rc_connect_result *out)
 {
@@ -1098,31 +1011,23 @@ static rc_decode_live_stats g_live_stats;
 static int g_live_open;
 
 /*
- * A FRAME QUEUE, so that decoding does not happen inside the receive loop.
+ * A frame queue, so that decoding does not happen inside the receive loop.
  *
- * b128 measured what the receive buffer actually is: 124800 bytes, where 1048576 was asked for and lv2
- * capped it. That is about half a second of this stream on average and HALF OF ONE KEYFRAME at the
- * 57 KB they now reach - so the average was never the problem, the stalls were.
+ * b128 measured the receive buffer at 124800 bytes, where 1048576 was asked for and lv2 capped it:
+ * about half of one 57 KB keyframe. Decoding in the demuxer's callback stopped the socket being read
+ * for as many decodes as frames completed in one pass (five frames, around 133 ms, 31 KB arriving at
+ * 232 KB/s), and the buffer overran.
  *
- * Decoding used to happen in the demuxer's callback, inside the drain loop. A pass that completed five
- * frames stopped reading the socket for five decodes - around 133 ms - and at 232 KB/s that is 31 KB
- * arriving with nowhere to go, on top of whatever burst provoked it. The loss looked like the network
- * twice over: first because poll was eating packets, and then because the buffer was overrunning while
- * the PPE was busy.
- *
- * So the sink COPIES and returns, and the outer loop decodes one frame per pass. The copy is a few
- * microseconds against a 22 ms decode, and the longest the socket goes unread becomes one decode rather
- * than however many frames happened to complete together.
+ * So the sink COPIES and returns; the copy is a few microseconds against a 22 ms decode.
  *
  * Sized in whole frames rather than bytes: eight is enough to ride out a keyframe followed by a burst of
  * inter-frames, and a slot has to hold the largest frame seen with room to spare.
  */
 #define RC_FRAME_QUEUE_SLOTS 8
 /*
- * A WHOLE FRAME, SIZED FOR 1080p. 96 KB was comfortable for 720p, whose largest frame measured 51 KB -
- * but a 1080p keyframe carries 2.25x the pixels and there is no headroom in that. The demuxer can
- * assemble about a megabyte (STREAM_DEMUX_ASSEMBLY_CAPACITY), so this was the first thing that would
- * have clipped, and it would have clipped SILENTLY: the guard below simply skipped anything larger.
+ * A whole frame, sized for 1080p. The largest 720p frame measured 51 KB and a 1080p keyframe carries
+ * 2.25x the pixels. The demuxer can assemble about a megabyte (STREAM_DEMUX_ASSEMBLY_CAPACITY); the
+ * guard below skips anything larger than a slot.
  */
 #define RC_FRAME_SLOT_BYTES (256 * 1024)
 
@@ -1139,31 +1044,23 @@ static unsigned g_frames_oversized;
 static unsigned g_queue_worst;
 
 /*
- * THE DECODER RUNS ON ITS OWN THREAD, AND THE REASON IS b142.
+ * The decoder runs on its own thread, so a decode cannot stop the socket being read.
  *
- * Decoding inline in the receive loop was a deliberate choice once, and the note above the queue records
- * why: doing the work where the buffer is valid avoids a copy at every layer. The crypto rewrite changed
- * the arithmetic underneath that choice. With ingest down to 84 us per packet, decode is the only large
- * cost left - 21,774 us per call at 720p - and b142 measured the consequence directly: a 270 ms decode
- * run, a 94 ms gap between socket reads, a drain burst of 118 packets where b141 saw 6, and 157 units
- * lost to a 124,800-byte socket buffer that nobody was emptying. The frame queue sat pinned at 8 of 8.
+ * b142, decoding on the receive thread (21,774 us per call at 720p, ingest 84 us per packet): a 270 ms
+ * decode run, a 94 ms gap between socket reads, a drain burst of 118 packets where b141 saw 6, 157
+ * units lost to the 124,800-byte socket buffer, and the frame queue pinned at 8 of 8.
  *
- * None of that is the decoder being slow. It is the decoder and the socket sharing a thread.
+ * Three choices here are deliberate:
  *
- * THREE CHOICES HERE ARE DELIBERATE:
+ * The consumer COPIES the frame out of the ring while holding the lock, then decodes outside it.
+ * Decoding in place would let the producer evict and overwrite the slot mid-decode once the ring
+ * wraps. The copy averages ~8 KB.
  *
- * The consumer COPIES the frame out of the ring while holding the lock, then decodes outside it. The
- * alternative - decoding in place - lets the producer evict and overwrite the slot mid-decode once the
- * ring wraps. The copy averages ~8 KB against a 21,774 us decode, which is not a cost worth a race.
+ * The wait has a TIMEOUT. The thread notices the quit flag by itself within 50 ms, so teardown does
+ * not depend on a wakeup being delivered.
  *
- * The wait has a TIMEOUT rather than being infinite. The thread therefore notices the quit flag by
- * itself within 50 ms and cannot be wedged by a signal that arrives at the wrong moment. This port has
- * already lost three sessions to shutdown lockups; a teardown path that depends on a wakeup being
- * delivered is not one to write a fourth time.
- *
- * The priority is READ from the receive thread rather than assumed, and set one step below it. Draining
- * the socket promptly is the whole point of the change, so the thread that does it must win. A hard-coded
- * number would be a guess about a scheduler this port has never measured.
+ * The priority is READ from the receive thread rather than assumed, and set one step below it: the
+ * thread that drains the socket must win.
  */
 #define RC_DECODE_THREAD_STACK (256u * 1024u)
 #define RC_DECODE_WAIT_US      50000ull
@@ -1206,26 +1103,21 @@ static int g_awaiting_keyframe;
 static void request_idr(uint64_t now);
 
 /*
- * The two things this client owes the console on a timer, checked wherever there is a moment.
- *
- * They used to sit only at the top of the hold loop, which made the drain bound a compromise: large
- * enough to clear a burst, small enough that one burst could not starve a heartbeat. Calling this from
- * inside the drain as well costs two comparisons per packet and removes the tension, so the bound can be
- * sized for the burst alone.
+ * The two things this client owes the console on a timer, checked wherever there is a moment: at the
+ * top of the hold loop and from inside the drain (two comparisons per packet), so the drain bound can
+ * be sized for the burst alone without starving a heartbeat.
  */
 /*
- * CONTROLLER INPUT, UP THE STREAM CHANNEL.
+ * Controller input, up the stream channel.
  *
  * Two packets and two cadences. A HISTORY packet (type 1) goes whenever a button transitioned, and
  * carries the last several transitions rather than only the new one - they are CUMULATIVE and the
- * console tracks button state from them, so a dropped packet would otherwise lose a transition
- * permanently and leave a button held forever; unchanged, it goes again every 200 ms. A STATE packet
- * (type 6) is the analog snapshot, every 15 ms whether or not anything moved (cap48).
+ * console tracks button state from them, so a dropped packet cannot leave a button held forever;
+ * unchanged, it goes again every 200 ms. A STATE packet (type 6) is the analog snapshot, every 15 ms
+ * whether or not anything moved (cap48).
  *
- * SENT FROM THE PERIODIC TICK, NOT THE DRAIN, and ripcord-3ds spent two phases learning why: input is
- * a wall-clock activity like the heartbeat, while the drain's period depends on how much video is
- * arriving. Tying the poll to the drain makes the controller laggy exactly when the picture is busy,
- * which is exactly when it is being used.
+ * Sent from the periodic tick, not the drain: input is a wall-clock activity like the heartbeat, while
+ * the drain's period depends on how much video is arriving.
  *
  * The sealer does the encryption and the tag together - see takion_control_sealer_seal_input for why
  * those cannot be separated, and for why input must share the sealer's keystream offset rather than count
@@ -1446,17 +1338,15 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     }
 
     /*
-     * ASK FOR LESS WHEN THE PICTURES ARE TOO FINELY SLICED FOR THIS DECODER.
+     * Ask for less when the pictures are too finely sliced for this decoder.
      *
      * The protocol half of this lives in libripcord; the POLICY is here, because what triggers it is a
      * property of cellVdec and not of Halyard. 65 slices in a 720p picture decode on this hardware and
      * 136 do not, and the console slices so that each network unit stands alone - so slice count follows
-     * the bitrate it is sending. Another port would throttle for entirely different reasons, or not at
-     * all, which is exactly why this does not belong in the shared layer.
+     * the bitrate it is sending.
      *
-     * Loss reports cannot express this. It reports what was lost, and nothing is being lost: the
-     * link is fine and the decoder simply cannot use what arrives. That gap is what CONNECTION_QUALITY
-     * is for.
+     * Loss reports cannot express this: nothing is being lost, the decoder simply cannot use what
+     * arrives. That gap is what CONNECTION_QUALITY is for.
      */
     if (g_connquality_enabled && out->demux_ready && now >= g_next_connquality) {
         unsigned slices = rc_decode_vdec_au_max_slices();
@@ -1478,14 +1368,9 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
                 out->connquality_target = (int)g_connquality_target;
 
                 /*
-                 * NO KEYFRAME REQUEST HERE, and b177 is why it was tried and removed.
-                 *
-                 * The reasoning was sound - a stream that has changed shape needs a fresh reference -
-                 * and the implementation was not. Setting g_awaiting_keyframe hands the flag to the
-                 * "still blind? ask again" loop above, which repeats every 200 ms until a keyframe
-                 * arrives; eight throttle steps became 79 IDR requests and 16 keyframes in thirty
-                 * seconds. Asking for a keyframe once is a reasonable thing to want, and this flag is
-                 * not the way to ask for it once.
+                 * No keyframe request here. Setting g_awaiting_keyframe hands the flag to the "still
+                 * blind? ask again" check below, which repeats every 200 ms until a keyframe arrives;
+                 * b177: eight throttle steps became 79 IDR requests and 16 keyframes in thirty seconds.
                  */
             }
         }
@@ -1493,16 +1378,10 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     }
 
     /*
-     * A FRAME THE DECODER NEVER SAW BREAKS THE CHAIN, exactly as a lost packet does.
-     *
-     * b180 at 720p60 decoded 1,208 pictures of 1,779 with 489 errors and FOUR units lost on the network -
-     * so nearly all of it was frames this port dropped before the decoder, its access-unit ring being a
-     * 30 fps size. Every one of those breaks the reference chain, and nothing asked for a keyframe: three
-     * keyframes in thirty seconds, one IDR request, and a picture that went blocky and stayed blocky.
-     *
-     * This is what g_awaiting_keyframe is for, and it is worth distinguishing from b177's misuse of it.
-     * There the flag was set on every bitrate step, which is not a broken chain and produced 79 requests.
-     * Here a frame really is missing, which is the condition the flag names.
+     * A frame the decoder never saw breaks the reference chain, exactly as a lost packet does, so it
+     * needs a keyframe too. b180 at 720p60 decoded 1,208 pictures of 1,779 with 489 errors and four
+     * units lost on the network: nearly all of it was frames this port dropped before the decoder, and
+     * only one IDR request went out.
      */
     if (rc_decode_vdec_take_chain_broken())
         g_awaiting_keyframe = 1;
@@ -1520,33 +1399,19 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
  * Takes whatever A/V is waiting, up to the bound, and feeds it to the demuxer. Returns how many
  * datagrams it took.
  *
- * A FUNCTION because it has to be called from more than one place. The receive loop calls it, and so
- * does the gap between decodes - one decode is 19 to 23 ms and the socket holds 122 KB, so going more
- * than one decode without reading is how b130 put loss back to 6.6% after b129 had it at 1.3%.
+ * A function because it is called from more than one place: the socket holds 122 KB and one decode
+ * is 19 to 23 ms, so it must not go more than one decode unread (b130: 6.6% loss, against b129's 1.3%).
  */
 /*
- * THE LONGEST THE SOCKET GOES UNREAD, measured rather than reasoned about.
- *
- * Four builds have now moved work across this boundary on the theory that some unit of it was too long
- * to sit between two reads - decode inside the drain, then one decode per pass, then four with only the
- * timers between, then four with a drain between each. Loss went 11.9%, 1.3%, 6.6%, 8.6%. That is not a
- * sequence converging on an answer, it is a sequence of guesses, and the thing every one of them was
- * guessing at is a number this loop can simply report.
- *
- * A 122 KB buffer at ~300 KB/s is full in about 400 ms. If the worst gap is nowhere near that, the
- * overflow theory is wrong and the loss is somewhere else entirely.
+ * The longest the socket goes unread, measured. A 122 KB buffer at ~300 KB/s is full in about 400 ms;
+ * a worst gap nowhere near that means the loss is not overflow.
  */
 static uint64_t g_last_drain_ms;
 static unsigned g_worst_read_gap_ms;
 
 /*
- * WHICH PHASE OWNS THE GAP. b136 measured the longest interval between socket reads at 372 ms against a
- * buffer that fills in about 400 - so the overflow is real and sitting on the edge. What it does not say
- * is what spends that time, and the arithmetic does not obviously account for it: a bounded drain is
- * tens of milliseconds, four decodes are sixty, and the blit is four.
- *
- * Something in this loop costs far more than its parts suggest, and guessing which has already cost four
- * builds. Each phase is timed and its worst reported.
+ * Which phase owns the gap: each phase of the loop is timed and its worst reported. b136 measured the
+ * longest interval between socket reads at 372 ms against a buffer that fills in about 400.
  */
 static unsigned g_worst_drain_ms;
 static unsigned g_worst_decode_ms;
@@ -1555,17 +1420,11 @@ static uint64_t g_ingest_ticks;
 static unsigned g_ingest_calls;
 
 /*
- * SPLIT THE 829 MICROSECONDS. b139 measured stream_demux_ingest at 829 us per packet, which at 3.2 GHz
- * is about 1900 cycles for every byte of a 1400-byte datagram. A naive software AES is 50 to 100 cycles
- * per byte, so the cipher cannot be most of this - and removing an entire redundant GMAC pass in b138
- * moved the drain by a tenth, which said the same thing.
- *
- * The port supplies the demuxer's crypto seam, so it can wrap it: this callback does exactly what
- * stream_demux_packet_crypto's does and times it. Whatever is left of the 829 is header parsing, FEC
- * bookkeeping and the assembly copy - and one of those is then the thing to attack.
- *
- * Wrapping rather than editing libripcord, because this is a question about this platform's
- * performance and not a change to how the demuxer works.
+ * Times the crypto share of stream_demux_ingest, which b139 measured at 829 us per packet. The port
+ * supplies the demuxer's crypto seam, so it wraps it: this callback does exactly what
+ * stream_demux_packet_crypto's does and times it. The remainder is header parsing, FEC bookkeeping and
+ * the assembly copy. Wrapped here rather than in libripcord because it is a question about this
+ * platform's performance.
  */
 static uint64_t g_crypto_ticks;
 static unsigned g_crypto_calls;
@@ -1613,12 +1472,8 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
     drained = 0;
     while (drained < RC_AV_DRAIN_BURST) {
         /*
-         * THE TIMERS ARE CHECKED IN HERE TOO, which is what lets the bound be generous.
-         *
-         * They used to live only in the outer loop, so the bound was a compromise: large enough
-         * to drain a burst, small enough that heartbeats and loss reports were not starved
-         * by one. Checking them per drained packet costs two comparisons and removes the
-         * tension, so the bound can be sized for the burst alone.
+         * The timers are checked in here too, so the bound can be sized for the burst alone - see
+         * the note above send_input.
          */
         send_periodic(session, out, next_loss_report);
 
@@ -1649,37 +1504,19 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
                     out->av_other++;
 
                 /*
-                 * THE PROBE'S OWN VERIFY IS GONE, and its removal is the point.
-                 *
-                 * It was kept deliberately: it answered "does the A/V authentication rule hold"
-                 * independently of "does reassembly work", and collapsing the two would have made one
-                 * failure look like the other. That measurement has been taken many times over - 1123 of
-                 * 1123, then 6287 of 6287, then every run since.
-                 *
-                 * What it costs is a SECOND GMAC over ~1400 bytes for every packet, on a 3.2 GHz PPE
-                 * with no AES instructions, on the one thread that has to empty a 122 KB socket buffer.
-                 * b137 timed a bounded 256-packet drain at 192 ms - three quarters of a millisecond per
-                 * packet - while the demuxer was already verifying and decrypting each one through its
-                 * own crypto seam. Paying twice for an answer we have is a diagnostic that outlived its
-                 * question and became the fault.
+                 * No separate verify here: the demuxer already verifies and decrypts each packet
+                 * through its own crypto seam, and a second GMAC over ~1400 bytes per packet on this
+                 * thread was measurable (b137: a bounded 256-packet drain took 192 ms).
                  *
                  * The A/V rule itself is unchanged and still enforced, inside the demuxer: tag at offset
                  * 10, keystream offset read from the packet at 14, and only the tag zeroed in the AAD - not
-                 * the control rule. av_verified now counts what the DEMUXER accepted, which is the
-                 * demuxer's own accounting - units received against units lost - is the number that
-                 * matters from here, and it already reports exactly this.
+                 * the control rule. av_verified now counts what the DEMUXER accepted.
                  */
                 if (out->demux_ready) {
                     /*
-                     * TIMED, because removing one of the two GMAC passes moved the drain from 192 ms to
-                     * 173 - about a tenth - which says the crypto was not what it cost. A bounded drain
-                     * is two syscalls and this call per packet, and at ~0.95 ms per packet something
-                     * here is an order of magnitude more expensive than it looks.
-                     *
-                     * stream_demux_ingest parses the header, verifies a GMAC, CTR-decrypts the payload,
-                     * does FEC bookkeeping and copies into the assembly buffer. Which of those dominates
-                     * is worth knowing before anything is moved to an SPE on the assumption it is the
-                     * crypto.
+                     * Timed: removing one of the two GMAC passes (b138) moved the drain only from 192 ms
+                     * to 173. stream_demux_ingest parses the header, verifies a GMAC, CTR-decrypts the
+                     * payload, does FEC bookkeeping and copies into the assembly buffer.
                      */
                     uint64_t t0 = rc_tick();
 
@@ -1714,27 +1551,13 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
     (void)ctx;
 
     /*
-     * ASK BEFORE CONVERTING. If the previous flip has not landed, this picture is dropped whole - no
-     * conversion, no wait. b87 did the opposite and paid for it: it converted and vsync-waited on every
-     * frame, on the thread draining the socket, and lost 90 units where the run before lost none.
+     * Wait briefly for the display rather than dropping the picture, and ask before converting.
      *
-     * A dropped frame costs one frame. A waited-on frame costs every packet that arrives during the
-     * wait, and those losses cascade - the decoder then errors on the gaps, which is where b87's 81
-     * decoder errors came from.
-     */
-    /*
-     * WAIT BRIEFLY FOR THE DISPLAY RATHER THAN DROPPING THE PICTURE - and the reasoning above is kept
-     * because it was right when it was written and is not any more.
-     *
-     * It describes this running on the thread that drains the socket, where a wait cost every packet
-     * arriving during it. Since b144 the decode and blit have had their OWN thread; the receive loop
-     * keeps draining regardless, which is the whole point of that split. What remains of the old cost is
-     * a decode thread that pauses until the flip completes, and the picture ring in front of it exists
-     * exactly to absorb that.
-     *
-     * b186 is what dropping costs now: 1,777 pictures decoded without an error and 649 thrown away here,
-     * which is 37 fps on screen from a 60 fps stream. A flip completes every vsync, so a bounded wait
-     * turns those drops into paced blits.
+     * Since b144 the decode and blit have their own thread, so a bounded wait here does not stop the
+     * socket being drained (on the receive thread it did: b87 lost 90 units and saw 81 decoder
+     * errors). Dropping instead costs frames: b186 decoded 1,777 pictures without an error and threw
+     * 649 away here, 37 fps on screen from a 60 fps stream. A flip completes every vsync, so the wait
+     * is bounded by RC_BLIT_WAIT_MS, after which the picture is dropped whole.
      */
     {
         unsigned waited = 0u;
@@ -1779,31 +1602,17 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
  * no PPE scaler. That is counted, and a run where it is non-zero is a run that should go back to YUV.
  */
 /*
- * WHAT THE OVERLAY SAYS, and it is deliberately the same set of questions the .NET client's diagnostics
- * report answers - what was asked for, what arrived, and what is happening now - so that a fault
- * described on one client is recognisable on the other.
- *
- * Everything here is read from counters this port already keeps. Nothing is computed for the overlay
- * alone, and nothing here touches the picture: the numbers are all in main memory, which matters
- * because the buffer being drawn ON is RSX memory and must only be written.
- *
- * The rates are over the whole session rather than a sliding window. A window would read better and
- * would need a history buffer per metric; this is the version that exists, and the log still carries
- * the peaks.
- */
-/*
- * THE PANEL.
- *
- * Laid out here rather than in rc_overlay.c because what belongs on it is a question about this port's
- * pipeline, while how to put a pixel down is not. The overlay file owns the bitmap and the primitives;
- * this owns the answer to "what would someone want to know at the moment the picture looks wrong".
+ * The diagnostics panel. Laid out here rather than in rc_overlay.c: the overlay file owns the bitmap
+ * and the primitives, this owns what is shown.
  *
  * The shape follows the .NET client's diagnostics report - what was asked for, what arrived, what is
  * happening now - so a fault described against one client is recognisable on the other.
  *
- * TWO COLUMNS AND RIGHT-ALIGNED NUMBERS. The labels sit at one x and the values at another, and the
- * numbers end on a fixed edge rather than starting at one, so a frame rate going 59 -> 9 does not shift
- * everything after it. A number that moves while you read it is a number you read twice.
+ * Everything is read from counters this port already keeps, all in main memory: the buffer being
+ * drawn ON is RSX memory and must only be written.
+ *
+ * Two columns: labels at one x, values at another, and numbers right-aligned to a fixed edge so a
+ * frame rate going 59 -> 9 does not shift everything after it.
  */
 /*
  * DESIGN PIXELS, against a 1920x1080 screen. rc_overlay_px converts each to whatever the television
@@ -1820,14 +1629,9 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
 #define OV_ROW_H    rc_overlay_px(34)
 
 /*
- * A BITRATE IN THE UNIT SOMEONE WOULD SAY IT IN.
- *
- * The launch spec carries kbps because that is what the wire field is, and 20000 on a panel next to a
- * live figure reading 11.9 invites the reader to do the conversion themselves and to get it wrong.
- * Both are the same quantity and both should be in the same unit.
- *
- * Writes into `out` and returns the unit, so the number can be set as a figure - tabular, right
- * aligned - and the unit as a word beside it, which is the split the rest of the panel uses.
+ * The asked bitrate in the unit of the live figure beside it (the launch spec carries kbps, the wire
+ * field's unit). Writes the number into `out` and returns the unit, so the number can be set
+ * right-aligned and the unit as a word beside it.
  */
 static const char *bitrate_text(int kbps, char *out, size_t out_size)
 {
@@ -2140,15 +1944,10 @@ static void draw_overlay(void)
     rc_overlay_text(OV_LABEL_X, y + small_drop, 1, RC_OV_LABEL, "Lost/s");
     rc_overlay_num_right(OV_NUM_R, y, 2, peak_lost > 0u ? RC_OV_WARN : RC_OV_TEXT, "%u", now->lost);
     /*
-     * THREE ROWS, THREE SPARKLINES. Two of three having a graph made the eye ask what was different
-     * about the third, and the answer was nothing - the data was already in the window.
-     *
-     * A flat empty line is the point rather than a waste of it: loss is normally zero, and thirty
-     * seconds of visibly nothing is a stronger statement than a 0 that could have been a 4 a moment
-     * ago. The bars keep their track so a clean second reads as low rather than as missing.
-     *
-     * Scaled against its own peak, not a fixed ceiling, because there is no natural maximum for loss
-     * the way 60 is for frames - two lost units matter if the last thirty seconds lost none.
+     * A sparkline for loss too. It is normally flat, which shows thirty clean seconds rather than one
+     * instantaneous 0; the bars keep their track so a clean second reads as low rather than as missing.
+     * Scaled against its own peak, not a fixed ceiling: loss has no natural maximum the way 60 is for
+     * frames.
      */
     rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, rc_overlay_px(20), lost_series, series_n,
                     (peak_lost > 0u) ? peak_lost : 1u,
@@ -2277,14 +2076,9 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
     g_tally.video_frames++;
 
     /*
-     * DROP EVERYTHING UNTIL A CLEAN PICTURE, when asked to. Counted as arrived first, because it did
-     * arrive - the stream is healthy and it is this end choosing not to show it.
-     *
-     * The frames after a broken chain reference pictures the decoder no longer has, so what they
-     * produce is somewhere between artefacts and garbage. Showing them is not wrong, which is why this
-     * is off by default: the IDR request has already gone out and usually lands within a second, and a
-     * second of artefacts recovers into a moving picture while a second of nothing is a freeze. Which
-     * of those reads worse is taste, and on a lossy link it is taste that changes.
+     * Drop everything until a clean picture, when asked to. Counted as arrived first, because it did
+     * arrive. The frames after a broken chain reference pictures the decoder no longer has, so they
+     * decode to artefacts; see g_skip_until_keyframe for why showing them is the default.
      */
     if (g_skip_until_keyframe && g_awaiting_keyframe && !is_keyframe) {
         g_frames_skipped++;
@@ -2310,18 +2104,11 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
         return;
 
     /*
-     * COPIED, NOT DECODED. The reasoning that put the decode here was sound and the conclusion was
-     * wrong: avoiding a copy per frame is worth a few microseconds, and paying for it with a 22 ms
-     * stall in the loop that drains a 122 KB socket buffer is not. See the frame queue above.
+     * Copied, not decoded: a 22 ms decode must not stall the loop that drains a 122 KB socket buffer
+     * (see the frame queue above). The demuxer's contract says these bytes live only for this call, so
+     * the copy is the price of decoding anywhere else.
      *
-     * The demuxer's contract says these bytes live only for this call, which is exactly why the copy is
-     * the price of decoding anywhere else.
-     */
-    /*
-     * COUNTED, NOT JUST SKIPPED. A frame too large for a slot used to fall out of this `if` and vanish -
-     * no counter, no log line, and at 1080p that would have looked exactly like a decoder that drops
-     * keyframes. This session has already spent five builds on a fault that every counter reported as
-     * success; a silent drop is the same mistake waiting to happen.
+     * A frame too large for a slot is counted, not silently skipped.
      */
     if (length > RC_FRAME_SLOT_BYTES)
         g_frames_oversized++;
@@ -2531,17 +2318,10 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
     g_tally.corrupt_events++;
 
     /*
-     * ASK FOR A FRESH IDR, which this used to merely count.
-     *
-     * The old comment said a recovery path that could not be verified would obscure the measurement,
-     * and while reassembly was the open question that was right. b90 made it wrong: over thirty seconds
-     * the console sent 893 video frames and exactly ONE keyframe, seven loss events cost the decoder its
-     * reference chain, and 686 of those frames failed with openh264's 0x12 - dsNoParamSets | dsRefLost.
-     * The picture froze while a perfectly healthy stream kept arriving.
-     *
-     * Inter-frames reference the pictures before them, so a gap is not one lost frame - it is every
-     * frame until the next keyframe, and the console only sends another when asked. Counting the loss
-     * and not asking is the one response guaranteed not to recover.
+     * Ask for a fresh IDR. Inter-frames reference the pictures before them, so a gap costs every
+     * frame until the next keyframe, and the console only sends another when asked. b90, counting the
+     * loss without asking: 893 video frames and one keyframe in thirty seconds, seven loss events, and
+     * 686 frames failed with openh264's 0x12 - dsNoParamSets | dsRefLost.
      *
      * Throttled to the reference's interval. One IDR repairs the whole chain, so requesting on every
      * lost slice while a burst is still arriving would spend upstream bandwidth on repairs already in
@@ -2561,11 +2341,8 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
  * follows it rather than re-deriving it.
  *
  * NOT DONE HERE: the echo and MTU measurement legs. Those produce the rtt and mtu the launch spec
- * declares, and the 3DS port's note is worth repeating - it omitted the echo leg for five phases on the
- * reasoning that it "tunes bitrate, it does not unlock anything", and both halves of that were true while
- * the conclusion still cost it, because rtt 0 is an input the console uses. This port declares the same
- * defaults it always has, which is the status quo rather than a regression, and the measurement is
- * unfinished business rather than a decision.  [X]
+ * declares, and rtt 0 is an input the console uses (the 3DS port's note). This port declares the same
+ * defaults it always has, and the measurement is unfinished business rather than a decision.  [X]
  */
 static int senkusha_legs(halyard_control_session *session, rc_connect_result *out)
 {
@@ -2634,16 +2411,11 @@ static int senkusha_legs(halyard_control_session *session, rc_connect_result *ou
     out->senkusha_complete = 1;
 
     /*
-     * THE MEASUREMENT LEGS, after the exchange the console gates on and before the launch spec is built.
+     * The measurement legs, after the exchange the console gates on and before the launch spec is built.
+     * They unlock nothing, but the declared RTT is an input the console's rate controller uses: b115
+     * declared 0, asked for 8000 kbps at 720p and was sent about 1400.
      *
-     * These do not unlock anything, which is exactly why they were skipped - and the 3DS port's note
-     * says what that cost: it omitted the echo leg for five phases reasoning that it "only tunes
-     * bitrate", and both halves of that were true while the conclusion was not. The declared RTT is an
-     * input the console's rate controller uses, and declaring 0 asks it to plan against a figure nobody
-     * measured. b115 asked for 8000 kbps at 720p and was sent about 1400.
-     *
-     * Best-effort throughout: a failed probe leaves the declared defaults in place, which is the status
-     * quo rather than a regression.
+     * Best-effort throughout: a failed probe leaves the declared defaults in place.
      */
     senkusha_echo_probe(session, out);
     senkusha_mtu_probe(session, out);
@@ -2679,14 +2451,12 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     int ok = 0;
 
     /*
-     * NEGOTIATE THE VERSION ON THIS CHANNEL FIRST, and use what the console picks.
+     * Negotiate the version on this channel first, and use what the console picks.
      *
-     * b51 found this the expensive way. The ECDH CURVE is chosen from the negotiated version, not from
-     * the one we would like - so assuming our own top version generates a key on a curve the console may
-     * not have chosen. The failure surfaces nowhere near the cause: the console's reply arrives, its
+     * The ECDH CURVE is chosen from the negotiated version, so assuming our own top version generates a
+     * key on a curve the console may not have chosen. The symptom (b51) is misleading: the console's
      * ecdhSignature VERIFIES (an HMAC over whatever bytes it sent, which says nothing about the curve),
-     * and only then is its public point rejected for being on a different curve. It reads like a crypto
-     * fault and is a negotiation one.
+     * and only then is its public point rejected for being on a different curve.
      *
      * The senkusha channel's version exchange does not count for this. That one is part of senkusha's
      * own bring-up; this is the stream channel, and the reference asks again here.
@@ -2726,20 +2496,19 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     params.height = (rec->stream_height > 0) ? rec->stream_height : 360;
 
     /*
-     * NEVER ASK FOR MORE THAN 720p, AND THE REASON IS THE REFERENCE BUFFER RATHER THAN THE PIXEL RATE.
+     * Never ask for more than 720p. The limit is the reference buffer, not the pixel rate.
      *
      * cellVdec can be opened at H.264 level 4.2 and no higher - b145 swept vdecQueryAttr and it accepts
      * exactly 10..42. The console encodes with NINE reference frames, and level bounds the decoded
      * picture buffer: 4.2 allows 34,816 macroblocks, nine 720p frames need 32,400 and fit, nine 1080p
-     * frames need 73,440 and do not. So the console declares level 5.0 for 1080p because it genuinely
-     * needs it, and a decoder that cannot be configured that high accepts every access unit, reports no
-     * error, and produces uniformly black pictures. b169 through b171 is that, three times.
+     * frames need 73,440 and do not. The console declares level 5.0 for 1080p, and a decoder that
+     * cannot be configured that high accepts every access unit, reports no error, and produces
+     * uniformly black pictures (b169 through b171).
      *
-     * FRAME RATE IS NOT WHAT IS BEING CAPPED. 720p60 is 216,000 macroblocks a second against 4.2's
-     * ceiling of 522,240, and the reference buffer does not grow with frame rate - so 60 fps at this
-     * resolution should be inside the same level - and it is. 720p60 ran at 58 fps sustained: 1,748 of
-     * 1,769 frames decoded, all of them shown, nothing dropped at the display, audio clean. This said
-     * "untested here" until 2026-09-18. The cap is on size alone, and that is still the right cap.
+     * Frame rate is not capped. 720p60 is 216,000 macroblocks a second against 4.2's ceiling of
+     * 522,240, and the reference buffer does not grow with frame rate. 720p60 ran at 58 fps sustained
+     * (2026-09-18): 1,748 of 1,769 frames decoded, all of them shown, nothing dropped at the display,
+     * audio clean.
      */
     if (params.height > 720 || params.width > 1280) {
         out->resolution_capped_from_width = params.width;
@@ -2821,17 +2590,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         out->ecdh_code = g_negotiator.last_ecdh_code;
 
         /*
-         * THE CONTROL. Run a KNOWN-GOOD P-521 point through the identical validator, right here, at the
-         * same call depth, in the same run.
-         *
-         * The console's point has been checked off-console against the curve equation by integer
-         * arithmetic and it IS on P-521; the same bytes are accepted by the same code built for the
-         * host. Yet this machine refuses them, while four P-521 vectors sitting on its own disk pass -
-         * two of which have the same high-byte shape as this point, so it is not the 521st bit.
-         *
-         * Those facts cannot all be about the point, so this asks whether they are about the PLACE. If
-         * the control point fails here too, the environment at this call site is the subject and the
-         * console's key is innocent. If the control passes and the console's does not, the reverse.
+         * The control: run a KNOWN-GOOD P-521 point through the identical validator, at the same call
+         * depth, in the same run. If it fails here too, the environment at this call site is at fault
+         * and not the console's key; if it passes and the console's does not, the reverse.
          *
          * The control is one of the vectors from libripcord/tests/vectors/session-crypto.kat, which
          * this project generates from its own .NET side - generic test material, tied to no console and
@@ -2900,30 +2661,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->sealing_on = 1;
 
     /*
-     * AND THE RECEIVE HALF, WHICH VERIFIES AND DROPS.
-     *
-     * This heading read "in COUNTING mode for now" until 2026-09-18, which was true of the first
-     * hardware run and had not been true since b70. The paragraph below is why it counted to begin
-     * with; the one after it is what earned enforcement.
-     *
-     * Sealing without verifying is half a mechanism - GMAC authenticates without encrypting, so a
-     * control message from anyone parses perfectly well, and until now this port read whatever arrived
-     * without asking who wrote it.
-     *
-     * Counting rather than enforcing on the first hardware run, deliberately. Enforcing a check that has
-     * never been observed to pass turns any mistake in the receive key schedule into a session that goes
-     * quiet, which is indistinguishable from the console losing interest and is the hardest failure
-     * shape to diagnose - this port has already spent a dozen runs on one of those. The run reports the
-     * proportion instead, and "0 of N failed" is what earns enforcement.
+     * The receive half, which verifies and drops. GMAC authenticates without encrypting, so without
+     * this a control message from anyone parses perfectly well.
      */
     takion_control_verifier_init(&g_verifier, g_negotiator.receive_aes_key,
                                  g_negotiator.receive_base_iv);
     /*
-     * ENFORCING NOW, and the sample is what changed. b70 held the session open and checked 14 incoming
-     * packets with 0 failures, where b69 had exactly one. A single passing 32-bit tag already settled the
-     * key schedule - chance is about one in four billion - but it said nothing about whether ALL console
-     * traffic is authenticated, and that is the question enforcement actually turns on. Fourteen for
-     * fourteen, across heartbeats and SACKs as well as STREAM_INFO, answers it.
+     * Enforcing, not counting (the first hardware run only counted). b70 held the session open and
+     * checked 14 incoming packets with 0 failures, across heartbeats and SACKs as well as STREAM_INFO,
+     * where b69 had exactly one.
      */
     takion_channel_enable_verification(&g_stream_channel, takion_control_verifier_check, &g_verifier,
                                        1 /* drop what does not authenticate */);
@@ -2970,13 +2716,10 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_idr_requests = 0u;
                     g_last_idr_request_ms = 0u;
                     /*
-                     * ARMED AT THE START, because at the start we are blind by definition: nothing has
-                     * been decoded, so there is no reference chain, and the console sends an IDR when
-                     * asked rather than on a timer. b141 is what the 0 here looked like - the crypto
-                     * rewrite took loss from 288 units to 4, which removed the only thing that had ever
-                     * set this flag. 890 frames arrived, not one of them a keyframe, no IDR was ever
-                     * requested and the decoder rejected every frame. The loss had been accidentally
-                     * standing in for a request nobody was making.
+                     * Armed at the start: nothing has been decoded, so there is no reference chain, and
+                     * the console sends an IDR when asked rather than on a timer. b141, with 0 here and
+                     * almost no loss to set the flag: 890 frames arrived, not one of them a keyframe, and
+                     * the decoder rejected every frame.
                      */
                     g_awaiting_keyframe = 1;
                     /*
@@ -3015,14 +2758,12 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     (void)rc_pad_open();
                     rc_decode_live_hint((int)info.width, (int)info.height);
                     /*
-                     * BEFORE THE OPEN, because that is where the picture slots are fixed. This sat
-                     * after it for one edit and would have shipped as "asked for RSX memory, got main
-                     * memory, measured no difference" - a silent fallback reporting a working system.
+                     * Before the open, because that is where the picture slots are fixed; set after it,
+                     * this silently falls back to main memory.
                      *
-                     * ONLY WITH RGB OUTPUT, and that condition is hard rather than cautious: the YUV
-                     * path has the SPEs READ the picture to convert it, and a Cell read from RSX memory
-                     * is roughly two orders of magnitude slower than a write. Planes there would be the
-                     * per-frame PPE sampler mistake again, three million times a frame.
+                     * Only with RGB output, and that condition is hard: the YUV path has the SPEs READ
+                     * the picture to convert it, and a Cell read from RSX memory is roughly two orders
+                     * of magnitude slower than a write.
                      */
                     rc_decode_vdec_want_vram(rec->hardware_scale && rec->decoder_rgb);
                     g_live_open = rc_decode_live_open();
@@ -3060,14 +2801,10 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         out->hardware_scale = rec->hardware_scale;
 
                         rc_overlay_set_system_font(rec->system_font);
-                        /*
-                         * PREPARED ALWAYS, SHOWN ON REQUEST. The atlas and the panel are built here
-                         * whether or not the overlay starts visible, because building them when the
-                         * toggle is pressed would do it on the decode thread mid-stream - which is the
-                         * b256 stall, and would strike exactly when someone wants the numbers.
-                         */
-                        /* Prepared at start-up now, beside the display - see main.c. Only visibility
-                         * is decided here, because only that is the record's to say. */
+                        /* The atlas and the panel are prepared at start-up, beside the display - see
+                         * main.c - because building them on the decode thread mid-stream is the b256
+                         * stall. Only visibility is decided here, because only that is the record's to
+                         * say. */
                         rc_overlay_show(rec->diagnostics);
                         out->diagnostics = rec->diagnostics;
                         out->overlay_system_font = rc_overlay_using_system_font();
@@ -3102,15 +2839,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     out->demux_ready = 1;
 
                     /*
-                     * HEVC IS REFUSED LOUDLY RATHER THAN DECODED BADLY.
+                     * HEVC is refused loudly rather than decoded badly.
                      *
                      * The launch spec asks for "avc" and both console families honour it, so this has
-                     * never fired. It exists because of what the failure would look like if it ever
-                     * did: cellVdec decodes H.264 and nothing else, and handing it HEVC would not make
-                     * it complain - b169 through b171 are three runs of a decoder that accepted every
-                     * access unit, reported no error and produced uniformly black pictures, and that
-                     * cost days. The demuxer already classifies the stream from the parameter sets,
-                     * which is the one place the two codecs cannot be confused, so the answer is free.
+                     * never fired. cellVdec decodes H.264 and nothing else, and can accept access units
+                     * it cannot decode without reporting an error (b169 through b171 produced uniformly
+                     * black pictures that way). The demuxer already classifies the stream from the
+                     * parameter sets.
                      *
                      * The stream is NOT torn down. Audio decodes independently and a session with
                      * sound and a diagnosis on the screen is worth more than a disconnection.
@@ -3142,18 +2877,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     }
 
     /*
-     * HOLD THE SESSION OPEN AND WATCH, rather than ending the moment STREAM_INFO is acked.
-     *
-     * b69 armed incoming verification and came back with "1 checked, 0 failed". One passing 32-bit tag
-     * is strong evidence about the KEY SCHEDULE - chance would be about one in four billion - but it is
-     * a thin sample for the different question of whether everything the console sends is authenticated,
-     * and the probe was ending before anything else could arrive. A sample of one cannot distinguish
-     * "all console traffic is sealed" from "the one packet we happened to see was".
-     *
-     * So this keeps both channels serviced for a few seconds and tallies what turns up. It is also the
-     * beginning of the streaming loop rather than scaffolding: holding a session open while pumping
-     * heartbeats and draining the stream channel is exactly what the A/V leg has to do, and doing it
-     * here first means the next step inherits something that has run on hardware.
+     * The hold loop: the streaming loop. Keeps both channels serviced - heartbeats pumped, the stream
+     * channel drained - and tallies what turns up, until something ends the session.
      */
     {
         uint64_t deadline;
@@ -3163,37 +2888,23 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         uint64_t next_sysutil;
 
         /*
-         * BOTH THERMAL SAMPLES ARE TAKEN OUTSIDE THE HOLD, and b202 is why. Sampling once a second from
-         * inside the loop cost 28 ms a reading - syscall 383 is a hypervisor round trip to a hardware
-         * sensor, not a register read - which stalled the drain for 4.4 seconds, lost 3,896 units of
-         * 4,175 and put 4 fps on the screen.
+         * Both thermal samples are taken outside the hold. b202 sampled once a second inside the loop
+         * at 28 ms a reading (syscall 383 is a hypervisor round trip to a hardware sensor), which
+         * stalled the drain for 4.4 seconds, lost 3,896 units of 4,175 and put 4 fps on the screen.
          *
-         * Two samples still answer the question. Temperature under a sustained load rises towards a
-         * steady state and does not come back down inside a run, so the reading after the hold IS the
-         * peak, and the one before it is the baseline to subtract. What was lost with the per-second
-         * sampling is the shape of the curve, which no fan responds to anyway.
+         * Temperature under a sustained load rises towards a steady state, so the reading after the
+         * hold is the peak and the one before it is the baseline.
          */
         rc_thermal_sample(&out->thermal);
 
         /*
-         * NO TIMER, AND THAT IS THE CHANGE RATHER THAN THE ABSENCE OF ONE.
+         * No timer. The session runs until something ends it: Disconnect in the in-session menu, Quit
+         * from the PS menu, the console ceasing to send pictures, or a channel fault. All four are
+         * handled below, all four leave by `break`, and the teardown after the loop runs as usual.
          *
-         * This loop used to run for thirty seconds and stop. That was the right shape while the question
-         * was "does a picture arrive at all" - a probe reports and exits - and it is the wrong one now
-         * that the other end of it is somebody playing a game. A stream that ends on a stopwatch is a
-         * disconnect nobody asked for, and there is no number of seconds that is correct for both uses.
-         *
-         * So the session runs until something ENDS it, and every ending is deliberate: Disconnect in the
-         * in-session menu, Quit from the PS menu, the console ceasing to send pictures, or a channel
-         * fault. All four are handled below, all four leave by `break`, and the teardown after the loop
-         * is untouched.
-         *
-         * holdseconds in the pairing record SURVIVES, as an explicit cap, because a measurement run has
-         * the opposite need: comparing two builds' frame rate or thermals requires both to have run the
-         * same length, and a person putting the controller down at a different moment is not that. It is
-         * opt-in, absent from every record that does not ask for it, clamped to an hour so a typo cannot
-         * pin the console open, and logged when it applies - a stream that stops by itself should never
-         * be a mystery to whoever is watching it.
+         * holdseconds in the pairing record is an explicit cap for measurement runs, which need two
+         * builds to run the same length. It is opt-in, clamped to an hour so a typo cannot pin the
+         * console open, and logged when it applies.
          */
         hold_ms = (rec->hold_seconds > 0)
                       ? (uint64_t)(rec->hold_seconds > 3600 ? 3600 : rec->hold_seconds) * 1000ULL
@@ -3227,18 +2938,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             uint64_t other_started;
 
             /*
-             * THE XMB CAN ASK FOR THIS PROGRAM MID-STREAM, AND NOTHING HERE WAS LISTENING.
+             * The XMB can ask this program to quit mid-stream. Choosing Quit from the PS menu does not
+             * kill the process: lv2 raises SYSUTIL_EXIT_GAME through the registered callback, which
+             * is only delivered by sysUtilCheckCallback, waits for the program to leave, and
+             * force-terminates it when it does not - with the RSX holding a context, an SPU thread
+             * group running, sockets open and a decoder mid-picture (three beeps and a reboot).
              *
-             * Choosing Quit from the PS menu does not kill the process: lv2 raises SYSUTIL_EXIT_GAME
-             * through the registered callback, waits for the program to leave, and force-terminates it
-             * when it does not - with the RSX holding a context, an SPU thread group running that is
-             * deliberately never destroyed, sockets open and a decoder mid-picture. Three beeps and a
-             * reboot. The shell answered this from b373; this path never called sysUtilCheckCallback at
-             * all, so the request was not merely ignored, it was never delivered.
-             *
-             * Leaving by `break` is the whole of the fix: the hold ends the way it ends when its time is
-             * up, the tallies below are collected, the teardown runs in its usual order, and main()
-             * closes the logs before anything that can hang.
+             * Leaving by `break` collects the tallies below and runs the teardown in its usual order.
+             * The shell has answered the same request since b373.
              */
             if (rc_time_ms() >= next_sysutil) {
                 next_sysutil = rc_time_ms() + 100u;
@@ -3286,58 +2993,33 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             service_control_tick(session);
 
             /*
-             * PEEK BEFORE READING, and this is not an optimisation - it is the only way A/V can be seen
-             * at all.
+             * Peek before reading: it is the only way A/V can be seen at all.
              *
              * One UDP socket carries both the control association and the A/V stream, and
              * takion_channel_poll does an unconditional recvfrom: every packet it does not recognise is
-             * consumed and discarded. So a console that has been sending video since STREAM_INFO was
-             * acked would look exactly like a console sending nothing, which is what the last two runs
-             * reported. MSG_PEEK reads the base type without taking the datagram, so each one can be
-             * routed to whichever reader owns it.
+             * consumed and discarded. MSG_PEEK reads the base type without taking the datagram, so
+             * each one can be routed to whichever reader owns it.
              *
              * The base type is the LOW NIBBLE of the first byte. 0 is the control association; 2 and 3
              * are video and audio.
-             */
-            /*
-             * DRAIN A BURST, DO NOT SLEEP BETWEEN PACKETS.
              *
-             * This used to handle one A/V packet and then sleep a millisecond. At the ~190 packets a
-             * second this stream runs at, that is 190 ms of every second spent asleep with data
-             * waiting - on top of 24 ms per frame of decode and colour conversion. Per 33 ms frame
-             * period roughly 30 of those 33 ms were committed, so any jitter became a backlog, and the
-             * backlog became the 71 lost units and 10 loss events b91 reported where the six-second run
-             * had none. The loss was self-inflicted pacing, not the network: 5702 of 5704 packets
-             * authenticated.
-             *
-             * Bounded rather than unbounded, and that bound is not timidity either - the control
-             * channel's heartbeats and the console's own messages are serviced by the loop outside
-             * this one, and a sustained flood that never yields would starve them.
+             * A burst is drained without sleeping between packets: at ~190 packets a second, a 1 ms
+             * sleep per packet is 190 ms of every second asleep with data waiting (b91: 71 lost units
+             * and 10 loss events, with 5702 of 5704 packets authenticated). The drain is bounded so a
+             * sustained flood cannot starve the control channel's heartbeats and messages, which are
+             * serviced by this outer loop.
              */
             drained = drain_av(session, out, &next_loss_report);
             /*
-             * A negative peek is treated as "nothing waiting", not as an error, and deliberately so.
-             * On this platform sockets are lv2 descriptors and errors surface through net_errno rather
-             * than errno - a distinction this port has already been caught by once, when
-             * fcntl(F_SETFL) returned -1 with nothing useful in errno. Rather than depend on a mapping
-             * nobody here has verified, the peek stays advisory: takion_channel_poll below does its own
-             * recvfrom and reports a genuine socket failure through its own return.
+             * A negative peek is treated as "nothing waiting", not as an error. On this platform
+             * sockets are lv2 descriptors and errors surface through net_errno rather than errno, a
+             * mapping nobody here has verified (fcntl(F_SETFL) has returned -1 with nothing useful in
+             * errno). So the peek stays advisory: takion_channel_poll below does its own recvfrom and
+             * reports a genuine socket failure through its own return.
              */
 
-            /*
-             * THE DECODE THAT USED TO BE HERE NOW RUNS ON ITS OWN THREAD - see decode_thread_entry.
-             *
-             * The history is worth keeping, because each step was right about the problem in front of it
-             * and the last one is a different problem. One decode per pass tied the decode rate to the
-             * loop rate (b129: 28.5 frames arriving, 21.5 dequeued, 212 dropped). Four per pass with only
-             * the timers serviced between left the socket unread for 76 ms and loss went from 1.3% to
-             * 6.6% (b130). Draining after every decode fixed that, and b142 shows what is left of it: a
-             * 270 ms decode run and a 94 ms gap between reads, because a 21,774 us decode on this thread
-             * is 21,774 us during which nothing empties a 124,800-byte buffer.
-             *
-             * Bounding the work per pass was always a way of sharing one thread between two jobs that
-             * both want it continuously. Two threads is the answer that does not need tuning.
-             */
+            /* No decode here: it runs on its own thread - see decode_thread_entry and the note by
+             * g_decode_thread. */
 
             other_started = rc_time_ms();
             result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
@@ -3543,15 +3225,13 @@ done:
  * ---------------------------------------------------------------------------------------------------
  * THE SIGN-IN GATE, and why it has state of its own.
  *
- * A locked console asks for a passcode, and asking a person for one means raising the system keyboard,
- * which blocks for as long as somebody takes to type. The control session cannot be left alone for that
- * long: the console heartbeats every few seconds and disconnects a client that stops answering, so the
- * keyboard would reliably destroy the session it was raised for.
+ * A locked console asks for a passcode, and the system keyboard blocks for as long as somebody takes
+ * to type. The console heartbeats every few seconds and disconnects a client that stops answering, so
+ * the control session must be serviced meanwhile.
  *
- * So servicing the session is factored out of the wait loop and into these, and the keyboard is given
- * one of them as a pump hook - see rc_osk_set_pump_hook. Both paths absorb events through the same
- * function, which is the point: whatever arrives while the keyboard is up is not merely kept alive, it
- * is READ, so a console that answers mid-typing is not answered twice or missed entirely.
+ * Servicing is therefore factored out of the wait loop into these, and the keyboard is given one of
+ * them as a pump hook - see rc_osk_set_pump_hook. Both paths absorb events through the same function,
+ * so whatever arrives while the keyboard is up is READ, not merely kept alive.
  * ---------------------------------------------------------------------------------------------------
  */
 
@@ -3579,16 +3259,11 @@ static void signin_absorb(const halyard_control_event *ev)
 
     if (ev->kind == HALYARD_CONTROL_EVENT_MESSAGE) {
         /*
-         * EVERY FRAME'S TYPE AND DECRYPTED LENGTH, WHILE THE GATE IS OPEN - which is how a passcode the
-         * console really refused is told apart from one our own crypto mangled on the way.
-         *
-         * Both look identical from the outside: a rejection byte is a rejection byte whether the
-         * console read our digits and disliked them, or read something else entirely. But the LENGTHS
-         * are a check nobody has to trust us for. docs/protocol/ps5-session-transport.md carries the
-         * console's own table - 0x8004 is 4 bytes, 0x50 is 0, 0x36 and 0x910 are 4 - so lengths that
-         * match it are a receive counter in step, and a receive counter in step is a key and a schedule
-         * that agree with the console's. Lengths that do not match mean the verdict byte is not a
-         * verdict at all, and the passcode was never the problem.
+         * Every frame's type and decrypted length, while the gate is open. This tells a passcode the
+         * console really refused from one our own crypto mangled: docs/protocol/ps5-session-transport.md
+         * carries the console's own table - 0x8004 is 4 bytes, 0x50 is 0, 0x36 and 0x910 are 4 - and
+         * lengths that match it mean the receive counter, key and schedule agree with the console's.
+         * Lengths that do not match mean the verdict byte is not a verdict at all.
          *
          * The passcode itself is never logged, here or anywhere: only how many digits went out.
          */
@@ -3771,18 +3446,12 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
     SAY("loading the pairing record");
 
     /*
-     * TRY THE SAME DIRECTORIES THE LOG TRIES, in the same order, rather than the single hard-coded one
-     * this used to read.
-     *
-     * b40 failed here with the record sitting on the console: the log resolves a writable directory by
-     * trying four and picking the first that works - which is the install directory - while this looked
-     * only in /dev_hdd0/. Two different answers to "where does this program keep its files" in one
-     * program, and the person putting the record on the console has no way to know which one applies.
-     * Worse, the advice given at the time named the log's directory, so following it moved the record
-     * out of the only place this would look.
+     * Try the same directories the log tries, in the same order, so the program has one answer to
+     * where it keeps its files (b40 looked only in /dev_hdd0/ while the log used the install
+     * directory, and missed a record that was present).
      *
      * The caller passes the list so it cannot drift from the log's. A NULL list falls back to the
-     * compile-time constant, which is what a caller with no opinion gets.
+     * compile-time constant.
      */
     {
         int loaded = 0;
@@ -3870,17 +3539,10 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
         : "inet_aton DISAGREES with inet_pton - the core parses addresses with inet_aton");
 
     /*
-     * SAY IT ON THE TELEVISION, NOT ONLY IN THE LOG.
-     *
-     * SAY writes to a callback that ends up in a file on another machine. Between somebody pressing
-     * Cross and the first say() - which was down at the hold loop - this path probes an address, sends a
-     * WAKEUP, polls for up to twenty seconds, pre-flights a TCP port, opens a control session, runs
-     * senkusha and negotiates keys, with NOTHING on screen. Reported as "after selecting a console,
-     * nothing happens until the console connects", which is exactly what it looked like.
-     *
-     * Each stage now names itself, in the console's own words rather than the protocol's: somebody
-     * waiting is owed what is being attempted, not which datagram is in flight. The names come from the
-     * dotnet client's vocabulary, which has had the same argument already.
+     * Say it on the television, not only in the log: SAY writes to the log callback, say() to the
+     * screen. Every stage from here names itself on screen (probe, wake, pre-flight, session, senkusha,
+     * keys), in plain words rather than the protocol's; the names come from the dotnet client's
+     * vocabulary.
      */
     say(RC_PHASE_DISCOVERING, "Connecting",
         rec.name[0] != '\0' ? rec.name : "Looking for the console", NULL);
@@ -3904,15 +3566,12 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
             out->broadcast_matches = (strcmp(seen, rec.host) == 0);
 
             /*
-             * IT MOVED, AND IT PROVED WHO IT IS. The id in the reply is the one this record was
-             * written against, so the address is the only thing that is wrong and the keys are as
-             * good as they ever were. Point the record at where it answered and carry on into the
-             * same connect this function would have done - the alternative was telling somebody to
-             * walk to another room and read a PIN off a screen to fix a DHCP lease.
+             * It moved, and the id in the reply is the one this record was written against, so only
+             * the address is wrong and the keys still stand. Point the record at where it answered
+             * and carry on into the same connect, without re-pairing.
              *
-             * The re-probe is not ceremony. It is the same question asked at the new address, so a
-             * console that answered a broadcast and then will not answer a unicast still fails here
-             * rather than being followed into the rest of the flow on the strength of one datagram.
+             * The re-probe asks the same question at the new address, so a console that answered a
+             * broadcast and then will not answer a unicast still fails here.
              */
             if (!out->broadcast_matches && rec.console_id[0] != '\0' &&
                 strcmp(seen_id, rec.console_id) == 0) {
@@ -3942,11 +3601,8 @@ answered:
         started = rc_time_ms();
 
         /*
-         * NO ESTIMATE, and that is the settled position rather than an omission. This used to promise
-         * "a few seconds from rest"; b36 watched this console take 12.3 s merely to answer a SRCH after
-         * waking, which is not a few. A promise the console can miss turns an ordinary wait into
-         * something going wrong, and the count below already says how long it has actually been - which
-         * is the honest version of the same reassurance.
+         * No estimate on screen, deliberately: b36 watched this console take 12.3 s merely to answer a
+         * SRCH after waking. The count below says how long it has actually been.
          */
         say(RC_PHASE_WAKING, "Waking the console",
             rec.name[0] != '\0' ? rec.name : NULL, NULL);
@@ -4035,11 +3691,10 @@ answered:
          * does not say so by refusing - it silently drops every Takion INIT, so failing to answer here
          * surfaces later as a transport timeout that looks like a network fault.
          *
-         * Twenty seconds to be told which case this is. Not eight: b36 watched this console take 12.3 s
-         * merely to answer a SRCH after waking, so a window generous for an already-awake console is not
-         * necessarily generous here, and calling one that is still waking up "not willing to stream" is
-         * a wrong answer rather than a slow one. An unlocked console sends no prompt at all and this
-         * window ends at SESSION_ID instead.
+         * Twenty seconds to be told which case this is, not eight: b36 watched this console take 12.3 s
+         * merely to answer a SRCH after waking, and one still waking up must not be called "not willing
+         * to stream". An unlocked console sends no prompt at all and this window ends at SESSION_ID
+         * instead.
          */
         uint64_t deadline = rc_time_ms() + 20000u;
 
@@ -4058,12 +3713,7 @@ answered:
         }
 
         /*
-         * THE PASSCODE, ASKED FOR ON THE TELEVISION - and until now this port could not ask.
-         *
-         * b39 confirmed the gate on hardware and the answer was a passcode in the pairing record, put
-         * there over FTP. That is fine for a bring-up rig and no use at all to somebody who woke their
-         * console from sleep and found it locked: the connection was refused, the program said so, and
-         * there was nothing to do about it from the sofa.
+         * The passcode, asked for on the television. b39 confirmed the gate on hardware.
          *
          * HalyardStreamingSession.cs is the source of truth and asks a provider, re-asking on each
          * rejection up to five times, because a person typing can mistype. The same shape is here, with
@@ -4240,32 +3890,18 @@ answered:
         }
 
         /*
-         * SAY GOODBYE BEFORE CLOSING ANYTHING, which this port did not do at all.
-         *
-         * Every way a session ended here ended the same way from the console's side: the pictures stop
-         * and, a moment later, two sockets close. The console has to time the session out and decide
-         * for itself whether we crashed or left - and that is what a person quitting from the PS menu
-         * saw, a "nope out" rather than a disconnection.
+         * Say goodbye before closing anything, so the console does not have to time the session out.
          *
          * The vendor's client sends a Takion DISCONNECT at session end, on the stream channel, while
-         * the connections are still up (cap48/cap52). HalyardStreamingSession.cs does the same and is
-         * emphatic that it is BEST-EFFORT: a console that never sees it is no worse off than it was
-         * before this existed, so nothing here is checked and nothing waits.
+         * the connections are still up (cap48/cap52). HalyardStreamingSession.cs does the same and
+         * treats it as BEST-EFFORT, so nothing here is checked and nothing waits.
          *
-         * WHAT THIS DELIBERATELY DOES NOT DO is rest the console. cap52 isolated that as a separate
-         * frame on the binary control channel; the DISCONNECT is byte-identical with and without it.
-         * Sending one here would put somebody's console to sleep when they only quit the app, which is
-         * a decision for a setting rather than a teardown.
-         */
-        /*
-         * REST FIRST, IF IT WAS ASKED FOR, and the order is not arbitrary: cap52 isolated this by
-         * diffing a rest-off against a rest-on disconnect and the ONLY difference was this empty frame
-         * on the binary control channel, sent BEFORE the Takion DISCONNECT, which is byte-identical
-         * either way. So this frame is what rests the console; the goodbye below does not carry it.
+         * Rest first, if it was asked for. cap52 diffed a rest-off against a rest-on disconnect and the
+         * ONLY difference was this empty frame on the binary control channel, sent BEFORE the Takion
+         * DISCONNECT, which is byte-identical either way. So this frame is what rests the console.
          *
-         * Only ever on request. Somebody who chose "leave the console on", or who quit from the PS
-         * menu, gets a console that is still awake - putting it to sleep because the app closed would
-         * be the app deciding something it was not asked about.
+         * Only ever on request: somebody who chose "leave the console on", or who quit from the PS
+         * menu, gets a console that is still awake.
          */
         if (g_menu_rest) {
             if (halyard_control_session_send(&session, HALYARD_CTRL_TYPE_REST_MODE, NULL, 0)) {

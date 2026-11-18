@@ -5,22 +5,16 @@
  * permutation, so the inverse S-box and InvMixColumns would be dead weight on a 128 MB handheld.
  *
  * State layout is the FIPS-197 column-major one: byte i of the block is state[row = i % 4][col = i / 4].
- * Every index below assumes that; ShiftRows in particular is unreadable under any other convention.
+ * Every index below assumes that.
  *
- * THE STATE LIVES IN FOUR WORDS, NOT A BYTE ARRAY, AND THAT IS LOAD-BEARING. Column c is held as one
- * big-endian uint32 with row 0 in the most significant byte. The obvious transcription of FIPS-197 keeps
- * `uint8_t s[16]` and walks it, which reads beautifully and is ruinous on an in-order core: every step
- * stores a byte and the next step immediately loads it back, and a store-to-load forward of the same
- * address is precisely the case such a pipeline cannot shortcut. Measured on the PS3's PPE, the packet
- * cipher and its GMAC together cost 837 us per ~1,400-byte packet - about 99% of the demuxer's whole
- * per-packet budget - with the arithmetic itself accounting for a small fraction of that. Word-at-a-time
- * keeps the state in registers, so SubBytes/ShiftRows/MixColumns never round-trip through memory.
+ * The state is four words, not a byte array, and must stay so. Column c is one big-endian uint32 with
+ * row 0 in the most significant byte. A `uint8_t s[16]` state stores a byte and loads it back at every
+ * step, which an in-order core cannot forward: measured on the PS3's PPE, the packet cipher and its GMAC
+ * together cost 837 us per ~1,400-byte packet, about 99% of the demuxer's per-packet budget. Words keep
+ * the state in registers. rc_gcm.h records the same fix for GHASH.
  *
- * This is the same lesson rc_gcm.h records for GHASH, one layer down, and the fix has the same shape.
- *
- * The S-box stays a 256-byte table, deliberately: the faster-still form is a set of 4 KB "T-tables", and
- * a table that large is materially easier to observe through the data cache. The word rewrite gets most
- * of the win without widening that surface.
+ * The S-box stays a 256-byte table on purpose: 4 KB "T-tables" would be faster still, but a table that
+ * large is materially easier to observe through the data cache.
  */
 #include "rc_crypto.h"
 

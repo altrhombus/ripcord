@@ -1,8 +1,8 @@
 /*
  * libripcord - the account route's datagram control transport (UDP 9303): framing and association.
  *
- * WHAT THIS IS. A console reached through the cloud rendezvous - the account ("no-PIN") route, and so
- * every internet session - does not serve its control plane on TCP 9295. It serves /sess/rgst,
+ * A console reached through the cloud rendezvous - the account ("no-PIN") route, and so every internet
+ * session - does not serve its control plane on TCP 9295. It serves /sess/rgst,
  * /sess/init, /sess/ctrl and then the persistent binary control frames over UDP 9303, in a light
  * reliable-datagram framing that is NOT Takion and shares no bytes with it. The same 88-byte prelude
  * also opens the A/V leg on 9297 before its first Takion byte, where it doubles as the NAT hole-punch.
@@ -17,11 +17,10 @@
  * plus HalyardDatagramControlChannel.IsCompleteHttpMessage, which is pure and so lives here too.
  *
  * TWO TRANSLATION UNITS, NEITHER WITH I/O. No sockets, no clock, and no CSPRNG: the association draws
- * its tags, tokens and sequences through a callback the caller supplies, exactly as the .NET type takes
- * a Func<int, byte[]>. That keeps it reachable by the fuzzer with nothing else linked (the reason
- * rc_stun.c and rc_stun_client.c are split, see rc_stun.h), and it is what lets the host suite replay
- * the .NET association's own transcript byte for byte with the same counting "random" source. The
- * socket pump is halyard_dgram_channel.h.
+ * its tags, tokens and sequences through a callback the caller supplies, as the .NET type takes a
+ * Func<int, byte[]>. That keeps it reachable by the fuzzer with nothing else linked, and lets the host
+ * suite replay the .NET association's own transcript byte for byte with the same counting "random"
+ * source. The socket pump is halyard_dgram_channel.h.
  *
  * NO ALLOCATION. The .NET types return fresh arrays and lists; here a parsed chunk BORROWS its body from
  * the caller's datagram, and the association emits through callbacks into one scratch buffer it owns.
@@ -227,15 +226,13 @@ typedef struct {
 } halyard_dgram_event;
 
 /*
- * WHAT THE ASSOCIATION ASKS OF ITS CALLER, as callbacks rather than a returned action list, because a
- * list of datagrams is an allocation and this core makes none. Where .NET returns
- * HalyardControlAction(Send, Events), C calls send() once per datagram and event() once per event, in
- * the order they arise. The sets are identical; only the interleaving is observable, and nothing in the
- * protocol depends on it.
+ * WHAT THE ASSOCIATION ASKS OF ITS CALLER, as callbacks rather than a returned action list, because
+ * this core does not allocate. Where .NET returns HalyardControlAction(Send, Events), C calls send()
+ * once per datagram and event() once per event, in the order they arise. The sets are identical; only
+ * the interleaving differs, and nothing in the protocol depends on it.
  *
- *   send    put one datagram on the wire. No return value: a failed send is the transport's problem to
- *           record (halyard_dgram_channel does), and the association's state must not depend on it any
- *           more than the .NET one's does.
+ *   send    put one datagram on the wire. No return value: a failed send is the transport's to record
+ *           (halyard_dgram_channel does), and the association's state does not depend on it, as in .NET.
  *   event   optional (NULL ignores events). It MAY call halyard_dgram_assoc_clear_inbound; it must not
  *           call back into the association otherwise.
  *   random  fill `out` with `length` unpredictable bytes; 1 on success, 0 on failure. Production passes

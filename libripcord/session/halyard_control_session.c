@@ -300,10 +300,8 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
          * 0-3), the login passcode is counter 4, and the 16-byte field that would have been the fifth
          * header is sent AFTER the passcode as a binary frame - so it is not a /sess/ctrl header at all.
          *
-         * Sending StreamingType on PS4 would spend counter 4, which is where the console then expects the
-         * passcode - the exact reason a correct PS4 passcode was refused at counter 5 (b469/b470) until
-         * this was captured. So on PS4 the field is not sent, counter 4 is left for the passcode, and no
-         * counter is reused.
+         * So on PS4 the field is not sent and counter 4 is left for the passcode: sending it there had a
+         * correct PS4 passcode refused at counter 5 (b469/b470).
          */
         if (rec->is_ps5) {
             halyard_sess_field_int32le_plaintext(rec->streaming_type, plain4);
@@ -514,26 +512,23 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
     /*
      * RESYNCHRONISE RATHER THAN WAIT FOREVER FOR A FRAME THAT CANNOT EXIST.
      *
-     * A desync here is fatal and silent. Hardware caught it exactly: 8 bytes of high-entropy junk at the
-     * head of the buffer, followed by perfectly valid heartbeat frames -
+     * Seen on hardware: 8 bytes of high-entropy junk at the head of the buffer, followed by valid
+     * heartbeat frames -
      *
      *     <8 bytes, encrypted-frame tail> | 00 00 00 00 00 fe 00 00 | 00 00 00 00 00 fe 00 00
      *
-     * (The junk is the tail of an encrypted frame and is not reproduced: it is session-keyed, and the shape
-     * is what matters here, not the value.) The parser reads its first four bytes as a payload length -
-     * around four gigabytes, since the high byte is large - and waits for data that will
-     * never arrive, while the console's heartbeats stack up untouched behind it. We stop replying, and
-     * it drops the session ~38 s later. Every earlier theory about that disconnect (a starved loop, our
-     * replies failing to send, Takion stalling, the console losing interest) was downstream of this.
+     * (The junk is the tail of an encrypted frame and is not reproduced: it is session-keyed.) The parser
+     * reads its first four bytes as a payload length of around four gigabytes and waits for data that
+     * will never arrive, while the console's heartbeats stack up behind it. We stop replying, and it
+     * drops the session ~38 s later.
      *
      * The root cause is still open: something under-consumed an earlier message by exactly one header's
-     * worth of bytes, and identifying which message needs a capture. But waiting forever is the wrong
-     * response to an impossible length whatever produced it - the frames behind it are readable, and a
-     * client that resynchronises keeps the session alive while the cause is found.
+     * worth of bytes, and identifying which message needs a capture. Meanwhile the frames behind the
+     * junk are readable, and resynchronising keeps the session alive.
      *
-     * The scan looks for the frame shape the wire actually has: reserved bytes zero at offset 6..7, and
-     * a payload length small enough to be real. That is weak evidence per byte, which is why the resync
-     * is LOGGED with what it discarded - a silent recovery would hide the very bug this exists to survive.
+     * The scan looks for the frame shape the wire has: reserved bytes zero at offset 6..7, and a payload
+     * length small enough to be real. That is weak evidence per byte, so the resync is LOGGED with what
+     * it discarded rather than recovering silently.
      */
     if (consumed == 0 && session->buffered >= HALYARD_CTRL_HEADER_SIZE) {
         uint32_t claimed = ((uint32_t)session->buffer[0] << 24) | ((uint32_t)session->buffer[1] << 16)
@@ -583,14 +578,13 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
     /*
      * SPEND THE CONSOLE'S COUNTER FOR EVERY PAYLOAD-CARRYING FRAME, decrypt where we can.
      *
-     * The increment is unconditional on there being a payload, and deliberately so: the counter tracks
-     * what the CONSOLE encrypted at, not what we managed to read. Skipping it for a frame we chose not to
-     * decrypt - because it was too large, or because nobody wanted it - would silently shift every
-     * subsequent frame onto the wrong counter, and a wrong counter does not fail loudly. It produces
-     * plausible garbage.
+     * The increment is unconditional on there being a payload: the counter tracks what the CONSOLE
+     * encrypted at, not what we managed to read. Skipping it for a frame we did not decrypt (too large,
+     * or unwanted) would shift every later frame onto the wrong counter, which decrypts to plausible
+     * garbage rather than failing.
      *
-     * Empty payloads spend nothing. Heartbeats and the login prompt are both empty, and they are the two
-     * most frequent frames on this channel, so getting that wrong would desynchronise almost at once.
+     * Empty payloads spend nothing. Heartbeats and the login prompt, the two most frequent frames on
+     * this channel, are both empty.
      */
     out_event->counter = session->recv_counter;
     if (payload_length > 0u) {

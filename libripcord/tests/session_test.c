@@ -401,9 +401,8 @@ static void test_end_to_end_field_pipeline(void)
  *
  * halyard_ctrl_message.h states it: the field counter is one running per-connection value, the five
  * /sess/ctrl headers consume 0-4, and every retry must advance it because reusing one reuses an IV under
- * the same key. A build that got this wrong would produce a perfectly acceptable-looking frame, the
- * console would answer it normally, and nothing would ever complain - which is exactly the kind of
- * defect worth a host test rather than a hardware run.
+ * the same key. A build that got this wrong would produce an acceptable-looking frame that the console
+ * answers normally.
  */
 /*
  * The console's direction counts separately from ours, and only payload-carrying frames spend a counter.

@@ -101,13 +101,12 @@ int halyard_registration_field_init(struct halyard_control_field_tag *field, int
  *     PIN     : wrapped[i] = ((material[i] ^ table[i]) + bias + i)          bias -0x2d PS5, +0x29 PS4
  *     account : wrapped[i] = ((material[i] - i) + 0x2b) ^ table[i]          both families
  *
- * The arithmetic and the XOR are in the opposite order, and the constant is 0x2b. Applying the PIN
- * transform here gives the console a material we never used, which corrupts the field IV, which
- * corrupts exactly the first sixteen bytes of the field - where "Client-Type: " sits - and the console
- * answers 403 / 80108b09. That was the account route's last blocker (HalyardRegistrationKdf.
- * WrapAccountMaterial, and the 2026-09-04 journal entry). PS5 is [V]: it pairs and streams live. PS4 is
- * [X]: the .NET side applies the same transform over the PS4 wrap table, and no PS4 account pairing has
- * been run against it.
+ * The arithmetic and the XOR are in the opposite order, and the constant is 0x2b. The PIN transform
+ * here gives the console a material we never used, corrupting the field IV and so the first sixteen
+ * bytes of the field - where "Client-Type: " sits - and the console answers 403 / 80108b09
+ * (HalyardRegistrationKdf.WrapAccountMaterial, and the 2026-09-04 journal entry). PS5 is [V]: it pairs
+ * and streams live. PS4 is [X]: the .NET side applies the same transform over the PS4 wrap table, and
+ * no PS4 account pairing has been run against it.
  */
 int halyard_registration_wrap_account_material(int is_ps5, const uint8_t material[16],
                                                const uint8_t *context, size_t context_length,

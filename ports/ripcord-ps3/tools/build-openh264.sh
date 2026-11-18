@@ -3,10 +3,8 @@
 # ripcord-ps3 - cross-build openh264's H.264 DECODER for the PS3's PPE, and nothing else.
 #
 # WHY THIS EXISTS. DECODE.md section 1 settles the decoder base on openh264: CABAC is the one part of
-# H.264 that is both large and unforgiving, it has to be bit-exact or the stream desynchronises
-# silently, and there is no partial credit. Everything else the capture showed - Main not High,
-# progressive, I and P only - would make a from-scratch decoder plausible, but it would spend the effort
-# precisely where the risk is concentrated.
+# H.264 that is both large and unforgiving - it has to be bit-exact or the stream desynchronises
+# silently - and a from-scratch decoder would spend its effort where that risk is concentrated.
 #
 # WHAT IT DOES NOT DO: vendor openh264 into this repository. Fetched from a pinned, hash-verified
 # upstream release at build time, into a gitignored directory - the same reasoning that keeps the interop
@@ -20,10 +18,10 @@
 # for why a call that always fails is the correct answer here rather than a workaround.
 #
 # ONE FILE IS NOT BUILT: WelsThread.cpp, whose CWelsThread constructs a pte_handle_t from an int that
-# PSL1GHT's pthreads-embedded does not offer. Nothing the decoder needs refers to it. Everything else
-# builds, including the mutex and event primitives the decoder really does call, and PSL1GHT's libpthread
-# supplies what those rest on. ProcessorCount resolves to 1 through openh264's own fallback path, which
-# is the right answer: this port's parallelism is SPEs, which openh264 knows nothing about.
+# PSL1GHT's pthreads-embedded does not offer. Nothing the decoder needs refers to it. The mutex and
+# event primitives the decoder does call are built, and PSL1GHT's libpthread supplies what those rest
+# on. ProcessorCount resolves to 1 through openh264's own fallback path, which is the right answer:
+# this port's parallelism is SPEs, which openh264 knows nothing about.
 #
 #     PS3DEV=... PSL1GHT=... ./build-openh264.sh [output-dir]
 #

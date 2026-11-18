@@ -7,10 +7,9 @@
  * when it does not get it. A session keyed from a counter connects, plays, and looks exactly like a
  * working one.
  *
- * This file exists because that argument was previously the reason rc_platform_ps3.c refused to
- * implement the function at all. It said, correctly, that a call this port could not confirm must fail
- * to link rather than be stubbed, and that when the call WAS confirmed it belonged in its own file
- * rather than being appended to one about clocks. This is that file.
+ * It has its own file because that argument belongs with entropy rather than in rc_platform_ps3.c,
+ * which is about clocks. Until the call was confirmed the function was deliberately absent, so that a
+ * caller failed to link rather than got a stub.
  *
  * WHAT WAS CONFIRMED, AND HOW - 2026-09-11, against ps3dev nightly-2026-07-26.
  *

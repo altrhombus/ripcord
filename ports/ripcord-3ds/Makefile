@@ -62,12 +62,10 @@ ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 # protocol state does not fit in that: takion_reliable_channel is 49.6 KB (32 unacked 1500-byte packets)
 # and stream_demux is 513 KB. Declaring either as an ordinary local overflows the stack in the function
 # PROLOGUE, before a single line of the function body runs - which on 2026-08-12 presented as a data
-# abort writing 12 bytes below SP, with a log file that stopped after the banner and gave no hint which
-# function was even entered. Diagnosing that from the dump took considerably longer than this flag.
+# abort writing 12 bytes below SP, with a log file that stopped after the banner.
 #
 # 8 KB per frame leaves room for a reasonable call depth inside 32 KB. Anything bigger belongs in .bss
-# (file-scope or `static`) or on the heap; with -Werror below, exceeding it fails the build instead of
-# the handheld.
+# (file-scope or `static`) or on the heap; with -Werror below, exceeding it fails the build.
 CFLAGS  := $(ARCH) -std=c99 -O2 -g \
            -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion \
            -Wframe-larger-than=8192 \

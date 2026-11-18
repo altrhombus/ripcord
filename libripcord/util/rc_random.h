@@ -1,8 +1,7 @@
 /*
  * ripcord-3ds - the random-bytes seam.
  *
- * Two callers need real entropy, and both are security-critical in ways that are invisible when they go
- * wrong:
+ * Two callers need real entropy, and neither failure produces a symptom:
  *
  *   - `handshakeKey`, the 16 bytes that authenticate the ECDH exchange (takion_session_negotiator.h).
  *     A predictable one lets anything that can inject on the stream channel substitute its own public
@@ -10,9 +9,7 @@
  *   - the ephemeral ECDH private scalar (rc_ecdh.h), where a predictable value hands over the whole
  *     stream.
  *
- * Neither failure produces a symptom. That is the entire reason this is a named seam with a hard-failing
- * contract rather than a convenience wrapper: there is no observable difference between a session keyed
- * from the console's CSPRNG and one keyed from a counter, until someone is reading your traffic.
+ * Hence a named seam with a hard-failing contract rather than a convenience wrapper.
  *
  * ON DEVICE this is libctru's PS_GenerateRandomBytes (the `ps:ps` service - the system's own CSPRNG,
  * which is what the console's own software uses). mbedtls's built-in entropy sources are not an option:
@@ -22,7 +19,7 @@
  * OFF DEVICE (the host test builds) there is deliberately NO implementation. This file compiles to
  * nothing outside __3DS__, so a host program that tries to generate a real key fails to link rather than
  * silently getting a weak one. The host tests pass their own deterministic callback directly to rc_ecdh
- * instead - which is correct for known-answer vectors and would be a catastrophe here.
+ * instead, which is correct for known-answer vectors only.
  */
 #ifndef RC_RANDOM_H
 #define RC_RANDOM_H

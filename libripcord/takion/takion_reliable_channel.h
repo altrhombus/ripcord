@@ -91,10 +91,9 @@ typedef struct {
  * retrying INIT and COOKIE_ECHO up to `max_attempts` times with `per_attempt_timeout_ms` between
  * attempts. Returns 1 on success (ch is ready for takion_channel_send/poll), 0 on failure/timeout.
  *
- * NOTE THAT THIS BLOCKS for up to max_attempts x per_attempt_timeout_ms. In the real connect flow that
- * is a problem rather than a detail: the TCP control channel must keep answering HEARTBEAT_REQ the whole
- * time or the console resets the session ~15-30 s in, and this port has no second thread to do it on.
- * Use takion_channel_connect_ticked() there.
+ * THIS BLOCKS for up to max_attempts x per_attempt_timeout_ms. In the real connect flow the TCP control
+ * channel must keep answering HEARTBEAT_REQ the whole time or the console resets the session ~15-30 s
+ * in; use takion_channel_connect_ticked() there.
  */
 int takion_channel_connect(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
                            unsigned max_attempts, unsigned per_attempt_timeout_ms);
@@ -137,9 +136,9 @@ int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, stru
  * it. On the rendezvous route it is the media socket: its port was advertised through the cloud, STUN
  * servers were asked from it (and may answer late), and it carries a senkusha association, then the
  * stream's own. .NET reads every datagram there with RemoteEndPoint.Equals(console) and skips the rest
- * (TakionAssociation, TakionReliableChannel, HalyardTakionStream.ReceiveLoopAsync). The LAN path, which is
- * hardware-validated on the PS3 and 3DS, never asked for this, so it stays byte-for-byte what it was:
- * with filtering off, every read below is the same recvfrom it always was.
+ * (TakionAssociation, TakionReliableChannel, HalyardTakionStream.ReceiveLoopAsync). The LAN path is
+ * hardware-validated on the PS3 and 3DS without it: with filtering off, every read below is the plain
+ * recvfrom.
  */
 int takion_channel_connect_filtered(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
                                     unsigned max_attempts, unsigned per_attempt_timeout_ms,
@@ -164,11 +163,9 @@ void takion_channel_enable_sealing(takion_reliable_channel *ch, takion_seal_fn s
  *
  * `enforce` decides what a failure costs. 0 counts failures and delivers the packet anyway; 1 drops it.
  *
- * START AT 0 ON A NEW PLATFORM, and that is not timidity. Enforcing a check that has never been observed
- * to pass turns every mistake in the key schedule into a session that goes silent, which is the hardest
- * shape of failure to diagnose and is indistinguishable from the console losing interest. Counting first
- * produces a number - "0 of 214 failed" or "214 of 214" - and those two want completely different work.
- * Move to 1 once the number says the mechanism is right.
+ * START AT 0 ON A NEW PLATFORM. Enforcing a check that has never been observed to pass turns every
+ * mistake in the key schedule into a session that goes silent. Counting first produces a number ("0 of
+ * 214 failed" or "214 of 214"); move to 1 once it says the mechanism is right.
  */
 void takion_channel_enable_verification(takion_reliable_channel *ch, takion_verify_fn verify,
                                         void *verify_ctx, int enforce);
@@ -197,13 +194,8 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
  * interleaves other traffic freely.
  *
  * `out_message`/`out_length` (both may be NULL) hand back the matched message, which SESSION_REPLY's
- * caller needs - the reply is not merely an acknowledgement, it carries the console's ECDH public key.
- * The pointer aims into the channel's own buffer and is valid until the next poll, exactly like
- * takion_channel_poll's.
- *
- * Lives here rather than in a port because every port needs the same loop for the same reason, and the
- * 3DS and PS3 versions would have differed only in which clock and sleep they called - both of which
- * rc_platform.h already abstracts.
+ * caller needs - the reply carries the console's ECDH public key. The pointer aims into the channel's
+ * own buffer and is valid until the next poll, exactly like takion_channel_poll's.
  */
 int takion_channel_await_control(takion_reliable_channel *ch, uint32_t want_type, unsigned timeout_ms,
                                  takion_tick_fn tick, void *tick_ctx,

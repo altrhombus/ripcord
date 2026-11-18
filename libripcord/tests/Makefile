@@ -35,10 +35,9 @@ PROTO_VECTORS := vectors/control-proto.kat
 
 # Phase 6a: the ECDH backend. Unlike everything else here, this one is NOT self-contained - see
 # rc_ecdh.h for why the core delegates elliptic-curve arithmetic instead of implementing it.
-# Two ways to get mbedtls on the host, and the local build is preferred because it makes the suite's
-# central promise - "any machine with a C compiler and nothing else installed" - actually true.
-# ecdh_test used to skip on any box without libmbedtls-dev, which quietly meant the P-256/P-521
-# agreement and the derived stream keys went unchecked on exactly the machines least likely to notice.
+# The local build is the default so the suite runs on "any machine with a C compiler and nothing else
+# installed": without it ecdh_test skips on any box without libmbedtls-dev, and the P-256/P-521
+# agreement and the derived stream keys go unchecked there.
 #
 #   ECDH_BACKEND=local   (default) build the ECP/MPI layer from a pinned, hash-verified release into
 #                        build/mbedtls, using the same script and the same 2.28.8 pin as the Vita port
@@ -623,11 +622,9 @@ clean:
 
 # Compile every portable translation unit on the host, including the ones no test runner links.
 #
-# The runners deliberately stop at the socket boundary, which used to leave a handful of files -
-# net/rc_tcp.c, session/halyard_control_session.c, takion/takion_reliable_channel.c, and the plumbing in
-# util/ - compiled by the cross-compiler and by nothing else. That is precisely the set where a
-# platform assumption hides, and it was invisible to `make` until the core was pulled out of the 3DS
-# tree and this target was written.
+# The runners stop at the socket boundary, so without this target a handful of files - net/rc_tcp.c,
+# session/halyard_control_session.c, takion/takion_reliable_channel.c, and the plumbing in util/ - are
+# compiled by the cross-compiler only, and that is the set where a platform assumption hides.
 #
 # _DEFAULT_SOURCE is needed for inet_aton(), which is a BSD extension rather than C99 and is NOT
 # guaranteed to exist on every target - vitasdk's documented address helper is sceNetInetPton. Two call
@@ -649,8 +646,7 @@ compile:
 # WHY THIS EXISTS. The core parses bytes from the LAN and from a console, much of it before anything is
 # authenticated: discovery replies from whatever answers a broadcast, the Takion handshake, SACK, DATA
 # and reassembly, and stream headers. It is C, so a length it trusts is a memory-safety bug rather than
-# an exception. The macOS client links this core directly, which is what made that worth guarding
-# rather than assuming, and the console ports benefit from the same guard.
+# an exception. The macOS client links this core directly, and the console ports get the same guard.
 #
 # TWO MODES, because Apple's clang ships the sanitizers but not libFuzzer:
 #

@@ -19,12 +19,10 @@
  * resolution failure - `host` must be a dotted-quad IPv4 address; this port never needs DNS, since
  * consoles are only ever addressed by an IP a discovery/pairing step already resolved).
  *
- * BOUNDED BY RC_TCP_CONNECT_TIMEOUT_MS, and it was not always. This used to be a plain blocking
- * connect(), which on a console that does not accept on the port waits for the platform's own TCP
- * timeout - on the PS3 indefinitely, which is the b31 lockup. The PS3 port worked around it with a
- * pre-flight connect of its own (ports/ripcord-ps3 rc_connect.c tcp_port_accepts) and recorded that the
- * fix belonged here; this is that fix, and the same non-blocking-connect-plus-select shape that
- * pre-flight proved on the PS3's hardware. Equivalent to rc_tcp_connect_timeout(host, port,
+ * BOUNDED BY RC_TCP_CONNECT_TIMEOUT_MS. A plain blocking connect() to a console that does not accept on
+ * the port waits for the platform's own TCP timeout - on the PS3 indefinitely, which is the b31 lockup.
+ * This is the non-blocking-connect-plus-select shape the PS3 port's pre-flight (ports/ripcord-ps3
+ * rc_connect.c tcp_port_accepts) proved on hardware. Equivalent to rc_tcp_connect_timeout(host, port,
  * RC_TCP_CONNECT_TIMEOUT_MS). */
 int rc_tcp_connect(const char *host, unsigned short port);
 
@@ -58,21 +56,18 @@ int rc_tcp_send_all(int sock, const void *data, size_t length);
 ssize_t rc_tcp_recv(int sock, void *buf, size_t buf_size);
 
 /*
- * PUT A SOCKET INTO NON-BLOCKING MODE, PORTABLY - and this exists because fcntl() does not do it
- * everywhere.
+ * PUT A SOCKET INTO NON-BLOCKING MODE, PORTABLY.
  *
- * On Linux and the 3DS, fcntl(fd, F_SETFL, O_NONBLOCK) is the idiom and works. On the PS3 it does not:
- * lv2 sockets are not newlib file descriptors, so fcntl operates on a different table entirely, returns
- * without complaint, and leaves the socket BLOCKING. PSL1GHT exposes SO_NBIO (0x1100) for the job
- * instead.
+ * On Linux and the 3DS, fcntl(fd, F_SETFL, O_NONBLOCK) works. On the PS3 it does not: lv2 sockets are
+ * not newlib file descriptors, so fcntl returns without complaint and leaves the socket BLOCKING.
+ * PSL1GHT exposes SO_NBIO (0x1100) for the job instead.
  *
- * The consequence is not a failed call, which is why it took hardware to find. A socket that is still
- * blocking makes every poll loop in halyard_control_session.c unreachable: recv() never returns, so the
- * deadline guarding it is never evaluated, and a function whose every loop is bounded hangs anyway. On
- * a PS3 that is a locked console needing a power cycle.
+ * A socket left blocking makes every poll loop in halyard_control_session.c hang: recv() never returns,
+ * so the deadline guarding it is never evaluated. On a PS3 that is a locked console needing a power
+ * cycle.
  *
- * SO_NBIO is only defined by PSL1GHT's headers, so this compiles to exactly the previous behaviour
- * everywhere else and changes nothing for the 3DS, the Vita or the host suite.
+ * SO_NBIO is only defined by PSL1GHT's headers, so the 3DS, the Vita and the host suite keep the fcntl
+ * path.
  *
  * Returns 1 on success, 0 if neither mechanism was available or accepted.
  */

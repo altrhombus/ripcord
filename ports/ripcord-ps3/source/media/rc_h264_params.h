@@ -11,9 +11,7 @@
  * So the slice-header parser deliberately stops after `redundant_pic_cnt`. Everything up to that point is
  * what sec 7.4.1.2.4 uses to decide whether a slice begins a new primary coded picture; everything after
  * it - reference list modification, prediction weights, the marking process - is decoder state that only
- * the decoder can use. Parsing further would be writing decoder internals under a parser's name, and this
- * file would then be the wrong place to look for either. The stopping point is documented rather than
- * incidental, and `rc_h264_slice_header_parse` says what it did not read.
+ * the decoder can use. `rc_h264_slice_header_parse` says what it did not read.
  *
  * MEASURED, NOT ASSUMED. docs/protocol/ps5-av-stream.md records what the console actually sends, parsed
  * out of two decrypted dumps: Main profile, CABAC, progressive, I and P slices only, one slice group,
@@ -86,14 +84,12 @@ typedef struct {
      * cellVdec converts to ARGB itself and takes only a matrix (BT.601 or BT.709) - it has no range
      * input at all, so it applies one assumption, and the near-universal one is that the source is
      * LIMITED range (luma 16-235) to be expanded to 0-255. If the console actually sends FULL range,
-     * that expansion happens to material that is already expanded, and the result is exactly the
-     * symptom a bright scene shows first: highlights clipping early, sand and sun reading too bright,
-     * everything else looking about right.
+     * that expansion happens to material that is already expanded: highlights clip early and bright
+     * scenes read too bright.
      *
-     * So these are read to find out which it is. -1 means the stream did not say, which is itself the
-     * answer H.264 defines a default for: absent video_signal_type means full_range 0 and matrix 2
-     * ("unspecified"). They are recorded rather than acted on - what to DO about a mismatch is a
-     * separate question, and one worth asking only once this says there is one.
+     * So these are read to find out which it is. -1 means the stream did not say, for which H.264
+     * defines a default: absent video_signal_type means full_range 0 and matrix 2 ("unspecified").
+     * They are recorded rather than acted on.
      */
     int video_signal_type_present_flag;
     int video_full_range_flag;      /* -1 not stated; 0 limited (16-235); 1 full (0-255) */

@@ -6,17 +6,15 @@
  * access to main memory except by DMA, and 256 KB of local store for code, data and stack together.
  * Nothing in libripcord can be included here and nothing here may call into the PPU side.
  *
- * WHAT IT DOES, AND WHY IT IS DELIBERATELY NOT A DECODER. It copies `size` bytes from one main-memory
- * address to another, 16 KB at a time, then writes a flag the PPE is watching. That is all. The point of
- * step 6 is not to do work on an SPE, it is to find out what it COSTS to hand an SPE a job at all -
- * because that number decides the shape of the decoder, and no amount of reasoning about the Cell
- * substitutes for it. If per-job overhead is large, the decoder must batch whole slices; if it is small,
- * it can pipeline at macroblock-row granularity. README.md's step 7 cannot be designed without it.
+ * WHAT IT DOES. It copies `size` bytes from one main-memory address to another, 16 KB at a time, then
+ * writes a flag the PPE is watching. The point of step 6 is to find out what it COSTS to hand an SPE a
+ * job at all, because that number decides the shape of the decoder: if per-job overhead is large, the
+ * decoder must batch whole slices; if it is small, it can pipeline at macroblock-row granularity.
+ * README.md's step 7 cannot be designed without it.
  *
  * SINGLE-BUFFERED ON PURPOSE. Issue a get, wait, issue a put, wait. Double-buffering - fetching chunk
- * n+1 while chunk n is being written - is the obvious optimisation and roughly doubles the achievable
- * rate, which is exactly why it is not here. This measurement is meant to be the honest floor that a
- * later one can be compared against, not the best number the hardware can produce.
+ * n+1 while chunk n is being written - roughly doubles the achievable rate, and is left out so that
+ * this measurement is the floor a later one can be compared against.
  *
  * THE 16 KB CHUNK IS THE HARDWARE'S LIMIT, not a tuning choice: a single MFC transfer tops out there.
  * Both effective addresses and the local-store buffer must share 16-byte alignment, and sizes must be a

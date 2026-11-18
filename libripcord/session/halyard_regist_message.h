@@ -58,9 +58,8 @@ size_t halyard_regist_build_request(int is_ps5, const char *client_ip,
  * Split a raw HTTP response into its status and body, and report the console's own
  * RP-Application-Reason when it sends one.
  *
- * THAT HEADER IS THE CONSOLE EXPLAINING ITSELF and discarding it makes every refusal look alike: a
- * wrong key, the wrong transport for this route, and a plain no all arrive as the same status. It is a
- * hex application code, and it is the difference between a diagnosis and another guess.
+ * That header is a hex application code. Without it a wrong key, the wrong transport for this route,
+ * and a plain no all arrive as the same status.
  *
  * Returns 1 when the response parsed, whatever the status. `out_reason` is left empty when absent.
  */

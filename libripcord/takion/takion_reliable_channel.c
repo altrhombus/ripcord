@@ -435,18 +435,13 @@ int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
     /*
      * PEEK BEFORE TAKING, because this socket is not ours alone.
      *
-     * One UDP socket carries both the control association and the A/V stream. This used to recvfrom
-     * unconditionally and return 0 for anything whose verification tag did not match - which does not
-     * ignore a foreign packet, it CONSUMES AND DESTROYS it.
+     * One UDP socket carries both the control association and the A/V stream. A recvfrom here on a
+     * packet whose verification tag does not match CONSUMES AND DESTROYS it: the PS3 port measured 9% of
+     * A/V units missing on a wired link that way.
      *
-     * A caller that peeks before calling here cannot close the gap: between its peek finding nothing and
-     * this call's recvfrom, a datagram can arrive, and at three hundred packets a second that race fires
-     * constantly. On a wired link showing no business losing anything, the PS3 port measured 9% of A/V
-     * units missing and the demuxer correctly reported them as lost - they were never on the wire twice,
-     * they were read here and thrown away.
-     *
-     * Peeking costs one syscall on a packet this function is about to read anyway, and it makes a reader
-     * that shares a socket leave alone what it does not own.
+     * A caller that peeks before calling here cannot close the gap: a datagram can arrive between its
+     * peek and this call's recvfrom, and at three hundred packets a second that race fires constantly.
+     * So the peek is here, at the cost of one syscall per packet.
      */
     n = channel_recv(ch, ch->sock, recv_buf, sizeof(recv_buf), MSG_PEEK);
     if (n < 0)

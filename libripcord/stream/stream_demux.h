@@ -34,15 +34,12 @@
 #define STREAM_DEMUX_MAX_CODED_LENGTH 4096
 
 /*
- * UNITS PER FRAME, WHICH IS NOT THE SAME NUMBER AS THE FEC GROUP SIZE, and conflating the two is what
- * kept 1080p from working at all.
+ * UNITS PER FRAME, WHICH IS NOT THE SAME NUMBER AS THE FEC GROUP SIZE.
  *
  * FEC_MAX_TOTAL_UNITS bounds what fec_reed_solomon.c can RECOVER - k+m against its fixed working
- * buffers. The units a frame occupies is a different quantity that merely happens to have been smaller
- * on every stream this code had seen: 640x360 needs a handful and 1280x720 measured about 21, both
- * comfortably inside 64. A 1920x1080 frame needs well over a hundred, and the frame was then abandoned
- * before assembly began - silently, which is why 103,371 video packets became 32 frames and nobody
- * could see where they went.
+ * buffers. The units a frame occupies is a different quantity: 640x360 needs a handful, 1280x720
+ * measured about 21, and a 1920x1080 frame needs well over a hundred. Capped at 64, 1080p frames were
+ * abandoned silently before assembly (103,371 video packets became 32 frames).
  *
  * 256 is derived, not chosen: the console's Cauchy matrix builder forms every coefficient as the
  * GF(2^8) inverse of (m + j) XOR i, and that lookup is an inverse only while both operands are below
@@ -51,12 +48,9 @@
  * captures is 130 units. The same number sizes HalyardStreamDemuxer's dynamic buffers; here it is a fixed
  * buffer, 1 MB at this coded length.
  *
- * NOT OVERRIDABLE, AND THAT IS THE POINT. b168 made it a per-port -D and the console hung before it
- * reached the network: this port's core-test objects are compiled from their own flag list rather than
- * from CFLAGS, so stream_demux.c saw 512 while the test translation units saw 64. One struct, two sizes,
- * one binary - writes past the end of an object the rest of the program believed was sixteen times
- * larger. A type whose size depends on a command-line define is a trap that is set once and sprung
- * somewhere else, so there is one number here and no way to vary it.
+ * NOT OVERRIDABLE. b168 made it a per-port -D and the console hung before it reached the network: this
+ * port's core-test objects are compiled from their own flag list rather than from CFLAGS, so
+ * stream_demux.c saw 512 while the test translation units saw 64 - one struct, two sizes, one binary.
  */
 #define STREAM_DEMUX_MAX_UNITS_PER_FRAME 256
 #define STREAM_DEMUX_VIDEO_HEADER_CAPACITY 512

@@ -1,17 +1,14 @@
 /*
  * ripcord-ps3 - the screen a person actually starts at.
  *
- * Everything before this was a bring-up harness: it ran a fixed list of checks, read its one console's
- * address out of a text file put there over FTP, and reported to a log. That is the right shape for
- * finding out whether a decoder works and the wrong shape for anything else - there was no way to
- * choose a console, no way to change a setting, and no way to find out what went wrong except by
- * fetching a file from the machine afterwards.
+ * It replaces the bring-up harness, which ran a fixed list of checks, read its one console's address
+ * out of a text file put there over FTP, and reported to a log: no way to choose a console, change a
+ * setting, or find out what went wrong without fetching a file from the machine afterwards.
  *
  * WHAT THIS OWNS AND WHAT IT DOES NOT. It owns the home screen, the settings screen, and the loop that
  * turns a d-pad into a cursor. It owns none of the drawing primitives (rc_overlay), none of the list
  * arithmetic (libripcord/ui/rc_menu.c, which is tested on a host with no console attached), and none
- * of the protocol. It decides what is on the screen and what happens when Cross is pressed, which is
- * the part that is genuinely about this platform.
+ * of the protocol. It decides what is on the screen and what happens when Cross is pressed.
  *
  * IT DRAWS ONTO THE OVERLAY'S SURFACE rather than into the back buffer, for the reason that file gives
  * at length: antialiased text has to be blended, blending means reading what is already there, and

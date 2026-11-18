@@ -16,8 +16,7 @@
  * CONFIDENCE LEVELS carry over unchanged: the registkey zero-padding, the RP-Did fixed-structure shape
  * and the "WinX.Y" string are wire-confirmed [V]. RP-StartBitrate/RP-StreamingType's little-endian 4-byte
  * encoding is tentative [X] - it does not appear in any verified vector on either side of this port,
- * only in shipped (but unverified) behaviour. That uncertainty is the protocol's, not this port's:
- * porting the .NET code directly doesn't resolve it, only a live capture would.
+ * only in shipped (but unverified) behaviour; only a live capture would resolve it.
  */
 #ifndef HALYARD_SESS_FIELDS_H
 #define HALYARD_SESS_FIELDS_H
@@ -80,22 +79,15 @@ void halyard_sess_field_did_plaintext(const uint8_t *device_id, size_t device_id
 /*
  * RP-OSType plaintext: the ASCII string "Win{major}.{minor}" with a trailing NUL - e.g. major=10,
  * minor=0 gives "Win10.0\0" (8 bytes). Returns the plaintext length (including the trailing NUL), or 0
- * if buf_size is too small. This port reports a real Windows version rather than inventing a 3DS one:
- * the console has only ever been observed accepting this field, and there is no evidence changing it
- * would do anything but add risk.
- */
-/*
- * RP-OSType's plaintext: "Win<major>.<minor>" with a trailing NUL.
+ * if buf_size is too small.
  *
- * THE "Win" IS NOT DECORATION AND IS NOT OURS TO CHANGE. **[V]** The console's own remote-play list
- * names every session this project opens as a PC, so both this field and the plaintext `User-Agent:
- * remoteplay Windows` header were made settable to find out which one it reads. The console VALIDATES
- * BOTH: a value it does not recognise is rejected and the session does not open.
+ * THE "Win" IS NOT OURS TO CHANGE. **[V]** The console VALIDATES both this field and the plaintext
+ * `User-Agent: remoteplay Windows` header: a value it does not recognise is rejected and the session
+ * does not open. (Both were made settable to find out which one names the session as a PC in the
+ * console's remote-play list; that code was reverted.)
  *
- * So the device name is not a string the client chooses. Whatever the console shows is selected from a
- * set it already knows, and getting a PS3 to appear as anything other than a PC would mean finding a
- * value in that set - not inventing one. The experiment is recorded here rather than the code, because
- * the code it needed was reverted and the finding is the part worth keeping.
+ * So the device name the console shows is selected from a set it already knows; showing anything other
+ * than a PC would mean finding a value in that set, not inventing one.
  */
 size_t halyard_sess_field_os_type_plaintext(int major, int minor, char *buf, size_t buf_size);
 

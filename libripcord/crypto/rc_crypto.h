@@ -7,13 +7,11 @@
  * Ripcord.Protocol.Halyard.Common.
  *
  * WHY A SEAM RATHER THAN A DIRECT mbedtls DEPENDENCY.
- *   devkitPro ships mbedtls for the 3DS, and on real hardware it is the better backend: the ARM11 has no
- *   crypto extensions, every A/V packet pays for AES, and mbedtls has hand-tuned paths this file does not.
- *   But the whole point of this port is to check the spec by running the same known-answer vectors the .NET
- *   side produces, and that check is worth far more if it runs on any machine with a C compiler and nothing
- *   else installed. So the default build uses the self-contained implementation here, and
- *   -DRC_CRYPTO_MBEDTLS swaps in mbedtls behind the same three functions. Same seam-and-stub shape the
- *   repository uses for IHalyardSessionCrypto.
+ *   On 3DS hardware mbedtls is the better backend: the ARM11 has no crypto extensions, every A/V packet
+ *   pays for AES, and mbedtls has hand-tuned paths this file does not. But the known-answer vectors the
+ *   .NET side produces must run on any machine with a C compiler and nothing else installed. So the
+ *   default build uses the self-contained implementation here, and -DRC_CRYPTO_MBEDTLS swaps in mbedtls
+ *   behind the same three functions. Same seam-and-stub shape as IHalyardSessionCrypto.
  *
  * ON ROLLING OUR OWN. These are the forward AES block permutation and SHA-256, both transcribed from
  * FIPS-197 and FIPS 180-4 - public specifications, which is the only source independence rules permit here

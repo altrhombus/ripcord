@@ -2,13 +2,11 @@
  * ripcord-ps3 - the one value the SPE and the PPE both have to agree about.
  *
  * Shared by spu/rc_spu_probe.c (compiled by spu-gcc, for the SPE) and source/spu/rc_spu.c (compiled by
- * ppu-gcc, for the PPE). It contains no code and includes nothing, which is what makes that safe: the
- * two halves are different architectures with different toolchains and almost nothing may cross between
- * them, but a pair of integer constants can.
+ * ppu-gcc, for the PPE). It contains no code and includes nothing, which is what makes it safe to share
+ * between two architectures with two toolchains.
  *
- * The values are a progress report written by DMA into a word the PPE polls. They exist because the
- * first version signalled only completion, and the PPE waited for it forever - so a run that did not
- * finish produced a hung console and no information. What the PPE sees on a timeout now distinguishes:
+ * The values are a progress report written by DMA into a word the PPE polls, so that a run that does
+ * not finish still says how far it got. What the PPE sees on a timeout distinguishes:
  *
  *   NOTHING   the word is still zero. The SPE never reached its first instruction, or never managed a
  *             DMA write at all - suspect the image, the thread setup, or the address handed to it.
@@ -28,18 +26,13 @@
 #define RC_SPU_PHASE_DONE    0x53504f4bu   /* 'SPOK' */
 
 /*
- * THE HEARTBEAT, which answers a different question from the phase above and is the reason a second
- * mechanism exists at all.
+ * THE HEARTBEAT. The phase word is delivered by DMA, so when the PPE sees NOTHING it cannot tell an SPE
+ * that never executed an instruction from one whose DMA never landed.
  *
- * The phase word is delivered by DMA. So when the PPE sees NOTHING, two very different things are still
- * on the table: the SPE never executed an instruction, or it executed plenty and its DMA never landed.
- * Those have nothing in common as bugs, and the phase word cannot separate them because it depends on
- * the very mechanism under suspicion.
- *
- * The heartbeat does not. It is an ordinary variable in the SPE's local store, written by an ordinary
- * store instruction, and the PPE reads it with sysSpuThreadReadLocalStorage - a syscall that reaches
- * into the SPE's memory from outside without the SPE participating. Nothing between the two is shared
- * except the address, which the Makefile extracts from the linked SPU image with spu-nm.
+ * The heartbeat is an ordinary variable in the SPE's local store, written by an ordinary store
+ * instruction, and the PPE reads it with sysSpuThreadReadLocalStorage - a syscall that reaches into the
+ * SPE's memory from outside without the SPE participating. Nothing between the two is shared except
+ * the address, which the Makefile extracts from the linked SPU image with spu-nm.
  *
  *   RUNNING  the SPE executed instructions. If the phase is still NOTHING, the fault is in the DMA or
  *            in the addresses it was handed - not in getting the program to run.
@@ -84,31 +77,25 @@
 #define RC_SPU_ARG_COUNT 4
 
 /*
- * THE JOB BLOCK, and why the arguments are no longer passed as arguments.
+ * THE JOB BLOCK, and why the arguments are not passed as arguments.
  *
  * MEASURED, b10: of the four values sysSpuThreadInitialize accepts, lv2 delivered arg0, arg1 and arg2
  * intact and arg3 as ZERO. The SPE then DMA'd to effective address 0, the MFC faulted, and the thread
- * died before its next instruction - which is every symptom seen from b7 onward, from one missing word.
+ * died before its next instruction. PSL1GHT's own samples all declare an SPU main taking four u64s, and
+ * not one of them populates arg2 or arg3. [X] Whether arg3 is reserved by lv2 for some purpose or simply
+ * not delivered is unknown and does not matter here.
  *
- * PSL1GHT's own samples are consistent with that: every one of them declares an SPU main taking four
- * u64s, and not one of them ever populates arg2 or arg3. The four-parameter signature is a convention
- * that nothing in the SDK exercises past the second slot. [X] Whether arg3 is reserved by lv2 for some
- * purpose or simply not delivered is unknown and does not matter here.
+ * So a single effective address is passed, pointing at this structure in main memory, which the SPE
+ * fetches by DMA before doing anything else. The decoder will need this shape regardless: a decode job
+ * has far more than four parameters.
  *
- * So a single effective address is passed - the only argument slot with evidence behind it - and it
- * points at this structure in main memory, which the SPE fetches by DMA before doing anything else.
- * That is the standard shape for SPU work dispatch and it is what the decoder will need regardless:
- * a decode job has far more than four parameters, so the argument registers were never going to be the
- * mechanism. Finding the limit this early is cheap.
+ * 32 BYTES. The MFC rejects any transfer whose size is not 0, 1, 2, 4, 8 or a multiple of 16 - IBM's
+ * Cell Broadband Engine Programmers Guide has a worked example of a 24-byte control block that fails
+ * for exactly this reason. Four u64s come to 32. Anything added here must keep it a multiple of 16, and
+ * the guide's advice is to pad explicitly rather than to count.
  *
- * 32 BYTES, AND THE SIZE IS NOT AN ACCIDENT TO LEAVE UNREMARKED. The MFC rejects any transfer whose size
- * is not 0, 1, 2, 4, 8 or a multiple of 16 - IBM's Cell Broadband Engine Programmers Guide devotes a
- * worked example to a 24-byte control block that fails for exactly this reason, which is the same shape
- * as this structure and one field short of the same bug. Four u64s happen to come to 32. Anything added
- * here must keep it a multiple of 16, and the guide's advice is to pad explicitly rather than to count.
- *
- * Both copies are 128-byte aligned, which the same guide names as the alignment at which DMA reaches peak
- * performance rather than merely working (16 is the minimum for transfers of 16 bytes or more).
+ * Both copies are 128-byte aligned, which the same guide names as the alignment at which DMA reaches
+ * peak performance rather than merely working (16 is the minimum for transfers of 16 bytes or more).
  */
 typedef struct {
     uint64_t src_ea;

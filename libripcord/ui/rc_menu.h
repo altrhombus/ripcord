@@ -1,22 +1,18 @@
 /*
  * ripcord - a list of things a person can choose, in a form any front end can render.
  *
- * WHY THIS IS HERE AND NOT IN THE PORT. A menu is two separate problems wearing one name. There is what
- * the list CONTAINS and which row is under the cursor - which is arithmetic, is the same on every screen
- * this project will ever draw on, and is exactly the part that gets subtly wrong (a cursor that stops on
- * a row that cannot be chosen, a wrap that skips the last item, a value edited on the row above the one
- * being looked at). And there is what it LOOKS like, which is nothing but the platform. The first is in
- * this file and is tested on a host with no console attached; the second is not, and cannot be.
+ * WHY THIS IS HERE AND NOT IN THE PORT. What the list CONTAINS and which row is under the cursor is
+ * arithmetic, the same on every screen, and the part that goes subtly wrong (a cursor that stops on a
+ * row that cannot be chosen, a wrap that skips the last item, a value edited on the wrong row). It is
+ * in this file and tested on a host. What it LOOKS like is the platform's.
  *
  * SAME RULE AS rc_session_state.h: no front end's types cross into here. No colour, no font, no pixel, no
  * button. A row has a label, a value, a note and whether it can be chosen, and a front end decides what
- * any of that looks like. A television ten feet away and a handheld's lower screen agree on the model and
- * on nothing else.
+ * any of that looks like.
  *
  * THE CALLER OWNS THE MEANING OF `id`. Rows are addressed by an id the caller assigns rather than by
  * their index, because indices move: a home screen that lists however many consoles answered a broadcast
- * has a different index for "Settings" every time it is rebuilt, and code that remembers the number 4 is
- * code that opens the wrong screen the day a second console is switched on.
+ * has a different index for "Settings" every time it is rebuilt.
  */
 #ifndef RC_MENU_H
 #define RC_MENU_H

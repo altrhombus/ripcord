@@ -2,16 +2,13 @@
  * ripcord - the registration flow against a fake console on loopback.
  *
  * WHAT THIS PROVES AND WHAT IT DOES NOT. It cannot prove the console accepts our bytes; only a console
- * can. What it proves is that the flow assembles the three layers correctly and, above all, that every
- * failure it can reach reports the RIGHT ONE of its named statuses - because the whole argument for
- * having named statuses is that a user standing in front of two screens with an expiring PIN needs to
- * be told which thing went wrong, and a status that is merely plausible is worse than none.
+ * can. It proves that the flow assembles the three layers correctly and that every failure it can
+ * reach reports the RIGHT ONE of its named statuses.
  *
  * The fake console is a thread on 127.0.0.1 that speaks the shape of the protocol: it reads the POST,
  * recovers the material from the context exactly as the console must, derives the same key from the PIN
- * it "displayed", and answers with an encrypted pairing record. That it can do so at all is the real
- * check - it exercises unwrap and the key derivation from the far side, which the known-answer vectors
- * verify arithmetically but never actually use in the direction the console does.
+ * it "displayed", and answers with an encrypted pairing record. That exercises unwrap and the key
+ * derivation in the console's direction, which the known-answer vectors only verify arithmetically.
  */
 #include "../halyard/halyard_registration.h"
 #include "../halyard/halyard_v1.h"

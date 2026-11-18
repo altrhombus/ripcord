@@ -1,10 +1,9 @@
 /*
  * libripcord - the connect sequence's timing and bookkeeping, as pure functions.
  *
- * WHY A SEPARATE FILE. halyard_client.c owns sockets and a console, and nothing that owns a console can
- * be tested without one. The decisions it makes on a clock - when to ask for a keyframe again, when an
- * input STATE packet is owed, what a zero in the config means - do not need either, and each of them has
- * a hardware finding behind it that a test should be able to hold in place:
+ * Separate from halyard_client.c so they can be tested without sockets or a console. Each decision -
+ * when to ask for a keyframe again, when an input STATE packet is owed, what a zero in the config means -
+ * has a hardware finding behind it:
  *
  *   the IDR latch            b124 (asking once per loss starves the decoder) and b141 (armed at start,
  *                            because a loss-free stream otherwise never asks at all)
@@ -145,7 +144,7 @@ typedef struct {
  * passed; a STATE packet on the first poll and every HALYARD_CLIENT_INPUT_STATE_MS after, changed or not.
  *
  * `writer->previous` and `have_previous` are updated here, once both packets are built - both decisions
- * are against the SAME previous frame, which is what rc_connect.c 1404-1407 records. Sequence numbers
+ * are against the SAME previous frame, which is what rc_connect.c 1296-1299 records. Sequence numbers
  * advance only for packets actually produced.
  *
  * Compared field by field, never with memcmp: the struct has padding, and padding is not copied

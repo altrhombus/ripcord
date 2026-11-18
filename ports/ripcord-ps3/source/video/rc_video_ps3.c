@@ -15,11 +15,9 @@
 /*
  * The RSX command buffer and the IO region it is mapped through.
  *
- * THE IO SIZE MUST BE A WHOLE NUMBER OF MEGABYTES, and the alignment must be 1 MB too. rsx.h says so in
- * as many words - "a 1 MB-aligned IO buffer allocated in main memory, which size is a multiple of one
- * megabyte" - and b80 passed 512 KB, which is neither. rsxInit answered 0x802100FF and the screen stayed
- * black. The requirement was in the documentation the rest of this file was written from; I read the
- * sequence and skipped the sentence above it.
+ * THE IO SIZE MUST BE A WHOLE NUMBER OF MEGABYTES, and the alignment must be 1 MB too. rsx.h: "a 1
+ * MB-aligned IO buffer allocated in main memory, which size is a multiple of one megabyte". b80 passed
+ * 512 KB; rsxInit answered 0x802100FF and the screen stayed black.
  *
  * Kept as an explicit multiple rather than a bare hex constant so the constraint is visible at the place
  * someone would change it.
@@ -46,15 +44,14 @@ static void *s_host_addr;
  *
  * Sized for a 1920x1088 source so a stream that is not 720p does not have to reallocate mid-session.
  *
- * ONE BUFFER IS ENOUGH, AND THE REASON IS NOT IN THIS FILE. The RSX reads it asynchronously, so writing
- * the next picture into it while the last blit is still running would tear - and nothing here prevents
- * that. What prevents it is the caller's order: it waits on rc_video_present_ready before converting a
- * picture, that call is true only once the previous FLIP has completed, and the flip was queued into the
- * same command buffer AFTER the blit. The RSX executes in order, so a completed flip means a finished
- * blit.
+ * ONE BUFFER IS ENOUGH ONLY BECAUSE OF THE CALLER'S ORDER. The RSX reads it asynchronously, so writing
+ * the next picture into it while the last blit is still running would tear. The caller waits on
+ * rc_video_present_ready before converting a picture, that call is true only once the previous FLIP
+ * has completed, and the flip was queued into the same command buffer AFTER the blit. The RSX executes
+ * in order, so a completed flip means a finished blit.
  *
- * Which means: if a caller is ever changed to blit without waiting for the previous flip, this needs a
- * second buffer on the same change. That dependency runs between two files and is invisible in both.
+ * If a caller is ever changed to blit without waiting for the previous flip, this needs a second
+ * buffer on the same change.
  */
 static uint32_t *s_stage;
 static u32 s_stage_offset;
@@ -111,19 +108,14 @@ int rc_video_open(rc_video_info *out)
      * LOAD THE MODULES FIRST, because these libraries are PRXes and nothing in them exists until they
      * are loaded.
      *
-     * b80 and b81 both got 0x802100FF out of rsxInit with nothing on screen, and the second run proved
-     * the IO size was not the whole story. nm on the SDK's own libraries says why: rsxInit and
-     * videoGetState are `D` symbols with matching _stub entries - PRX import pointers, not linked code.
-     * sprxlinker patches the call sites at build time, which is why this links and runs, but the module
-     * behind them still has to be resident at runtime, and this program called sysModuleLoad nowhere at
-     * all.
-     *
-     * Networking did not need it because PSL1GHT's netInitialize loads its own module; the display has
-     * no such courtesy.
+     * nm on the SDK's own libraries shows rsxInit and videoGetState as `D` symbols with matching _stub
+     * entries - PRX import pointers, not linked code. sprxlinker patches the call sites at build time,
+     * which is why this links and runs, but the module behind them still has to be resident at runtime.
+     * Without the load, rsxInit returned 0x802100FF with nothing on screen (b80, b81). Networking does
+     * not need it because PSL1GHT's netInitialize loads its own module.
      *
      * A module that is already loaded returns an error rather than success, so the return is recorded
-     * and not treated as fatal - refusing to continue because something was already there would be a
-     * new way to produce a black screen.
+     * and not treated as fatal.
      */
     s_gcm_module = (int)sysModuleLoad(SYSMODULE_GCM_SYS);
     s_sysutil_module = (int)sysModuleLoad(SYSMODULE_SYSUTIL);
@@ -136,9 +128,8 @@ int rc_video_open(rc_video_info *out)
         return fail(out, "memalign for the RSX IO region", 0);
 
     /*
-     * TRY SEVERAL SIZES RATHER THAN BELIEVING ONE, which is the same discipline the log-directory probe
-     * in main.c uses and for the same reason: four hypotheses about this call have now been wrong, and
-     * a sweep costs one console round trip where a guess costs one each.
+     * TRY SEVERAL SIZES RATHER THAN BELIEVING ONE, as the log-directory probe in main.c does: a sweep
+     * costs one console round trip where a guess costs one each.
      *
      * The leading suspect is the relationship between the two sizes. The command buffer is carved OUT of
      * the IO region - rsxInit is documented to build a heap in what remains - and every attempt so far
@@ -251,8 +242,7 @@ int rc_video_open(rc_video_info *out)
      *   REFRESH. 50 Hz means a 60 fps stream has no whole-number relationship with the display and
      *   nothing here converts one to the other.
      *
-     * libRESC exists to solve all three and has not been built. Reporting the mode is what turns "does
-     * it look odd" into "it is interlaced, 4:3, at 50 Hz, and here is which of those it is".
+     * libRESC exists to solve all three and has not been built.
      */
     s_info.aspect = (int)state.displayMode.aspect;
     s_info.scan_mode = (int)state.displayMode.scanMode;
@@ -350,14 +340,10 @@ int rc_video_present_ready(void)
     /*
      * ASKING MUST NOT CONSUME THE ANSWER.
      *
-     * This used to reset the status here, on the reasoning that the answer is consumed where it is read.
-     * It is not: the caller can still decline to flip - if the conversion fails there is nothing to show
-     * - and then no flip ever completes, the status never returns to zero, and EVERY later picture is
-     * reported busy. b195 is that: one failed scale, and 1,058 decoded pictures found the display busy
-     * for the rest of the run.
-     *
-     * The reset belongs with the flip, which is the act that makes a new answer possible, and is now
-     * done there.
+     * The status is not reset here. The caller can still decline to flip - if the conversion fails
+     * there is nothing to show - and then no flip ever completes, the status never returns to zero, and
+     * EVERY later picture is reported busy. b195 is that: one failed scale, and 1,058 decoded pictures
+     * found the display busy for the rest of the run. The reset is done with the flip.
      */
     if (status != 0) {
         s_busy_calls++;
@@ -481,22 +467,19 @@ static inline uint32_t clamp255(int32_t v)
 
 /*
  * The same placement and scaling as rc_video_blit_yuv420, for a picture the decoder has already turned
- * into packed 32-bit RGB. Only the conversion is absent, which is the whole point: b185 measured the
- * SPE spending 16,444 us a frame converting and scaling against 1,667 us waiting for the MFC.
+ * into packed 32-bit RGB. Only the conversion is absent: b185 measured the SPE spending 16,444 us a
+ * frame converting and scaling against 1,667 us waiting for the MFC.
  *
- * NO PPE FALLBACK HERE, and that is deliberate rather than an omission. The YUV path keeps one because
- * the PPE converter is the implementation that is known to work and a silent failure would be worse than
- * a slow frame. There is no PPE scaler to fall back TO - so if the SPEs cannot do it, the caller is told
- * (0) and the decoder seam can go back to asking for YUV, which is a decision for the caller and not
- * something to paper over here.
+ * NO PPE FALLBACK HERE, deliberately. The YUV path keeps one because the PPE converter is the
+ * implementation that is known to work. There is no PPE scaler to fall back TO - so if the SPEs cannot
+ * do it, the caller is told (0) and the decoder seam can go back to asking for YUV, which is a decision
+ * for the caller.
  */
 /*
  * THE RSX DOES THE SCALING.
  *
- * Everything the SPEs were built to do here - colour conversion, scaling, and the copy into the display
- * buffer - the RSX has fixed-function hardware for, and until now it did nothing in this program but
- * scan out. rsxSetTransferScaleSurface is the 2D engine's scaled blit: arbitrary source and destination
- * rectangles, and a bilinear interpolator that costs nothing because it is wired rather than executed.
+ * rsxSetTransferScaleSurface is the 2D engine's scaled blit: arbitrary source and destination
+ * rectangles, and a fixed-function bilinear interpolator.
  *
  * WHAT THIS IS NOT. It does not make the picture arrive faster and it will not change the fan (b204
  * measured the machine silent at this load either way - see DECODE.md). What it buys is the SPE time
@@ -507,7 +490,7 @@ static inline uint32_t clamp255(int32_t v)
  * to a 1024-pixel source, and 1280 is wider. Nothing here works around that, deliberately: a workaround
  * for a limit nobody has hit would be untestable, and the failure is visible on a television within a
  * second. If a 720p source comes out torn or truncated, splitting the blit into horizontal strips is
- * the answer and this is the note that says so.
+ * the answer.
  */
 static unsigned blit_argb32_on_rsx_from(u32 src_offset, int width, int height,
                                         int dst_w, int dst_h, int ox, int oy, int linear)
@@ -596,13 +579,12 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
      * THE RSX ROUTE, WHICH STILL NEEDS THE SPEs - just not for any arithmetic.
      *
      * The picture is in main memory where the decoder left it and the 2D engine reads RSX-addressable
-     * memory, so something has to move it. The SPEs do that 1:1: same width, same height, no conversion
-     * and no scaling, which reduces their job to a straight DMA and drops the transfer from 1920x1080
-     * to the source size. The scaling - and the interpolation, which cost 21,038 us an SPE frame to do
-     * in software - then happens on hardware built for it.
+     * memory, so the SPEs move it 1:1: same width, same height, no conversion and no scaling - a
+     * straight DMA at the source size rather than 1920x1080. The scaling and the interpolation, which
+     * cost 21,038 us an SPE frame in software, then happen on the RSX.
      *
      * If the staging buffer was refused at open, or the SPEs are not up, this falls through to the SPE
-     * scaler exactly as before. A missing optional path must never mean a missing picture.
+     * scaler. A missing optional path must never mean a missing picture.
      */
     if (s_rsx_scale && s_stage_ok) {
         unsigned copy_us = rc_spu_yuv_convert_argb(argb, src_stride, width, height,
@@ -624,27 +606,19 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
 /*
  * FIT THE SOURCE INTO THE DISPLAY BUFFER, ACCOUNTING FOR PIXELS THAT ARE NOT SQUARE.
  *
- * The earlier version scaled by pixel COUNT, which is right only when a buffer pixel is as wide as it
- * is tall. At 1080p and 720p it is, which is why this went unnoticed through the whole port: those
- * buffers are 16:9 in pixels AND 16:9 on the screen. A 720x480 buffer is neither - it is 3:2 in pixels
- * and displayed as 4:3 or as 16:9, so its pixels are 11% taller or 19% wider than square, and a
- * picture fitted by count comes out wrong by exactly that much. b282 measured it in both:
+ * Scaling by pixel COUNT is right only when a buffer pixel is as wide as it is tall. At 1080p and 720p
+ * it is. A 720x480 buffer is 3:2 in pixels and displayed as 4:3 or as 16:9, so its pixels are 11%
+ * taller or 19% wider than square. b282 measured a fit by count in both:
  *
  *   480p 16:9 - drew 720x404, which appears as 2.11:1 against a 1.78:1 source  (+19%)
  *   480p 4:3  - drew 720x404, which appears as 1.58:1                          (-11%)
  *
- * Neither is dramatic, and both were reported as looking fine on a television, which is the honest
- * reason to fix it from the arithmetic rather than by eye: an 11% error makes circles into ovals and
- * nothing announces it.
- *
- * The maths is one ratio. The drawn rectangle must have a BUFFER-SPACE aspect of the source's aspect
- * divided by the pixel aspect, and the pixel aspect is the display's shape over the buffer's shape. In
- * integers to avoid a float unit for something exact, and in 64 bits because the products reach 2.4e10
- * at 1080p.
+ * The drawn rectangle must have a BUFFER-SPACE aspect of the source's aspect divided by the pixel
+ * aspect, and the pixel aspect is the display's shape over the buffer's shape. In integers to avoid a
+ * float unit for something exact, and in 64 bits because the products reach 2.4e10 at 1080p.
  *
  * VIDEO_ASPECT_AUTO is treated as square, which is what the port already assumed. It is the one case
- * where the console has not said, and inventing a correction from nothing would be worse than the
- * behaviour that has always worked.
+ * where the console has not said.
  */
 static void fit_into_display(int src_width, int src_height,
                              int *dst_w, int *dst_h, int *ox, int *oy)
@@ -823,19 +797,18 @@ void rc_video_scale_info(int *scaled_w, int *scaled_h, int *display_w, int *disp
 }
 
 /*
- * THE AGREEMENT CHECK, MOVED OFF THE STREAMING PATH.
+ * THE AGREEMENT CHECK, OFF THE STREAMING PATH.
  *
- * It used to run on the first frame of the session, which was affordable at 960x540 and became a
- * disaster at 1920x1080: an SPE conversion, two hashes of two million pixels, and a full PPE conversion
- * of the same - well over a tenth of a second stalled inside the receive loop, at exactly the moment the
- * console is establishing its cadence. b112 lost the Takion channel to it and received 58 packets where
- * the run before received 6287.
+ * On the first frame of the session at 1920x1080 it was an SPE conversion, two hashes of two million
+ * pixels, and a full PPE conversion of the same - well over a tenth of a second stalled inside the
+ * receive loop while the console is establishing its cadence. b112 lost the Takion channel to it and
+ * received 58 packets where the run before received 6287.
  *
- * The check was never about a particular frame. It is about two implementations agreeing, and a
- * synthetic input tests that better: the gradients below sweep luma and both chroma channels across
- * their whole range, including the values that clamp, which a given frame of a game may never contain.
+ * The check is about two implementations agreeing, and a synthetic input tests that better: the
+ * gradients below sweep luma and both chroma channels across their whole range, including the values
+ * that clamp, which a given frame of a game may never contain.
  *
- * It runs once, before streaming, on a small picture, and it SCALES - because the scaler is now part of
+ * It runs once, before streaming, on a small picture, and it SCALES - because the scaler is part of
  * what has to agree, and a 1:1 check would pass while every scaled pixel was wrong.
  */
 #define RC_VERIFY_SRC_W 64
@@ -926,16 +899,12 @@ const char *rc_video_self_test_failure(void)
 }
 
 /*
- * A block of RSX local memory, for a caller that wants the RSX to read what it writes.
+ * A block of RSX local memory, for a caller that wants the RSX to read what it writes. The caller (the
+ * decoder) gets a pointer and an offset and does not need to know what a gcm offset is.
  *
- * Offered rather than done here because the caller that needs it is the decoder, and the decoder has no
- * business knowing what a gcm offset is. It gets a pointer and an offset; what those mean is this
- * file's problem.
- *
- * THE COST OF GETTING THIS WRONG IS ASYMMETRIC. Writes from the Cell into this memory are fast and
- * reads from it are roughly two orders of magnitude slower, so a buffer allocated here must be written
- * by the Cell and read by the RSX, never the other way round. Anything that samples it on the PPE
- * belongs somewhere else.
+ * Writes from the Cell into this memory are fast and reads from it are roughly two orders of magnitude
+ * slower, so a buffer allocated here must be written by the Cell and read by the RSX, never the other
+ * way round. Anything that samples it on the PPE belongs somewhere else.
  */
 void *rc_video_alloc_rsx(size_t bytes, uint32_t *offset)
 {
@@ -977,11 +946,10 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
 /*
  * Queue an unscaled copy of the overlay bitmap over the picture.
  *
- * SEPARATE FROM DRAWING IT, and that separation is the whole fix. b225 drew the overlay with the PPE
- * straight into the back buffer immediately after the picture blit had been QUEUED - so the RSX
- * executed the picture afterwards and painted over the text, every frame, and nothing appeared. Issuing
- * it as a command puts it behind the picture in the same buffer, where the ordering is the hardware's
- * to keep rather than a race to lose.
+ * SEPARATE FROM DRAWING IT. Drawn by the PPE straight into the back buffer immediately after the
+ * picture blit had been QUEUED (b225), the text was painted over by the picture every frame. Issuing
+ * the copy as a command puts it behind the picture in the same buffer, where the ordering is the
+ * hardware's to keep.
  *
  * rsxSetTransferImage rather than the scaled blit: the bitmap is already the size it will be drawn at,
  * and an unscaled rectangular copy is both cheaper and free of the interpolator's edge behaviour on a
@@ -991,21 +959,18 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
  * MAP MAIN MEMORY SO THE RSX CAN READ IT, which is what makes the overlay's copy go away.
  *
  * The overlay has to be drawn in main memory - blending reads the destination, and a PPE read from the
- * RSX's own memory is about two orders of magnitude slower than a write, which is the whole reason
- * rc_overlay keeps a bitmap at all. What followed from that was an eight-megabyte copy into video
- * memory every frame, purely so the 2D engine had something it could reach.
+ * RSX's own memory is about two orders of magnitude slower than a write. Without this, that means an
+ * eight-megabyte copy into video memory every frame so the 2D engine has something it can reach.
  *
- * It does not need the copy; it needs an IO address. gcmMapMainMemory hands the RSX a window onto a
- * buffer that stays exactly where it is, and the same transfer then reads it with
- * GCM_TRANSFER_MAIN_TO_LOCAL instead of LOCAL_TO_LOCAL.
+ * gcmMapMainMemory hands the RSX a window onto a buffer that stays exactly where it is, and the same
+ * transfer then reads it with GCM_TRANSFER_MAIN_TO_LOCAL instead of LOCAL_TO_LOCAL.
  *
- * NOT THE b232 HAZARD, and the distinction is the one that mattered there. b232 asked the 2D engine to
- * BLEND, which it will not do and which stopped the command processor. This asks it to copy, which is
- * what it has been doing since b228; only where it reads from changes.
+ * NOT THE b232 HAZARD. b232 asked the 2D engine to BLEND, which it will not do and which stopped the
+ * command processor. This asks it to copy, which is what it has been doing since b228; only where it
+ * reads from changes.
  *
  * The address must be megabyte-aligned and the length a whole number of megabytes - the same rule
- * rsxInit's IO region follows, and for the same reason. Refusal is reported and is not fatal: the
- * caller keeps its copy.
+ * rsxInit's IO region follows. Refusal is reported and is not fatal: the caller keeps its copy.
  */
 int rc_video_map_main(const void *addr, size_t bytes, uint32_t *offset)
 {
@@ -1033,17 +998,14 @@ void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int
      * A PLAIN RECTANGULAR COPY, AND THE PANEL IS OPAQUE BECAUSE OF IT.
      *
      * b232 asked the scaled blit to composite the panel instead - A8R8G8B8 with
-     * GCM_TRANSFER_OPERATION_BLEND_PREMULT - on the reasoning that compositing needs the destination
-     * read and the RSX is the only thing here that can read its own memory cheaply. The reasoning was
-     * right and the instruction is not usable: it WEDGED THE COMMAND PROCESSOR. One picture reached the
-     * screen, its flip never completed, gcmGetFlipStatus stayed at 1 for the remaining sixty seconds
-     * and all 2,119 later pictures were dropped as "display busy". Audio, on its own path, carried on -
-     * which is what made it look like a video fault rather than a stopped GPU.
+     * GCM_TRANSFER_OPERATION_BLEND_PREMULT - and it WEDGED THE COMMAND PROCESSOR. One picture reached
+     * the screen, its flip never completed, gcmGetFlipStatus stayed at 1 for the remaining sixty
+     * seconds and all 2,119 later pictures were dropped as "display busy", while audio carried on.
      *
      * Whether the blend operation or the A8R8G8B8 scale format is the unsupported half was not
-     * separated, and is not worth a run: translucency through the 2D engine is closed either way. The
-     * route that remains is the 3D pipeline - a textured quad with alpha blending - which certainly
-     * works and costs shaders, vertex buffers and a great deal more code than an opaque panel is worth.
+     * separated: translucency through the 2D engine is closed either way. The route that remains is
+     * the 3D pipeline - a textured quad with alpha blending - which costs shaders, vertex buffers and
+     * a great deal more code than an opaque panel is worth.
      *
      * rsxSetTransferImage cannot blend. It is a memory-to-memory rectangle, it has run on hardware
      * since b228, and it is what this uses.
@@ -1051,19 +1013,15 @@ void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int
     /*
      * THE WRITES HAVE TO BE FINISHED BEFORE THE RSX IS TOLD TO LOOK.
      *
-     * While this copied out of video memory the question never arose: the PPE's memcpy completed before
-     * the command was queued, and the RSX read a buffer nothing else was touching. Reading main memory
-     * directly puts the PPE's stores and the RSX's reads on either side of a race - and a store sitting
-     * in the cache when the transfer runs shows up as a piece of the PREVIOUS frame, in a band the width
-     * of a cache line, in whatever part of the screen was drawn last.
+     * Reading main memory directly puts the PPE's stores and the RSX's reads on either side of a race:
+     * a store sitting in the cache when the transfer runs would show up as a piece of the PREVIOUS
+     * frame, in a band the width of a cache line. `sync` waits for every prior store to reach the point
+     * where the rest of the machine can see it. It is issued once a frame, against a transfer of eight
+     * megabytes.
      *
-     * `sync` waits for every prior store to reach the point where the rest of the machine can see it.
-     * It is issued once a frame, against a transfer of eight megabytes, so its cost does not signify.
-     *
-     * The smearing that prompted this was NOT this - it was a drawing bug in rc_shell.c, found two
-     * builds later. Ordering stores before handing the buffer to another device is correct regardless,
-     * and costs nothing, so it stays; see the longer note beside flush_for_rsx in rc_overlay.c for what
-     * is and is not known about whether it was ever needed.
+     * The smearing that prompted this was NOT this - it was a drawing bug in rc_shell.c. See the note
+     * beside flush_for_rsx in rc_overlay.c for what is and is not known about whether it was ever
+     * needed.
      */
     if (from_main)
         __asm__ __volatile__("sync" : : : "memory");

@@ -236,40 +236,25 @@ static void read_enter_button(void)
 /* ------------------------------------------------------------------------------------------------ */
 
 /*
- * SHAPES, BY DISTANCE RATHER THAN BY SAMPLING - and the difference is visible on a television.
+ * SHAPES, BY DISTANCE RATHER THAN BY SAMPLING.
  *
- * The previous version tested nine sub-positions per pixel against the shape and counted them. That is
- * the textbook answer and it was wrong here for three reasons. Nine samples give nine levels of
- * coverage, so a curve gets a stepped edge rather than a smooth one. The corner test was built from
- * distances to the four straight sides, which meets itself at forty-five degrees and leaves a wedge -
- * the "weird artifacting". And sampling is a THRESHOLD, so a corner pixel sitting near the boundary
- * flips between counts as the background moves under it, which is exactly the shimmer.
- *
- * A rounded rectangle has an exact distance function, so this asks for the distance instead:
+ * A rounded rectangle has an exact distance function:
  *
  *     dx = max(|px - cx| - (w/2 - r), 0)
  *     dy = max(|py - cy| - (h/2 - r), 0)
  *      d = sqrt(dx*dx + dy*dy) - r
  *
- * Negative inside, zero on the edge, and correct in the corners because the corner IS a circle by
- * construction. Coverage comes straight off it as a one-pixel ramp, which is smooth, continuous, and -
- * the part that kills the shimmer - depends only on the geometry. The same pixel gets the same coverage
- * on every frame no matter what is behind it.
+ * Negative inside, zero on the edge, and correct in the corners because the corner is a circle by
+ * construction. Coverage comes straight off it as a one-pixel ramp, which depends only on the geometry:
+ * the same pixel gets the same coverage on every frame no matter what is behind it. Counting nine
+ * sub-positions per pixel, which this replaced, gave a stepped edge, a wedge at forty-five degrees in
+ * the corners, and a shimmer as the background moved. The distance is also cheaper: one square root
+ * per corner pixel and none on the straight edges.
  *
- * It is also far cheaper: one square root per corner pixel instead of nine inside-tests per pixel, and
- * the straight edges need no square root at all.
- *
- * AND THEN IT WAS STILL WRONG, because the square root underneath it was. b360 drew this and the
- * corners still read as "a line, then a corner, then another line" - which is the exact symptom of the
- * arc and the straight edges not meeting. They did not: isqrt_i seeded its search at 1<<15, which is
- * not a power of four, so the digit-by-digit algorithm underneath it was answering sqrt(2v) - and, for
- * anything above 65535, saturating at 510 regardless of the input. A corner 22 pixels across feeds it
- * values into six figures, so the arc it drew was a chamfer of the wrong radius joined to the straight
- * edges at a step.
- *
- * The seed is now 1<<30, which IS a power of four and is the largest that fits an int. The lesson is
- * the cheap one: the formula was right for two builds, and the four-line helper under it was never
- * checked against the thing it claims to compute.
+ * It depends on isqrt_i being exact, and isqrt_i's seed must be a power of four: 1<<30 is the largest
+ * that fits an int. Seeded at 1<<15 (b360) it answered sqrt(2v) and saturated at 510 above 65535, so a
+ * corner 22 pixels across was drawn as a chamfer of the wrong radius, stepped against the straight
+ * edges.
  */
 
 /*
@@ -316,16 +301,14 @@ static uint32_t *s_px;
 static int s_pitch;
 
 /*
- * WHERE THE DRAWING IS ALLOWED TO REACH, which is NOT the same question as how big the screen is - and
- * conflating them is what b417 shipped.
+ * WHERE THE DRAWING IS ALLOWED TO REACH: the bounds of the buffer being drawn into, which is not the
+ * same question as how big the screen is.
  *
- * sx() and sy() scale a design laid out against 1920x1080 to whatever the television is, so they have to
- * read the real display. Clipping asks something else entirely: what are the bounds of the buffer being
- * drawn into. Those agree for every caller except one - the selected card, which is rendered into a
- * sprite about 412 pixels wide - and setting s_scr_w to the sprite's width to make the clipping right
- * made sx() divide every layout measurement by a screen four times too narrow. The card came out with
- * its padding, its lift and its text in the wrong places, which on screen was a second copy of the card
- * offset from the one underneath it.
+ * sx() and sy() scale a design laid out against 1920x1080 to whatever the television is, so they read
+ * the real display. The two agree for every caller except the selected card, which is rendered into a
+ * sprite about 412 pixels wide. Setting s_scr_w to the sprite's width to make the clipping right (b417)
+ * made sx() scale every layout measurement against a screen four times too narrow, and the card came
+ * out as a second copy offset from the one underneath it.
  */
 static int s_clip_w, s_clip_h;
 
@@ -333,16 +316,11 @@ static int s_clip_w, s_clip_h;
  * WHERE A SHAPE PUT INK, TOLD TO WHICHEVER BUFFER IS BEING DRAWN INTO.
  *
  * Every shape reports the rows it may touch, so nothing has to read a finished buffer back to find out
- * where the interface is. There are now TWO such buffers - the cached layer and the selected card's
- * sprite - and b421 shipped with the shapes reporting unconditionally to the layer's. Which meant the
- * sprite's bounds covered only its TEXT, because text reports through rc_overlay's hook and happened to
- * be aimed correctly; the card's own fill and outline were recorded into the LAYER's bounds, in the
- * sprite's coordinates.
- *
- * What that looks like on a television is the sprite compositing its text and nothing else: the card
- * underneath shows through everywhere the sprite did not claim, so an opaque card reads as a translucent
- * one, the plus sign appears twice, and the glow hugs a card edge that is eighteen pixels from the one
- * you can see. Every symptom of the last three builds is this.
+ * where the interface is. There are two such buffers, the cached layer and the selected card's sprite,
+ * and a shape must report to the one it is drawing into. Reporting unconditionally to the layer's
+ * (b421) left the sprite's bounds covering only its text, which reports through rc_overlay's hook. The
+ * sprite then composited its text and nothing else: the card underneath showed through, the plus sign
+ * appeared twice, and the glow hugged a card edge eighteen pixels from the visible one.
  */
 static void note_ink(int y, int x0, int x1);
 
@@ -441,25 +419,16 @@ static int rrect_dist(const sh_rrect *s, int col, int dy)
 
 /*
  * One rounded rectangle, filled when `t` is 0 and outlined otherwise.
- */
-/*
- * A SPAN AT A TIME, NOT A PIXEL AT A TIME - and the reason is a property of this shape rather than an
- * optimisation trick.
  *
- * b370 timed the parts of the drawing and settled where the frame goes: of 67,199 us, the text is 2,629
- * and the rounded rectangles are 63,695. Every guess before that had been aimed at the text, on the
- * strength of SHELL-DESIGN.md's warning about rasterising glyphs sixty times a second - which is sound
- * advice about a cost that turns out to be four percent of this screen.
+ * A SPAN AT A TIME, NOT A PIXEL AT A TIME.
  *
- * At 42,029 us for roughly 620,000 pixels the fill was taking about 217 cycles each, which is an order
- * of magnitude more than a blend costs. It was computing a distance function per pixel across the whole
- * card, and the distance function is the expensive part - but look at what it returns. Inside the
- * straight vertical band, which for a 360-wide card with a 22-pixel radius is 87 percent of every row,
- * the horizontal term is clamped to zero and the distance is dy - r: a function of the ROW alone. Every
- * pixel in that span gets the same coverage, and the whole per-pixel calculation was re-deriving one
- * answer three hundred times a row.
+ * b370 timed the parts of the drawing: of 67,199 us, the text is 2,629 and the rounded rectangles are
+ * 63,695. The fill took 42,029 us for roughly 620,000 pixels, about 217 cycles each, because it
+ * computed the distance function for every pixel.
  *
- * So each row is now three pieces: a left edge, a flat middle, and a right edge. The middle is one
+ * Inside the straight vertical band, which for a 360-wide card with a 22-pixel radius is 87 percent of
+ * every row, the horizontal term is clamped to zero and the distance is dy - r: a function of the row
+ * alone. So each row is three pieces: a left edge, a flat middle, and a right edge. The middle is one
  * constant coverage and a tight blend with the multiply-by-alpha hoisted out; only the edges - about
  * twenty pixels a side, where the corner arc lives - pay for a distance and a square root.
  *
@@ -476,22 +445,16 @@ static unsigned div255(unsigned v)
 }
 
 /*
- * TRIED AND REJECTED: dcbt. The second memory-level idea to change nothing, and together they point
- * somewhere else entirely.
+ * TRIED AND REJECTED: dcbt.
  *
- * b371 took roughly ninety percent of the arithmetic out of this loop and the shapes fell by 2.5x, not
- * by ten. What was left came to about 170 cycles a blended pixel, which looked like a read-modify-write
- * to an eight-megabyte surface that is never in cache: an in-order core stopping dead on each dependent
- * load. So b373 prefetched four cache lines ahead. Glow 8,972 to 9,045 us, card shapes 16,582 to
- * 16,619 - nothing, within noise.
+ * b371 took roughly ninety percent of the arithmetic out of this loop and the shapes fell by 2.5x,
+ * leaving about 170 cycles a blended pixel. b373 prefetched four cache lines ahead and it changed
+ * nothing: glow 8,972 to 9,045 us, card shapes 16,582 to 16,619. dcbz on the write path in rc_wave.c
+ * had done nothing either.
  *
- * With dcbz on the write path in rc_wave.c having done nothing either, that is two interventions aimed
- * at memory with no effect, and the conclusion is that memory is not what this is waiting for.
- *
- * WHICH LEAVES THE MULTIPLIES. The PPE's integer multiply is slow and poorly pipelined, and a blend
- * does three of them per pixel - one per channel - each feeding a dependent chain. Three multiplies at
- * the PPE's latency is most of the per-pixel budget on its own, and no amount of arranging the memory
- * was ever going to touch it. See blend_span: they are now a table.
+ * The multiplies were tried next. The PPE's integer multiply is slow and poorly pipelined, and a blend
+ * does three of them per pixel - one per channel - each feeding a dependent chain. See blend_span:
+ * they are now a table.
  */
 
 /*
@@ -538,20 +501,18 @@ static void blend_lut_for(uint32_t rgb, unsigned a)
 /*
  * One horizontal run at a single alpha. The globals are read ONCE here rather than per pixel: s_px and
  * s_pitch are file-scope, the loop stores through s_px, and the compiler has to assume a store might
- * reach them - so every iteration of the old per-pixel path reloaded all four before it could work out
- * where the next pixel was.
+ * reach them.
  */
 /*
  * ONE PIXEL AT AN ALPHA OF ITS OWN, which is what the table cannot do.
  *
  * The table above is keyed on the colour AND the alpha, so it is only free where a run shares both. A
- * glow's alpha changes with every pixel by definition, and b374 shipped it through blend_span anyway:
- * the key missed on nearly every pixel, so a 768-entry table was rebuilt two hundred thousand times a
- * frame and the glow went from 9,045 us to 43,227. The table was a good idea applied to the one place
- * it cannot apply.
+ * glow's alpha changes with every pixel. Sent through blend_span (b374), the key missed on nearly every
+ * pixel, a 768-entry table was rebuilt two hundred thousand times a frame, and the glow went from
+ * 9,045 us to 43,227.
  *
- * So varying alpha keeps the multiplies. Three per pixel is what that costs, and the glow is now small
- * enough - see rounded_glow - that it no longer matters.
+ * So varying alpha keeps the multiplies, three per pixel. The glow is now small enough - see
+ * rounded_glow - that it no longer matters.
  */
 static void blend_one(uint32_t *p, uint32_t rgb, unsigned a)
 {
@@ -683,21 +644,18 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
 /*
  * THE GLOW, AS ONE FALLOFF RATHER THAN AS FOUR RINGS - AND CAPTURED, NOT DRAWN.
  *
- * The first version stacked four concentric rounded rectangles at a falling alpha. On a photograph that
- * is a halo; on a television it is four bands, because four steps is what four shapes give you. The
- * distance function answers it properly: alpha falls as the square of how far outside the card a pixel
- * is, which is continuous and is one pass instead of four.
+ * Alpha falls as the square of how far outside the card a pixel is, off the distance function: one
+ * continuous pass. Four concentric rounded rectangles at a falling alpha showed on a television as
+ * four bands.
  *
  * IT DOES NOT GO INTO THE CACHED LAYER, because it breathes. The layer is rebuilt when the interface
  * changes, which is a cursor move; anything that changes every frame cannot live in it. So the shape is
- * rasterised ONCE into a coverage mask - which is what it really is, one colour at a varying alpha - and
- * each frame multiplies that mask by a single scalar. Rasterising is the expensive half and it happens
- * on a rebuild; the per-frame half is a byte, a multiply and a blend.
+ * rasterised ONCE, on a rebuild, into a coverage mask - one colour at a varying alpha - and each frame
+ * multiplies that mask by a single scalar. The mask is a box around the card rather than a screen,
+ * because that is all it can ever cover.
  *
- * The mask is a box around the card rather than a screen, because that is all it can ever cover.
- *
- * ITS INSIDE IS STILL NOT PAINTED. The card covers exactly the region where the distance is negative,
- * and what showed through was the glow's own alpha - at most 64 of 255 - through the twelve percent the
+ * ITS INSIDE IS NOT PAINTED. The card covers exactly the region where the distance is negative, and
+ * what showed through was the glow's own alpha - at most 64 of 255 - through the twelve percent the
  * card's fill lets past. One pixel of overlap is kept so the card's antialiased edge has something to
  * sit on.
  */
@@ -939,14 +897,11 @@ static int pill(const char *label, int x, int y, int h, uint32_t argb)
 /*
  * THE STATUS PIPS, held aside for the same reason as the glow: they move.
  *
- * ONLY THE GREEN ONE BREATHES, which is not what SHELL-DESIGN.md asked for and is the better call.
- *
- * The plan was a slow breathe on a console in STANDBY - "a console you must wake looks asleep". On a
- * screen it turned out to be the wrong way round: amber already says "not ready" by being amber, and
- * moving it as well makes the thing you cannot use the most animated thing on the card. Green moving
- * gently says "this is awake and waiting for you", which is the one piece of information somebody is
- * actually looking for. So amber sits still and green breathes, slowly and shallowly - it is saying
- * "alive", not "look at me".
+ * ONLY THE GREEN ONE BREATHES, which is not what SHELL-DESIGN.md asked for. Its plan was a slow
+ * breathe on a console in STANDBY - "a console you must wake looks asleep". On a screen amber already
+ * says "not ready" by being amber, and moving it as well makes the thing you cannot use the most
+ * animated thing on the card. So amber sits still and green breathes, slowly and shallowly: "this is
+ * awake and waiting for you".
  */
 #define SH_PIPS 4
 static struct { int x, y, d, ready; } s_pip[SH_PIPS];
@@ -993,15 +948,13 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
     /*
      * THE MOVING CARD IS OPAQUE, and it has to be.
      *
-     * The card is translucent by design - 88 percent, so a little of the background shows through it.
-     * That was fine while it was drawn straight onto the wave. It is not fine now: the same card is also
-     * in the cached layer in its unselected form, at its slot, and this one sits a lift above it - so
-     * twelve percent of a card eighteen pixels lower shows through this one. On a television that is
-     * double-vision text and an outline that does not line up with the glow around it. The strip the
-     * two do not share is handled the other way round, by not compositing the layer there at all.
+     * The card is translucent by design - 88 percent. But the same card is also in the cached layer in
+     * its unselected form, at its slot, and this one sits a lift above it - so twelve percent of a card
+     * eighteen pixels lower would show through this one: double-vision text and an outline that does
+     * not line up with the glow around it. The strip the two do not share is handled the other way
+     * round, by not compositing the layer there at all.
      *
-     * What is lost is twelve percent of a dark blue wave behind a near-black card, which is a handful of
-     * levels nobody can see. What is gained is the card looking like one card.
+     * What is lost is twelve percent of a dark blue wave behind a near-black card.
      */
     rounded(x, y, w, h, r, s_sprite_building ? 0xFF0E1218u : (selected ? 0xE00E1218u : 0xB00A0D12u), 1);
     rounded_edge(x, y, w, h, r, sy(2), selected ? s_accent : 0x30FFFFFFu);
@@ -1059,22 +1012,14 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
 
         if (ready || standby) {
             /*
-             * RECORDED, NOT DRAWN - it breathes, and the layer is not rebuilt per frame. Two hundred
-             * and fifty pixels put straight on the screen after everything else is cheaper than any
-             * arrangement that keeps it in the cache, and it sits on top of the card, so last is also
-             * the right order.
-             */
-            /*
-             * RECORDED FOR EVERY CARD AT ITS RESTING SLOT, and not at all by the sprite.
+             * RECORDED, NOT DRAWN - it breathes, and the layer is not rebuilt per frame. About two
+             * hundred and fifty pixels put straight on the screen after everything else; it sits on top
+             * of the card, so last is also the right order.
              *
-             * A pip is a sixteen-pixel dot drawn live, on top of everything, so it breathes. Making the
-             * selected card's travel with it needed the sprite to own one - and then a cursor move had
-             * to add one and take one away, which is state that has to be right on a path where getting
-             * it wrong shows as a dot in the wrong place. Every card keeping its own, where the card
-             * rests, is selection-independent and therefore free: a cursor move changes nothing here.
-             *
-             * What it costs is that during the two hundred milliseconds of a slide the pip waits at the
-             * destination rather than riding along. The card is on its way to exactly that spot.
+             * RECORDED FOR EVERY CARD AT ITS RESTING SLOT, and not at all by the sprite. Every card
+             * keeping its own pip where it rests is selection-independent, so a cursor move changes
+             * nothing here. A pip owned by the sprite would have to be added and taken away on every
+             * move, and getting that wrong shows as a dot in the wrong place.
              */
             if (!s_sprite_building && s_pip_count < SH_PIPS) {
                 /* Kept in slot coordinates. Which one belongs to the card that moves is a question
@@ -1201,23 +1146,21 @@ static void pump_input(void);
 static uint64_t s_ui_at;
 static unsigned s_ui_us, s_ui_worst_us, s_frames;
 /*
- * WHAT A FRAME ACTUALLY COSTS, AND WHY THE FIRST VERSION OF THIS LIED.
+ * WHAT A FRAME ACTUALLY COSTS.
  *
- * b363 and b366 reported "15 fps" and "10 fps" from frames divided by the time the shell was open. That
- * is not a frame rate. The shell blocks for a second and a half inside a discovery broadcast, and for
- * as long as somebody takes inside the pairing prompts and the on-screen keyboard - none of which draws
- * a frame, all of which is on that clock. The two numbers differed by a third because the person
- * holding the controller spent longer in a sub-screen, and nothing about the drawing had changed at all.
- * It also sent me looking for fifty milliseconds a frame that were never there.
+ * Frames divided by the time the shell was open is not a frame rate (b363 and b366 reported "15 fps"
+ * and "10 fps" that way). The shell blocks for a second and a half inside a discovery broadcast, and
+ * for as long as somebody takes inside the pairing prompts and the on-screen keyboard - none of which
+ * draws a frame.
  *
  * So the interval between successive draws is measured directly, and an interval longer than a fifth of
  * a second is discarded as "the shell was doing something else" rather than averaged in. The components
  * are summed rather than sampled, because the last frame's cost is not the typical one and the spread
  * here is wide.
  *
- * And the whole of draw() is timed as well as its parts, so the parts can be checked against the whole.
- * The gap between them is the flip wait, which is the one cost that SHOULD be there - it is the frame
- * rate being held to the refresh - and telling it apart from an unmeasured cost needs both numbers.
+ * The whole of draw() is timed as well as its parts, so the parts can be checked against the whole. The
+ * gap between them is the flip wait, which is the one cost that SHOULD be there - it is the frame rate
+ * being held to the refresh.
  */
 static uint64_t s_draw_at;           /* rc_tick() at the top of this draw */
 static uint64_t s_frame_at;          /* rc_tick() at the start of the previous draw */
@@ -1231,25 +1174,16 @@ static rc_thermal_record s_thermal;
 /* ------------------------------------------------------------------------------------------------
  * THE INTERFACE IS DRAWN ONCE AND COMPOSITED, NOT REDRAWN OVER A MOVING BACKGROUND
  *
- * Four attempts to make the blending cheaper - dcbz, dcbt, removing the arithmetic, removing the
- * multiplies - left it at about 140 cycles a blended pixel, having started at 217. The arithmetic was
- * never what it was waiting for. What it was waiting for is the shape of the access: every blended
- * pixel READ the surface before writing it, the surface is eight megabytes, nothing of it is ever in
- * cache, and an in-order core stops dead on each dependent load.
+ * Blending the interface onto the surface cost about 140 cycles a pixel even after dcbz, dcbt, removing
+ * the arithmetic and removing the multiplies (it started at 217). Every blended pixel READ the surface
+ * before writing it; the surface is eight megabytes, nothing of it is ever in cache, and an in-order
+ * core stops dead on each dependent load. The background only ever WRITES its surface, at about 21
+ * cycles a pixel.
  *
- * The background, by contrast, only ever WRITES its surface, and costs about 21 cycles a pixel doing
- * it. The difference between those two numbers is the whole of this design.
- *
- * So the surface stops being read. The interface is drawn once into a layer of its own and kept until
- * something about it changes - which is on a cursor move, not on a frame - and each frame is then one
- * pass down the screen:
- *
- *     the background's row is expanded into a single-row buffer, which stays in cache;
- *     the layer's ink for that row is composited onto it, also in cache;
- *     the finished row is stored to the surface, once, sequentially.
- *
- * The surface therefore receives exactly one streaming store per frame and no reads at all, which is
- * the access pattern the background has already demonstrated this core is good at.
+ * So the interface is drawn once into a layer of its own and kept until something about it changes -
+ * which is on a cursor move, not on a frame - and each frame is one pass down the screen, a row at a
+ * time: the background's row, then the layer's ink for that row composited onto it. See draw() for why
+ * that goes straight into the surface rather than through a line buffer.
  *
  * THE LAYER HOLDS PREMULTIPLIED COLOUR. Compositing it is then out = layer.rgb + under * (255 - a),
  * with no division by the alpha and no special case for a pixel that is fully covered. rc_overlay
@@ -1330,9 +1264,8 @@ static int layer_ensure(void)
 /*
  * WHERE THE INK IS, RECORDED AS IT IS LAID DOWN.
  *
- * b380 found this out afterwards by reading the finished layer back - eight megabytes, twice, on the
- * one path that has to be quick. A rebuild measured 36,023 us, which is a stall of nearly two frames
- * every time the cursor moves, and it is a thing somebody feels rather than measures.
+ * Finding it afterwards by reading the finished layer back (b380) made a rebuild 36,023 us - eight
+ * megabytes read twice, a stall of nearly two frames every time the cursor moves.
  *
  * Both halves of the drawing already know: rc_overlay through its ink hook, and the shapes here at the
  * top of each row's loop. The bounds are deliberately conservative - the full extent a row COULD touch
@@ -1370,20 +1303,18 @@ static void layer_note_ink(int y, int x0, int x1)
  * has to re-find a jumping one." And the card itself picked up, which is "the whole character - the
  * difference between highlighted and picked up".
  *
- * WHAT MOVES IS THE GLOW, not the card - see the note in draw() on why sliding the card was the wrong
- * reading of that line, and felt it. The sprite exists because the selected card cannot live in the
- * cached layer: it is taller and brighter than its neighbours, so a cursor move would otherwise rebuild
- * nineteen milliseconds of layer on the frame an animation starts.
+ * WHAT MOVES ACROSS IS THE GLOW, not the card - see the note in draw(). The sprite exists because the
+ * selected card cannot live in the cached layer: a cursor move would otherwise rebuild nineteen
+ * milliseconds of layer on the frame an animation starts.
  *
- * AND ITS OTHER RULE, WHICH DECIDES THE SHAPE OF THIS: "Response is instant; only the picture settles."
- * The press is acted on the frame it arrives - rc_menu_move happens immediately, the selection IS the
- * new one, and rc_connect would be handed the new console if Cross followed a tenth of a second later.
- * What eases is where the sprite is DRAWN. A menu that makes you wait for an animation before it accepts
- * the next press is the worst thing a console menu does, and nothing here can do it.
+ * ITS OTHER RULE: "Response is instant; only the picture settles." The press is acted on the frame it
+ * arrives - rc_menu_move happens immediately, the selection IS the new one, and rc_connect would be
+ * handed the new console if Cross followed a tenth of a second later. What eases is where the sprite
+ * is DRAWN; nothing here waits for an animation before accepting the next press.
  *
  * The overshoot is on the lift rather than on a scale. The document asks for 1.08 with 4% over, and a
  * scale means resampling a 360x450 sprite every frame; the card rising past its resting height and
- * settling back reads as the same thing - a thing picked up - for a subtraction.
+ * settling back reads as the same thing for a subtraction.
  */
 #define SH_SPRITE_MAX_W 520
 #define SH_SPRITE_MAX_H 620
@@ -1404,13 +1335,12 @@ static int s_card_w, s_card_h;          /* the card inside the sprite, without i
  *
  * The selected card is the same size as its neighbours and sits a lift ABOVE its slot. The layer holds
  * every card unselected, at its slot - so the copy underneath the selected one sticks out by exactly
- * that lift at the bottom, and an opaque sprite covering its own rect does not cover that strip. What
- * reached the television was the card's border, then a gap, then the glow ring: the border was the
- * layer's card, eighteen pixels lower than the one it belonged to.
+ * that lift at the bottom, and an opaque sprite covering its own rect does not cover that strip. On the
+ * television that was the layer's card border, eighteen pixels low, between the card and its glow.
  *
- * The strip has to show the BACKGROUND, so there is nothing the sprite can paint over it. The layer
- * simply does not get composited there. The suppressed rect is the card's own width - the gap between
- * cards is wider than the glow's margin, so this can never reach a neighbour.
+ * The strip has to show the BACKGROUND, so there is nothing the sprite can paint over it; the layer is
+ * not composited there. The suppressed rect is the card's own width - the gap between cards is wider
+ * than the glow's margin, so this can never reach a neighbour.
  */
 static int s_sup_lo, s_sup_hi, s_sup_top, s_sup_bot;
 static int s_from_x, s_from_y;          /* where it was when the cursor last moved */
@@ -1665,16 +1595,11 @@ static void paint_ui(void)
             /*
              * EVERY CARD UNSELECTED, INTO THE LAYER; THE SELECTED ONE INTO A SPRITE OF ITS OWN.
              *
-             * The layer is rebuilt when the interface changes, which is what a cursor move IS - so a
-             * cursor that eases between cards would rebuild it sixty times a second at nineteen
-             * milliseconds a go, and the motion meant to look smooth would be the one thing that made
-             * it stutter. The same problem the glow had, and the same answer: what moves comes out.
-             *
-             * So the layer holds the row at rest and the selected card is rendered once into a sprite
-             * that is blitted at an eased position each frame. Sliding it costs a composite over its own
-             * area; re-rasterising its text would cost the rebuild. Underneath it, at its destination
-             * slot, is that same card drawn unselected - which is exactly what should be showing while
-             * the sprite is still on its way there.
+             * The layer is rebuilt when the interface changes, at nineteen milliseconds a go, so what
+             * moves comes out of it - the same answer as the glow. The layer holds the row at rest and
+             * the selected card is rendered once into a sprite that is blitted at an eased position
+             * each frame, which costs a composite over its own area. Underneath it, at its slot, is
+             * that same card drawn unselected.
              */
             for (i = 0; i < n; i++) {
                 int x = x0 + i * (cw + gap);
@@ -1704,18 +1629,13 @@ static void paint_ui(void)
 }
 
 /*
- * EVERY PIXEL DRAWN MUST BE INSIDE THE BOUNDS ITS DRAWER REPORTED, and until b391 nothing checked it.
+ * EVERY PIXEL DRAWN MUST BE INSIDE THE BOUNDS ITS DRAWER REPORTED.
  *
  * The composite walks the recorded bounds and nothing else, so a primitive that draws without saying
  * where does not lose its pixels - it loses the composite's permission to read them. rounded_glow did
- * exactly that, and what reached the television was a glow with square corners, present on the side
- * facing the other card and absent on the outside, visible along the bottom only where the word
- * "standby" happened to widen the row. Five readings of the drawing code did not find it; a description
- * of the shape on screen did, which is not a method that scales.
- *
- * Nothing in this project's host tests could have caught it either: they compare one implementation
- * against another and both would have drawn the glow correctly. The fault was in the BOOKKEEPING beside
- * the drawing, and the only thing that knows about it is this invariant.
+ * that before b391: a glow with square corners, present on the side facing the other card and absent
+ * on the outside. The host tests cannot catch this class of fault - the drawing is correct and the
+ * bookkeeping beside it is not - so this invariant is the only check.
  *
  * Checked on the first couple of rebuilds and then never again: a layout fault is there from the first
  * frame or not at all, and the scan is the cost the ink hook exists to avoid paying per frame.
@@ -1747,14 +1667,10 @@ static void layer_verify(void)
  * WHAT CHANGES WITH THE CURSOR BUT DOES NOT MOVE WITH IT, drawn straight onto the screen every frame.
  *
  * The description line and the hint row both read the SELECTION, so leaving them in the cached layer
- * meant every cursor move rebuilt it - and a rebuild is the better part of twenty milliseconds landing
- * on exactly the frame an animation is starting. What reached the television was a slide that lurched
- * on its first step and then ran smoothly, which is the worst possible distribution of that cost.
- *
- * They are a line of text and a row of glyphs: about one and a half milliseconds a frame to draw, every
- * frame, against nineteen on the frames where it used to matter most. With them out, the card row's
- * layer depends on the LIST and not on which of it is chosen, so moving the cursor rebuilds the sprite
- * alone.
+ * meant every cursor move rebuilt it - the better part of twenty milliseconds landing on exactly the
+ * frame an animation is starting. Drawn live they are a line of text and a row of glyphs, about one and
+ * a half milliseconds a frame. With them out, the card row's layer depends on the LIST and not on which
+ * of it is chosen, so moving the cursor rebuilds the sprite alone.
  */
 /*
  * The row's measurements, in one place, because two callers need them and a layout they disagreed about
@@ -1793,15 +1709,13 @@ static int sprite_rebuild_from_menu(void)
     /*
      * THE SAME SIZE AS ITS NEIGHBOURS, SITTING HIGHER - not taller.
      *
-     * It used to be drawn taller by its lift, growing upward from a fixed bottom. That put the card's
-     * text nine pixels from where the unselected version of the same card has it, so ANY transition
-     * between the two moved the text as well as the card, and that shift landing on the first frame of
-     * an animation is what made every version of this feel jerky. Reported from a sofa, correctly,
-     * before it was understood here.
+     * Drawn taller by its lift, growing upward from a fixed bottom, the card's text sat nine pixels
+     * from where the unselected version of the same card has it, so any transition between the two
+     * moved the text as well as the card, on the first frame of an animation.
      *
      * A pure translation has no such discontinuity: the layer's copy and the sprite's copy are laid out
      * identically, so the swap changes only brightness and outline - and the card can then be RISEN into
-     * place, which is the "picked up" the design asks for and could not have while it was also growing.
+     * place, which is the "picked up" the design asks for.
      */
     lift = sy(SH_SELECT_LIFT);
     s_lift = lift;
@@ -1816,22 +1730,18 @@ static int sprite_rebuild_from_menu(void)
 /* ------------------------------------------------------------------------------------------------
  * THE TROPHY CARD
  *
- * A panel that slides in from the top right, holds, and slides out. It is an instantly recognisable
- * piece of this console's vocabulary, and the thing it is FOR is that the shell already has answers
- * worth announcing: how many consoles replied, that a pairing took, that a console somebody is looking
- * at has woken up. Before this they went to the log, which is on another machine.
+ * A panel that slides in from the top right, holds, and slides out. It announces answers the shell
+ * already has: how many consoles replied, that a pairing took, that a console somebody is looking at
+ * has woken up. Otherwise they go only to the log, which is on another machine.
  *
- * SHELL-DESIGN.md groups this with the title sequence under "the moment". The title sequence is dropped
- * - it is the menu asking for credit - and this is not the same kind of thing at all: it is the machine
- * answering a question somebody asked. That is why one went and this stayed.
+ * SHELL-DESIGN.md groups this with the title sequence under "the moment". The title sequence is
+ * dropped; this stayed because it is the machine answering a question somebody asked.
  *
  * IT IS DRAWN LIVE, like everything else here that moves. A rounded panel and one line of text is about
- * a millisecond and a half, and caching it to slide it would be machinery for a thing that is on screen
- * for three seconds at a time.
+ * a millisecond and a half, and it is on screen for three seconds at a time.
  *
  * A QUEUE, NOT A SLOT. Two things can happen at once - a refresh finding a console awake while a pairing
- * finishes - and the second must not cut the first off mid-sentence. Three deep: more than that and the
- * person has walked away.
+ * finishes - and the second must not cut the first off. Three deep.
  */
 #define SH_TOAST_MAX      3
 #define SH_TOAST_IN_MS   320u
@@ -1941,19 +1851,16 @@ static void build_layer(int can_forget)
         return;
 
     /*
-     * CLEARED IN FULL, AND THIS IS A RETREAT FROM SOMETHING CLEVERER.
+     * CLEARED IN FULL.
      *
-     * b386 cleared only the rows and columns the previous build had recorded ink on, which is sound by
-     * induction - every build erases the last one's full extent, so the only ink present is the last
-     * one's - and it was eight megabytes of memset saved on a path that runs a few times a second. What
-     * was reported from hardware was the previous screen's glow showing faintly through the next one,
-     * and the argument above has exactly one weak point: it holds only while every write really is
-     * inside its recorded bounds, across two files and seven drawing primitives.
+     * b386 cleared only the rows and columns the previous build had recorded ink on, which is sound
+     * only while every write really is inside its recorded bounds, across two files and seven drawing
+     * primitives. What was reported from hardware was the previous screen's glow showing faintly
+     * through the next one.
      *
-     * A full clear removes that entire class of question for about seven milliseconds on a rebuild, and
-     * a rebuild is not in the frame budget. The ink bounds are still recorded and still used - they are
-     * what stops the COMPOSITE walking the whole screen sixty times a second, which is where the time
-     * actually was. This gives up the small half of that saving and keeps the large one.
+     * A full clear costs about seven milliseconds on a rebuild, and a rebuild is not in the frame
+     * budget. The ink bounds are still recorded and still used - they are what stops the COMPOSITE
+     * walking the whole screen sixty times a second.
      *
      * If the smearing survives this, it is not the bookkeeping: it is the RSX reading main memory that
      * the PPE has written, and that is a different fix in a different file.
@@ -2124,27 +2031,14 @@ static void draw(int can_forget)
     glow_scale = breathe(now, 4200u, 172u, 255u);
 
     /*
-     * WHERE THE SELECTED CARD IS THIS FRAME. The selection itself changed the instant the button was
-     * read; this is only where it gets drawn on the way there. Its glow rides the same offset, because
-     * light that lags the thing casting it is worse than light that does not move at all.
-     */
-    /*
-     * THE LIGHT TRAVELS; THE CARD DOES NOT.
+     * WHERE THE SELECTED CARD AND ITS GLOW ARE THIS FRAME. The selection itself changed the instant the
+     * button was read; this is only where things get drawn on the way there.
      *
-     * The first version slid the whole selected card from the slot it left to the one it arrived at,
-     * and that is the wrong reading of what SHELL-DESIGN.md asks for. It wants the CURSOR to move
-     * between cards - "the eye follows a moving thing; it has to re-find a jumping one" - and separately
-     * for the card you land on to be picked up. A card's NAME sliding across the screen to a slot it
-     * belongs in is neither.
-     *
-     * It also felt wrong for a reason worth writing down, because it was reported before it was
-     * understood: a selected card is taller than an unselected one, so its text sits in a different
-     * place inside it. Sliding the card meant that shift happened on the same frame the slide began -
-     * the content jumped and then travelled, which reads as a lurch no easing curve can smooth.
-     *
-     * So the card arrives immediately, at its own slot, exactly where it belongs; and the glow sweeps
-     * from the old card to the new one over two hundred milliseconds. What moves is the light, which is
-     * the thing the eye was going to follow anyway.
+     * THE LIGHT TRAVELS; THE CARD DOES NOT. SHELL-DESIGN.md wants the CURSOR to move between cards -
+     * "the eye follows a moving thing; it has to re-find a jumping one" - and separately for the card
+     * you land on to be picked up. Sliding the whole selected card between slots was neither, and its
+     * content jumped on the frame the slide began. So the card arrives immediately, at its own slot,
+     * and the glow sweeps from the old card to the new one over two hundred milliseconds.
      */
     {
         unsigned dt = (s_move_at != 0u && now >= s_move_at) ? (unsigned)(now - s_move_at)
@@ -2197,62 +2091,42 @@ static void draw(int can_forget)
          * STRAIGHT INTO THE SURFACE, NOT THROUGH A LINE BUFFER.
          *
          * b380 expanded each row into a single-row buffer, composited there, and then copied the
-         * finished row out - on the reasoning that the row would stay in cache and the surface would
-         * receive nothing but a streaming store. The copy is what that costs: eight megabytes read back
-         * out of the line buffer and eight megabytes stored, on top of the eight already written INTO
-         * it. It measured 46,559 us against 19,091 for simply drawing the interface every frame.
+         * finished row out. It measured 46,559 us against 19,091 for simply drawing the interface every
+         * frame: the copy is eight megabytes read back out of the line buffer and eight stored, on top
+         * of the eight already written into it.
          *
          * The row is in cache either way. A row is 7,680 bytes and the L2 is half a megabyte, so the
-         * row rc_wave_row has just written is still there when the composite reads it back - which is
-         * the whole benefit the line buffer was supposed to provide, already paid for and free.
+         * row rc_wave_row has just written is still there when the composite reads it back.
          */
         /*
          * TICKS ACCUMULATED, CONVERTED ONCE. us_since divides by rc_tick_hz(), and two of those per row
-         * for two timers is four thousand 64-bit divisions a frame - which is instrumentation costing
-         * about three milliseconds of the thing it is measuring. The raw counter is added up here and
-         * turned into microseconds when the shell closes.
+         * for two timers is four thousand 64-bit divisions a frame - about three milliseconds. The raw
+         * counter is added up here and turned into microseconds when the shell closes.
          */
         /*
          * TRIED AND REVERTED: EXPANDING THE BACKGROUND ON THE BORROWED SPE SCALER.
          *
          * rc_spu_yuv already holds three SPE threads, up before this shell runs and kept for the
          * decoder; since the decoder began producing RGB they do nothing but scale, which is what
-         * expanding the quarter-size buffer is. Borrowing them rather than making a group was the right
-         * shape - that group is deliberately never destroyed, so a second one would be SPEs the decoder
-         * never gets back.
+         * expanding the wave's quarter-size buffer is. Borrowing them rather than making a group was
+         * the right shape - that group is deliberately never destroyed (destroying it locked this
+         * console in b105 and again in b107), so a second one would be SPEs the decoder never gets
+         * back.
          *
-         * IT IS THE COST THAT KILLS IT. That scaler is general: it computes a source coordinate and a
-         * pair of weights per output pixel, for any ratio. rc_spu_yuv_job.h records mode 2 - interpolate
-         * in both directions, which a smooth background needs - at 21,038 us an SPE for a frame, while
-         * the streaming path's measured 2,992 us is mode 0, nearest. This expansion is a FOUR times
-         * ratio, so its only weights are 0, 1/4, 1/2 and 3/4 and every one is reachable by halving
-         * twice; the PPE does the whole screen in 11,343 us doing exactly that. A general scaler is
-         * about seven times more expensive than the special case, and no arrangement of the call fixes
-         * that.
+         * THE COST KILLS IT. That scaler is general: it computes a source coordinate and a pair of
+         * weights per output pixel, for any ratio. rc_spu_yuv_job.h records mode 2 - interpolate in
+         * both directions, which a smooth background needs - at 21,038 us an SPE for a frame, while the
+         * streaming path's measured 2,992 us is mode 0, nearest. This expansion is a FOUR times ratio,
+         * so its only weights are 0, 1/4, 1/2 and 3/4 and every one is reachable by halving twice; the
+         * PPE does the whole screen in 11,343 us doing exactly that.
          *
-         * AND IT BROKE THE THING IT WAS MEANT NOT TO TOUCH. Missing the 25 ms deadline five times in a
-         * row sets s_ready = 0 inside rc_spu_yuv, for the rest of the process - so a menu that asked for
-         * the scaler and did not get it left the DECODER without one too. Exactly the impact on
-         * streaming this was supposed to avoid, arrived at from the other direction.
+         * AND IT BROKE THE DECODER'S SCALER. Missing the 25 ms deadline five times in a row sets
+         * s_ready = 0 inside rc_spu_yuv, for the rest of the process - so a menu that asked for the
+         * scaler and did not get it left the DECODER without one too.
          *
          * The SPE route is still open, and it needs a kernel written for a 4x expansion rather than a
          * borrowed general one. rc_wave_small exists for that: aligned, padded to a multiple of 16
          * bytes a row, and ready to be handed to an MFC.
-         */
-        /*
-         * THE EXPANSION ON THE SPEs, WHEN THERE ARE ANY - AND NOTHING IS CREATED TO GET THEM.
-         *
-         * rc_spu_yuv already holds three SPE threads, brought up before this shell runs and kept for the
-         * decoder's colour path; since the decoder began producing RGB they do nothing but bilinear
-         * scaling, which is exactly what expanding the wave's quarter-size buffer is. So this borrows
-         * the group rather than making one - which matters more than the speed does, because that group
-         * is deliberately never destroyed (destroying it locked this console in b105 and again in b107),
-         * and a second one would be SPEs the decoder never gets back. Nothing here has to be cleaned up
-         * before a stream starts, because nothing here was taken.
-         *
-         * It is synchronous and it refuses rather than hangs: a zero return means the SPEs did not
-         * finish inside their deadline and the PPE does the frame, which is the same contract the stream
-         * path has always had.
          */
         for (y = 0; y < s_scr_h; y++) {
             uint32_t *row = pixels + (size_t)y * (size_t)pitch;
@@ -2308,13 +2182,10 @@ static void draw(int can_forget)
          * THE SELECTED CARD'S PIP RIDES WITH IT.
          *
          * Pips are recorded once, at each card's resting slot, which keeps the list independent of which
-         * card is chosen - and that is what lets a cursor move rebuild nothing. But the chosen card then
-         * RISES out of its slot and the pip stayed behind, which was reported from a sofa as the green
-         * dot not moving with the card. It is true of the sideways sweep too; the rise is simply where
-         * it shows.
-         *
-         * So the one pip inside the selected card's resting slot is offset by however far the sprite has
-         * travelled from it. No extra state, and it costs a rectangle test per pip per frame.
+         * card is chosen - and that is what lets a cursor move rebuild nothing. But the chosen card
+         * RISES out of its slot, so the one pip inside the selected card's resting slot is offset by
+         * however far the sprite has travelled from it. No extra state; a rectangle test per pip per
+         * frame.
          */
         int slot_x = s_sel_x, slot_y = s_sel_y + s_lift;
         int ride_x = s_draw_x - slot_x, ride_y = s_draw_y - slot_y;
@@ -2392,16 +2263,14 @@ static void draw(int can_forget)
  * which is how a confirmation gets past somebody.
  */
 /*
- * EDGES ARRIVING BETWEEN DRAWS ARE KEPT, and this is why a press used to need repeating.
+ * EDGES ARRIVING BETWEEN DRAWS ARE KEPT.
  *
- * The loop was: poll the pad once, act, draw. Drawing waits for the flip and then fills the screen, so
- * the pad was being READ about ten times a second - and rc_pad_read reports the pad's state right now,
- * not what it did in between. A press and release inside one of those gaps left no trace at all. It is
- * not a slow menu, it is a menu that never saw the button.
+ * rc_pad_read reports the pad's state right now, not what it did in between, and drawing waits for the
+ * flip and then fills the screen. With one poll per draw the pad was read about ten times a second,
+ * and a press and release inside one of those gaps left no trace at all.
  *
  * So polling is separated from drawing. pump_input runs while waiting for the flip, at whatever rate
- * the loop can manage, and ORs every edge it sees into a pending mask that the next pass consumes. A
- * press cannot now fall between two looks no matter how long the drawing takes.
+ * the loop can manage, and ORs every edge it sees into a pending mask that the next pass consumes.
  */
 static uint32_t s_pending;
 
@@ -2473,21 +2342,17 @@ static void forget_held(void)
 /*
  * A CONSOLE'S NAME OUTLIVES ITS ADDRESS, so take the name whenever the network offers one.
  *
- * A record written before this port stored names has only an address in it, and an address is not
- * something anybody recognises on a menu - worse, it is the part most likely to be wrong later, because
- * a DHCP lease is not a promise. Discovery knows what each console calls itself; when one answers at an
- * address we already have keys for, that name is adopted and written down, and the card stops saying
- * 192.168 anything.
+ * A record written before this port stored names has only an address in it, which nobody recognises on
+ * a menu and which a DHCP lease can change. Discovery knows what each console calls itself; when one
+ * answers at an address we already have keys for, that name is adopted and written down.
  *
  * AND ITS ID, WHICH IS THE PART THAT SURVIVES THE ADDRESS CHANGING. A record written before this port
  * stored one has a host and nothing else that identifies the console, so the first time it moves the
- * only way back is to pair it again. The id is learned here, quietly, on any broadcast where a paired
- * address answers - which means the repair happens on an ordinary visit to the menu, before it is
- * needed, rather than during the failure it prevents.
+ * only way back is to pair it again. The id is learned here, on any broadcast where a paired address
+ * answers - on an ordinary visit to the menu, before it is needed.
  *
  * A CONSOLE ALREADY MATCHED BY ID IS RE-ADDRESSED TOO. Once an id is on file, a console answering from
- * somewhere new is recognisable, and the record follows it. That is the other half of the problem the
- * previous version of this comment said it did not solve.
+ * somewhere new is recognisable, and the record follows it.
  */
 static void adopt_names(void)
 {
@@ -2535,35 +2400,31 @@ static void adopt_names(void)
 /* ------------------------------------------------------------------------------------------------
  * THE QUIET REFRESH
  *
- * The console cards were asked once, at launch, and then never again. So a console woken from another
- * room went on saying "standby" while somebody stood watching the screen that exists to tell them - and
- * the only way to find out otherwise was to go into the options and ask, which is a thing to do about a
- * menu whose whole job is that answer.
+ * Asked once, at launch, the cards went stale: a console woken from another room went on saying
+ * "standby" until somebody went into the options and asked again.
  *
- * It re-asks every ten seconds, and does it WITHOUT STOPPING: rc_discover blocks for its whole window,
- * which would freeze the shell for a second and a half every time, so this drives rc_discover's
- * open/pump/close form a frame at a time. Two datagrams and a socket held for under a second.
+ * So it re-asks on an interval (SH_REFRESH_MS, below), and does it WITHOUT STOPPING: rc_discover blocks
+ * for its whole window, which would freeze the shell for a second and a half every time, so this
+ * drives rc_discover's open/pump/close form a frame at a time. Two datagrams and a socket held for
+ * under a second.
  *
  * AND IT ONLY REBUILDS THE MENU WHEN SOMETHING A VIEWER COULD SEE HAS CHANGED. Rebuilding bumps the
  * menu's revision, which throws away the cached interface layer - about nineteen milliseconds - and
- * more to the point restarts the selected card's glow. A card row that flinched every ten seconds
- * because two datagrams came back saying exactly what the last two said would be a worse fault than the
- * one this fixes.
+ * restarts the selected card's glow.
  */
 static void build_home(void);   /* defined below; the refresh rebuilds the cards through it */
 
 /*
  * FIVE SECONDS, AND THE ANSWER IS TAKEN AS SOON AS IT IS COMPLETE.
  *
- * Ten seconds plus a 900 ms window meant a change could take eleven seconds to appear, which was
- * reported from hardware as "longer than ten seconds" - correctly. Two datagrams every five seconds is
- * nothing on a LAN and nothing on this CPU, so the interval is halved; and the window no longer has to
- * expire before the cards move, provided at least as many consoles have answered as answered last time.
+ * Ten seconds plus a 900 ms window meant a change could take eleven seconds to appear, reported from
+ * hardware as "longer than ten seconds". Two datagrams every five seconds is nothing on a LAN and
+ * nothing on this CPU. The window no longer has to expire before the cards move, provided at least as
+ * many consoles have answered as answered last time.
  *
- * THAT PROVISO IS THE WHOLE OF THE CARE HERE. Acting on the first reply would drop a second console that
- * was merely slower, and it would do it silently - a card vanishing for five seconds and coming back.
- * Waiting for the window is the safe answer when FEWER have replied than before; when the count is
- * already whole, there is nothing further to wait for.
+ * THAT PROVISO MATTERS. Acting on the first reply would silently drop a second console that was merely
+ * slower - a card vanishing for five seconds and coming back. When FEWER have replied than before, the
+ * window is waited out; when the count is already whole, there is nothing further to wait for.
  */
 #define SH_REFRESH_MS         5000u   /* how often to ask again */
 #define SH_REFRESH_WINDOW_MS   900u   /* how long to listen before giving up on the rest */
@@ -3108,8 +2969,7 @@ static int adjust(int delta)
  * thing support questions start with.
  *
  * NO LIST OF PEOPLE IS HARD-CODED HERE. A static roll of contributors is wrong the moment somebody
- * joins, and a screen that is quietly out of date is worse than one that points at the place which
- * cannot be - so it names the repository, which is where the list actually lives and stays current.
+ * joins, so the screen names the repository, which is where the list lives and stays current.
  */
 static void build_about(void)
 {

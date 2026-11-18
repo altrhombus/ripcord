@@ -1,25 +1,19 @@
 /*
  * ripcord-3ds - offline MVD replay: feed a known-good H.264 file to the decoder, with no console.
  *
- * WHY THIS EXISTS. Twelve hardware runs were spent on a grey picture, each one costing a full connect
- * flow against a real PS5 - discovery, session, senkusha, Takion, ECDH - to test one hypothesis about a
- * decoder. Then `dumpvideo=1` wrote the elementary stream to SD, ffmpeg decoded it on a PC, and it was
- * the PS5 home screen in full colour with legible text. That settled the fault: the console's stream is
- * good, this port's demuxer is good, and MVD alone turns a valid bitstream into a flat grey field.
- *
- * Once the input is known-good, the console is dead weight. This program reads that same video.264 off
- * the SD card and drives rc_mvd with it directly. No network, no keys, no session that times out, no
- * packet loss, and - the part that matters most - EVERY RUN IS IDENTICAL, so a change in the picture is
- * a change we made rather than a change in what the console happened to be showing.
+ * WHY THIS EXISTS. `dumpvideo=1` wrote the console's elementary stream to SD and ffmpeg decoded it on a
+ * PC as the PS5 home screen in full colour with legible text, while this port's MVD path showed a flat
+ * grey field: the console's stream and the demuxer were good, and the fault was in decode. This program
+ * reads that same video.264 off the SD card and drives rc_mvd with it directly. No network, no keys, no
+ * session that times out, no packet loss, and EVERY RUN IS IDENTICAL, so a change in the picture is a
+ * change we made rather than a change in what the console happened to be showing.
  *
  *     ffmpeg -i video.264 frame%03d.png     # what the decoder is SUPPOSED to produce
  *
  * ACCESS UNITS, NOT NAL UNITS. The stream carries one slice per MTU: the first keyframe in our capture
  * is 21 IDR NAL units, and 2,213 NAL units make only 941 pictures. A picture therefore ends where the
  * next one begins, and the marker for that is `first_mb_in_slice == 0` in a slice header - not the
- * arrival of an SPS, which in this stream appears only 20 times in 941 pictures. Grouping on parameter
- * sets would put twenty pictures' worth of slices into one access unit and is exactly the sort of
- * plausible-but-wrong rule that has already cost this investigation several rounds.
+ * arrival of an SPS, which in this stream appears only 20 times in 941 pictures.
  *
  * first_mb_in_slice is the first field of the slice header and is coded ue(v), so the value is zero
  * precisely when the byte after the NAL header has its top bit set.
@@ -97,16 +91,15 @@ static int unit_is_keyframe(const uint8_t *unit, size_t length)
 }
 
 /*
- * TWO FILES, SWITCHED AT RUNTIME - the CABAC/CAVLC A/B.
+ * TWO FILES - the CABAC/CAVLC A/B. Which one plays is chosen at startup; see main.
  *
  * The console encodes Main profile with entropy_coding_mode_flag = 1, i.e. CABAC. MVD is a fixed-function
  * block and whether it implements CABAC at all is a property of the silicon, not something this code can
- * configure - so it is the first thing to establish and it had never been checked.
+ * configure.
  *
  * video_cavlc.264 is the same pictures re-encoded as Constrained Baseline: CAVLC, level 3.1, refs=1, no
  * B-frames, slices sized near the MTU like the console's. The ONLY meaningful difference is the entropy
- * coder. Switching between them without re-initialising MVD keeps the decoder in the same warm state
- * that produces "clean after a rewind, then blurring", so the comparison is like for like.
+ * coder.
  *
  *     ffmpeg -i video.264 -c:v libx264 -profile:v baseline -level 3.1 -refs 1 -bf 0 \
  *            -b:v 700k -x264-params slice-max-size=1200 video_cavlc.264
@@ -116,15 +109,10 @@ static int s_stream_index;
 static const char *s_argv0;
 
 /*
- * INTEGRITY CHECK ON LOAD - because a corrupted capture looked like a decoder bug for several rounds.
- *
- * The first capture this tool was fed had 332 frame_num discontinuities across 941 pictures: 35% of its
- * pictures referenced a frame that was not in the file, because the dump was written to SD on the
- * receive thread and the resulting stall cost 2168 packets. ffmpeg conceals gaps silently, so it decoded
- * and looked perfect on a PC, and was trusted as known-good input while the decoder was blamed.
- *
- * frame_num increments by one per reference picture; a jump means a picture is missing. Counting them
- * takes milliseconds and turns "is my test input sound?" from an assumption into a printed number.
+ * INTEGRITY CHECK ON LOAD. frame_num increments by one per reference picture; a jump means a picture is
+ * missing. The first capture this tool was fed had 332 frame_num discontinuities across 941 pictures,
+ * because the dump was written to SD on the receive thread and the resulting stall cost 2168 packets.
+ * ffmpeg conceals gaps silently, so that capture decoded and looked perfect on a PC.
  */
 typedef struct { const uint8_t *b; size_t len; size_t pos; } bitreader;
 
@@ -379,17 +367,12 @@ int main(int argc, char **argv)
     rc_profile_calibrate();
 
     /*
-     * THE STREAM IS CHOSEN AT STARTUP, NOT SWITCHED AT RUNTIME.
-     *
-     * There was a Y key that swapped files mid-run. Both forms of it crashed: handing a warm decoder a
-     * new sequence parameter set took the process down, and so did tearing MVD down and re-initialising
-     * it to avoid that. Four crash dumps share an identical register context - same PC across builds
-     * whose .text differs by ~1.5 KB, lr = 0, only the faulted data address changing - which is code
-     * that does not move when this binary does. That is the MVD system module dying, not this program,
-     * and no amount of care on this side makes mvdstdExit/mvdstdInit cycling safe.
-     *
-     * Selecting before mvdstdInit is called sidesteps it completely: hold Y while launching for the
-     * second stream. One decoder lifetime per process, which is what the block appears to expect.
+     * THE STREAM IS CHOSEN AT STARTUP, NOT SWITCHED AT RUNTIME: hold Y while launching for the second
+     * stream. Swapping files mid-run crashed in both forms - handing a warm decoder a new sequence
+     * parameter set, and tearing MVD down and re-initialising it to avoid that. Four crash dumps share
+     * an identical register context - same PC across builds whose .text differs by ~1.5 KB, lr = 0,
+     * only the faulted data address changing - which is the MVD system module dying, not this program.
+     * One decoder lifetime per process, which is what the block appears to expect.
      */
     hidScanInput();
     if (hidKeysHeld() & KEY_Y)
