@@ -17,7 +17,7 @@ public protocol WebSocketChannel: Sendable {
 
 /// The real channel, over URLSessionWebSocketTask.
 ///
-/// Three things differ from .NET's ClientWebSocket, and each is handled here rather than left to surprise:
+/// Three things differ from .NET's ClientWebSocket:
 ///
 /// - **The keepalive is a loop of ours.** ClientWebSocket's KeepAliveInterval sends frames on a cadence
 ///   by itself (unsolicited PONGs, in .NET's implementation); URLSessionWebSocketTask sends nothing unless

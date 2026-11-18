@@ -1,5 +1,5 @@
 // AnnexBSampleBuilder, end to end, with no console: VideoToolbox encodes synthetic frames, each access
-// unit is re-shaped into what libripcord's demuxer emits (Annex-B, parameter sets prepended to every
+// unit is re-shaped into what the engine's demuxer emits (Annex-B, parameter sets prepended to every
 // keyframe), and the builder's output is decoded again by VideoToolbox, using the format description the
 // builder made. A frame that fails to decode, or decodes at the wrong size, fails the test.
 

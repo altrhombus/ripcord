@@ -3,9 +3,8 @@
  *
  * *** THE SEQUENCE HERE IS THE SDK'S, NOT AN INVENTION. *** It follows PSL1GHT's own
  * samples/spu/spudma: initialize, import, create group, initialize thread, start, wait, join, close.
- * That mattering is a lesson this port paid for - the packaging rules were written from ppu_rules "in
- * spirit" and dropped a step, and the result was four hardware runs that produced nothing at all. When
- * an SDK ships a worked example of the exact thing you are doing, the example is the specification.
+ * When an SDK ships a worked example of the exact thing you are doing, the example is the
+ * specification.
  */
 #include "rc_spu.h"
 
@@ -73,8 +72,7 @@ int rc_spu_init(void)
      * [X] The argument is the number of RAW SPUs to reserve, and 6 is what the SDK's own sample passes.
      * A PS3 has 8 SPEs: one is fused off for yield and one is reserved by the hypervisor, leaving 6 to
      * the application. Taking the sample's number rather than reasoning to it is deliberate - what
-     * matters for a probe is that it works, and what the split actually is can be measured later by the
-     * thing that needs more than one.
+     * matters for a probe is that it works.
      */
     if (sysSpuInitialize(6, 0) != 0)
         return 0;
@@ -103,18 +101,14 @@ void rc_spu_image_info(uint32_t *entry, uint32_t *segments, uint32_t *expected_e
     /*
      * *** THESE FIELDS ARE NOT TRUSTWORTHY AND MUST NOT DRIVE A CONCLUSION. ***
      *
-     * b9 read entryPoint as 0x22043300 where the linker had written 0x278, and segmentCount as 0, and
-     * this function's caller duly concluded that the imported image was not ours. That conclusion was
-     * wrong: the heartbeat in the same run proved the SPE was executing our program, which it could not
-     * have been unless the image loaded correctly.
+     * b9 read entryPoint as 0x22043300 where the linker had written 0x278, and segmentCount as 0, while
+     * the heartbeat in the same run proved the SPE was executing our program.
      *
      * The declaration is what is wrong. lv2/spu.h declares sysSpuImage as four u32s, and its third
      * member is documented as "address of segments" - an address, in a process whose pointers are 64
-     * bits. That does not fit, so the struct lv2 writes cannot be the struct PSL1GHT declares, and
-     * reading the later fields yields fragments of whatever the real layout is.
-     *
-     * It is still logged, because raw numbers from the console are worth having and the next person may
-     * be able to work the real layout out from them. It is no longer allowed to decide anything.
+     * bits. So the struct lv2 writes cannot be the struct PSL1GHT declares, and reading the later
+     * fields yields fragments of whatever the real layout is. They are logged as raw numbers and
+     * decide nothing.
      */
     *entry = s_ready ? s_image.entryPoint : 0u;
     *segments = s_ready ? s_image.segmentCount : 0u;
@@ -205,9 +199,9 @@ int rc_spu_run(const void *src, void *dst, size_t size, uint64_t *ticks,
     /*
      * THE MEASUREMENT. From here to the flag being observed is what a caller handing out a unit of work
      * actually pays: thread group start, the SPE's own startup, the DMA, and the completion write. It
-     * deliberately does NOT exclude thread start - a decoder that starts a thread per macroblock row
-     * would pay exactly this, and pretending otherwise would produce a number that flatters the design
-     * it is meant to inform.
+     * deliberately does NOT exclude thread start - a caller that starts a thread per job would pay
+     * exactly this, and pretending otherwise would produce a number that flatters the design it is
+     * meant to inform.
      */
     started = rc_tick();
 
@@ -221,15 +215,9 @@ int rc_spu_run(const void *src, void *dst, size_t size, uint64_t *ticks,
      * when the thread has exited and been reaped, which folds teardown into the number, while the flag
      * is written the moment the SPE's work is done.
      *
-     * BOUNDED, and the previous version was not. It said a hang was "the correct failure, because a
-     * silent hang on a specific line is a far better clue than a spurious success". That was wrong on
-     * its own terms and the console proved it: the SPE did not finish, the PPE spun forever, and what
-     * the operator got was a blank screen, a log that simply stopped, and a power cycle. A hang is not a
-     * clue - it is the absence of one, and it destroys the run that would have produced it.
-     *
-     * The deadline is generous by three orders of magnitude. A 256 KB DMA job is tens of microseconds;
-     * anything still running after two seconds is not slow, it is broken, and waiting longer only
-     * postpones the report.
+     * BOUNDED. An unbounded wait left the PPE spinning forever when the SPE did not finish: a blank
+     * screen, a log that simply stopped, and a power cycle. A 256 KB DMA job is tens of microseconds,
+     * so anything still running after two seconds is not slow, it is broken.
      */
     deadline = started + (rc_tick_hz() * RC_SPU_TIMEOUT_SECONDS);
 

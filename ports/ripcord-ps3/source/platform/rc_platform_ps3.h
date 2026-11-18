@@ -7,7 +7,7 @@
  *
  * It exists to stop one specific thing: a second copy of the expected time base frequency. main.c wants
  * to cross-check what lv2 reports against what this port expects, and the alternative to declaring it
- * here was to write 79,800,000 in two files and hope they stayed together. They do not; that is why
+ * here is to write 79,800,000 in two files and hope they stay together. They do not; that is why
  * this project does not keep second copies of anything.
  */
 #ifndef RC_PLATFORM_PS3_H
@@ -27,8 +27,8 @@ uint64_t rc_ps3_timebase_hz_expected(void);
  *
  * Pressing PS and choosing Quit does not kill the process. lv2 raises SYSUTIL_EXIT_GAME through
  * whatever callback the program registered, waits for it to leave of its own accord, and force-
- * terminates it when it does not. This program registered nothing, so every XMB quit took the second
- * path: the RSX still holding a context, an SPU thread group still running - and that group is
+ * terminates it when it does not. A program that registers nothing takes the second path on every
+ * XMB quit: the RSX still holding a context, an SPU thread group still running - and that group is
  * deliberately never destroyed, see rc_spu_yuv.h on the two builds where destroying it locked the
  * console. What that looks like from the sofa is three beeps and a reboot.
  *

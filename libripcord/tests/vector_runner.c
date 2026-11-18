@@ -1,26 +1,23 @@
 /*
- * ripcord-3ds - known-answer vector runner.
+ * libripcord - the control-plane crypto known-answer vector runner.
  *
  * Reads the vector file produced by
  *
  *     dotnet run --project tools/Ripcord.ProtocolLab -- vectors
  *
- * and checks this port's control-plane crypto against it, line by line. Every answer in that file was
+ * and checks the core's control-plane crypto against it, line by line. Every answer in that file was
  * computed by the .NET implementation; every answer here is computed by the C one. Where they disagree,
- * one of the two has misread docs/protocol/ps5-remoteplay-v1-spec.md - and that is the finding worth having,
- * because a spec two independent implementations read differently is a spec defect, not a porting detail.
+ * one of the two has misread docs/protocol/ps5-remoteplay-v1-spec.md.
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS. It is plain C99 with no devkitPro, no libctru and no console
- * involved, so the crypto can be verified on any machine with a compiler:
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE. It is plain C99 with no console SDK involved, so the crypto
+ * can be verified on any machine with a compiler:
  *
- *     make -C ports/ripcord-3ds/tests
+ *     make -C libripcord/tests
  *
- * The on-device build compiles the same source/ files; if they are wrong, they are wrong here first and
- * far more cheaply.
+ * The ports' on-device builds compile the same core files.
  *
  * The file format is deliberately flat text rather than JSON: a line per vector, hex fields, split on
- * spaces. A JSON parser would be a dependency this port does not otherwise need, on a target where every
- * kilobyte of binary is real, to read a file whose entire grammar is "words on a line".
+ * spaces, so the core needs no JSON parser.
  */
 #include "../crypto/rc_crypto.h"
 #include "../halyard/halyard_v1.h"
@@ -343,7 +340,7 @@ static void run_streaminfo(char **fields, int count, int line_number)
  * makes those checks a test of AGREEMENT, not of correctness - two implementations can agree and both be
  * wrong. This one vector is from the published standard, so it fails independently of anything in this
  * repository. It also localises the most likely defect: a single mistyped S-box byte passes most inputs
- * and fails a scattered few, which reads as a mode bug for a surprisingly long time. (Ask how I know.)
+ * and fails a scattered few, which reads as a mode bug for a surprisingly long time.
  */
 static int self_test(void)
 {

@@ -15,22 +15,21 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 /// bytes. The <em>structure</em> below is our own reimplementation, validated end-to-end against a full
 /// live session (cap22: derive → decrypt every /sess/ctrl field to its plaintext); the table
 /// <em>contents</em> are extracted interop constants supplied via <see cref="HalyardControlSecrets"/>
-/// (never committed — see that type's remarks).
+/// (none are written into this assembly — that type's remarks say where they are loaded from).
 /// </para>
 ///
 /// <para>
 /// <b>Role note:</b> the AES key is the companion-derived value and the IV material is the nonce-derived
-/// value — not the other way round. An earlier revision had these two swapped; it passed the
-/// primitive-level field-cipher tests (which feed key/material in directly) but produced garbage on a
-/// real session, where the key/material come from this derivation. The <see cref="LiveControlVectorTests"/>
-/// end-to-end vector guards against regressing that.
+/// value — not the other way round. Swapped, it still passes the primitive-level field-cipher tests (which
+/// feed key/material in directly) but produces garbage on a real session, where the key/material come from
+/// this derivation. The <see cref="LiveControlVectorTests"/> end-to-end vector guards against that.
 /// </para>
 ///
 /// The console negotiates among several KDF variants: the dispatcher branches first on a protocol/version
 /// discriminator (our <c>versionSelector</c> — PS5 = 1, PS4 = 0) and then on RP-KeyType. The two variants a
 /// live PS5 and PS4 select differ only in their per-byte constants and their two lookup tables; the same
 /// companion-derived-key / nonce-derived-material roles and the downstream field/IV/CFB machinery are shared.
-/// This implements both; other variants slot in behind the same seam when needed.
+/// This implements those two and no other variant.
 /// </summary>
 public sealed class HalyardControlKdf
 {

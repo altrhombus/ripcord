@@ -5,9 +5,9 @@ namespace Ripcord.Presentation.Threading;
 /// (Avalonia, GTK#, Uno, or a plain host with a message loop).
 ///
 /// <para>
-/// Ships now, with no consumer, because it is the cheap proof that <see cref="IUiDispatcher"/> is genuinely an
-/// abstraction rather than a rename of one platform's API. If the seam could only ever be implemented by
-/// WinUI's DispatcherQueue, the extraction would not have bought anything.
+/// No front end in this repository uses it; only its tests do. It is the cheap proof that
+/// <see cref="IUiDispatcher"/> is genuinely an abstraction rather than a rename of one platform's API: a seam
+/// that only WinUI's DispatcherQueue could implement would not be one.
 /// </para>
 /// </summary>
 public sealed class SynchronizationContextUiDispatcher : IUiDispatcher

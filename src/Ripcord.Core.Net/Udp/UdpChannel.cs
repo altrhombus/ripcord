@@ -30,8 +30,8 @@ public sealed class UdpChannel : IDisposable
 
         // Off, on Windows. Left on, one ICMP "port unreachable" (a probe to a port the console has closed, a
         // datagram that outlived the far end's socket) makes the next receive throw ConnectionReset, and every
-        // receive loop here ends on an exception: the session went with it, silently (the 2026-09-30 review). A
-        // datagram socket has no connection to reset, so there is nothing this error could tell us.
+        // receive loop here ends on an exception, taking the session with it silently. A datagram socket has no
+        // connection to reset, so there is nothing this error could tell us.
         if (OperatingSystem.IsWindows())
         {
             _client.Client.IOControl(SioUdpConnReset, [0, 0, 0, 0], null);

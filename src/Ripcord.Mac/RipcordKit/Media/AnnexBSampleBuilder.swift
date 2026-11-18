@@ -1,6 +1,6 @@
 // From the console's bitstream to what Apple's decoders take.
 //
-// libripcord's demuxer (stream/stream_demux.c) hands over each video frame as one Annex-B access unit:
+// The engine's demuxer (ripcord-proto, stream/demux.rs) hands over each video frame as one Annex-B access unit:
 // NAL units behind 00 00 01 / 00 00 00 01 start codes, with the parameter sets from STREAM_INFO
 // prepended to every keyframe. VideoToolbox and AVSampleBufferDisplayLayer take neither form. They want
 // a CMSampleBuffer whose NAL units carry 4-byte big-endian length prefixes (AVCC/HVCC), and a

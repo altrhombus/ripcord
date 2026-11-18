@@ -39,7 +39,7 @@ int takion_chunk_type(const uint8_t *data, size_t length)
 }
 
 /* Every chunk here declares its own length in the standard 2-byte SCTP field at offset 2; checking it
- * against the fixed size this port expects catches a truncated or malformed frame before the fixed
+ * against the fixed size this code expects catches a truncated or malformed frame before the fixed
  * field reads below run past what the sender actually meant to send. */
 static int chunk_header_ok(const uint8_t *data, size_t length, unsigned expect_type, size_t expect_size)
 {

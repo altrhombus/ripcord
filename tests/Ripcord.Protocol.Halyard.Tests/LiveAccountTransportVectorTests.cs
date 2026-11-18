@@ -13,7 +13,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// This is the test that makes the derivation in <c>docs/protocol/ps5-session-transport.md</c> mean something:
 /// the codec is fed the console's own bytes and has to agree about where every field sits. The synthetic
 /// round-trips in <see cref="HalyardControlChunkTests"/> cannot do that — a codec is self-consistent by
-/// construction, which is exactly the trap the account seed tests fell into before their live vector existed.
+/// construction, which is the trap any round-trip-only suite is in.
 /// </para>
 ///
 /// <para>

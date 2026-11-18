@@ -1,7 +1,7 @@
 /*
  * ripcord-ps3 - a probe for the console's own H.264 decoder (cellVdec, via PSL1GHT's codec/vdec.h).
  *
- * WHY A PROBE BEFORE AN IMPLEMENTATION. b144 established that openh264 on the PPE is the ceiling: with
+ * WHY A PROBE. b144 established that openh264 on the PPE is the ceiling: with
  * the network finally clean the console tripled its bitrate, frames went from 8.2 KB to 23.3 KB, and the
  * measured cost per successful decode rose to somewhere around 70-83 ms - a 12-14 fps limit on a 30 fps
  * stream. The hardware decoder is the way out, and it runs on the SPEs rather than the PPE.
@@ -11,10 +11,10 @@
  * failure mode CONTRIBUTING.md names - fluent, confident specificity about a value nobody checked - so this
  * sweeps the space instead and lets the console say which values it accepts. That is a derivation.
  *
- * The same probe reports the memory each accepted level wants, which sizes the allocation the real
- * implementation will need, and whether the module loads at all.
+ * The same probe reports the memory each accepted level wants, which is what sizes the decoder's
+ * allocation, and whether the module loads at all.
  *
- * Nothing here decodes anything. It queries, and it is safe to run before the decoder exists.
+ * rc_vdec_probe decodes nothing. It queries, and it needs no open decoder.
  */
 #ifndef RC_VDEC_PROBE_H
 #define RC_VDEC_PROBE_H
@@ -52,17 +52,14 @@ int rc_vdec_probe(rc_vdec_probe_result *out);
  *
  * This runs the console's decoder over the same capture rc_decode_probe feeds to openh264 and hashes the
  * output the same way - Y, then U, then V, one running FNV-1a per picture, via the same function. Equal
- * hashes mean the two decoders agree, which is the only evidence worth having before the live path is
- * moved onto a decoder nobody here has run.
+ * hashes mean the two decoders agree.
  *
  * It is deliberately OFFLINE. Nothing in the streaming path changes, and a failure costs a run rather
  * than a session.
  *
- * EVERY STEP IS LOGGED AS IT IS ATTEMPTED, through the caller's own log function, and that is the whole
- * point rather than a convenience. b146 recorded the step in the struct below and printed it after the
- * call returned - which names nothing at all when the call never returns, which is precisely the case
- * the field existed for. The console hung and the last line in the log was the one printed before the
- * probe started. A record that only survives success is not instrumentation.
+ * EVERY STEP IS LOGGED AS IT IS ATTEMPTED, through the caller's own log function. A step recorded in
+ * the struct below and printed after the call returned names nothing when the call never returns: in
+ * b146 the console hung and the last line in the log was the one printed before the probe started.
  *
  * rc_log flushes per line, so a line written before a call is on disk before that call can hang.
  */
@@ -109,10 +106,9 @@ typedef struct {
 
     /*
      * THE STRIDE, DERIVED RATHER THAN ASSUMED. b152 showed the two decoders disagree on the LUMA, not
-     * just the chroma, and printed the reason in passing: openh264's own strides are 704 and 352 for a
-     * 640-wide picture. It pads, and this probe was reading vdec's output as though stride equalled
-     * width. If vdec pads too then every row after the first is read misaligned, which corrupts Y and
-     * makes any question about chroma offsets meaningless.
+     * just the chroma: openh264's own strides are 704 and 352 for a 640-wide picture. It pads, and this
+     * probe was reading vdec's output as though stride equalled width. If vdec pads too then every row
+     * after the first is read misaligned.
      *
      * No SDK header states the stride, so it is swept against openh264's known-good luma hash - the same
      * method that turned profile_level from a guess into the level_idc set. `matched_stride` is the one
@@ -207,20 +203,20 @@ typedef struct {
     uint8_t  rgb_first[8];
 } rc_vdec_decode_result;
 
-/* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
- * Returns 1 if at least one picture came out. `out` is filled either way. */
 /* Called with one already-formatted line per step attempted. Must write through to storage - see above. */
 typedef void (*rc_vdec_log_fn)(const char *message);
 
 /*
+ * Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
+ * Returns 1 if at least one picture came out. `out` is filled either way.
+ *
  * `reference_y` is openh264's luma hash for the first picture, used to identify the stride by sweep.
- * Pass 0 to skip that search.
- */
-/*
- * `want_rgb` asks the decoder for VDEC_PICFMT_ARGB32 instead of YUV420P. That is the open question behind
- * the colour converter: if the decoder can hand back RGB, the YUV-to-RGB pass on the SPEs is not needed.
- * Asked here, offline, because the streaming path has no RGB blit and a format switch there would draw
- * garbage to find out.
+ * Pass 0 to skip that search. `reference_u` is its U hash, used the same way to find where the chroma
+ * begins.
+ *
+ * `want_rgb` asks the decoder for VDEC_PICFMT_ARGB32 instead of YUV420P and records whether the request
+ * is accepted and the buffer filled. Asked offline, so a refused format costs a probe run rather than a
+ * session.
  */
 int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_log_fn log,
                          uint64_t reference_y, uint64_t reference_u, int want_rgb,

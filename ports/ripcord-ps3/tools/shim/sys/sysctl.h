@@ -5,15 +5,13 @@
  * has. The include is guarded for Linux, Android, Emscripten and Fuchsia, and a bare newlib target is
  * none of those, so it falls through to the BSD path and fails to compile on a missing header.
  *
- * The honest answer for this port is not a number obtained some other way: it is that openh264 should
- * not be sizing a thread pool here at all. The PPE runs the decoder single-threaded and the parallelism
- * goes to the SPEs, which openh264 knows nothing about. So this declares the call and the build supplies
- * one that fails, and openh264's own error path - `pInfo->ProcessorCount = 1` - produces exactly the
- * answer this port wants, by its own logic rather than by a patch to its source.
+ * openh264 should not be sizing a thread pool here at all: the PPE runs the decoder single-threaded and
+ * the parallelism goes to the SPEs, which openh264 knows nothing about. So this declares the call and
+ * the build supplies one that fails, and openh264's own error path - `pInfo->ProcessorCount = 1` -
+ * produces exactly the answer this port wants, by its own logic rather than by a patch to its source.
  *
- * Nothing is modified in openh264. That matters for a dependency fetched and verified at build time:
- * a patch would have to be carried, rebased and justified forever, and a shim on the include path is
- * visible, local, and costs nothing when the dependency moves.
+ * Nothing is modified in openh264. A patch to a dependency fetched and verified at build time would
+ * have to be carried and rebased; a shim on the include path is visible and local.
  */
 #ifndef RC_PS3_SHIM_SYS_SYSCTL_H
 #define RC_PS3_SHIM_SYS_SYSCTL_H

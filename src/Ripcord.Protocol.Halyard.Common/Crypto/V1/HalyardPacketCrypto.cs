@@ -137,7 +137,7 @@ public sealed class HalyardPacketCrypto : IDisposable
     /// re-folds <em>key0</em> (not the AES key) with an incrementing IV:
     /// <code>key[n] = sha256_fold(key0 || iv_add(baseIv, n * 0xAF6E))   (n >= 1)</code>
     /// Recovered and verified byte-for-byte against a live console capture (13670/13672 A/V packets over 223
-    /// rotation windows) - the earlier "sha256_fold(aesKey || ...)" form was correct only for window 0.
+    /// rotation windows). Folding the AES key in place of key0 is correct only for window 0.
     /// </summary>
     public void GmacKey(ulong keystreamOffset, Span<byte> destination)
     {

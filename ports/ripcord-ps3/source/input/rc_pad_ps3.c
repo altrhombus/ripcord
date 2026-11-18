@@ -58,21 +58,15 @@ static int16_t deadzone(int16_t v)
 }
 
 /*
- * A ZERO-LENGTH READ MEANS "NOTHING NEW", NOT "NOTHING THERE", and getting that backwards is what b271
- * shipped.
+ * A ZERO-LENGTH READ MEANS "NOTHING NEW", NOT "NOTHING THERE" (b271).
  *
  * ioPadGetData fills `len` only when the pad has reported since the last call. Polling at 125 Hz
  * against a pad that reports far less often, and only when something changes, means most calls come
- * back empty - and treating each one as an absent controller produced 59 answered polls in sixty
- * seconds and 118 connect/disconnect events, which is the pad apparently vanishing and returning
- * between every pair of frames.
+ * back empty. Treating each one as an absent controller produced 59 answered polls in sixty seconds
+ * and 118 connect/disconnect events, and a poll that reported "no pad" sent no periodic state packet.
  *
- * It cost more than the counters. A poll that reported "no pad" sent NOTHING - so no periodic state
- * packet went out, and the console heard from the controller about once a second.
- *
- * Presence is now decided by info.status alone, which is the field that actually answers it, and the
- * last good reading is held and re-sent while the pad has nothing new to say. That is also the truth:
- * a stick that has not moved is still where it was.
+ * Presence is decided by info.status alone, and the last good reading is held and re-sent while the
+ * pad has nothing new to say.
  */
 static halyard_input_state s_last;
 static int s_have_last;
@@ -81,9 +75,9 @@ static unsigned s_fresh;
  * pressure was actually granted, since a refusal reads exactly like a trigger nobody touched. */
 static int s_analog_seen;
 /*
- * THE CHORD STATE, and its logic, live in rc_chord.c now - a pure state machine over a button mask and
- * the clock, so the two bugs it has had (a swallowed tap never sent; a stray press left on release) can
- * be driven from a host test rather than only found on hardware. This file supplies the mask and the
+ * THE CHORD STATE. Its logic lives in rc_chord.c - a pure state machine over a button mask and the
+ * clock, so its two failure modes (a swallowed tap never sent; a stray press left on release) can be
+ * driven from a host test rather than only found on hardware. This file supplies the mask and the
  * time and applies the result to the pad state; rc_chord.h owns RC_CHORD_WINDOW_MS/REPLAY_MS.
  */
 static rc_chord s_chord;
@@ -172,32 +166,21 @@ int rc_pad_read(halyard_input_state *out)
          * SELECT and START; the PS5 renamed the same positions Create and Options, and those are the
          * codes that go on the wire, which is why the constants below read the other way round. Where
          * this file talks about what a player presses it says SELECT and START, and where it talks about
-         * what the console receives it says Create and Options. Getting those the wrong way round is how
-         * the log came to tell somebody to press two buttons their controller does not have.
+         * what the console receives it says Create and Options.
          *
-         * Two buttons rather than three, because three was awkward to press with the same hands that
-         * are holding the controller. Both are menu buttons, which matters twice over: no game asks for
-         * them together, and neither is latency-sensitive - which is what makes the hold-back below
-         * affordable.
+         * Two buttons, both menu buttons: no game asks for them together, and neither is
+         * latency-sensitive, which is what makes the hold-back below affordable. L3 is out of it
+         * deliberately: it is a sprint or a crouch in most games, so delaying it by a quarter of a second
+         * to see whether a chord forms would be felt.
          *
-         * L3 is out of it deliberately. It was in the first version and it is a sprint or a crouch in
-         * most games, so delaying it by a fifth of a second to see whether a chord forms would be felt.
-         * Delaying SELECT or START is not.
-         *
-         * HELD BACK, NOT JUST SWALLOWED, and this is the fix rather than a refinement. The first
-         * version removed the chord's buttons only once ALL of them were down, so whichever was pressed
-         * first had already gone out as an ordinary press - and SELECT arrives at the PS5 as Create,
-         * which is its screenshot button, so reaching for the menu took a burst of screenshots with it.
-         * "A pause menu at worst" was wrong.
-         *
-         * So a press of either button is now withheld for RC_CHORD_WINDOW_MS. If the other arrives
+         * HELD BACK, NOT JUST SWALLOWED. SELECT arrives at the PS5 as Create, which is its screenshot
+         * button, so a press of either button is withheld for RC_CHORD_WINDOW_MS. If the other arrives
          * inside that window the pair is swallowed and nothing reaches the console; if it does not, the
-         * press is released and travels normally, a fifth of a second late. A lone tap of SELECT still
+         * press is released and travels normally, a quarter of a second late. A lone tap of SELECT still
          * takes a screenshot on the console. Only a deliberate pair does not.
          *
          * A fumbled chord - one button, a long pause, then the other - still toggles, and still leaks
-         * the first button, because after the window it has genuinely been sent. That is the honest
-         * edge of this design and it costs one stray menu press, not a burst of them.
+         * the first button, because after the window it has genuinely been sent.
          */
         {
             const uint32_t chord = HALYARD_PAD_OPTIONS | HALYARD_PAD_CREATE;

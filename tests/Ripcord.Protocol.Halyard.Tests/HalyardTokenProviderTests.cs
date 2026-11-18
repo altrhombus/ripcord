@@ -6,8 +6,8 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The token provider's two faults the Mac port found (2026-09-26): concurrent callers each spent the rotating
-/// refresh token, and sign-out left the provider seeded.
+/// The token provider under concurrency: callers share one refresh rather than each spending the rotating
+/// refresh token, and a sign-out leaves the provider unseeded even with a refresh in flight.
 /// </summary>
 public class HalyardTokenProviderTests
 {

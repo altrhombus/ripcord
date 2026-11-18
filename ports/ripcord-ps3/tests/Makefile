@@ -1,8 +1,7 @@
 # ripcord-ps3 - host-side self-tests.
 #
 # Builds for THIS machine, not the PS3: plain C99, no PSL1GHT, no SPU toolchain, no console. The
-# bitstream code is portable C and there is no reason to need hardware to find out it is wrong - which
-# matters more here than it did for ripcord-3ds, because there is no PS3 on hand at all yet.
+# bitstream code is portable C and there is no reason to need hardware to find out it is wrong.
 #
 #     make            build and run
 #     make build      build only

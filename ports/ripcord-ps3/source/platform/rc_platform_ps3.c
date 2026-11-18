@@ -5,41 +5,27 @@
  * libripcord/platform/rc_platform.h for what each function promises; this file only says how the PPE
  * delivers it.
  *
- * *** COMPILED, RUN, AND MEASURED ON A CONSOLE. ***
+ * *** COMPILED, RUN, AND MEASURED ON A CONSOLE. *** What the console settled, on 2026-09-11 and in the
+ * runs after it:
  *
- * This banner said the exact opposite until 2026-09-18 - "nothing in this file has ever been compiled",
- * every SDK-facing line [X], no PSL1GHT installation and no PS3 to run it against. That was true when it
- * was written, and it is retired rather than deleted because the warning it carried was the right one to
- * have had: the 3DS port's first socket bug was an idiom that is correct on .NET, correct on Unix, and
- * rejected outright by the 3DS SOC service, and it cost a hardware run to find. It was reasonable to
- * assume this file had one of those in it. It did not.
- *
- * What the console settled, on 2026-09-11 and in the runs after it:
- *
- *   - THE TIME BASE IS 79,800,986 Hz, measured, against the 79,800,000 this file expected - 12 parts per
- *     million. It is no longer asserted either: rc_tick_hz() asks lv2, and the constant is demoted to
+ *   - THE TIME BASE IS 79,800,986 Hz, measured, against the 79,800,000 this file expects - 12 parts per
+ *     million. It is not asserted: rc_tick_hz() asks lv2, and the constant is kept as
  *     rc_ps3_timebase_hz_expected() for main.c to cross-check the kernel's answer against.
- *   - SLEEP TAKES MICROSECONDS under the sysUsleep spelling, which was the one genuine unit risk here.
+ *   - SLEEP TAKES MICROSECONDS under the sysUsleep spelling, which is the one genuine unit risk here.
  *   - THE CSPRNG returns what the seam promises, every branch of the check exercised rather than only
  *     the passing one.
  *
- * THE SDK SURFACE IS DELIBERATELY ALMOST EMPTY, AND THAT IS THE DESIGN.
+ * THE SDK SURFACE IS DELIBERATELY SMALL. rc_time_ms() and rc_tick() read the PowerPC time base with one
+ * instruction, `mftb`, which is an architectural fact about the CPU rather than a name in somebody's
+ * header. The seam's exposure to PSL1GHT is one sleep call and one frequency syscall; the XMB-quit
+ * watch at the foot of the file adds one sysutil callback.
  *
- * Three of the four functions here read the PowerPC time base with one instruction. `mftb` is an
- * architectural fact about the CPU rather than a name in somebody's header, so it cannot be wrong in
- * the way an SDK call can: there is no wrapper to misremember and no units to invert. The whole file's
- * exposure to PSL1GHT is therefore one sleep call and one frequency constant, which is a much smaller
- * surface to be wrong about than four independent SDK calls would have been.
- *
- * ONE CLOCK, NOT TWO - which is what makes the seam's monotonicity promise structural here.
- *
- * rc_platform.h is explicit that rc_time_ms() must never go backwards, because the core is written as
- * `while (rc_time_ms() - start <= timeout)` and on unsigned arithmetic a backwards clock turns that
- * into a near-infinite loop rather than an early exit. A wall clock cannot promise that: the PS3 has a
- * user-settable date and an internet time sync, and both step it. So rc_time_ms() is derived from the
- * same time base rc_tick() reads, which counts up from power-on and has nothing that can move it. The
- * cost is one division; the benefit is that the property the core depends on is a property of the
- * hardware rather than a hope about the system clock.
+ * ONE CLOCK, NOT TWO. rc_platform.h is explicit that rc_time_ms() must never go backwards, because the
+ * core is written as `while (rc_time_ms() - start <= timeout)` and on unsigned arithmetic a backwards
+ * clock turns that into a near-infinite loop rather than an early exit. A wall clock cannot promise
+ * that: the PS3 has a user-settable date and an internet time sync, and both step it. So rc_time_ms()
+ * is derived from the same time base rc_tick() reads, which counts up from power-on, at the cost of one
+ * division.
  */
 
 #include <stdint.h>
@@ -53,25 +39,17 @@
 #include "rc_platform_ps3.h"
 
 /*
- * THE TIME BASE FREQUENCY IS ASKED FOR, NOT ASSUMED - which is a change from how this file was first
- * written, and the reason is worth recording.
+ * THE TIME BASE FREQUENCY IS ASKED FOR, NOT ASSUMED. sysGetTimebaseFrequency() is syscall 147, declared
+ * in <sys/systime.h>, returning the rate as a u64.
  *
- * The original version hard-coded 79,800,000 Hz, the documented figure for every retail PS3 (3.2 GHz
- * divided by 40), and carried a long warning that it was the one number here a wrong value would
- * corrupt silently: every timeout in the core scales by the ratio, so a 5-second handshake deadline
- * becomes 4 or 6 and the console reads as flaky rather than as a bug in this file. All of that is still
- * true. What changed is that the warning was unnecessary, because lv2 will simply tell us:
- * sysGetTimebaseFrequency() is syscall 147, declared in <sys/systime.h>, returning the rate as a u64.
- * It was found by reading the SDK's own header while confirming something else.
+ * The constant below is the EXPECTED value - 79,800,000 Hz, the documented figure for every retail PS3
+ * (3.2 GHz divided by 40) - kept for two jobs: as the fallback if the syscall ever returns something
+ * unusable, and as the figure source/app/main.c cross-checks the kernel's answer against. A wrong
+ * frequency corrupts silently: every timeout in the core scales by the ratio, so a 5-second handshake
+ * deadline becomes 4 or 6.
  *
- * So the constant below is no longer the source of truth. It is the EXPECTED value, kept for two jobs:
- * as the fallback if the syscall ever returns something unusable, and as the figure source/app/main.c
- * cross-checks the kernel's answer against.
- *
- * This also sharpens the bring-up program. Its own comment worried that measuring the tick with a sleep
- * tests the CONJUNCTION of two unknowns - sysUsleep's units and the frequency - and cannot say which is
- * wrong. With the frequency coming from the kernel, that stops being true: an authoritative frequency
- * plus a measured one isolates the sleep. See main.c, which now says so.
+ * With the frequency coming from the kernel, main.c's measurement of the tick with a sleep isolates
+ * sysUsleep's units instead of testing two unknowns at once. See main.c.
  *
  * [X] The syscall number and the unit are the SDK's, not ours, and neither has been run on a console.
  */
@@ -102,13 +80,11 @@ static uint64_t rc_ps3_timebase_hz(void)
 /*
  * The time base, read with one instruction.
  *
- * On 64-bit PowerPC `mftb` yields the whole 64-bit counter in a single move, so none of the
- * read-high/read-low/re-read-high dance that 32-bit PowerPC needs applies - and the PPE runs this port
- * as 64-bit code. Writing that loop anyway would not be harmless caution: it would suggest to the next
- * reader that the hazard exists here, which is a worse defect than the two instructions it saves.
+ * On 64-bit PowerPC `mftb` yields the whole 64-bit counter in a single move, and the PPE runs this port
+ * as 64-bit code, so the read-high/read-low/re-read-high loop that 32-bit PowerPC needs does not apply
+ * and is deliberately not written.
  *
- * At 79.8 MHz a 64-bit counter wraps after roughly seven thousand years, so no wrap handling is needed
- * and none is written. That conclusion survives any plausible correction to the frequency.
+ * At 79.8 MHz a 64-bit counter wraps after roughly seven thousand years, so no wrap handling is needed.
  */
 static inline uint64_t rc_ps3_timebase(void)
 {
@@ -156,17 +132,11 @@ uint64_t rc_ps3_timebase_hz_expected(void)
 }
 
 /*
- * rc_random_bytes() IS NOT HERE, AND THAT IS STILL DELIBERATE - but the reason has changed.
- *
- * It used to be absent because this port did not know which call the PS3 exposes for cryptographically
- * secure bytes, and a seam whose failure is invisible must refuse to link rather than be stubbed. The
- * call was confirmed on 2026-09-11 - sysGetRandomNumber, from sysPrxForUser - so it is now implemented,
- * in source/platform/rc_random_ps3.c.
- *
- * It lives there rather than here for the reason this comment gave when it was still a refusal: the
- * argument about why entropy fails silently belongs in a file about entropy, not buried in one about
- * clocks. That file carries the argument, what was confirmed and how, and the two things about the call
- * that are still [X].
+ * rc_random_bytes() IS NOT HERE, AND THAT IS DELIBERATE. It is implemented in
+ * source/platform/rc_random_ps3.c - sysGetRandomNumber, from sysPrxForUser, confirmed on 2026-09-11 -
+ * because the argument about why entropy fails silently belongs in a file about entropy, not in one
+ * about clocks. That file carries the argument, what was confirmed and how, and the two things about
+ * the call that are still [X].
  */
 
 /* See the header: an XMB quit that nothing answers is a force-termination, not a clean exit. */
@@ -186,9 +156,9 @@ void rc_ps3_exit_watch(void)
     s32 rc = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT1, ps3_sysutil_event, NULL);
 
     /*
-     * Reported rather than checked: a console that will not let us hear about the quit still runs, it
-     * just goes back to behaving the way every build before this one did. Saying so is what stops the
-     * next person diagnosing the reboot from scratch.
+     * Reported rather than checked: a console that will not let us hear about the quit still runs, and
+     * an XMB quit then force-terminates the program as the header describes. Saying so is what stops
+     * the next person diagnosing the reboot from scratch.
      */
     if (rc != 0)
         rc_log("plat:  sysUtilRegisterCallback refused (0x%08X) - an XMB quit will not be clean\n",

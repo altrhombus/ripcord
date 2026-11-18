@@ -39,7 +39,7 @@ static size_t encode_account_id(const char *account_id, char *out, size_t out_si
             break;
         }
         /* Past UINT64_MAX it is not a u64, so it is sent as text, as .NET's ulong.TryParse falls back and the
-         * engine does. This used to wrap silently and send a different account's id. */
+         * engine does. Letting it wrap would silently send a different account's id. */
         digit = (uint64_t)(*p - '0');
         if (numeric > (UINT64_MAX - digit) / 10u) {
             is_numeric = 0;
@@ -178,8 +178,8 @@ int halyard_regist_split_response(const uint8_t *response, size_t response_lengt
     {
         size_t line_start = 0;
 
-        /* Up to AND INCLUDING head_end: the last header line ends there, not at a CRLF of its own, and a
-         * reason sent as the final header used to be skipped (found comparing this with .NET). */
+        /* Up to AND INCLUDING head_end: the last header line ends there, not at a CRLF of its own, and
+         * stopping short would skip a reason sent as the final header (.NET reads it). */
         for (i = 0; i <= head_end; i++) {
             if (i < head_end && !(text[i] == '\r' && i + 1 < head_end && text[i + 1] == '\n'))
                 continue;

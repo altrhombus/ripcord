@@ -3,11 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
-    # The PS3 port versions independently of the dotnet client, so it has its own tag namespace and
-    # ps3-v1.0 is a claim about the port alone. A tag push runs this whole file, not a reduced release
-    # pipeline: a release that has not passed the same checks as a pull request is a weaker artifact than
-    # the pull request was.
-    # The macOS client does the same on macos-v* (docs/macos-plan.md, step 9), and the dotnet client on v*.
+    # Each client versions independently under its own tag namespace: the PS3 port on ps3-v*, the macOS client
+    # on macos-v* (docs/macos-plan.md, step 9), the dotnet client on v*. A tag push runs this whole file;
+    # each release job waits only for the jobs in its own `needs`.
     tags: ['ps3-v*', 'macos-v*', 'v*']
   pull_request:
   workflow_dispatch:
@@ -20,10 +18,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The real gate. Both suites are plain net10.0 and need no console, GPU, native interop or
-  # Windows-only hardware, so this job is fast and should never be flaky. A clean checkout has no
-  # captures folder, so the capture-backed vector tests self-skip — that is by design, and the skip
-  # count going UP unexpectedly is worth a look, since it means a test stopped finding its fixture.
+  # The real gate: both suites are plain net10.0 and need no console, GPU or native interop. A clean checkout
+  # has no captures folder, so the capture-backed vector tests self-skip by design; a skip count that rises
+  # unexpectedly means a test stopped finding its fixture.
   tests:
     name: Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -32,11 +29,8 @@ jobs:
       matrix:
         os: [windows-latest]
     steps:
-      # fetch-depth: 0, deliberately. PublishedTreeSweepTests sweeps every commit message, and
-      # actions/checkout defaults to a depth-1 clone in which `git log` returns one commit and
-      # exits 0 — indistinguishable from a single-commit repository. The sweep would report clean
-      # having read 1 of N messages. The suite now fails on a shallow clone rather than pass
-      # quietly, so removing this line turns the job red instead of hollowing the guard out.
+      # fetch-depth: 0 because PublishedTreeSweepTests sweeps every commit message, and the suite fails on a
+      # shallow clone rather than pass having read one commit.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -48,9 +42,8 @@ jobs:
       - name: Test — presentation
         run: dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release --logger "console;verbosity=normal"
 
-  # The full app, including the two C++/WinRT projects. `dotnet build` cannot build a vcxproj at
-  # all, so this needs MSBuild proper. Both architectures are first-class targets and either can
-  # regress alone — ARM64 has caught real breaks that x64 did not.
+  # The full app, including the two C++/WinRT projects, which need MSBuild proper (`dotnet build` cannot
+  # build a vcxproj). Both architectures are first-class targets and either can regress alone.
   app:
     name: App (${{ matrix.platform }})
     runs-on: windows-latest
@@ -65,24 +58,16 @@ jobs:
           dotnet-version: '10.0.x'
       - uses: microsoft/setup-msbuild@v2
         with:
-          # The action defaults to the 32-bit MSBuild.exe. Directory.Build.props' own error text tells
-          # you to "use the one matching the machine" for exactly this reason: a 32-bit MSBuild makes any
-          # property derived from the process architecture answer x86. The csproj no longer asks that
-          # question, so this is belt-and-braces rather than the fix - but a 64-bit MSBuild is what these
-          # projects are meant to be driven by.
+          # The action defaults to the 32-bit MSBuild.exe, under which any property derived from the process
+          # architecture answers x86. These projects are meant to be driven by a 64-bit MSBuild.
           msbuild-architecture: x64
       - name: Build solution
-        # -restore, not a bare build. Without it every managed project fails NETSDK1004 looking for a
-        # project.assets.json that no step has produced - which is what every App job did until someone
-        # read a CI log.
+        # -restore: without it every managed project fails NETSDK1004 for want of a project.assets.json.
         #
-        # -p:RipcordNativePlatform is the documented escape hatch for a cross-architecture build, and this
-        # is one: an x64 runner producing ARM64. A solution build hands -p:Platform only to projects that
-        # declare <Platforms>, so the AnyCPU managed consumers (Ripcord.Media, Ripcord.Input) see
-        # Platform=AnyCPU, fall to the last rule in Directory.Build.props - the machine's OSArchitecture -
-        # and look for their native interop under x64\Release while the C++ projects correctly wrote it to
-        # ARM64\Release. The native half built perfectly; the managed half looked in the wrong directory
-        # and failed with a hundred CS0246s naming types that were sitting right there.
+        # -p:RipcordNativePlatform: a solution build hands -p:Platform only to projects that declare
+        # <Platforms>, so on a cross-architecture build (an x64 runner producing ARM64) the AnyCPU managed
+        # consumers (Ripcord.Media, Ripcord.Input) would fall back to the machine's architecture in
+        # Directory.Build.props and look for their native interop in the wrong output directory.
         run: msbuild Ripcord.slnx -restore -p:Platform=${{ matrix.platform }} -p:RipcordNativePlatform=${{ matrix.platform }} -p:Configuration=Release -m
       - name: Native interop landed where the managed projects look for it
         shell: pwsh
@@ -91,17 +76,16 @@ jobs:
           if (-not (Test-Path $dir)) { throw "native interop output missing: $dir" }
           Get-ChildItem $dir -Recurse -Filter *.dll | Select-Object -First 20 Name, Length
 
-      # THE RELEASE ZIP, on a v* tag only, from the build above rather than a second one. dotnet publish makes it
-      # self-contained (Ripcord.App.csproj), so it runs on a machine that has never had .NET or the Windows App
-      # SDK, and it carries the licences, the privacy page and GameInputRedist.msi. The checks below fail the job
-      # rather than ship a zip missing any of them.
+      # The release zip, on a v* tag only. dotnet publish makes it self-contained (Ripcord.App.csproj), so it
+      # needs neither .NET nor the Windows App SDK installed, and it carries the licences, the privacy page and
+      # GameInputRedist.msi. The checks below fail the job rather than ship a zip missing any of them.
       - name: Publish the release zip
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          # The version from the tag, so the app says what it is: v1.0-rc1 is assembly version 1.0.0 (the
-          # numbers only, padded) and informational version 1.0-rc1, which Settings > About shows. Without it every
-          # zip reported the project's default version, whatever its tag.
+          # The version comes from the tag: v1.0-rc1 is assembly version 1.0.0 (the numbers only, padded)
+          # and informational version 1.0-rc1, which Settings > About shows. Without it every zip would
+          # report the project's default version.
           $tag = "$env:GITHUB_REF_NAME".TrimStart('v')
           $numbers = ($tag -split '-')[0].Split('.')
           while ($numbers.Count -lt 3) { $numbers += '0' }
@@ -112,7 +96,7 @@ jobs:
           foreach ($f in 'Ripcord.exe','LICENSE','NOTICE','THIRD-PARTY-NOTICES.txt','PRIVACY.md','GameInputRedist.msi','coreclr.dll','Microsoft.WindowsAppRuntime.dll') {
             if (-not (Test-Path (Join-Path $pub.FullName $f))) { throw "the publish is missing $f" }
           }
-          # Inside a Ripcord folder, so unzipping gives one folder rather than 568 loose files.
+          # Inside a Ripcord folder, so unzipping gives one folder rather than loose files.
           $arch = "${{ matrix.platform }}".ToLowerInvariant()
           $stage = "stage/Ripcord"
           New-Item -ItemType Directory -Force $stage | Out-Null
@@ -127,29 +111,23 @@ jobs:
           path: ripcord-*-win-*.zip
           if-no-files-found: error
 
-  # NOT a support claim: the shipping UI is Windows-only and there is no macOS or Linux front end.
-  # This guards one rule — that the 15 portable projects stay portable. `Ripcord.Presentation` is
-  # policed by PresentationPortabilityTests reflecting over assembly references, but a project
-  # picking up a Windows-only *package* would slip past that and only surface whenever someone
-  # finally tried another platform. Compiling the portable set for a non-Windows RID catches it on
-  # the commit that causes it, and costs one job. Delete this block if the guard is not wanted.
+  # Not a support claim: the dotnet client's UI is Windows-only. This guards one rule, that the portable
+  # projects stay portable. PresentationPortabilityTests polices assembly references, but a Windows-only
+  # *package* would slip past it; compiling the portable set for a non-Windows RID catches that on the
+  # commit that causes it.
   portable-core:
     name: Portable core (${{ matrix.rid }})
     runs-on: ${{ matrix.host }}
     strategy:
       fail-fast: false
       matrix:
-        # Linux alone: it proves the portable set builds and runs off Windows, which is the whole claim. A
-        # macOS leg ran here until 2026-09-28 and proved nothing Linux did not; no shipping client runs
-        # .NET on macOS.
+        # Linux alone: it proves the portable set builds and runs off Windows, which is the whole claim. No
+        # client runs .NET on macOS.
         include:
           - { host: ubuntu-latest, rid: linux-x64 }
     steps:
-      # fetch-depth: 0, deliberately. PublishedTreeSweepTests sweeps every commit message, and
-      # actions/checkout defaults to a depth-1 clone in which `git log` returns one commit and
-      # exits 0 — indistinguishable from a single-commit repository. The sweep would report clean
-      # having read 1 of N messages. The suite now fails on a shallow clone rather than pass
-      # quietly, so removing this line turns the job red instead of hollowing the guard out.
+      # fetch-depth: 0 because PublishedTreeSweepTests sweeps every commit message, and the suite fails on a
+      # shallow clone rather than pass having read one commit.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -179,22 +157,17 @@ jobs:
         run: |
           dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release
           dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release
-      # The leak guard's checker, against a synthetic captures folder. CI has no real one, so the hooks do nothing
-      # here, and without this a broken checker would pass every commit on the owner's machine in silence.
+      # The leak guard's checker, against a synthetic captures folder. CI has no real one, so the hooks do
+      # nothing here, and this step is what catches a broken checker.
       - name: The leak guard's checker
         if: runner.os == 'Linux'
         run: python3 tools/leak-guard/test_check.py
 
-  # The portable C core's own gates. Until this job existed, nothing in CI ran libripcord/tests at all:
-  # the PS3 job cross-compiles the core and runs some of its suites on a console, but the host suite,
-  # `make compile` and the ECDH cases went unexercised. When this job was written, `make compile` had
-  # rotted in three places (an unused static under -Werror, and bare includes that only resolved with a
-  # port's -I flags), and the default mbedTLS build could not start on a fresh clone because the script
-  # is committed without its execute bit. Nothing had noticed.
+  # The portable C core's own gates: the host suite, `make compile`, the sanitizers and the fuzz harnesses.
+  # The PS3 job cross-compiles the core but runs none of these.
   #
-  # Linux, where the console ports are built. A macOS leg ran here while the macOS client linked this core;
-  # it moved to the Rust engine on 2026-09-26, and the engine job's ripcord-diff still builds the core under
-  # Apple's clang on macOS, so the leg was dropped on 2026-09-28.
+  # Linux only, where the console ports are built. The engine job's ripcord-diff also builds the core under
+  # Apple's clang on macOS.
   libripcord:
     name: libripcord (${{ matrix.host }})
     runs-on: ${{ matrix.host }}
@@ -235,10 +208,10 @@ jobs:
             libripcord/tests/build/fuzz/timeout-*
           if-no-files-found: ignore
 
-  # The Rust engine (engine/, docs/engine-plan.md): the whole protocol, which the Apple clients ship on.
-  # Four hosts, because each one links the engine differently and Windows is where the plan's gate still
-  # wants a figure: the .NET harness runs its checks everywhere and prints the per-packet cost on each,
-  # which is informational only on a shared runner. Miri and cargo-fuzz run in engine-nightly.yml.
+  # The Rust engine (engine/, docs/engine-plan.md): the whole protocol, which the Apple clients run on.
+  # Four hosts, because each one links the engine differently. The .NET harness runs its checks on each and
+  # prints the per-packet cost, which is informational only on a shared runner. Miri and cargo-fuzz run in
+  # engine-nightly.yml.
   engine:
     name: Rust engine (${{ matrix.host }})
     runs-on: ${{ matrix.host }}
@@ -257,7 +230,7 @@ jobs:
       - name: Generate the known-answer vectors
         run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
       # ripcord-diff builds the C core with its own Python constants generator and runs it beside the Rust
-      # engine. The C core has never been built with MSVC, so the Windows legs leave that crate out.
+      # engine. No job builds the C core with MSVC, so the Windows legs leave that crate out.
       - name: Tests, the vector runner and the differential runs against the C core
         if: runner.os != 'Windows'
         working-directory: engine
@@ -275,8 +248,8 @@ jobs:
           cargo clippy --workspace $exclude --all-targets -- -D warnings
           cargo clippy --workspace $exclude --all-targets --all-features -- -D warnings
           cargo fmt --check
-      # cargo-deny itself, from crates.io at a pinned version, rather than a third-party action: the same
-      # registry every engine dependency already comes from, and no second publisher to trust.
+      # cargo-deny from crates.io at a pinned version rather than a third-party action: the registry every
+      # engine dependency already comes from, and no second publisher to trust.
       - name: Dependency policy
         if: runner.os == 'Linux'
         working-directory: engine
@@ -284,10 +257,9 @@ jobs:
       - name: The engine from .NET, through its generated bindings
         run: dotnet run -c Release --project engine/hosts/dotnet/Ripcord.Engine.Harness
 
-  # The macOS client's Xcode project (src/Ripcord.Mac), on the Rust engine since Phase 3: its build phase
-  # runs cargo, so this job needs a Rust toolchain. RipcordKitTests checks CryptoKit as the engine's key
-  # agreement against the .NET vectors (EngineKeyAgreementTests) and runs whole sessions against the
-  # engine's loopback consoles.
+  # The macOS client's Xcode project (src/Ripcord.Mac). Its build phase runs cargo, so this job needs a Rust
+  # toolchain. RipcordKitTests checks CryptoKit as the engine's key agreement against the .NET vectors
+  # (EngineKeyAgreementTests) and runs whole sessions against the engine's loopback consoles.
   #
   # macos-26 because the deployment target is macOS 26 (docs/macos-plan.md), which needs that SDK.
   mac:
@@ -311,9 +283,8 @@ jobs:
           for scheme in RipcordLab Ripcord; do
             xcodebuild -project Ripcord.xcodeproj -scheme "$scheme" -configuration Release -derivedDataPath build build
           done
-      # The iPhone, iPad and Apple TV app (docs/ios-plan.md): RipcordKit and the engine for each platform, and the
-      # app over them. Device builds are unsigned, since those platforms refuse an ad hoc signature; this checks
-      # they compile and link, not that they install.
+      # The iPhone, iPad and Apple TV app (docs/ios-plan.md). Device builds are unsigned, since those platforms
+      # refuse an ad hoc signature; this checks they compile and link, not that they install.
       - name: Build the mobile app for iPhone, iPad and Apple TV
         working-directory: src/Ripcord.Mac
         run: |
@@ -335,16 +306,14 @@ jobs:
           ! nm -gU engine/target/shipping/release/libripcord.dylib
           | grep -E '_ripcord_(kat_run|loopback|scripted|account_seed_seal)'
 
-      # ON A macos-v* TAG, the same app again, signed with the Developer ID, notarized and stapled. The steps
-      # above have already built and tested this commit, so this is packaging, not a second opinion. Six
-      # secrets, none of which this repository had when this was written, so the first tag is the first run:
+      # On a macos-v* tag, the same app again, signed with the Developer ID, notarized and stapled. Six secrets:
       #   MACOS_DEVELOPER_ID_P12 (base64) and MACOS_DEVELOPER_ID_P12_PASSWORD: the Developer ID Application
       #     certificate and its key;
       #   MACOS_TEAM_ID;
       #   MACOS_NOTARY_KEY (base64 .p8), MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER: an App Store Connect API
       #     key for notarytool.
       # The app group stays off (RIPCORD_APP_GROUP = NO): claiming one under a Developer ID needs a
-      # provisioning profile as well, which is a separate decision. The widget then shows the way into the app.
+      # provisioning profile as well. The widget then shows the way into the app.
       - name: Sign, notarize and staple (macos-v* tags)
         if: startsWith(github.ref, 'refs/tags/macos-v')
         working-directory: src/Ripcord.Mac
@@ -399,43 +368,34 @@ jobs:
           path: src/Ripcord.Mac/dist/*.zip
           if-no-files-found: error
 
-  # The PS3 port's installable package. Not in Ripcord.slnx and buildable by neither dotnet nor
-  # MSBuild - it is a Makefile driving a PowerPC cross-compiler plus a second one for the SPEs - so it
-  # gets its own job rather than a leg on one of the matrices above.
+  # The PS3 port's installable package: a Makefile driving a PowerPC cross-compiler and a second one for the
+  # SPEs, outside Ripcord.slnx, so it gets its own job.
   #
-  # THE PACKAGE, NOT THE .self, AND THAT IS THE POINT. A plain `make` gives ripcord-ps3.self, which is
-  # what ps3load sends to a console over the network. `make pkg` is what installs from the XMB, which
-  # is what somebody who is not developing this port actually wants - and it covers strictly more of
-  # the build: make_self_npdrm, the icon, PARAM.SFO and the third-party notices are all pkg-only
-  # steps. ports/ripcord-ps3/SETUP.md section 6 is the post-mortem of four hardware runs that produced
-  # no output at all, and both causes were in the packaging rather than in the program.
+  # The package, not just the .self: `make pkg` is what installs from the XMB, and it covers more of the
+  # build (make_self_npdrm, the icon, PARAM.SFO and the third-party notices are pkg-only steps).
+  # ports/ripcord-ps3/SETUP.md section 6 covers the packaging faults.
   #
-  # NOT PATH-FILTERED, deliberately. A per-job `paths:` needs either its own workflow file or a
-  # third-party filter action, and the second is not something this repository takes - but the
-  # honest reason is that the filter would be wrong anyway. This build consumes libripcord/** and
-  # src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json, so a change under src/ really can
-  # break it, and "the PS3 job only runs when PS3 files change" is how that stays unnoticed.
+  # Not path-filtered, deliberately. This build consumes libripcord/** and
+  # src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json, so a change under src/ can break it. A
+  # per-job `paths:` would also need its own workflow file or a third-party filter action, which this
+  # repository does not take.
   ps3-package:
     name: PS3 package
     runs-on: ubuntu-latest
     env:
-      # The toolchain this port is verified against. ports/ripcord-ps3/SETUP.md section 2 names the
-      # same nightly and the two are meant to agree - bump them together, with a hardware run behind
-      # the bump. Pinned rather than tracking the newest because ps3dev cuts nightlies on its own
-      # schedule, and a green build going red for a reason nobody in this repository chose is the
-      # fastest way to teach people to ignore a red build.
+      # The toolchain this port is verified against. ports/ripcord-ps3/SETUP.md section 2 names the same
+      # nightly: bump them together, with a hardware run behind the bump. Pinned because ps3dev cuts
+      # nightlies on its own schedule, and a new one must not be what turns this build red.
       PS3DEV_RELEASE: nightly-2026-07-26
-      # The archive's SHA-256, as GitHub records it for that release asset. The toolchain compiles every
-      # byte of the package, so it gets the same verification the third-party libraries below already have.
-      # Bump it with PS3DEV_RELEASE: gh api repos/ps3dev/ps3dev/releases/tags/<tag> reports the digest.
+      # The archive's SHA-256, as GitHub records it for that release asset. Bump it with PS3DEV_RELEASE:
+      # gh api repos/ps3dev/ps3dev/releases/tags/<tag> reports the digest.
       PS3DEV_SHA256: dcbed747e094c6a382dae5b0aacc322a1d4390d9f2849a7d750a96ea398ee8ab
     steps:
       - uses: actions/checkout@v4
 
-      # 180 MB compressed, 577 MB unpacked, and nothing in it depends on anything in this repository -
-      # so the release tag is the whole cache key. Kept in $HOME rather than the workspace: the
-      # archive is relocatable (SETUP.md section 2), and an unpacked toolchain inside the checkout is
-      # 577 MB of untracked files sitting in a tree other jobs make assertions about.
+      # Nothing in the toolchain depends on this repository, so the release tag is the whole cache key. Kept in
+      # $HOME rather than the workspace: the archive is relocatable (SETUP.md section 2), and 577 MB of
+      # untracked files should not sit in the checkout.
       - name: Cache the ps3dev toolchain
         id: ps3dev
         uses: actions/cache@v4
@@ -451,24 +411,21 @@ jobs:
           echo "$PS3DEV_SHA256  $RUNNER_TEMP/ps3dev.tar.gz" | sha256sum -c -
           tar xzf "$RUNNER_TEMP/ps3dev.tar.gz" -C "$HOME"    # the archive's top level is ps3dev/
 
-      # PSL1GHT IS PS3DEV, not $PS3DEV/psl1ght. The archive puts ppu_rules, base_rules and data_rules
-      # at the top level beside ppu/ and spu/, and ppu_rules resolves -I$(PSL1GHT)/ppu/include against
-      # that. SETUP.md section 2 records the same correction, which an earlier revision of it got
-      # wrong. The Makefiles hard-error on either variable being unset, so there is no silent wrong
-      # answer available - but there is a silently wrong directory, which is this one.
+      # PSL1GHT is $PS3DEV itself, not $PS3DEV/psl1ght: the archive puts ppu_rules, base_rules and data_rules
+      # at the top level beside ppu/ and spu/ (SETUP.md section 2). The Makefiles error on either variable
+      # being unset, but not on a wrong directory.
       #
-      # The Makefile addresses the compilers by absolute path; PATH is here for build-mbedtls.sh,
-      # which resolves ${CROSS}gcc with `command -v` and exits rather than build if it is not there.
+      # PATH is for build-mbedtls.sh, which resolves ${CROSS}gcc with `command -v`; the Makefile addresses
+      # the compilers by absolute path.
       - name: Point the build at the toolchain
         run: |
           echo "PS3DEV=$HOME/ps3dev"  >> "$GITHUB_ENV"
           echo "PSL1GHT=$HOME/ps3dev" >> "$GITHUB_ENV"
           printf '%s\n' "$HOME/ps3dev/bin" "$HOME/ps3dev/ppu/bin" "$HOME/ps3dev/spu/bin" >> "$GITHUB_PATH"
 
-      # openh264, Opus and Mbed TLS are fetched from pinned, hash-verified upstream releases and
-      # cross-built; none is vendored, which is why this is a build step at all and not a checkout.
-      # The key covers the three scripts and the Mbed TLS config header because those are the only
-      # things in this repository that decide what comes out, plus the toolchain that compiled it.
+      # openh264, Opus and Mbed TLS are fetched from pinned, hash-verified upstream releases and cross-built;
+      # none is vendored. The key covers the three scripts and the Mbed TLS config header, the only things in
+      # this repository that decide what comes out, plus the toolchain that compiled it.
       - name: Cache the cross-built third-party libraries
         id: thirdparty
         uses: actions/cache@v4
@@ -476,11 +433,8 @@ jobs:
           path: ports/ripcord-ps3/third-party
           key: ps3-thirdparty-${{ env.PS3DEV_RELEASE }}-${{ hashFiles('ports/ripcord-ps3/tools/build-openh264.sh', 'ports/ripcord-ps3/tools/build-opus.sh', 'libripcord/tools/build-mbedtls.sh', 'libripcord/tools/ripcord-mbedtls-config.h') }}
 
-      # SKIPPED ON A CACHE HIT rather than left to short-circuit itself. build-mbedtls.sh does check
-      # whether its output is up to date; build-openh264.sh does not - it clears obj/ and recompiles
-      # all 35 translation units every time it runs. Since the cache key covers the scripts, a hit
-      # means the libraries in it were produced by exactly these scripts and this toolchain, so
-      # running them again buys nothing but minutes.
+      # Skipped on a cache hit: build-openh264.sh recompiles everything each time it runs, and the cache key
+      # already covers the scripts and the toolchain.
       - name: Cross-build openh264, Opus and Mbed TLS
         if: steps.thirdparty.outputs.cache-hit != 'true'
         working-directory: ports/ripcord-ps3
@@ -489,21 +443,14 @@ jobs:
           sh tools/build-opus.sh
           PREFIX="$PWD/third-party/mbedtls" CROSS=powerpc64-ps3-elf- sh ../../libripcord/tools/build-mbedtls.sh
 
-      # THE BUILD NUMBER IS THE RUN NUMBER, and this is not decoration. The Makefile explains at
-      # length why every build gets an id: for five hardware runs the only evidence of WHICH binary
-      # had executed was the byte size of the installed EBOOT, and a stale install and a broken
-      # program look identical. .buildno is gitignored per-machine state, so a runner starts at zero
-      # and every package CI ever produced would otherwise call itself b1.
+      # The build number is the run number. .buildno is gitignored per-machine state, so a runner starts at
+      # zero and every CI package would otherwise call itself b1. The stamp step writes one less than the run
+      # number because the rc_build_id.h rule increments what it reads; the XMB version is that number with a
+      # dot in it (run 432 -> 04.32). The NN.NN field holds to b9999, and run 10000 is not guarded against.
       #
-      # One less than the run number, because the rc_build_id.h rule increments what it reads - so
-      # the package comes out stamped with the run that made it, and the XMB version is that number
-      # with a dot in it (run 432 -> 04.32). The Makefile's ceiling applies here too: the NN.NN
-      # version field holds to b9999, and run 10000 would produce a version this console will not
-      # parse. That is years away and it is written down rather than guarded.
-      # ON A TAG THE PACKAGE IS VERSIONED BY THE TAG AND NOT BY EITHER COUNTER, because a person installing
-      # a release is asking "which version is this" and a counter answers "which iteration is this" - a
-      # question about the machine that built it. RELEASE_TAG goes into the environment, which is where the
-      # Makefile's `RELEASE_TAG ?=` reads it from, and the developer counter is not consumed at all.
+      # On a tag the package is versioned by the tag and by neither counter. RELEASE_TAG goes into the
+      # environment, where the Makefile's `RELEASE_TAG ?=` reads it, and the developer counter is not
+      # consumed. The Makefile has the reasoning in full.
       - name: Decide how this build is versioned
         run: |
           case "$GITHUB_REF" in
@@ -518,34 +465,25 @@ jobs:
         if: env.RELEASE_TAG == ''
         run: echo $(( ${{ github.run_number }} - 1 )) > ports/ripcord-ps3/.buildno
 
-      # BOTH GOALS, and `pkg` alone is not enough. The pkg rule depends on build/ripcord-ps3.ready.elf
-      # and stops there - it never reaches the $(APP).self rule, so on a clean checkout (*.self is
-      # gitignored) `make pkg` leaves no .self behind at all and the upload below fails looking for
-      # one. One invocation rather than two so both goals share a single rc_build_id.h and the package
-      # cannot end up stamped differently from the .self beside it.
-      # BUILD_ORIGIN=ci, so the compiled build id is "b35ci" and no CI artifact can be mistaken for a
-      # developer build. The two counters are independent - this one is github.run_number, the other is a
-      # gitignored per-machine file - and both printed the same "bNNN" shape until now. The docs cite 94
-      # local build numbers between b87 and b428; CI was days from reaching that range and minting a
-      # second, different b87.
+      # Both goals in one invocation, so they share a single rc_build_id.h: `pkg` alone depends on
+      # build/ripcord-ps3.ready.elf and never reaches the $(APP).self rule.
+      # BUILD_ORIGIN=ci makes the compiled build id "b35ci", so no CI artifact can be mistaken for a developer
+      # build: this counter is github.run_number, the developer one a gitignored per-machine file.
       - name: Build the package
         working-directory: ports/ripcord-ps3
         run: make all pkg BUILD_ORIGIN=ci
 
-      # THE PACKAGE HAS TO PROVE IT CARRIES THE BUILD THAT WAS JUST MADE. This is tools/ship.sh's
-      # check, which exists because `make pkg` leaves the previous package in place when it fails:
-      # three builds in a row reported a new build number, uploaded cleanly, installed cleanly and
-      # ran the old binary. An artifact download is an upload by another name, so it gets the same
-      # gate. The notices check is the other half - a .pkg that ships without them is a licence
-      # breach, and the Makefile makes them a prerequisite precisely so this can be asserted.
+      # The package must prove it carries the build just made: `make pkg` leaves the previous package in place
+      # when it fails, so a stale one would upload cleanly. This is tools/ship.sh's check. The notices check is
+      # the other half: a .pkg without them is a licence breach, and the Makefile makes them a prerequisite.
       - name: The package carries the build that was just made
         working-directory: ports/ripcord-ps3
         run: |
           sfo_ver=$(strings build/pkg/PARAM.SFO | grep -oE '^[0-9][0-9]\.[0-9][0-9]$' | head -1)
 
           if [ -n "$RELEASE_TAG" ]; then
-            # A RELEASE IS CHECKED AGAINST ITS TAG, which is the only thing that can be wrong about it:
-            # the package must claim the version the tag names. ps3-v1.0 -> 01.00.
+            # A release is checked against its tag: the package must claim the version the tag names.
+            # ps3-v1.0 -> 01.00.
             expected=$(printf '%s' "$RELEASE_TAG" \
               | sed -n 's/^ps3-v\([0-9][0-9]*\)\.\([0-9][0-9]*\)$/\1 \2/p' \
               | xargs printf '%02d.%02d')
@@ -555,9 +493,9 @@ jobs:
             fi
             echo "$RELEASE_TAG, version $sfo_ver - EBOOT, icon and notices all present"
           else
-            # [a-z]* tolerates the BUILD_ORIGIN suffix this job passes - the id is "b35ci", not "b35".
-            # Without it the pattern matches nothing and this gate fails every CI build while reporting a
-            # stale package, which is the misdiagnosis it exists to avoid rather than cause.
+            # [a-z]* tolerates the BUILD_ORIGIN suffix this job passes: the id is "b35ci", not "b35".
+            # Without it the pattern matches nothing and this gate fails every CI build, reporting a
+            # stale package.
             built=$(sed -n 's/.*"b\([0-9]*\)[a-z]*".*/\1/p' build/rc_build_id.h)
             sfo_built=$(printf '%s' "$sfo_ver" | tr -d '.' | sed 's/^0*//')
 
@@ -572,44 +510,28 @@ jobs:
           [ -n "$RELEASE_TAG" ] || echo "b$built, version $sfo_ver - EBOOT, icon and notices all present"
           ls -l ripcord-ps3.gnpdrm.pkg
 
-      # BOTH PACKAGES, because they are not interchangeable and which one a console wants depends on
-      # how it is set up. tools/ship.sh uploads the .gnpdrm one - that is the package_finalize'd
-      # build and the one that has actually been installed on hardware. The .self is here because it
-      # is what ps3load takes, which is the fast loop SETUP.md section 6 argues for.
+      # The package and only the package. It installs from the XMB and carries
+      # USRDIR/THIRD-PARTY-NOTICES.txt inside itself, where the licences want it for a binary distribution.
       #
-      # THE PACKAGE, AND ONLY THE PACKAGE. It is the file a person wants - it installs from the XMB and
-      # appears on the console - and it is self-sufficient, carrying USRDIR/THIRD-PARTY-NOTICES.txt
-      # inside itself, which is where the licences want it for a binary distribution.
+      # The .self is not uploaded, for a licence reason: it is a bare executable with no notice text in it,
+      # statically linking openh264, Opus, Mbed TLS, PSL1GHT and FreeType, so publishing it would mean
+      # publishing the notices beside it. Anyone who wants one runs `make`.
       #
-      # The .self used to ship here too and no longer does, which settles a licence question rather than
-      # trimming a download. A .self is a bare executable with no container: `strings` finds no notice
-      # text in it, and it links openh264, Opus, Mbed TLS, PSL1GHT and FreeType statically. Publishing
-      # one means publishing the notices beside it and relying on whoever downloads it to take both. Not
-      # publishing it removes the question instead of answering it, and costs nothing - a .self is a
-      # local build product for ps3load, and anyone who wants one runs `make`.
-      #
-      # The .gnpdrm one rather than the plain .pkg: it is what tools/ship.sh uploads, what SETUP.md's
-      # loop installs, and what has been installed on hardware. The plain .pkg also installs and can
-      # come back if a reason appears; one file is a better default than two that differ in a header
-      # byte and an encryption key.
+      # The .gnpdrm one rather than the plain .pkg: it is the package_finalize'd build, what tools/ship.sh
+      # uploads and what SETUP.md's loop installs.
       - uses: actions/upload-artifact@v4
         with:
           name: ripcord-ps3-b${{ github.run_number }}
           path: ports/ripcord-ps3/ripcord-ps3.gnpdrm.pkg
           if-no-files-found: error
 
-  # THE RELEASE. Runs only for a ps3-v* tag, and only after everything else in this file has passed -
-  # including the two suites, both App architectures and both portable-core hosts. A release that skipped
-  # the checks a pull request has to pass would be a weaker artifact than the pull request was.
+  # The PS3 release. Runs only for a ps3-v* tag, and only after the jobs in `needs` have passed.
   #
-  # IT BUILDS NOTHING. The package it publishes is the one ps3-package already built and verified against
-  # the tag, downloaded as that job's artifact. A release that rebuilds is a release nothing has checked -
-  # the bytes a person installs would be bytes no gate ever saw.
+  # It builds nothing: it publishes the package ps3-package built and verified against the tag, downloaded
+  # as that job's artifact, so the bytes a person installs are the bytes the gates saw.
   #
-  # A DRAFT, DELIBERATELY. The workflow attaches the package and writes nothing about what it does; a human
-  # publishes it, having written release notes that say what this port streams and what it does not. An
-  # automated release is an outward-facing act taken without anybody reading it, and this project's notes
-  # are the place its limits get stated honestly.
+  # A draft, deliberately: a person writes the release notes, saying what this port streams and what it
+  # does not, and publishes it.
   ps3-release:
     name: PS3 release
     if: startsWith(github.ref, 'refs/tags/ps3-v')
@@ -626,22 +548,21 @@ jobs:
           name: ripcord-ps3-b${{ github.run_number }}
           path: dist
 
-      # THE ASSET CARRIES THE VERSION IN ITS NAME, because a file called ripcord-ps3.gnpdrm.pkg in a
-      # downloads folder beside three others is unidentifiable. The console does not care what the package
-      # is called - only EBOOT.BIN's name matters to NPDRM - so this is free.
+      # The asset carries the version in its name. The console does not care what the package is called;
+      # only EBOOT.BIN's name matters to NPDRM.
       - name: Publish a draft release with the package
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # ${GITHUB_REF_NAME#ps3-} drops the namespace prefix, so ps3-v0.9 gives ripcord-ps3-v0.9.pkg
-          # rather than ripcord-ps3-ps3-v0.9.pkg. The prefix exists to keep the tag namespace separate
-          # from the dotnet client's; it has no business appearing twice in a filename.
+          # rather than ripcord-ps3-ps3-v0.9.pkg. The prefix only keeps this tag namespace separate
+          # from the dotnet client's.
           asset="ripcord-ps3-${GITHUB_REF_NAME#ps3-}.pkg"
           mv dist/ripcord-ps3.gnpdrm.pkg "$asset"
           ls -l "$asset"
 
-          # The notes are a placeholder on purpose. What this port streams, and what it does not, is a
-          # judgement a person makes and writes before publishing - not something a workflow asserts.
+          # The notes are a placeholder on purpose: what this port streams, and what it does not, is
+          # for a person to write before publishing.
           cat > notes.md <<'NOTES'
           **Draft — release notes go here before publishing.** What this build runs, streams and pairs
           with, and what it does not do.
@@ -651,10 +572,10 @@ jobs:
           NOTES
           sed -i 's/^          //' notes.md
 
-          # -R, because this job has no checkout and does not want one. `gh` infers the repository from a
-          # git remote, and the first run of this job died on "fatal: not a git repository" after doing
-          # everything else correctly - the asset was built, named and sitting there. Checking out the
-          # source purely to satisfy that inference would contradict the reason the job builds nothing.
+          # -R, because this job has no checkout and does not want one. Without it `gh` infers the
+          # repository from a git remote and fails with "fatal: not a git repository".
+          # Checking out the source only to satisfy that inference would contradict the job
+          # building nothing.
           gh release create "$GITHUB_REF_NAME" "$asset" \
             -R "$GITHUB_REPOSITORY" \
             --draft \
@@ -664,9 +585,9 @@ jobs:
           echo "Draft release $GITHUB_REF_NAME created with $asset attached."
           echo "It is NOT public until somebody publishes it."
 
-  # THE WINDOWS RELEASE, on the PS3 release's terms (above): only for a v* tag, only after the rest of this file
-  # has passed, publishing the two zips the app job built rather than building anything, and as a draft for a
-  # person to write the notes on and publish.
+  # The dotnet client's release, on the PS3 release's terms (above): only for a v* tag, only after the jobs in
+  # `needs` have passed, publishing the two zips the app job built rather than building anything, and as a
+  # draft for a person to write the notes on and publish.
   windows-release:
     name: Windows release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -722,9 +643,9 @@ jobs:
             --notes-file notes.md
           echo "Draft release $GITHUB_REF_NAME created. It is NOT public until somebody publishes it."
 
-  # THE MAC RELEASE, on the PS3 release's terms (above): only for a macos-v* tag, only after the rest of this
-  # file has passed, publishing the notarized zip the mac job built rather than building anything, and as a
-  # draft for a person to write the notes on and publish.
+  # The Mac release, on the PS3 release's terms (above): only for a macos-v* tag, only after the jobs in
+  # `needs` have passed, publishing the notarized zip the mac job built rather than building anything, and as
+  # a draft for a person to write the notes on and publish.
   mac-release:
     name: macOS release
     if: startsWith(github.ref, 'refs/tags/macos-v')
@@ -757,26 +678,18 @@ jobs:
             --notes-file notes.md
           echo "Draft release $GITHUB_REF_NAME created. It is NOT public until somebody publishes it."
 
-  # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its
-  # author. Until now the only thing enforcing that was a checkbox in the pull-request template,
-  # and a checkbox is not a mechanism: feat/ps3-port reached 260 unsigned commits out of 308
-  # before anybody noticed, on a repository whose main branch is otherwise entirely signed. That
-  # is what an unenforced rule costs, and it is the same shape as every other guard here - the
-  # rule existed, nothing asked it.
-  #
-  # Deliberately a few lines of git rather than a third-party action. This repository takes only
-  # first-party actions, and "does each commit in this range carry a trailer" does not justify a
-  # supply-chain dependency on somebody else's.
+  # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its author; this
+  # job enforces it. A few lines of git rather than a third-party action: this repository takes only
+  # first-party actions.
   dco:
     name: DCO sign-off
-    # Pull requests only. On a push to main the range worth checking is ambiguous, and by then the
-    # check is a report rather than a gate.
+    # Pull requests only: on a push to main the range worth checking is ambiguous, and the check would be a
+    # report rather than a gate.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      # fetch-depth: 0 for the same reason the other jobs need it: the commits being judged are
-      # exactly the ones a shallow clone does not have, and `git rev-list` over a range it cannot
-      # see exits 0 having checked nothing.
+      # fetch-depth: 0: a shallow clone lacks the commits being judged, and `git rev-list` over a range it
+      # cannot see exits 0 having checked nothing.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -786,8 +699,8 @@ jobs:
           head='${{ github.event.pull_request.head.sha }}'
 
           # --no-merges: a merge commit introduces no new work to certify, and the one the forge
-          # writes for you cannot have been signed by anybody in advance. The DCO is about
-          # authorship, so it is asked of commits that carry authored work.
+          # writes cannot have been signed in advance. The DCO is asked of commits that carry
+          # authored work.
           commits="$(git rev-list --no-merges "$base..$head")"
           if [ -z "$commits" ]; then
             echo "No non-merge commits in $base..$head - nothing to certify."

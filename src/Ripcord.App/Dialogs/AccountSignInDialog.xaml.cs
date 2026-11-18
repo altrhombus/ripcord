@@ -20,9 +20,8 @@ namespace Ripcord_App.Dialogs;
 /// </para>
 ///
 /// <para>
-/// <b>The window this is the "device" the portable layer refuses to name.</b> Everything decided here is
-/// mechanical — navigate, watch, close. Which URL to open and what the code means belong to
-/// <see cref="IAccountSession"/>, and this dialog asks it both questions rather than knowing either.
+/// Everything decided here is mechanical — navigate, watch, close. Which URL to open and what the code means
+/// belong to <see cref="IAccountSession"/>, and this dialog asks it both questions rather than knowing either.
 /// </para>
 ///
 /// <para>
@@ -34,8 +33,8 @@ public sealed partial class AccountSignInDialog : ContentDialog
     private readonly AccountViewModel _account;
 
     /// <summary>
-    /// Null unless <c>RIPCORD_TRACE_FOCUS=1</c>. This surface is where focus theft was found twice and
-    /// mis-diagnosed twice, so it is the one place worth being able to switch a trace on for.
+    /// Null unless <c>RIPCORD_TRACE_FOCUS=1</c>. A web view takes Win32 focus while XAML focus reads as nowhere,
+    /// so this is a surface worth being able to switch a trace on for.
     /// </summary>
     private FocusTrace? _focusTrace;
 
@@ -93,7 +92,7 @@ public sealed partial class AccountSignInDialog : ContentDialog
             // A WebView2 is a native child HWND, so once its content has focus XAML focus reads as NOWHERE -
             // FocusManager.GetFocusedElement returns null. Anything that treats that as "focus needs
             // seeding" pulls focus back out, and the symptom is a password box that deselects the instant it
-            // is clicked. The shell's own seeding is now barred while a modal is up; this is the other half,
+            // is clicked. The shell's own seeding is barred while a modal is up; this is the other half,
             // so nothing in the dialog is holding focus for the platform to snap back to either.
             _ = Browser.Focus(FocusState.Programmatic);
         }

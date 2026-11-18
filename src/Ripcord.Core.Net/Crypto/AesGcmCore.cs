@@ -346,9 +346,8 @@ public static class AesGcmCore
     // ---- ARM64 (NEON PMULL) ---------------------------------------------------------------------
     //
     // A deliberate near-duplicate of the x86 path above rather than a shared generic implementation. The
-    // reduction sequence is the delicate part — the x86 version was wrong for essentially every input on the
-    // first attempt (a missing 256-bit shift; 0 of 3000 vectors passed) — and the x64 path is the shipping,
-    // validated one. Refactoring both onto one generic body would put that validated code at risk from a host
+    // reduction sequence is the delicate part: one missing 256-bit shift fails essentially every input (0 of
+    // 3000 vectors passed). Refactoring both onto one generic body would put each path at risk from a host
     // that cannot execute the other architecture's tests, so each path keeps its own copy and each is held to
     // the same bit-serial oracle in GfMulHardwareTests. Keep the two in step if the algorithm ever changes.
 

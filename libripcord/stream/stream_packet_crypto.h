@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - the v1 per-packet stream crypto (HalyardPacketCrypto), one channel direction.
+ * libripcord - the v1 per-packet stream crypto (HalyardPacketCrypto), one channel direction.
  *
  * AES-128-CTR payload encryption plus a 4-byte GMAC, both keyed off the packet's 64-bit keystream offset.
  * Encrypt-then-MAC: the tag is computed over the packet with its tag field (and, for some packet
@@ -48,14 +48,12 @@ typedef struct {
     /*
      * The prepared GMAC key for whichever rotation window was last used, so the GHASH tables are built
      * once per window rather than once per packet. The protocol rotates every 45,000 keystream-offset units
-     * - roughly 650 packets - so one build serves hundreds of tags, which is the entire reason the table
-     * is affordable at all (see rc_gcm.h).
+     * - roughly 650 packets (see rc_gcm.h).
      *
-     * This makes the struct ~4.8 KB. It must not be a stack local in the 3DS build; both live instances
-     * are file-scope in source/connect, and -Wframe-larger-than=8192 catches any attempt otherwise.
+     * This makes the struct ~4.8 KB. Keep it off the stack on a small-stack target (a 3DS main thread
+     * has 32 KB): libripcord/client holds its instances inside the halyard_client struct.
      *
-     * `mutable` in spirit: the tag functions take a const context and this is a pure cache of a value
-     * derived from it, hence the const-cast at the one call site, explained there.
+     * A pure cache: the tag functions take a const context and const-cast at the one call site.
      */
     rc_gmac_key prepared;
 } stream_packet_crypto;

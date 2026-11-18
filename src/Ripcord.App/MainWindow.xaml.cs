@@ -33,8 +33,7 @@ namespace Ripcord_App;
 ///
 /// <para>
 /// It implements <see cref="IShellNavigator"/> so that pages ask the portable seam for window-level operations
-/// rather than casting a static back to this class. The three members that satisfies were already public methods
-/// here; naming them as an interface is what lets a page stop knowing which window it is inside.
+/// rather than casting a static back to this class, and a page does not know which window it is inside.
 /// </para>
 /// </summary>
 public sealed partial class MainWindow : Window, IShellNavigator
@@ -43,28 +42,24 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private readonly ISettingsStore _settingsStore = App.Services.Settings;
 
     /// <summary>
-    /// The app's one reader of the controller. There used to be two — a GameInput-only source here for menu
-    /// navigation and a full composite in the session page — which is why a DualSense worked in a stream and
-    /// did nothing in the menus.
+    /// The app's one reader of the controller. The menus and the session page share it, so a pad that works in
+    /// a stream works in the menus.
     /// </summary>
     private readonly InputRouter _input = App.Input;
 
     /// <summary>
     /// The chrome's claim on the pad, pushed for the life of the window. A stream pushes a Session scope over
-    /// it; a dialog will push a Modal scope over that.
+    /// it; a dialog pushes a Modal scope over that.
     ///
     /// <para>
-    /// Its activation edge re-seeds focus, which is what makes returning from a stream land somewhere. Before
-    /// the scope stack there was no edge to hang that on — the stream simply stopped claiming the pad and
-    /// whatever had focus before was long gone.
+    /// Its activation edge re-seeds focus, which is what makes returning from a stream land somewhere.
     /// </para>
     /// </summary>
     private readonly ShellInputScope _chromeScope;
 
     /// <summary>
     /// Turns intents into focus movement, activation, scrolling and context menus. Takes the content root as a
-    /// callback rather than the window itself, so the same pilot can later be pointed at a dialog's root
-    /// without knowing it moved.
+    /// callback rather than the window itself, so it does not depend on which root it is pointed at.
     /// </summary>
     private readonly FocusPilot _focus;
 
@@ -84,9 +79,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
 
-        // The TitleBar must not be a focus target itself. Directional focus was picking the control rather than
-        // the Settings/About buttons inside its RightHeader, which draws no focus visual and offers nothing to
-        // activate — so pressing Up off the console grid looked like focus vanishing, and the two commands were
+        // The TitleBar must not be a focus target itself. Directional focus otherwise picks the control rather
+        // than the Settings/About buttons inside its RightHeader; it draws no focus visual and offers nothing to
+        // activate, so pressing Up off the console grid looks like focus vanishing, and the two commands are
         // unreachable by pad. Its children stay focusable; only the container stops volunteering.
         AppTitleBar.IsTabStop = false;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
@@ -94,7 +89,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         // The backdrop is declared in markup, which cannot ask whether the user permits transparency — so the
         // first thing done with it is to re-decide it. Without this, someone who has turned transparency off
-        // still got Mica until the first time they closed a stream.
+        // still gets Mica until the first time they close a stream.
         RestoreBackdrop();
         AppEffects.Changed += OnEffectsChanged;
 
@@ -132,20 +127,19 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 DispatcherQueuePriority.Low, FocusFirstContentElement),
             focusRoot: () => Content?.XamlRoot);
 
-        // The standing guarantee that something is always focused. Everything else that seeds focus — window
-        // activation, navigation, the first pad press — predates it and each was written for one situation
-        // somebody hit; this one covers the situations nobody has hit yet.
-        // needsSeed is the SHELL's question, not the pilot's. This used to ask the pilot directly, which
-        // skipped the modal guard and left the watchdog as the one seeding path with nothing in front of
-        // it - see ModalOwnsFocus for what that cost.
+        // The standing guarantee that something is always focused. The other seeds — window activation,
+        // navigation, the first pad press — each cover one situation; this one covers the rest.
+        // needsSeed is the SHELL's question, not the pilot's: asking the pilot directly would skip the modal
+        // guard and make the watchdog the one seeding path with nothing in front of it. See ModalOwnsFocus.
         _focusWatchdog = new FocusWatchdog(
             _dispatcherQueue,
             needsSeed: ShellShouldSeedFocus,
             seed: FocusFirstContentElement);
 
         // Focus is seeded on every navigation, not only when the chrome scope activates. Going to the pair flow
-        // and back left nothing focused, so a pad user had to press a direction just to get the caret back onto
-        // the console list — the new page has no idea the old one's focused element went away with it.
+        // and back otherwise leaves nothing focused, and a pad user has to press a direction just to get the
+        // caret back onto the console list — the new page has no idea the old one's focused element went away
+        // with it.
         ChromeFrame.Navigated += (_, _) =>
         {
             _arrivalSeedPending = true;
@@ -248,8 +242,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         // Closing mid-stream has to end the session before the process goes.
         //
-        // The session page's teardown is deliberately not awaited on the UI thread — doing that froze the
-        // window on exit once — so on an ordinary "leave the stream" it simply completes while the window
+        // The session page's teardown is deliberately not awaited on the UI thread — doing that can freeze the
+        // window on exit — so on an ordinary "leave the stream" it simply completes while the window
         // lives on. At shutdown there is no window to live on: the task is dropped, the process exits, and the
         // teardown's last acts never happen. Those acts are the control-channel close and, on the account
         // route, an HTTPS call leaving the cloud session, which is what tells PSN and the console we are gone.
@@ -261,9 +255,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
         {
             AppWindow.Changed -= OnAppWindowChanged;
 
-            // First, so no focus check queued before the close runs against the closed window. One that did read
-            // Window.Content from a released native window and faulted with an access violation, which no catch
-            // can stop: the app crashed on every close that raced a focus change (2026-09-30).
+            // First, so no focus check queued before the close runs against the closed window. Such a check reads
+            // Window.Content from a released native window and faults with an access violation, which no catch
+            // can stop.
             _focusWatchdog.Dispose();
             _closed = true;
             _focusTrace?.Dispose();
@@ -295,9 +289,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
             page.SetBottomInset(inset);
         }
 
-        // The chrome pages too, which the prompts covered the same way: "Add another console" sat under them on
-        // hardware (2026-10-01). The page's bottom moves up while the prompts show; that beats a control nobody
-        // can see.
+        // The chrome pages too, which the prompts cover the same way: without the margin "Add another console"
+        // sits under them. The page's bottom moves up while the prompts show; that beats a control nobody can
+        // see.
         ChromeFrame.Margin = new Thickness(0, 0, 0, inset);
     }
 
@@ -333,9 +327,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private bool _closed;
 
     /// <summary>
-    /// The whole window's focus moves, when <c>RIPCORD_TRACE_FOCUS</c> asks for them. It covered only the sign-in
-    /// dialog, and the pad bugs found on 2026-10-08 (focus landing on something with no focus visual) were on
-    /// ordinary pages, where there was nothing to read.
+    /// Traces the whole window's focus moves, on ordinary pages as well as in dialogs, when
+    /// <c>RIPCORD_TRACE_FOCUS</c> asks for them.
     /// </summary>
     private readonly FocusTrace? _focusTrace = FocusTrace.StartIfEnabled("shell");
 
@@ -343,15 +336,14 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Queue work for the UI thread, to be dropped if the window has closed by the time it runs.
     ///
     /// <para>
-    /// <b>Every callback this window queues goes through here,</b> because the dispatcher drains its queue while
-    /// the app shuts down, after the window has closed. Queued work that touched the window then threw - a focus
-    /// seed reading <c>ChromeFrame.Content</c> threw <c>E_UNEXPECTED</c> - and an exception out of a dispatcher
-    /// callback is a fail-fast. Caught in a dump on 2026-09-30, closing the app.
+    /// Every callback this window queues goes through here, because the dispatcher drains its queue while the
+    /// app shuts down, after the window has closed. Queued work that touches the window then throws (a focus
+    /// seed reading <c>ChromeFrame.Content</c> threw <c>E_UNEXPECTED</c>; dump of 2026-09-30, closing the app),
+    /// and an exception out of a dispatcher callback is a fail-fast.
     /// </para>
     ///
     /// <para>
-    /// The check is made when the work runs, not when it is queued, and deliberately so: whether the window has
-    /// closed in between is the whole question.
+    /// The check is made when the work runs, not when it is queued.
     /// </para>
     /// </summary>
     private bool Post(DispatcherQueueHandler work) => Post(DispatcherQueuePriority.Normal, work);
@@ -401,7 +393,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// <summary>
     /// The window's icon, which is also the taskbar's for the zip build: the tile normally, and the one-colour
     /// mark under a contrast theme, white on the dark ones and black on the light one, the way Windows' inbox apps
-    /// change theirs (owner, 2026-10-08). The packaged build's Start and taskbar tiles switch by themselves through
+    /// change theirs. The packaged build's Start and taskbar tiles switch by themselves through
     /// their contrast-qualified assets; the zip build has no resource system, so it is done here, and again when
     /// contrast is turned on or off while the app is open.
     /// </summary>
@@ -437,8 +429,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
     /// <summary>
     /// Windows' own navigation sounds, while a pad is in use and never otherwise: the convention the Xbox shell
-    /// set, where moving and pressing click and a mouse stays silent (showcase plan, decision D: try it and decide
-    /// by ear). ElementSoundPlayer plays only for its own controls' gestures, so FocusPilot plays the moves and
+    /// set, where moving and pressing click and a mouse stays silent (showcase plan, decision D).
+    /// ElementSoundPlayer plays only for its own controls' gestures, so FocusPilot plays the moves and
     /// presses the pad makes through it. Settings can turn them off.
     /// </summary>
     private void UseNavigationSounds(InputMode mode)
@@ -447,8 +439,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
             : ElementSoundPlayerState.Off;
 
     /// <summary>
-    /// The smallest the window may be made, in effective pixels. Below it the console card's play mark was cut
-    /// off, the one thing the home page exists for (visual audit, 2026-10-08). 640 is also where the console grid
+    /// The smallest the window may be made, in effective pixels. Below it the console card's play mark is cut
+    /// off, the one thing the home page exists for. 640 is also where the console grid
     /// drops to one column (<c>CardMetrics.SingleColumnWidth</c>), so the two rules meet.
     /// </summary>
     private const double MinimumWidth = 640;
@@ -491,8 +483,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// <para>
     /// <b>Bounded, because a hang here is worse than an unclean exit.</b> The teardown's own cloud call carries
     /// a three-second timeout, so four is enough for the whole of it and still short enough that a user who
-    /// clicked the X is not left wondering. If it overruns we close anyway — the alternative is a window that
-    /// will not shut, which is the bug the fire-and-forget was introduced to fix.
+    /// clicked the X is not left wondering. If it overruns we close anyway, rather than leave a window that
+    /// will not shut.
     /// </para>
     /// </summary>
     private async Task CloseWhenSessionHasEndedAsync(SessionPage page)
@@ -566,19 +558,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
         => SystemBackdrop = AppEffects.TransparencyEnabled ? new MicaBackdrop() : null;
 
     /// <summary>
-    /// Transparency or high contrast changed while running. Only the backdrop needs acting on here — the accent
-    /// wash and the family marks resolve through <c>AccentResources</c> on each binding pass, so they follow on
-    /// the next render without anything being told.
-    /// </summary>
-    /// <summary>
     /// Colour the minimise, maximise and close buttons for the theme the window is actually in.
     ///
     /// <para>
-    /// Left to the platform, they came back from High Contrast on a white block: turning High Contrast off
-    /// restored the page but not the caption buttons, which kept a light background in a dark window until
-    /// relaunch (visual audit, 2026-10-08). So they are painted here on every theme or contrast change. In
-    /// High Contrast every colour is cleared, which hands the buttons back to the system's contrast theme,
-    /// the only correct answer there.
+    /// Left to the platform, turning High Contrast off restores the page but not the caption buttons, which
+    /// keep a light background in a dark window until relaunch. So they are painted
+    /// here on every theme or contrast change. In High Contrast every colour is cleared, which hands the
+    /// buttons back to the system's contrast theme.
     /// </para>
     ///
     /// <para>
@@ -618,6 +604,11 @@ public sealed partial class MainWindow : Window, IShellNavigator
         bar.ButtonPressedForegroundColor = glyph;
     }
 
+    /// <summary>
+    /// Transparency or high contrast changed while running: repaint the caption buttons, pick the icon again and,
+    /// outside a stream, re-decide the backdrop. The accent wash and the family marks resolve through
+    /// <c>AccentResources</c> on each binding pass, so they follow on the next render without anything being told.
+    /// </summary>
     private void OnEffectsChanged()
     {
         PaintCaptionButtons();
@@ -662,8 +653,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         // The title bar itself stays in windowed mode — it carries the window controls and the drag region, and
         // taking those away would trap the user in a window they cannot move or close. Its COMMANDS go, because
-        // they navigate the chrome frame, which is collapsed behind opaque video: they were visible, clickable
-        // and completely inert, which is worse than absent. Reported from hardware.
+        // they navigate the chrome frame, which is collapsed behind opaque video: left up they are visible,
+        // clickable and completely inert, which is worse than absent.
         TitleBarCommands.Visibility = Visibility.Collapsed;
         AppTitleBar.IsBackButtonVisible = false;
 
@@ -672,9 +663,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
     }
 
     /// <summary>
-    /// Full screen has no title bar, but the window kept a caption strip across its top, so a press there moved the
-    /// window: the stream's diagnostics panel sits in it, and dragging it by its header dragged Ripcord instead
-    /// (owner, 2026-10-09). Cleared while full screen; the title bar sets its own again when it is back.
+    /// Full screen has no title bar, but the window keeps a caption strip across its top, so a press there moves the
+    /// window: the stream's diagnostics panel sits in it, and dragging it by its header would drag Ripcord instead.
+    /// Cleared while full screen; the title bar sets its own again when it is back.
     /// </summary>
     private void ClearCaptionRegion()
     {
@@ -692,36 +683,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private void TitleBar_BackRequested(TitleBar sender, object args) => GoBack();
 
     /// <summary>
-    /// The single back route. Every gesture that means "back" — the title-bar chevron and the pad's East
-    /// button — comes through here, so they cannot disagree about what back does.
-    /// </summary>
-    /// <summary>
-    /// Window-level keyboard shortcuts.
-    ///
-    /// <para>
-    /// In code rather than markup for one unavoidable reason and one consequence of it: <c>VirtualKey</c> has
-    /// no name for the comma, so <c>Ctrl+,</c> — the shortcut every Windows app uses for settings — can only be
-    /// written as its numeric code, and once one accelerator lives here the rest are easier to read beside it
-    /// than split across two files.
-    /// </para>
-    ///
-    /// <para>
-    /// Deliberately no <c>TabIndex</c> anywhere in this app: tab order follows declaration order, so
-    /// rearranging markup cannot silently produce a wrong order that only a keyboard user discovers. Where the
-    /// order is wrong, the markup moves.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// A plain arrow key nothing else used moves focus through <see cref="FocusPilot"/>, the pad's path, rather
     /// than WinUI's own arrow-key navigation.
     ///
     /// <para>
-    /// The root grid's <c>XYFocusKeyboardNavigation</c> was meant to give the keyboard the pad's directional
-    /// model by construction, and it did until the pad needed more than the engine: WinUI's search gives up on
-    /// "Add another console" once focus has come from the title bar, and the pad's straight-line fallback lives
-    /// in FocusPilot. On hardware (2026-10-01) the arrow keys then stuck exactly where the pad had. Routing them
-    /// here makes the two one path again. A key only arrives here unhandled, so text boxes, sliders and the
-    /// GridView's own item navigation keep their arrows; a dialog's keys never reach the window's root.
+    /// WinUI's search (the root grid's <c>XYFocusKeyboardNavigation</c>) gives up on "Add another console" once
+    /// focus has come from the title bar, and the pad's straight-line fallback lives in FocusPilot, so on WinUI's
+    /// path the arrow keys stick where the pad does not. Routing them here makes the two one path.
+    /// A key only arrives here unhandled, so text boxes, sliders and the GridView's own item navigation keep
+    /// their arrows; a dialog's keys never reach the window's root.
     /// </para>
     /// </summary>
     private void OnRootKeyDown(object sender, KeyRoutedEventArgs e)
@@ -753,6 +723,20 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private static bool IsDown(Windows.System.VirtualKey key)
         => InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
+    /// <summary>
+    /// Window-level keyboard shortcuts.
+    ///
+    /// <para>
+    /// In code rather than markup because <c>VirtualKey</c> has no name for the comma, so <c>Ctrl+,</c> — the
+    /// shortcut every Windows app uses for settings — can only be written as its numeric code; the other
+    /// accelerators sit beside it rather than split across two files.
+    /// </para>
+    ///
+    /// <para>
+    /// Deliberately no <c>TabIndex</c> anywhere in this app: tab order follows declaration order. Where the
+    /// order is wrong, the markup moves.
+    /// </para>
+    /// </summary>
     private void AddAccelerators()
     {
         if (Content is not UIElement root)
@@ -761,7 +745,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         }
 
         // No tooltip for these. WinUI shows an element's first accelerator as a tooltip by default, and on the
-        // window's root that is every pixel of the window: "Alt+Left" came up wherever the pointer rested.
+        // window's root that is every pixel of the window: "Alt+Left" would come up wherever the pointer rests.
         root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
 
         root.KeyDown += OnRootKeyDown;
@@ -786,13 +770,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
             }
         });
 
-        // Escape goes back, which it did not — reported as "Esc in Settings does nothing, so the page felt
-        // stuck". Only outside a stream: in a session Escape belongs to the session (leave the stream), and
-        // that reservation is why it is not a bindable key.
+        // Escape goes back. Only outside a stream: in a session Escape belongs to the session (leave the
+        // stream), and that reservation is why it is not a bindable key.
         //
         // Declining rather than doing nothing is the whole point here. This accelerator sits on the window
         // root and therefore sees Escape before the session page's own does, so swallowing it while streaming
-        // left Escape dead in a session — F11 kept working only because nothing at this level claims it.
+        // would leave Escape dead in a session.
         AddIf(Windows.System.VirtualKey.Escape, Windows.System.VirtualKeyModifiers.None, () =>
         {
             if (Shell().IsStreaming)
@@ -804,9 +787,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
             return true;
         });
 
-        // F6 cycles between the window's two focus regions — the title-bar commands and the page. With the
-        // NavigationView gone there are only two, which is exactly what makes F6 worth having: there is no
-        // other key that reaches the title bar.
+        // F6 cycles between the window's two focus regions — the title-bar commands and the page. There are
+        // only two, which is exactly what makes F6 worth having: there is no other key that reaches the title
+        // bar.
         Add(Windows.System.VirtualKey.F6, Windows.System.VirtualKeyModifiers.None, CycleRegion);
 
         // Two shapes on purpose. Most of these always act, and say so by taking an Action. One does not — and
@@ -905,6 +888,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
         }
     }
 
+    /// <summary>
+    /// The single back route. Every gesture that means "back" — the title-bar chevron, Alt+Left, Escape and the
+    /// pad's East button outside a stream — comes through here, so they cannot disagree about what back does.
+    /// </summary>
     private void GoBack()
     {
         // Closing what is on top comes first. Otherwise Back with a context menu open navigates the page
@@ -932,26 +919,25 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private void OnAboutClick(object sender, RoutedEventArgs e) => NavigateToUtility(typeof(AboutPage));
 
     /// <summary>
-    /// Open one of the two utilities.
-    ///
-    /// <para>
-    /// Navigation rather than a pane selection, which is the substantive difference from the NavigationView
-    /// this replaced: opening Settings now pushes onto the back stack, so the chevron and B both return you to
-    /// what you were doing. Under the pane there was no back — you had to notice which item to click.
-    /// </para>
-    ///
-    /// <para>
-    /// Re-entry is ignored so that pressing the same command twice does not stack duplicates behind you, which
-    /// would make back feel broken in exactly the way a repeated click invites.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// <see cref="IShellNavigator.ShowSettings"/>. The same route the gear button takes, carrying where the
     /// caller wanted somebody to end up.
     /// </summary>
     public void ShowSettings(SettingsDestination destination = SettingsDestination.Top)
         => NavigateToUtility(typeof(SettingsPage), destination);
 
+    /// <summary>
+    /// Open one of the two utilities.
+    ///
+    /// <para>
+    /// Navigation rather than a pane selection: opening Settings pushes onto the back stack, so the chevron and
+    /// B both return you to what you were doing.
+    /// </para>
+    ///
+    /// <para>
+    /// Re-entry without a parameter is ignored so that pressing the same command twice does not stack duplicates
+    /// behind you.
+    /// </para>
+    /// </summary>
     private void NavigateToUtility(Type pageType, object? parameter = null)
     {
         // Re-navigated when a parameter is carried, even if the page is already up: "take me to the account"
@@ -964,7 +950,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
     /// <summary>
     /// Act on one navigation intent. Reached only while a non-Session scope owns the pad — the router does
-    /// that arbitration, so this no longer has to know what is in the stream layer or ask a page for a bool.
+    /// that arbitration, so this does not have to know what is in the stream layer or ask a page for a bool.
     /// </summary>
     private void OnNavIntent(NavIntent intent)
     {
@@ -977,20 +963,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 // thread — and an intent is precisely the "deliberate activity" its contract asks for.
                 _input.ReportControllerActivity();
 
-                // Nothing focused: this press establishes the caret and goes no further. Directional movement
-                // is relative to whatever has focus, so without an anchor the press was simply lost — which is
-                // why the first one or two after launch or re-activation felt like they did nothing.
-                // Consuming it is the predictable behaviour: one press to show where you are, the next to move.
-                // Seeding no longer swallows the press outright.
+                // Nothing focused: directional movement is relative to whatever has focus, so this press first
+                // seeds the caret.
                 //
-                // It used to: "one press to show where you are, the next to move". That reads well on a cold
-                // start and badly everywhere else — a tooltip appearing under the mouse is enough to disturb
-                // focus, and the user then has to press twice to do one thing. Reported from hardware as "it
-                // still takes two controller actions to break out".
+                // Seeding does not swallow the press outright: anything that disturbs focus (a tooltip appearing
+                // under the mouse is enough) would then cost two presses for one action.
                 //
                 // A DIRECTION after seeding is safe and is what was asked for, so it runs. An ACTIVATION is
                 // not: pressing Select would act on whatever the seed happened to land on, which the user has
-                // not seen yet. So those, and only those, still cost a press.
+                // not seen. So those, and only those, cost a press.
                 if (SeedFocusIfNothingHasIt() && (intent.Accept || intent.Context || intent.Back))
                 {
                     return;
@@ -1019,12 +1000,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 if (intent.Back)
                 {
                     // On the stream layer Back leaves it, as its own "Back to consoles" does; going back in the
-                    // collapsed chrome frame underneath did nothing visible. A pad only gets here while no stream
+                    // collapsed chrome frame underneath does nothing visible. A pad only gets here while no stream
                     // is live (the session scope keeps its presses), so this is a connect, or a connect that failed.
                     //
                     // Or a prompt over a live stream, which is why a dialog closes first: the disconnect prompt
-                    // is the stream asking to leave, and B on it asked to leave again, which the page ignores while
-                    // it waits for the answer. So B did nothing there (owner, with a pad, 2026-10-09).
+                    // is the stream asking to leave, and asking to leave again is ignored by the page while it
+                    // waits for the answer, so B has to close the prompt itself.
                     if (_focus.TryDismissPopup())
                     {
                         // Closed what was on top.
@@ -1062,52 +1043,33 @@ public sealed partial class MainWindow : Window, IShellNavigator
             return false;
         }
 
-        // Returns what actually happened. It used to fire and forget, which meant any reason the keyboard
-        // did not open — including an exception — was swallowed AND the press was still reported as handled,
-        // so the button did nothing and said nothing. Reported as "press A on a text box: no keyboard".
+        // Returns what actually happened, so a keyboard that did not open — for any reason, an exception
+        // included — is not reported to the caller as a handled press.
         return _softKeyboard.TryOpen(target);
     }
 
     /// <summary>
-    /// Seed focus inside the page content.
-    ///
-    /// <para>
-    /// <b>Content, not chrome</b>, and that is the point of the change rather than a side effect of it. The
-    /// first focus stop used to be the navigation pane, so a player opening the app with a pad in hand had to
-    /// travel out of the furniture before reaching a console. Now the first thing focused is the first thing
-    /// on the page — which on the console list is a console.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// True while a modal owns focus, in which case the shell must keep its hands off.
     ///
     /// <para>
-    /// <b>The bug that named this.</b> The PSN sign-in dialog hosts a WebView2, which is a native child HWND.
-    /// Click into an HTML text box and Win32 focus goes there — but XAML focus goes NOWHERE, because the
-    /// focused thing is not in the XAML tree at all. <c>FocusManager.GetFocusedElement</c> returns null,
-    /// <see cref="FocusPilot.NeedsFocusSeed"/> reads that as "nothing has focus", and the shell put focus back
-    /// into the dialog. The password box deselected the instant it was clicked, every time.
+    /// The PSN sign-in dialog hosts a WebView2, which is a native child HWND. Click into an HTML text box and
+    /// Win32 focus goes there, but XAML focus goes nowhere: <c>FocusManager.GetFocusedElement</c> returns null,
+    /// <see cref="FocusPilot.NeedsFocusSeed"/> reads that as "nothing has focus", and the shell would put focus
+    /// back into the dialog, deselecting the password box the instant it was clicked.
     /// </para>
     ///
     /// <para>
-    /// XAML focus being nowhere is not the same as focus being nowhere.
-    /// </para>
-    ///
-    /// <para>
-    /// But the narrow reading is the wrong one, and fixing only the web view is how this took two attempts.
-    /// <see cref="FocusFirstContentElement"/> focuses the page inside <c>ChromeFrame</c> — which while a modal
-    /// is up is the content BEHIND it. Doing that is never right, whatever the modal contains and whatever
-    /// prompted it. So the guard belongs at the chokepoint rather than at the symptom, and a modal keeps focus
-    /// for as long as it is showing: <c>ContentDialog</c> seeds and traps its own.
+    /// The guard covers every modal, not only the web view: <see cref="FocusFirstContentElement"/> focuses the
+    /// page inside <c>ChromeFrame</c>, which while a modal is up is the content BEHIND it, and that is never
+    /// right. A modal keeps focus for as long as it is showing: <c>ContentDialog</c> seeds and traps its own.
     /// </para>
     /// </summary>
     private bool ModalOwnsFocus => _input.Scopes.Top?.Kind == InputScopeKind.Modal;
 
     /// <summary>
-    /// Whether the shell should put focus into the page — the question every seeding path has to ask, and the
-    /// reason it is a method: the focus watchdog asked <see cref="FocusPilot.NeedsFocusSeed"/> on its own and
-    /// so had no <see cref="ModalOwnsFocus"/> guard, which is what kept the sign-in box unusable after the
-    /// guard was added here.
+    /// Whether the shell should put focus into the page — the question every seeding path has to ask, the focus
+    /// watchdog included: <see cref="FocusPilot.NeedsFocusSeed"/> on its own has no <see cref="ModalOwnsFocus"/>
+    /// guard, and without one the sign-in box is unusable.
     /// </summary>
     private bool ShellShouldSeedFocus() => !ModalOwnsFocus && _focus.NeedsFocusSeed();
 
@@ -1127,11 +1089,19 @@ public sealed partial class MainWindow : Window, IShellNavigator
         return true;
     }
 
+    /// <summary>
+    /// Seed focus inside the page content.
+    ///
+    /// <para>
+    /// Content, not chrome: the first thing focused is the first thing on the page — which on the console list
+    /// is a console — so a player with a pad in hand does not have to travel out of the furniture first.
+    /// </para>
+    /// </summary>
     private void FocusFirstContentElement()
     {
         // The chokepoint. Every other seeding path leads here — window activation, navigation, chrome scope
-        // activation, a pad direction with nothing focused, the watchdog, region cycling — and each was
-        // written for one situation somebody hit, so guarding them one at a time is how one gets missed.
+        // activation, a pad direction with nothing focused, the watchdog, region cycling — so guarding them
+        // one at a time is how one gets missed.
         // Focusing the page behind a modal is wrong in all of them. Nor is there a page to focus once the
         // window has closed: ChromeFrame.Content throws then.
         if (_closed || ModalOwnsFocus)
@@ -1140,15 +1110,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
         }
 
         // The layer on screen. While the stream layer is up the chrome frame is collapsed, and seeding into it
-        // focused nothing: on a connect that failed, every press was spent seeding and none reached Try again
-        // (2026-10-02).
+        // focuses nothing: on a connect that failed, every press would be spent seeding and none would reach
+        // Try again.
         if ((IsStreaming ? StreamFrame.Content : ChromeFrame.Content) is not FrameworkElement content)
         {
             return;
         }
 
         // FocusState.Keyboard everywhere below, never Programmatic — see the note in MoveFocus. Seeding focus
-        // programmatically draws no focus visual, so the app's initial focus was invisible.
+        // programmatically draws no focus visual, so the app's initial focus would be invisible.
 
         // The page's own answer first: it knows which element is the point of the page, and tree order does
         // not. On the console list that is a console rather than the "Add console" button above it.
@@ -1166,8 +1136,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // Descend past containers. FindFirstFocusableElement happily returns a ScrollViewer — one is focusable
         // whenever it can scroll — and focusing a container is a TRAP, not merely untidy: directional search
         // starts from the focused element, and a container that ENCLOSES every candidate has nothing above,
-        // below or beside it, so every direction finds nothing and focus can never leave. That is exactly what
-        // made the settings page unusable with a pad.
+        // below or beside it, so every direction finds nothing and focus can never leave. The settings page is
+        // one whose first focusable element is such a container.
         DependencyObject scope = content;
         for (int depth = 0; depth < 8; depth++)
         {
@@ -1192,10 +1162,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
             scope = inner;
         }
 
-        // Nothing focusable on the page yet: it may still be populating. Ask again shortly, for up to half a
+        // Nothing focusable on the page: it may still be populating. Ask again shortly, for up to half a
         // second, before settling for the chrome. Without the wait a page that fills itself in after navigating -
-        // Keyboard controls builds its rows that way - opened every time with focus on the title-bar gear, so a
-        // pad user started in the window's furniture instead of the first row (visual audit, 2026-10-08).
+        // Keyboard controls builds its rows that way - opens every time with focus on the title-bar gear, so a
+        // pad user starts in the window's furniture instead of the first row.
         if (_seedRetries < SeedRetryLimit)
         {
             _seedRetries++;
@@ -1221,9 +1191,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// puts it when the control that held it leaves with the old page.
     ///
     /// <para>
-    /// That fallback can come after the seed, and the seeding paths took any focused control as placed, so Keyboard
-    /// controls opened now and then on the title bar's Back and About on the About button: one press of A from a
-    /// pad and the player went back, or nowhere (showcase review, R10, 2026-10-09).
+    /// That fallback can come after the seed, and a seeding path that takes any focused control as placed leaves
+    /// Keyboard controls open on the title bar's Back, or About on the About button: one press of A from a pad
+    /// and the player goes back, or nowhere.
     /// </para>
     /// </summary>
     private bool ArrivalFocusStrayed()

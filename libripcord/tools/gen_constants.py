@@ -79,7 +79,7 @@ def main(argv):
     if want_registration:
         args.remove("--registration")
 
-    # --for <name>: optional, so the three existing call sites keep working unchanged if one is missed.
+    # --for <name>: optional. A caller that omits it gets a generated header without the name.
     requested_by = None
     if "--for" in args:
         at = args.index("--for")

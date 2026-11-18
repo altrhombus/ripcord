@@ -44,11 +44,10 @@ public sealed class HalyardConsoleRegistrar : IConsoleRegistrar
             AccountId: registration.AccountId,
             Passcode: registration.Passcode,
 
-            // 32 bytes, carried over verbatim from the flow this replaced even though
-            // HalyardRegistrationRequest's own doc comment says "16-byte device id (RP-Did material)". The
-            // discrepancy is real and wire-affecting, and pairing demonstrably works at 32 — so changing it
-            // during an extraction would land as a refactor and behave as a protocol change. Tracked as an open
-            // question in ROADMAP; do not "tidy" this without deriving the answer first.
+            // 32 bytes, even though HalyardRegistrationRequest's own doc comment says "16-byte device id
+            // (RP-Did material)". The discrepancy is real and wire-affecting, and pairing demonstrably works
+            // at 32 — so changing it behaves as a protocol change. Do not "tidy" this without deriving the
+            // answer first.
             ClientDeviceId: RandomNumberGenerator.GetBytes(32),
             Platform: platform);
 

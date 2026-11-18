@@ -1,5 +1,5 @@
-// ripcord-lab: drives libripcord from the Mac, against a real console. The Mac counterpart of
-// tools/Ripcord.ProtocolLab, and the tool the engine spike (docs/macos-plan.md, step 2) grows in.
+// ripcord-lab: drives the Rust engine from the Mac, against a real console. The Mac counterpart of
+// tools/Ripcord.ProtocolLab.
 
 import CoreMedia
 import Foundation
@@ -76,7 +76,7 @@ case "discover":
     }
 
 case "bench":
-    // The engine the Mac links; Phase 1 compared it with the C core from this same workload (engine/README.md).
+    // The engine the Mac links; engine/README.md has the C core's figure from this same workload.
     let engines = arguments.count == 2 ? PacketCryptoBenchmark.Engine(rawValue: arguments[1]).map { [$0] } : PacketCryptoBenchmark.Engine.allCases
     guard let engines else { fail(usage, code: 2) }
     for engine in engines {

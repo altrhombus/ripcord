@@ -23,11 +23,9 @@ namespace Ripcord.Presentation.Halyard.Pairing;
 /// </para>
 ///
 /// <para>
-/// Moved here from <c>Ripcord.App/Services/AppRegistrationCipher.cs</c> unchanged. The logic is deliberately
-/// carried over verbatim: the resolution order and every <c>source</c> string are user-facing text on a pairing
-/// failure, so "improving" them during a move would be an invisible behaviour change in the one place a user is
-/// already having a bad time. The only difference is static → instance, so the pairing flow can be tested
-/// against a fake.
+/// The resolution order and every <c>source</c> string are user-facing text on a pairing failure, so changing
+/// them is a behaviour change. An instance rather than a static so the pairing flow can be tested against a
+/// fake.
 /// </para>
 /// </summary>
 public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistrationCipherResolver
@@ -124,9 +122,9 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
         }
         catch (Exception ex)
         {
-            // Names the file, like the other three reasons do. It previously did not, which made the one branch
-            // reachable by arbitrary I/O and parse failures — the least self-explanatory of the four — also the
-            // only one that did not say which file to go and look at.
+            // Names the file, like the other three reasons do. This branch is reachable by arbitrary I/O and
+            // parse failures — the least self-explanatory of the four — so it most needs to say which file to
+            // go and look at.
             reason = $"fixture load failed ({path}): {ex.Message}";
             return null;
         }
@@ -134,8 +132,7 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
 
     /// <summary>
     /// Explicit override, then the platform config directory (the location an installed build can use), then a
-    /// walk up to the dev tree. The last of those was previously the only option, which is why a shipped app
-    /// could never locate these constants.
+    /// walk up to the dev tree. Null when none of them holds a fixture.
     /// </summary>
     private string? Locate()
     {

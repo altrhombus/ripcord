@@ -27,7 +27,7 @@ public static partial class HalyardControlSecretsLoader
         if (path is null)
         {
             // Last resort: the constants bundled with this build. Absent when built with
-            // -p:BundleInteropConstants=false, in which case we degrade to the stub as before.
+            // -p:BundleInteropConstants=false, in which case this returns null and the caller uses the stub.
             var bundled = HalyardInteropConstants.Control();
             if (bundled is not null)
             {

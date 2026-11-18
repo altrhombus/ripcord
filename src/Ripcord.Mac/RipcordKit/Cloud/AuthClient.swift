@@ -69,7 +69,7 @@ public struct AuthClient: Sendable {
             ("client_id", config.clientID),
             ("redirect_uri", config.redirectURI),
             ("scope", config.scopeString),
-            // The same device identity the token exchange carries. Omitting these was the difference
+            // The same device identity the token exchange carries. Omitting these is the difference
             // between a code the token endpoint accepts and one it rejects as issued to another device.
             ("device_type", ClientConfig.deviceType),
             ("duid", clientDeviceID),

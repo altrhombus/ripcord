@@ -60,10 +60,9 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     /// that reads is a styling decision and lives in the front end, not here.
     ///
     /// <para>
-    /// Pointer only, never focus. It was "hover or focus" until 2026-10-08, which broke the rule design.md states
-    /// in so many words — hover is a wash, focus is a ring — and in light theme it did worse: the wash darkens a
-    /// light card, the hero holds focus from launch, so the first thing a light-theme player saw was a grey card
-    /// darker than the page, the "hole cut in the page" the gradient rule exists to prevent.
+    /// Pointer only, never focus: design.md's rule is that hover is a wash and focus is a ring. In light theme
+    /// the wash darkens a light card and the hero holds focus from launch, so "hover or focus" would open on a
+    /// grey card darker than the page.
     /// </para>
     /// </summary>
     public bool IsHighlighted
@@ -90,8 +89,8 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
 
     /// <summary>
     /// How this card is drawn at the size it is being given: the wedge, the insets and the type steps. Set with
-    /// <see cref="Density"/>, from the same <see cref="CardMetrics.For"/> answer, because the hero's size now
-    /// follows the window and a density alone no longer says how big it is.
+    /// <see cref="Density"/>, from the same <see cref="CardMetrics.For"/> answer, because the hero's size
+    /// follows the window and a density alone does not say how big it is.
     /// </summary>
     public CardGeometry Geometry
     {
@@ -105,7 +104,7 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     ///
     /// <para>
     /// Separate because the wedge responds to this and must not respond to focus: focus is the ring's job,
-    /// and a second focus mark on the wedge would rebuild the confusion that splitting them removed.
+    /// and a second focus mark on the wedge would leave a pad user unable to tell where focus is.
     /// </para>
     /// </summary>
     public bool IsPointerOver
@@ -182,8 +181,8 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             DisplayName: _console.DisplayName,
             Host: _console.Host,
 
-            // The family alone. It carried the console's address too, which is noise to a player and was in every
-            // screenshot anyone posted (visual audit, 2026-10-08). Details keeps the address for whoever needs it.
+            // The family alone. The console's address is noise to a player and would be in every screenshot
+            // anyone posts. Details keeps the address for whoever needs it.
             Details: family.ShortName,
             Accent: family.Accent,
             Reachability: _reachability,
@@ -216,11 +215,11 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             ActionGlyph: wake ? ActionGlyph.Wake : ActionGlyph.Play,
 
             // False only when the console did not answer at all. Presentation only: it dims the action so the
-            // card admits we could not reach it. It deliberately does NOT gate connecting, and the old name
-            // (CanConnect) said otherwise while a front end wired it to IsEnabled.
+            // card admits we could not reach it. It deliberately does NOT gate connecting, and a front end must
+            // not wire it to IsEnabled.
             //
             // Silence is the only route to Offline, and silence is not knowledge -- a console powered on for a
-            // whole session was reported unreachable because one datagram was lost. Blocking on it turns a lost
+            // whole session can be reported unreachable because one datagram was lost. Blocking on it turns a lost
             // packet into a dead end, while allowing the attempt costs a failed connect that can at least say
             // what went wrong. Away is reachable -- that is the point of distinguishing it from Offline.
             IsReachable: _reachability != ConsoleReachability.Offline,

@@ -30,8 +30,8 @@ When this was written the **control** path was **[V]** and the **stream** crypto
 the primitive and round-trip level, never driven end-to-end against a live stream-key capture — so the advice
 was to budget a debug pass and not expect a first-try picture. Both are now **[V]** against a real console,
 and the client streams video over the LAN and over the internet. If you are reimplementing from these
-documents rather than using this code, the advice still applies to *your* first connection: the nonce and
-keystream-offset wiring is where an off-by-one surfaces, and the discipline below is how you retire it cheaply.
+documents, the advice still applies to *your* first connection: the nonce and keystream-offset wiring is
+where an off-by-one surfaces, and the discipline below is how you retire it cheaply.
 
 ---
 
@@ -39,16 +39,14 @@ keystream-offset wiring is where an off-by-one surfaces, and the discipline belo
 
 **Status, as of 2026-09-09: the whole build order below is done and live.** Registration, the control plane,
 the stream crypto, the Takion transport and A/V decode all run against a real console, on the LAN and over
-the internet. What follows is the dated record of how it was built, kept because the order it was built in is
-the useful part of this document; read it as history, not as a to-do list. [`../journal.md`](../journal.md)
-carries the record past this point, and [`../../ROADMAP.md`](../../ROADMAP.md) is the source of truth for
-what is actually left.
+the internet. What follows is the dated record of how it was built, kept because the order is the useful
+part of this document; read it as history, not a to-do list. [`../journal.md`](../journal.md) carries the
+record past this point, and [`../../ROADMAP.md`](../../ROADMAP.md) is the source of truth for what is left.
 
 ### 2026-07-21 — primitives and key schedules
 
-The crypto primitives and key schedules were implemented and unit-tested first, following the build order
-below, with every transform behind a green known-answer test before anything was wired into the live session
-path.
+The crypto primitives and key schedules were implemented and unit-tested first, in the build order below:
+every transform had a green known-answer test before anything was wired into the live session path.
 
 - **Primitives** (`src/Ripcord.Core.Net/Crypto/`): `AesKeystreamModes` (CTR/OFB/CFB128) and `AesGcmCore`
   (GCM with an arbitrary-length IV — the platform `AesGcm` only accepts 12-byte nonces, but the stream MAC
@@ -59,9 +57,9 @@ path.
 - **Constants, then supplied out of band, now bundled**: `HalyardControlSecrets` holds the KDF tables and
   context keys. At this point they were fed in as config from the gitignored captures folder. They are **committed
   today**, in `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` — a deliberate, argued exception
-  covering values that are identical for every console and every account; see [`NOTICE`](../../NOTICE) and
-  [`NOTICE`](../../NOTICE)'s "Interoperability constants". Nothing tied to a specific console or account is
-  bundled, and a test enforces that line.
+  covering values that are identical for every console and every account; see [`NOTICE`](../../NOTICE)'s
+  "Interoperability constants". Nothing tied to a specific console or account is bundled, and a test
+  enforces that line.
 - **Seam reshaped + wired** (`Crypto/IHalyardSessionCrypto.cs`): the seam now models v1's two crypto
   systems — control (`EstablishControl` → `EncryptControlField`/`DecryptControlField`/`CryptStreaminfo`) and
   stream (`GenerateEphemeralPublicKey` → `TryEstablishStream` → per-packet `TryOpenPacket`/`SealPacket`,
@@ -112,7 +110,7 @@ path.
     assumed); and the launchSpec template + `encryptedKey`/`sessionKey` field semantics are still `[I]` (a
     minimal placeholder launchSpec is built today — pin these from capture before a live attempt).
 - **Tests** (`tests/Ripcord.Protocol.Halyard.Tests/`): 39 tests at this point, all green. (The suite has
-  grown a long way past that since; [`../../README.md`](../../README.md) carries the current figure.)
+  grown well past that; [`../../README.md`](../../README.md) carries the current figure.)
   - Self-contained (public NIST vectors + a fully-synthetic stream round-trip that ports
     `stream_crypto_reimpl.py` — the [C]-risk validator — plus seam-level seal/open round-trips through
     `HalyardV1SessionCrypto` in both directions).
@@ -137,8 +135,7 @@ stack and a first live picture; the picture arrived.
 
 The committed **spec** deliberately omits extracted constants and captured secrets (independent-implementation discipline —
 see [`README.md`](README.md)). A reimplementation built from these documents alone will compile without them
-but **will not interoperate**. What has changed since this section was written is where the first of the two
-lives:
+but **will not interoperate**. Since this section was written, the first of the two has moved:
 
 1. **Extracted constants** — the registration key tables and the `context_key` constants for the per-field IV
    (spec §2.0, §2.1). **These are now committed**, in
@@ -146,8 +143,8 @@ lives:
    supplied out of band to interoperate. They are generic interoperability values — identical for every
    console and every account, and a client cannot speak the protocol without them — which is the argument
    [`NOTICE`](../../NOTICE) makes in full and the reason the exception is bounded to values of that kind. The
-   spec still withholds them, so if you are implementing from the spec rather than from this code, they are
-   the values you have to recover from your own captures. Our own working copy sits in the captures folder.
+   spec still withholds them, so if you are implementing from the spec rather than from this code, you have
+   to recover them from your own captures. Our own working copy sits in the captures folder.
 
 2. **The reference implementations** — `captures/*_reimpl.py` (see spec §0). These are your **golden test
    vectors** and they are *not* committed. Port each one into the client as a known-answer test.
@@ -162,7 +159,7 @@ lives:
 
 Work spec §7 top to bottom. For each step: **make the matching reference vector pass in-language first, then
 wire it to a socket.** That converts "debug a live stream" into "make N known-answer tests green," which is
-exactly where the [C]-vs-[V] risk gets retired.
+where the [C]-vs-[V] risk gets retired.
 
 | # | Step | Spec | Golden vector (`captures/`) |
 |---|------|------|------------------------------|

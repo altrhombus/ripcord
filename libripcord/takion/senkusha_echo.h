@@ -1,20 +1,17 @@
 /*
- * ripcord-3ds - the senkusha RTT echo packet.
+ * libripcord - the senkusha RTT echo packet.
  *
  * Ported from src/Ripcord.Protocol.Halyard.Takion/SenkushaEchoProbe.cs, which is this project's own
  * reference implementation and carries the provenance for every field below. That file cites
  * docs/protocol/captures/session8-wireshark.pcapng frames 155-175 by number: ten pings, each returned by
  * the console BYTE-IDENTICALLY, in two independent captures.
  *
- * WHY A CLIENT CAN BUILD ONE OF THESE AT ALL. Bytes 22-26 hold a monotonic counter whose deltas matched
- * the capture's own inter-packet timing to within a few microseconds - a send timestamp, not a checksum.
- * Because the console returns the packet unchanged, only WE ever read that field, so any monotonic value
- * is as good as the vendor's. Had it been a checksum over the payload, generating a valid ping would have
- * required reversing it first.
+ * Bytes 22-26 hold a monotonic counter whose deltas matched the capture's own inter-packet timing to
+ * within a few microseconds - a send timestamp, not a checksum. Because the console returns the packet
+ * unchanged, only WE ever read that field, so any monotonic value will do.
  *
- * RTT is still measured with our own clock across the send/receive pair rather than by reading the echoed
- * timestamp back, for the same reason the .NET side does: the field is a convenience, the stopwatch is
- * the measurement.
+ * RTT is measured with our own clock across the send/receive pair, as the .NET side does, not by
+ * reading the echoed timestamp back.
  */
 #ifndef SENKUSHA_ECHO_H
 #define SENKUSHA_ECHO_H
@@ -49,8 +46,8 @@ size_t senkusha_echo_build(uint8_t sequence, uint64_t microseconds, size_t paylo
  * Is this datagram an echo of one of our pings, and if so which sequence?
  *
  * Matched on the marker bytes and the sequence rather than by comparing the whole packet: the console
- * echoes verbatim today, but keying off the fields we know the meaning of is more robust than depending
- * on every byte we do not.
+ * echoed verbatim in both captures, but keying off the fields we know the meaning of is more robust than
+ * depending on every byte we do not.
  */
 int senkusha_echo_is_echo(const uint8_t *datagram, size_t length, uint8_t *out_sequence);
 

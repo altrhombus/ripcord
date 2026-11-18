@@ -1,4 +1,4 @@
-/* See rc_random.h for why this hard-fails instead of degrading, and why there is no host implementation. */
+/* See rc_random.h for why this hard-fails instead of degrading. */
 
 #include "util/rc_random.h"
 
@@ -51,8 +51,9 @@ int rc_random_bytes(uint8_t *out, size_t length)
 #else /* !__3DS__ */
 
 /*
- * No host implementation, deliberately - see the header. A host build that reaches for real key material
- * should fail to link, not quietly succeed with something weaker than it thinks.
+ * Outside __3DS__ there is no entropy source, deliberately - see the header. These fail instead:
+ * rc_random_init returns 0 and rc_random_bytes zeroes the buffer and returns 0, so a host build that
+ * reaches for real key material gets a hard failure, not something weaker than it thinks.
  */
 
 int rc_random_init(void)

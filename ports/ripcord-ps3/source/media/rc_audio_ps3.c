@@ -163,8 +163,8 @@ void rc_audio_service(void)
         float *block;
         unsigned i;
 
-        /* Four blocks ahead, not six: the hardware ring is latency too, and the receive loop that
-         * refills it has never gone more than a couple of milliseconds without coming round. */
+        /* RC_AUDIO_BLOCKS_AHEAD and no further: the hardware ring is latency too. The header says why
+         * the lead is six blocks. */
         if (ahead >= RC_AUDIO_BLOCKS_AHEAD)
             break;
 

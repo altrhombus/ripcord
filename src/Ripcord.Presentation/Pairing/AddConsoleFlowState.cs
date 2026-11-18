@@ -55,12 +55,9 @@ public sealed record AddConsoleFlowState(
     /// What the note above means, as a tone rather than a colour.
     ///
     /// <para>
-    /// <b>It follows the note, not <see cref="CanPairWithAccount"/>,</b> which is the change worth explaining.
-    /// The front end used to derive severity from whether the route was available — Success when it was,
-    /// Informational when it was not — and that was fine while the note only ever said one of two things. It
-    /// stopped being fine when the route could be available <em>with a condition attached</em>: a green
-    /// Success bar reading "turn the console on first" tells the reader the opposite of what the sentence
-    /// says.
+    /// <b>It follows the note, not <see cref="CanPairWithAccount"/>.</b> The route can be available
+    /// <em>with a condition attached</em>, and a green Success bar reading "turn the console on first" tells
+    /// the reader the opposite of what the sentence says.
     /// </para>
     ///
     /// <para>
@@ -71,9 +68,9 @@ public sealed record AddConsoleFlowState(
     StatusTone AccountPairingNoteTone,
 
     /// <summary>
-    /// Which route the link step is currently set up for. Everything below follows from it: the step used to
-    /// show both routes at once — "no code needed", then how to find a code, then a box asking for one — which
-    /// contradicted itself and left two commit buttons with nothing to say which belonged to what.
+    /// Which route the link step is set up for. Everything below follows from it: showing both routes at
+    /// once — "no code needed", then how to find a code, then a box asking for one — would contradict itself
+    /// and leave two commit buttons with nothing to say which belongs to what.
     /// </summary>
     PairingRoute Route,
 
@@ -89,10 +86,9 @@ public sealed record AddConsoleFlowState(
     /// </summary>
     string SwitchRouteLabel,
 
-    /// <summary>Show the console's own instructions and the code box.</summary>
     /// <summary>
     /// What signing in would save this user, or empty when it would save nothing — because they already have,
-    /// or because this build ships no account credential and cannot.
+    /// or because this build has no account credential and cannot.
     ///
     /// <para>
     /// An invitation rather than a requirement. The code route works without it and is offered regardless;
@@ -111,7 +107,7 @@ public sealed record AddConsoleFlowState(
     /// <para>
     /// The code route looks like the low-friction one and is not: it wants the player at the console, through
     /// its menus, reading an 8-digit code, and holding a numeric account id almost nobody knows. Signing in
-    /// wants a password they already have. When this is true the form is not drawn yet and the offer is the
+    /// wants a password they already have. When this is true the form is not drawn and the offer is the
     /// step's content; <see cref="CodeRouteLabel"/> is the way past it.
     /// </para>
     /// </summary>
@@ -138,10 +134,9 @@ public sealed record AddConsoleFlowState(
     /// The way out of the celebration, beside Play now — and deliberately not a save button.
     ///
     /// <para>
-    /// It read <c>"Save"</c>, from a literal in the page's code-behind, past the string catalogue. Two
-    /// things wrong with that and the second is the worse one: the label was unlocalisable, and it was
-    /// offering to save a record that had been on disk since the console registered. A step that announces
-    /// "Paired." and then offers to save reads as though the first claim were conditional on the second.
+    /// Composed here, from the string catalogue, so it is localisable. Not "Save": the record has been on
+    /// disk since the console registered, and a step that announces "Paired." and then offers to save reads
+    /// as though the first claim were conditional on the second.
     /// </para>
     /// </summary>
     string DoneActionLabel,
@@ -156,7 +151,7 @@ public sealed record AddConsoleFlowState(
     /// <summary>
     /// Whether going back stays in the flow, at an earlier step. False on the first step, where back means
     /// leaving, which is the title bar's job; the page draws its own Back only when this is true, so the first
-    /// step no longer shows two Backs (visual audit, 2026-10-08).
+    /// step does not show two Backs.
     /// </summary>
     bool HasPreviousStep,
     string SuggestedName,
@@ -169,7 +164,7 @@ public sealed record AddConsoleFlowState(
 /// <summary>Raised when the flow ends with a saved console, and whether the user asked to play immediately.</summary>
 public sealed record AddConsoleCompletion(Ripcord.Core.Consoles.PairedConsole Console, bool ConnectNow);
 
-/// <summary>Tunables, all defaulted to what the flow shipped with.</summary>
+/// <summary>The flow's tunables, each with a default.</summary>
 public sealed class AddConsoleFlowOptions
 {
     /// <summary>

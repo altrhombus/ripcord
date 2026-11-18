@@ -85,7 +85,7 @@ int rc_spu_yuv_init(void)
     memset((void *)s_done, 0, 128u * RC_SPU_YUV_MAX_SPES);
 
     /*
-     * sysSpuInitialize is NOT called here. rc_spu.c's probe already initialises the SPU subsystem for
+     * sysSpuInitialize is NOT called here. rc_spu.c's probe initialises the SPU subsystem for
      * this process, and calling it twice returns an error that means "already done" - which would have
      * to be special-cased by value. Depending on the probe having run is the smaller assumption, and
      * rc_spu_yuv_init is only reached after it.
@@ -187,13 +187,12 @@ static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const ui
         s_sequence += 2u;   /* never collide with the phase values the SPE also writes */
 
     /*
-     * Strips are divided by OUTPUT row now, and the even-row rule no longer applies to them.
+     * Strips are divided by OUTPUT row, and a strip need not start on an even row.
      *
-     * It used to: a strip starting on an odd SOURCE row takes the wrong chroma line. With scaling the
-     * SPE computes its own source row from the output row, so every row - first in a strip or not -
-     * derives its chroma the same way. The constraint moved into the kernel where the mapping lives,
-     * which is the right place for it, and keeping a stale evenness rule here would silently misalign
-     * strips whenever the scale factor is not an integer.
+     * The SPE computes its own source row from the output row, so every row - first in a strip or
+     * not - derives its chroma the same way. The chroma pairing lives in the kernel where the mapping
+     * is; an evenness rule here would silently misalign strips whenever the scale factor is not an
+     * integer.
      */
     rows_each = (dst_height + s_spes - 1) / s_spes;
     if (rows_each < 1)
@@ -243,20 +242,14 @@ static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const ui
         (void)sysSpuThreadWriteMb(s_thread[i], 1u);
 
     /*
-     * A DEADLINE, A YIELD, AND A GIVING-UP POINT. The first version had only the first, and that was the
-     * difference between degrading and locking the console.
+     * A DEADLINE, A YIELD, AND A GIVING-UP POINT, and all three are needed.
      *
-     * It bounded ONE FRAME at 100 ms and spun with no sleep to do it - a hard poll of main memory from
-     * the PPE. When the SPEs stopped answering, every frame then paid 100 ms of bus-saturating spin plus
-     * a full PPE conversion, for as many frames as the session lasted. Ninety seconds of that starves
-     * the machine, which is what an unresponsive console with no video looks like. The comment above it
-     * said "a deadline, not an indefinite wait", and it was true of a frame and false of the run.
-     *
-     * So: sleep rather than spin, because the SPEs need the bus more than this loop does. A deadline of
-     * one frame time rather than three, because a conversion that has not finished in 25 ms has already
-     * lost its frame. And a consecutive-failure count, because one late frame is a hiccup while five in
-     * a row is a broken subsystem - and paying for a broken subsystem on every frame forever is the
-     * behaviour that turned a degraded picture into a dead console.
+     * Sleep rather than spin, because a hard poll of main memory from the PPE saturates the bus the
+     * SPEs need. A deadline of one frame time, because a conversion that has not finished in 25 ms has
+     * already lost its frame. And a consecutive-failure count, because one late frame is a hiccup while
+     * five in a row is a broken subsystem: with only a per-frame deadline (100 ms, spinning), every
+     * frame after the SPEs stopped answering paid the spin plus a full PPE conversion, and ninety
+     * seconds of that left the console unresponsive.
      */
     deadline = rc_time_ms() + RC_SPU_YUV_DEADLINE_MS;
     for (;;) {
@@ -330,20 +323,15 @@ void rc_spu_yuv_exit(void)
     /*
      * ASK THEM TO LEAVE, AND THEN STOP ASKING FOR ANYTHING.
      *
-     * Two attempts at a tidy shutdown have now locked this console. b105 called
-     * sysSpuThreadGroupTerminate on five threads blocked in a mailbox read - a blocked thread cannot
-     * notice it is being terminated. b107 asked them to leave first and then joined the group, which
-     * froze too: the stream had run to completion and the freeze was entirely in the teardown.
+     * Two attempts at a tidy shutdown locked this console. b105 called sysSpuThreadGroupTerminate on
+     * five threads blocked in a mailbox read - a blocked thread cannot notice it is being terminated.
+     * b107 asked them to leave first and then joined the group, which froze too, entirely in the
+     * teardown.
      *
-     * So the teardown does the one thing that helps and nothing that can block. The sentinel is written
-     * because an SPE waiting on its doorbell will wake, see zero and return from main - that is cheap and
-     * it is the right thing when it works. Nothing then WAITS for that to have happened.
-     *
-     * No join, no terminate, no destroy, and that is not a leak being excused. This runs as the process
-     * exits, and lv2 reclaims a process's SPE thread groups when it does. The question is not whether
-     * cleanup is tidy but whether it can hang, because a shutdown that hangs costs a reboot and - until
-     * the log order was fixed alongside this - the last lines of the log as well. Cleanup that cannot
-     * fail is worth more here than cleanup that is complete.
+     * So the sentinel is written, because an SPE waiting on its doorbell will wake, see zero and return
+     * from main, and nothing then WAITS for that to have happened. No join, no terminate, no destroy:
+     * this runs as the process exits, and lv2 reclaims a process's SPE thread groups when it does. A
+     * shutdown that hangs costs a reboot.
      *
      * Deliberately NOT marked [X]: this is not an unverified guess about the protocol, it is a decision
      * about what to do at exit, and the reasoning is the whole justification.

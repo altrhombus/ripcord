@@ -16,9 +16,8 @@ public sealed record HalyardPairingCredentials(
 
 /// <summary>
 /// Registration service. Delegates the wire flow (obtaining a registration key from a PIN) to
-/// <see cref="IHalyardRegistration"/>, which is implemented for real by
-/// <c>HalyardRegistrationClient</c> and has paired against a live console from scratch. The indirection
-/// stays because it is also the seam the tests substitute.
+/// <see cref="IHalyardRegistration"/>, which <c>HalyardRegistrationClient</c> implements. The indirection
+/// is also the seam the tests substitute.
 /// </summary>
 public sealed class HalyardPairingService(IHalyardRegistration registration) : IConsolePairingService
 {

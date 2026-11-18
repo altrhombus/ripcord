@@ -5,9 +5,9 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The 2026-09-30 review: on Windows, one ICMP "port unreachable" made the next receive on a UDP socket throw
-/// ConnectionReset, and every receive loop ended on it, taking the session along silently. Loopback produces the
-/// real thing: send to a port nothing is listening on, and Windows reports it back to the sender.
+/// On Windows, one ICMP "port unreachable" makes the next receive on a UDP socket throw ConnectionReset; a
+/// receive loop that ended on it would take the session along silently. Loopback produces the real thing:
+/// send to a port nothing is listening on, and Windows reports it back to the sender.
 /// </summary>
 public class UdpChannelResetTests
 {

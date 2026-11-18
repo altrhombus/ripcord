@@ -3,9 +3,9 @@
 // the one place that decides where it lives. Both stores keep the same record, so the lab and the app
 // differ only in the store they are given.
 //
-// THE LEGACY FILE. Until the Rust engine, the lab kept pairings in the C core's own `pairing.txt`
+// THE LEGACY FILE. `pairing.txt` is the C core's own pairing file
 // (libripcord/session/halyard_pairing_file.c): shared settings at the top, then one `[console]` section per
-// console, or a single record with no sections from before sections existed. PairingFileStore imports it
+// console, or a single record with no sections. PairingFileStore imports it
 // once, on the first load that finds it with no `pairings.json` beside it, and renames it
 // `pairing.txt.imported` so the import does not repeat. The reader is Swift's own, so importing needs no C.
 

@@ -8,12 +8,10 @@ using Ripcord.Presentation.Resources;
 /// The session factory a reconnect uses: every open after the first asks the console to wake first.
 ///
 /// <para>
-/// <b>Why.</b> <see cref="ConnectFlow"/> checks the console's power state once, before the first attempt, and the
-/// controller's retries only ever reopened the session. A console going into rest as the connect began (the one
-/// the last session asked to rest, still on its way down) answered discovery as awake, dropped the first attempt,
-/// and refused every retry after it: six "connection refused" in a row, then "Couldn't connect", while backing
-/// out and connecting again found it resting and woke it (2026-10-02). Asking before each retry is what the second
-/// connect did, inside the first one.
+/// <b>Why.</b> <see cref="ConnectFlow"/> checks the console's power state once, before the first attempt. A
+/// console going into rest as the connect begins answers discovery as awake, drops the first attempt, and
+/// refuses every retry after it: six "connection refused" in a row, then "Couldn't connect" (observed
+/// 2026-10-02). Asking before each retry finds it resting and wakes it.
 /// </para>
 ///
 /// <para>
@@ -29,7 +27,7 @@ public static class WakeBeforeRetry
     /// </summary>
     /// <remarks>
     /// A console that reported standby and never came up fails that open with <see cref="Strings.Connect_DidNotWakeDetail"/>,
-    /// which the controller reports and retries like any other failed open. Every other outcome opens as before:
+    /// which the controller reports and retries like any other failed open. Every other outcome goes on to open:
     /// a console whose power state cannot be told may still be reachable, and the open says more about why not.
     /// </remarks>
     public static Func<CancellationToken, Task<IStreamingSession>> Wrap(

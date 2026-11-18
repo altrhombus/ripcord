@@ -27,7 +27,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!--  L1/L2 content card. From AboutPage.CardStyle / SettingsPage.SettingsCardStyle, which were identical.  -->
+    <!--  L1/L2 content card: the stock card fill and stroke at Ripcord's card radius.  -->
     <Style x:Key="RipcordCardStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
@@ -35,7 +35,7 @@
         <Setter Property="CornerRadius" Value="{StaticResource RipcordCardCornerRadius}" />
     </Style>
 
-    <!--  A small rounded label for a single fact: version, licence, support level. From AboutPage.ChipStyle.  -->
+    <!--  A small rounded label for a single fact: version, licence, support level.  -->
     <Style x:Key="RipcordChipStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
@@ -46,9 +46,9 @@
     </Style>
 
     <!--
-        A controller button's badge in the hint bar. A style rather than brushes the bar looked up in code: a
-        looked-up brush is fixed to the theme it was found in, so after a switch to light the bar kept dark
-        badges and white verbs on a light page (visual audit, 2026-10-08). ThemeResource setters follow the theme.
+        A controller button's badge in the hint bar. A style rather than brushes the bar looks up in code: a
+        looked-up brush is fixed to the theme it was found in, so after a switch to light the bar would keep
+        dark badges and white verbs on a light page. ThemeResource setters follow the theme.
     -->
     <Style x:Key="RipcordHintBadgeStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
@@ -59,7 +59,7 @@
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <!--  A state pill. From SessionPage.CapabilityPillStyle — tighter padding and a dimmer fill than a chip.  -->
+    <!--  A state pill: tighter padding and a dimmer fill than a chip.  -->
     <Style x:Key="RipcordPillStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
@@ -123,16 +123,11 @@
         those events never arrive: there is no CoreWindow, so this app reads the pad itself and calls the focus
         engine directly. Engagement can therefore never be entered, and never exited.
 
-        HONEST HISTORY, because this setter was written for the wrong reason and the reason matters more than
-        the setter. Up/Down genuinely would not leave the bitrate slider, and the above was a tidy story that
-        fit. It was not the cause. FocusPilot was handing the focus search a TOOLTIP as its search root, so the
-        search found nothing from anywhere on the page; the slider was simply where it got noticed, because a
-        slider is where a user sits still long enough for a tooltip to appear. Fixing the popup filter fixed
-        the slider.
-
-        This setter stays, on its own merits: the engagement state is genuinely unreachable in a desktop app,
-        so leaving it on would leave a trap waiting for whoever does get a gamepad key path working. But it was
-        never observed to fix anything, and it should not be cited as having done so.
+        The setter is here because the engagement state is unreachable in a desktop app, so leaving it on
+        would leave a trap for any gamepad key path. It has not been observed to fix a focus bug, and is not
+        the remedy for focus that will not leave a slider: FocusPilot handing the focus search a tooltip as
+        its search root has that symptom, and the slider is where it shows, because a slider is where a user
+        sits still long enough for a tooltip to appear.
         ================================================================================================
     -->
     <Style TargetType="Slider">
@@ -140,13 +135,12 @@
     </Style>
 
     <!--
-        A ComboBox defaults to 32 tall, which is a mouse target. Settings is six of them in a column, and on a
-        handheld that is six chances to open the wrong one. Raised to the touch minimum here rather than on
-        each instance, so the seventh combo anyone adds is right without being told.
+        A ComboBox defaults to 32 tall, which is a mouse target. Settings is a column of them, and on a
+        handheld each is a chance to open the wrong one. Raised to the touch minimum here rather than on
+        each instance, so the next combo anyone adds is right without being told.
 
-        Filed under Surfaces alongside the Slider rule above only because implicit control defaults have no
-        better home yet — neither is a surface, and if a third arrives they should move to a dictionary of
-        their own rather than the section growing quietly.
+        Neither this nor the Slider rule above is a surface. They are the app's two implicit control
+        defaults, and they sit in this dictionary because it is merged app-wide.
     -->
     <Style TargetType="ComboBox">
         <Setter Property="MinHeight" Value="{StaticResource RipcordTouchTarget}" />

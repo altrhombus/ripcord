@@ -9,9 +9,8 @@ namespace Ripcord.Presentation.Tests;
 /// What the card's menu and dialogs say, and which detail rows exist at all.
 ///
 /// <para>
-/// None of this was reachable by a test before: it was twenty-two English strings and a run of
-/// <c>if</c> statements inside a <c>ContentDialog</c> assembled by hand in the page, on the one surface
-/// every user meets first.
+/// The strings and the row rules are held outside the page so a test can reach them without a
+/// <c>ContentDialog</c>: this is the one surface every user meets first.
 /// </para>
 /// </summary>
 public class ConsoleCardCopyTests

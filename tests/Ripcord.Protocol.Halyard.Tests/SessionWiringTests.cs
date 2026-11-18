@@ -75,13 +75,13 @@ public class SessionWiringTests
     }
 
     // SkippableFact, not Fact: this calls Skip.If, and under a plain [Fact] the SkipException surfaces as a
-    // FAILURE instead of a skip. It never showed up because the gitignored fixture was always discoverable by
-    // walking up from the test binary — so a fresh clone without it, or any build whose output lands outside
-    // the repo tree, would have reported a spurious red test.
+    // FAILURE instead of a skip. The gitignored fixture is found by walking up from the test binary, so that
+    // would be a spurious red test on a fresh clone without it, or in any build whose output lands outside
+    // the repo tree.
     [SkippableFact]
     public void ControlSecretsLoader_LoadsFixtureWhenPresent()
     {
-        // The captures-folder fixture ships in the dev tree; skip cleanly if a checkout lacks it.
+        // The captures-folder fixture is gitignored; skip cleanly if a checkout lacks it.
         HalyardControlSecretsLoader.Load(out string source);
         Skip.If(source.Contains("not found"), $"Control fixture absent ({source}).");
 

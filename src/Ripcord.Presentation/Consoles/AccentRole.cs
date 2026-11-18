@@ -7,9 +7,9 @@ namespace Ripcord.Presentation.Consoles;
 /// types.
 ///
 /// <para>
-/// Deliberately kept distinct from <see cref="ConsoleVendor"/> even though the two currently map one-to-one.
+/// Deliberately kept distinct from <see cref="ConsoleVendor"/> even though the two map one-to-one.
 /// <c>ConsoleVendor</c> is a domain fact (who makes the console); this is a presentation slot (which accent to
-/// draw with). They will diverge the first time two vendors share a slot, or one vendor needs two.
+/// draw with). Two vendors sharing a slot, or one vendor needing two, would make them diverge.
 /// </para>
 /// </summary>
 public enum AccentRole

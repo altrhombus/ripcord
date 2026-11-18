@@ -42,10 +42,8 @@ public sealed record SessionSample(
 /// The session trace: every stats tick, as CSV.
 ///
 /// <para>
-/// <b>Why this exists.</b> Answering "is the receive-queue threshold right on this hardware" needs a
-/// distribution, not a glance. The only way to read that number today is to watch a twice-a-second figure on
-/// rung 3 and try to catch the peak by eye, or to press F8 repeatedly and diff text files. Both are a way of
-/// asking someone to be a chart recorder, and neither survives the moment they look away.
+/// Answering "is the receive-queue threshold right on this hardware" needs a distribution, which a
+/// twice-a-second figure on rung 3 or repeated F8 snapshots cannot give.
 /// </para>
 ///
 /// <para>
@@ -57,7 +55,7 @@ public sealed record SessionSample(
 ///
 /// <para>
 /// Formatting is invariant-culture throughout: a trace written on a machine with comma decimals and read on
-/// one without is a silent corruption, and this is a file written specifically to be sent somewhere else.
+/// one without is a silent corruption.
 /// </para>
 /// </summary>
 public static class SessionSampleLog

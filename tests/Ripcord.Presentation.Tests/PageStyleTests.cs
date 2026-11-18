@@ -4,16 +4,13 @@ using Xunit;
 namespace Ripcord.Presentation.Tests;
 
 /// <summary>
-/// Structural guards on the design system. Two rules live here, and both are tests rather than prose
-/// because prose in a dictionary header has already failed to hold each of them: a page may not declare
-/// its own <c>Style</c>, and a page may not hard-code a corner radius the token set already names.
+/// Structural guards on the design system: a page may not declare its own <c>Style</c>, and a page may not
+/// hard-code a corner radius the token set already names.
 ///
 /// <para>
-/// <b>Why this is a test.</b> Before the shared dictionaries existed, the same card, chip and pill were
-/// re-declared inline across three pages and drifted a little each time. Worse than the drift was a collision
-/// nobody noticed: <c>AboutPage</c> and <c>SessionPage</c> both defined <c>RowLabelStyle</c> and
-/// <c>RowValueStyle</c> with entirely different definitions, so markup moved between those two pages silently
-/// restyled itself. Prose in the dictionary header asked pages not to do this and three pages did it anyway.
+/// <b>Why this is a test.</b> Inline styles drift and collide: two pages that each define a
+/// <c>RowLabelStyle</c> with a different definition silently restyle any markup moved between them. Prose
+/// in the dictionary header does not hold either rule.
 /// </para>
 ///
 /// <para>
@@ -81,10 +78,9 @@ public class PageStyleTests
     ///
     /// <para>
     /// <b>Why the threshold is 4 and not zero.</b> The radius set starts at 4 (tag), so any literal from 4 up
-    /// is a value that should have been picked from <c>Ripcord.Tokens.xaml</c> - and eleven of them were,
-    /// including a 14 that sat between two tokens and belonged to neither. Below 4 the number is not a pick
-    /// from that vocabulary at all: it is a capsule, half the height of the thing it rounds, and rule 3 in the
-    /// tokens header explains why filing those into a graded set would make the grading meaningless.
+    /// is a value that should have been picked from <c>Ripcord.Tokens.xaml</c>. Below 4 the number is not a
+    /// pick from that vocabulary at all: it is a capsule, half the height of the thing it rounds, and rule 3
+    /// in the tokens header explains why filing those into a graded set would make the grading meaningless.
     /// </para>
     ///
     /// <para>
@@ -143,15 +139,13 @@ public class PageStyleTests
     [Fact]
     public void TheConsoleCardIsDeclaredExactlyOnce()
     {
-        // The hero and the grid card were separate markup for one release and drifted three ways: the hero
-        // could not show the "checking" spinner the grid card shows, its overflow button sat under the touch
-        // minimum, and a change made to one was routinely not made to the other. The symptom reported was
-        // "making a change but it only applied to one of the views".
+        // The hero and the grid card are one template at three densities. As separate markup they drift: a
+        // state one can show and the other cannot, a button under the touch minimum on one of them, a change
+        // made to one and not to the other.
         //
-        // They are one template at three densities now. This counts the wedge because the wedge is the part
-        // that cannot be faked: any second copy of the card has to draw one, so a second declaration here is
-        // the moment the divergence comes back, and it fails on the commit that introduces it rather than on
-        // the hardware pass three weeks later.
+        // This counts the wedge because the wedge is the part that cannot be faked: any second copy of the
+        // card has to draw one, so a second declaration here is the moment the divergence starts, and it
+        // fails on the commit that introduces it rather than on a hardware pass.
         string path = Path.Combine(RepositoryRoot(), "src", "Ripcord.App", "Pages", "ConsolesPage.xaml");
 
         // Asserted, not assumed. A guard that reads a file it cannot find does not fail - it passes, having

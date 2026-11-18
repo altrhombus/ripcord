@@ -1,53 +1,26 @@
 /*
- * ripcord-ps3 - platform bring-up: does the toolchain work, and is the clock what we think it is.
+ * ripcord-ps3 - the application's entry point: the start-up checks, then the shell.
  *
- * This began as step 4 of the port's order of work - deliberately the cheapest program that could fail
- * informatively, linking the portable core's platform seam against PSL1GHT, printing a timestamp and
- * doing the one measurement that everything timing-dependent in this port rests on.
+ * The checks are deliberate. measure_timebase(), check_spu() and the rest run on every launch, after
+ * the logs are open and before rc_shell_run() is reached, so a console that has changed underneath
+ * this port says so at start-up as a named check rather than as a stream that times out. The shell and
+ * the session live in source/ui and source/connect.
  *
- * *** IT IS NOW THE APPLICATION'S ENTRY POINT, AND IT RUNS ON A CONSOLE. *** This banner said "never
- * cross-compiled, never run on a console - no PSL1GHT here and no PS3, so everything SDK-facing is [X]",
- * and that was true when it was written. It is retired here rather than deleted so that a reader who
- * meets the bring-up reasoning below knows it was written before the hardware existed and survived
- * contact with it.
+ * Why it measures the clock: rc_platform_ps3.c carries one magic number - the PPE time base at
+ * 79.8 MHz - and a wrong value there does not crash anything. It scales every timeout in the core by
+ * the ratio. So: sleep a known interval, count ticks, divide.
  *
- * The bring-up checks did not move out when the app grew around them, and that is deliberate.
- * measure_timebase() and check_spu() still run on every launch, after the logs are open and before
- * rc_shell_run() is reached, so a console that has changed underneath this port says so at start-up -
- * as a named check against lv2's own answer - rather than as a stream that mysteriously times out. What
- * follows describes those checks; the shell and the session live in source/ui and source/connect.
+ * What the measurement tells you: rc_tick_hz() asks lv2 for the frequency (syscall 147), so the
+ * frequency is the known the sleep is tested AGAINST, and a measurement that disagrees is evidence
+ * about sysUsleep specifically. Watching a wall clock on the first boot (the run sleeps about five
+ * seconds in total) is a confirmation. The hard-coded figure is an expectation, checked against lv2's
+ * answer as a separate line; if those two disagree, the kernel is right.
  *
- * WHY IT MEASURES THE CLOCK RATHER THAN JUST PRINTING ONE.
+ * Output goes to a file, following both other ports.
  *
- * rc_platform_ps3.c carries a single magic number - the PPE time base at 79.8 MHz - and a wrong value
- * there does not crash anything. It scales every timeout in the core by the ratio, so a handshake
- * deadline quietly becomes 20% short and the console looks flaky. That class of fault is expensive to
- * find later and trivial to find now: sleep a known interval, count ticks, divide.
- *
- * WHAT THE MEASUREMENT TELLS YOU - AND THIS IS NARROWER, AND BETTER, THAN IT USED TO BE.
- *
- * This comment used to warn that the measurement tests the CONJUNCTION of two unknowns: if the figure
- * came out a thousand times wrong, that was either a microsecond/millisecond mix-up in sysUsleep or a
- * wrong hard-coded frequency, and the program could not say which. It advised watching a wall clock to
- * disambiguate, since the run sleeps about five seconds in total.
- *
- * That is no longer the situation. rc_tick_hz() now asks lv2 for the frequency (syscall 147) instead of
- * asserting it, so the frequency is not an unknown being tested - it is the known the sleep is tested
- * AGAINST. A measurement that disagrees is evidence about sysUsleep specifically. The wall-clock trick
- * still works and is still worth doing on the first boot, but it is now a confirmation rather than the
- * only way to read the result.
- *
- * The hard-coded figure has not gone away; it has been demoted to an expectation, and this program
- * checks lv2's answer against it as a separate line. If those two ever disagree, the kernel is right.
- *
- * OUTPUT GOES TO A FILE, following both other ports. Results you can copy off the drive beat a
- * photograph of a television that you then retype.
- *
- * WHAT RUNS WHERE. This file is not only a PS3 file. Everything below touches the platform seam, the
- * logger and the CSPRNG seam and nothing else, so it compiles and runs on a host against stand-ins for
- * all three, as well as on the console. Re-run on 2026-09-11
- * after the CSPRNG check was added, and every branch was exercised rather than only the happy one,
- * because a check that has never failed is not yet known to be a check:
+ * What runs where: everything below touches the platform seam, the logger and the CSPRNG seam and
+ * nothing else, so it also compiles and runs on a host against stand-ins for all three. Re-run on
+ * 2026-09-11 after the CSPRNG check was added, with every branch exercised:
  *
  *   - the pass: five seconds of wall time against the five this comment claims, all four ok lines.
  *   - the time-base FAIL: a stand-in reporting a frequency a thousand times too high. Both the note
@@ -73,9 +46,9 @@
 #include "rc_spu_yuv.h"
 
 /*
- * Generated by the Makefile, which bumps a counter whenever a source file changes. The number appears in
- * the XMB title, in the beacon file and at the top of both logs, and all three have to agree with what
- * `make` printed. See the Makefile's BUILD_NO comment for the five runs that made this necessary.
+ * Generated by the Makefile, which bumps a counter whenever a source file changes. The number appears
+ * on the XMB, in the beacon file and at the top of both logs, and all three have to agree with what
+ * `make` printed. See the Makefile's BUILD_NO comment.
  */
 #include "rc_build_id.h"
 #include "rc_spu.h"
@@ -102,16 +75,13 @@
 /*
  * sysLv2Fs* - the log channel that does not go through newlib. See lv2_log_open below for why.
  *
- * THE PRAGMA IS AROUND THE INCLUDE, NOT AROUND THE CALL SITES, and the difference is not cosmetic. The
- * SDK's lv2syscall macros take their arguments as u64 while the sysLv2Fs* wrappers declare theirs as
- * s32, so each wrapper converts signed to unsigned in its own body - and these are inline functions, so
- * GCC diagnoses those bodies where the header is read, not where we call them. A pragma wrapped around
- * our three functions suppressed nothing at all; this is what the first attempt got wrong.
+ * The pragma is around the INCLUDE, not the call sites. The SDK's lv2syscall macros take their
+ * arguments as u64 while the sysLv2Fs* wrappers declare theirs as s32, so each wrapper converts signed
+ * to unsigned in its own body - and these are inline functions, so GCC diagnoses those bodies where the
+ * header is read, not where we call them.
  *
- * It is scoped to this one include rather than dropped from the Makefile. The conversions are the SDK's,
- * on syscall numbers and file descriptors, and there is nothing at our call sites to fix - but a flag
- * relaxed globally to get one file to build is how a real narrowing bug gets through later, in a port
- * that also does bitstream parsing and crypto.
+ * It is scoped to this one include rather than dropped from the Makefile: the conversions are the
+ * SDK's, and the warning stays on for the rest of a port that does bitstream parsing and crypto.
  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-conversion"
@@ -120,59 +90,31 @@
 #pragma GCC diagnostic pop
 
 /*
- * THE MAIN THREAD'S STACK - and this line is here because its absence cost two hardware runs.
+ * The main thread's stack. Without this macro the program produced no output of any kind on two
+ * hardware runs: main() starts by calling functions with 512-byte frames. BRINGUP.md carries the
+ * warning (the 3DS crashed twice on a 32 KB default; the Vita raised its 4 KiB default to 256 KB).
  *
- * BRINGUP.md has carried the warning since before this port compiled: the 3DS crashed twice on a 32 KB
- * default and the Vita raised its 4 KiB default to 256 KB before running anything. When the toolchain
- * arrived, the mechanism was found (this macro), the Vita's --gc-sections trap was checked for and shown
- * not to apply here, the finding was written up in three documents - and nobody put the macro in the
- * program. Two runs then produced no output of any kind, and a long investigation of the filesystem
- * layer followed, which was the wrong tree: the first thing main() does is call a function with a
- * 512-byte frame, and the second is another one.
- *
- * The lesson is not about stacks. It is that "we identified the mechanism" and "the program uses it" are
- * different claims, and the documentation recorded the first as though it settled the second.
- *
- * THE SECOND ARGUMENT IS A RAW BYTE COUNT. It is not the SYS_PROCESS_SPAWN_STACK_SIZE_* enumeration,
- * and the first version of this line passed SYS_PROCESS_SPAWN_STACK_SIZE_1M because the name was such a
- * good fit. That constant is 0x70. The field is a size in bytes, so the shipped binary asked lv2 for a
- * ONE HUNDRED AND TWELVE BYTE stack - worse than the default it was written to replace, and a crash
- * before main() with no output, which is precisely the symptom it was meant to cure.
- *
- * Two things say it is bytes, and both were available before that build was made. Every sample in
- * PSL1GHT writes SYS_PROCESS_PARAM(1001, 0x100000) or 0x10000 - a byte count, spelled in hex. And the
- * field immediately after this one in the same struct is SYS_PROCESS_SPAWN_MALLOC_PAGE_SIZE_1M, which is
- * 0x00100000: the struct's own neighbouring member makes the units unambiguous. The _STACK_SIZE_ names
- * belong to the `flags` argument of sysProcessExitSpawn, a different call entirely.
+ * The second argument is a RAW BYTE COUNT, not the SYS_PROCESS_SPAWN_STACK_SIZE_* enumeration:
+ * SYS_PROCESS_SPAWN_STACK_SIZE_1M is 0x70, which here asks lv2 for a 112-byte stack and crashes before
+ * main() with no output. Every sample in PSL1GHT writes SYS_PROCESS_PARAM(1001, 0x100000) or 0x10000,
+ * and the next field in the same struct is SYS_PROCESS_SPAWN_MALLOC_PAGE_SIZE_1M, which is 0x00100000.
+ * The _STACK_SIZE_ names belong to the `flags` argument of sysProcessExitSpawn, a different call.
  *
  * 1 MB rather than a snug fit. The deepest measured path in shared code is the audio loss-concealment
- * chain at ~12.4 KB and this program is nowhere near that; there is nothing to buy by being tight and a
- * silent crash to lose by being wrong.
+ * chain at ~12.4 KB.
  *
  * [X] The loader's DEFAULT, when this macro is absent, is still unmeasured.
  */
 SYS_PROCESS_PARAM(1001, 0x100000)
 
 /*
- * WHERE THE LOG CAN GO, IN ORDER OF PREFERENCE - and this list exists because the first hardware run
- * produced nothing at all.
+ * Where the log can go, in order of preference. A packaged title gets its own directory under
+ * /dev_hdd0/game/<APPID>/ and may not be able to write outside it; a directory existing does not make
+ * it writable by this process. So the program tries each of these, uses the first that accepts a file,
+ * and logs the whole table - every candidate, and whether it worked.
  *
- * That run installed cleanly, appeared on the XMB, launched, exited without a crash report, and wrote no
- * log anywhere. The program's entire output is that file, so "no file" and "did not run" look identical
- * from the outside, which is a rotten place to be on the first boot of a new platform.
- *
- * The suspect is the sandbox. A packaged title is not a shell script: it gets its own directory under
- * /dev_hdd0/game/<APPID>/ and there is no reason to assume it may write outside it. The build before
- * that run had been pointed at /dev_hdd0/ precisely BECAUSE that directory always exists - which was
- * true, and irrelevant, because existing and being writable by this process are different questions.
- *
- * So the program stops assuming and measures. It tries each of these, uses the first that accepts a
- * file, and then logs the whole table - every candidate, and whether it worked. One run answers "where
- * may a packaged PS3 homebrew write?" for good, and the answer goes in the log rather than in a comment
- * somebody has to trust.
- *
- * The order is deliberate: the app's own USRDIR first, because it is the one a sandbox is most likely to
- * permit and the one a real client would use anyway.
+ * The app's own USRDIR is first: it is the one a sandbox is most likely to permit and the one a real
+ * client would use anyway.
  */
 #ifndef RC_PS3_LOG_DIRS
 #define RC_PS3_LOG_DIRS \
@@ -196,8 +138,7 @@ static const char *const g_log_dirs[] = { RC_PS3_LOG_DIRS };
 static int dir_accepts_a_file(const char *dir, const char *filename)
 {
     /* Static, not a local. rc_log.c makes this argument in full for its own format buffer: a 512-byte
-     * frame on a thread whose stack size was until now unset is not worth the tidiness, and this program
-     * is single-threaded so there is nothing to race with. */
+     * frame is not worth the tidiness, and only main() calls this, so there is nothing to race with. */
     static char path[512];
     FILE *f;
 
@@ -212,26 +153,15 @@ static int dir_accepts_a_file(const char *dir, const char *filename)
 }
 
 /*
- * THE SECOND LOG CHANNEL, AND WHY A BRING-UP PROGRAM HAS TWO.
+ * The second log channel, which does not depend on newlib to report on itself.
  *
- * The first hardware run produced no output of any kind. Not a wrong answer - nothing: installed,
- * launched, exited, no crash report, no file in any of the four directories the probe above tries, not
- * even the zero-byte marker the probe leaves behind. That is the worst possible result, because "the
- * program did not run" and "the program ran and could not tell you" are indistinguishable from outside.
+ * The PPU's newlib routes file I/O through a devoptab table (_open_r returns -1/ENOSYS when the entry
+ * it wants is null), and the first hardware run wrote no file through it at all. sysLv2FsOpen and
+ * sysLv2FsWrite are inline syscall wrappers in <sys/file.h> - no library, no devoptab, nothing between
+ * this code and lv2 but a `sc` instruction.
  *
- * Static analysis said the plumbing was right, which is exactly why it was not worth more of it: the
- * PPU's newlib routes file I/O through a devoptab table, _open_r returns -1/ENOSYS when the entry it
- * wants is null, and the whole chain - lv2-crt0.o's constructor, librt's __librt_open_r, a kept .ctors
- * section - is present and correct in the linked ELF. Something in it does not do at runtime what it
- * plainly does on paper, and another hour of objdump was not going to say what.
- *
- * So this program stops depending on that layer to report on itself. sysLv2FsOpen and sysLv2FsWrite are
- * inline syscall wrappers in <sys/file.h> - no library, no devoptab, no newlib, nothing between this
- * code and lv2 but a `sc` instruction. If the console can write a file at all, this writes it.
- *
- * BOTH channels stay. fopen's is not dead weight: whether it works is now itself one of the things this
- * program reports, and the log says which channels carried it. A bring-up program that quietly routed
- * around a broken subsystem, rather than naming it, would be hiding the finding.
+ * Both channels stay: whether fopen's works is itself one of the things this program reports, and the
+ * log says which channels carried it.
  */
 static s32 g_lv2_fd = -1;
 static const char *g_lv2_dir;
@@ -275,9 +205,9 @@ static void lv2_log_close(void)
 /*
  * Tee. Every ps3_log in this file reaches both channels, and neither can suppress the other.
  *
- * The buffer is static rather than a local for the reason rc_log.c gives at length about its own: this
- * is a 512-byte frame on a thread whose stack size is still an open question on this platform, and the
- * program is single-threaded, so there is nothing for it to race with.
+ * The buffer is static rather than a local for the reason rc_log.c gives at length about its own: a
+ * 512-byte frame on every log call is not worth the tidiness. Nothing locks it, so ps3_log belongs to
+ * one thread at a time.
  */
 static char g_line[512];
 
@@ -424,15 +354,10 @@ static int check_csprng(void)
     ps3_log("ok    CSPRNG live: init probed an unaligned draw, two draws differ\n");
 
     /*
-     * THIS USED TO CALL rc_random_exit() HERE, AND THAT WAS A BUG worth leaving a note about.
-     *
-     * The generator is a process-wide resource, not this check's property. Tearing it down on the way out
-     * of a PROBE left s_ready clear for everything after it, so every later draw returned failure - and
-     * the failure was invisible in exactly the place it mattered: the run reported "CSPRNG live" a few
-     * lines above, and then the stream session's 16-byte handshake key could not be drawn at all.
-     *
-     * b49 spent a hardware round trip finding that, and only found it because the failing step was named
-     * rather than guessed at. The lifetime belongs to main(), which closes it beside the log channels.
+     * No rc_random_exit() here. The generator is a process-wide resource: tearing it down on the way
+     * out of this probe leaves s_ready clear, and every later draw fails - including the stream
+     * session's 16-byte handshake key (b49). The lifetime belongs to main(), which closes it beside the
+     * log channels.
      */
     return 0;
 }
@@ -491,7 +416,7 @@ static int spu_report_failure(const char *what, uint32_t phase, uint32_t heartbe
     ps3_log("      join      cause 0x%08x  status 0x%08x\n", cause, status);
 
     /* Raw only. PSL1GHT's sysSpuImage layout does not match lv2's on this target - b9's reading of
-     * these fields produced a confident and wrong conclusion, so they no longer decide anything. */
+     * these fields produced a confident and wrong conclusion, so they decide nothing. */
     ps3_log("      image     entry 0x%08x segs %u (linker 0x%08x; fields unreliable)\n",
             entry, segments, expected);
 
@@ -526,19 +451,11 @@ static int spu_report_failure(const char *what, uint32_t phase, uint32_t heartbe
 }
 
 /*
- * HOW MANY TIMES TO REPEAT A MEASUREMENT, AND WHY THE MINIMUM IS TAKEN.
- *
- * The first two hardware runs disagreed badly: dispatch measured 65 us and then 89 us, and the DMA
- * figure derived from subtracting them came out at 9,967 MB/s and then 39,741 MB/s. The second is not
- * credible for one SPE, and the pair of them are not a measurement - they are one sample each, of a
- * quantity that shares a console with the XMB, a network stack and a filesystem, put through a
- * subtraction that amplifies whatever noise each carried.
- *
- * DECODE.md now cites these numbers, so they have to be worth citing. Ten runs, keep the minimum: the
- * fastest observed time is the one least contaminated by something else happening on the machine, which
- * is the right estimator for "what does this cost when nothing is in the way". The spread is reported
- * beside it, because a wide spread is itself the finding - it would mean dispatch cost is not a stable
- * quantity on this hardware and the decoder cannot budget against it.
+ * How many times to repeat a measurement. Ten runs, keep the minimum: the fastest observed time is
+ * the one least contaminated by whatever else the machine is doing. Single samples disagreed badly
+ * (dispatch 65 us then 89 us; the derived DMA figure 9,967 MB/s then 39,741 MB/s), and DECODE.md cites
+ * these numbers. The spread is reported beside the minimum, because a wide spread would mean dispatch
+ * cost is not stable enough for the decoder to budget against.
  */
 #define SPU_REPEATS 10
 
@@ -635,7 +552,7 @@ static int check_spu(void)
         uint64_t dma_ticks = copy_ticks - empty_ticks;
         /* Both directions: the SPE reads the source into local store and writes it back out, so the
          * MFC moved twice what the buffer holds. Reported in MB/s, which is the unit the decoder
-         * budget will be argued in. */
+         * budget is argued in. */
         uint64_t bytes = (uint64_t)SPU_BYTES * 2ULL;
         uint64_t mb_per_s = (dma_ticks > 0ULL)
                             ? (bytes * hz / dma_ticks) / (1024ULL * 1024ULL)
@@ -677,7 +594,7 @@ static int check_spu(void)
 
 /*
  * libripcord's own suites, on the console. See source/coretest/rc_core_tests.h for why this matters:
- * every assertion in the shared core has only ever run on little-endian x86, and the PPE is big-endian.
+ * the shared core's assertions otherwise run only on little-endian hosts, and the PPE is big-endian.
  *
  * THE RUNNERS PRINT WITH printf, which here goes to a TTY nobody is reading, so stdout is redirected to
  * a file for the duration and replayed through ps3_log afterwards - which puts it on the network log and
@@ -753,9 +670,9 @@ static int check_core(void)
 }
 
 /*
- * THE FIRST THING IN THIS PORT THAT TALKS TO A PS5. Everything else has been checked against vectors,
- * captures and reference decodes, all of which are recordings - and a recording cannot refuse a
- * datagram, answer from an address you did not expect, or take longer than you allowed.
+ * DISCOVERY, AGAINST A REAL CONSOLE. The checks before it run against vectors, captures and reference
+ * decodes, all of which are recordings - and a recording cannot refuse a datagram, answer from an
+ * address you did not expect, or take longer than you allowed.
  *
  * A console that is off, resting, or on another subnet is not a failure of this program, so finding
  * nothing is reported and not counted against the run. What IS reported either way is how far the
@@ -871,17 +788,16 @@ static int check_connect(void)
     stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, g_log_dirs, LOG_DIR_COUNT, &c);
 
     /*
-     * SAID ON THE TELEVISION, not only in this log. Whatever happened, the screen now carries a
-     * sentence about it and, where there is one, something the viewer can do - rather than the black
-     * screen every failure used to produce.
+     * SAID ON THE TELEVISION, not only in this log. Whatever happened, the screen carries a sentence
+     * about it and, where there is one, something the viewer can do - rather than a black screen.
      */
     rc_connect_report_outcome(stage, &c);
 
     if (stage == RC_CONNECT_NO_RECORD) {
         /*
          * NO RECORD IS THE MOMENT TO OFFER PAIRING, not a reason to give up. It is the one failure
-         * with an obvious next action, and asking a user to go and run a desktop tool is only
-         * reasonable while the console cannot do it itself. It can now.
+         * with an obvious next action, and the console can pair by itself, so nobody is sent off to
+         * run a desktop tool.
          *
          * A successful pairing retries the connect once, because the thing somebody wanted when they
          * typed a PIN was to stream - not to be told it worked and dropped back to a log.
@@ -906,9 +822,9 @@ static int check_connect(void)
     }
 
     /*
-     * Only claims what was observed. An earlier version printed "console was awake" off a flag that was
-     * still at its memset default when nothing had answered at all - which read as a successful probe
-     * immediately above a line saying no console answered.
+     * Only claims what was observed. was_asleep is still at its memset default when nothing answered
+     * at all, so "awake" or "in standby" is printed only beside an answer - otherwise it reads as a
+     * successful probe immediately above a line saying no console answered.
      */
     ps3_log("conn:  record loaded from %s; recorded address %s\n",
             c.record_dir != NULL ? c.record_dir : "the compiled-in directory",
@@ -923,15 +839,9 @@ static int check_connect(void)
             c.aton_matches_pton ? "yes" : "NO - the core uses inet_aton everywhere");
 
     /*
-     * THE SENKUSHA MEASUREMENTS, printed here rather than inside a stage's case.
-     *
-     * They first went into the STREAM_KEYS case, which since sealing landed is the FAILURE path - a
-     * successful run reaches STREAM_READY and skipped them entirely, so b119 took the measurements and
-     * reported none of them. The same mistake as putting the SPE init after the stage that needed it:
-     * placed where the text read well rather than where control flow goes.
-     *
-     * These happen early and matter whatever stage is reached afterwards, so they belong with the other
-     * unconditional lines above.
+     * The senkusha measurements, printed here rather than inside a stage's case: they happen early and
+     * matter whatever stage is reached afterwards. (Inside the STREAM_KEYS case, which is a failure
+     * path, a successful run skips them - b119.)
      */
     if (c.senkusha_complete) {
         ps3_log("       senkusha echo: %u/%u echoes, handshake round trip %d ms\n",
@@ -1047,9 +957,9 @@ static int check_connect(void)
                 /*
                  * PER FRAME FED, not per picture produced.
                  *
-                 * This divided by decoded_pictures, which is right only when every frame decodes. On a
-                 * run with 702 frames and 330 pictures it reported 40221 us and the true cost per decode
-                 * call was 18907 - it looked as though real content had made decoding twice as expensive,
+                 * Dividing by decoded_pictures is right only when every frame decodes. On a run with
+                 * 702 frames and 330 pictures that reported 40221 us where the true cost per decode call
+                 * was 18907 - it looked as though real content had made decoding twice as expensive,
                  * when decoding had not changed at all and the failures were the story.
                  */
                 unsigned long us = (hz > 0UL && c.decoded_fed > 0)
@@ -1068,23 +978,16 @@ static int check_connect(void)
                             c.scaled_width, c.scaled_height, c.display_width, c.display_height);
                     {
                         /*
-                         * THE MODE, said every run. Five were walked in b282 - 1080p, 1080i, 720p and
-                         * 480p in both aspects - and it is worth recording what that settled, because
-                         * two of the three things this used to warn about turned out not to be faults.
+                         * The mode, said every run. Five were walked in b282 - 1080p, 1080i, 720p and
+                         * 480p in both aspects.
                          *
-                         * INTERLACE IS FINE. This warned that motion would comb, on the reasoning that
-                         * the buffer is a progressive frame and nothing here filters. It does not: the
-                         * display hardware is told the negotiated mode by videoConfigure and generates
-                         * the fields itself, which is what every PS3 game that renders progressive and
-                         * outputs 1080i relies on. 1080i looked no different from 1080p. The warning is
-                         * gone rather than softened - a diagnostic that cries wolf costs more than one
-                         * that says nothing.
+                         * Interlace needs no warning: the display hardware is told the negotiated mode
+                         * by videoConfigure and generates the fields itself, and 1080i looked no
+                         * different from 1080p.
                          *
-                         * NON-SQUARE PIXELS WERE REAL and are now FIXED rather than warned about, in
-                         * fit_into_display. The numbers are kept here because they are what a future
-                         * regression would look like: 480p 16:9 drew a 2.11:1 picture from a 1.78:1
-                         * source and 480p 4:3 drew 1.58:1. Both were reported as looking fine, which is
-                         * why this was found by arithmetic and not by eye.
+                         * Non-square pixels are handled in fit_into_display. What a regression would
+                         * look like: 480p 16:9 drew a 2.11:1 picture from a 1.78:1 source and 480p 4:3
+                         * drew 1.58:1.
                          */
                         ps3_log("       mode: %s, %s, refresh mask 0x%02X\n",
                                 c.display_scan_mode == 1 ? "progressive" : "interlaced",
@@ -1123,25 +1026,14 @@ static int check_connect(void)
                                 c.blits, c.hold_ms, (c.blits * 1000u) / c.hold_ms);
                 } else {
                     /*
-                     * SAY WHAT IS KNOWN, NOT WHY. This branch used to claim "the display was not open",
-                     * which is a cause nobody here checked - in b141 the display was open and had just
-                     * drawn the test pattern, and the real reason was that the decoder produced no
-                     * pictures to blit. An over-confident diagnostic stops the next person looking.
+                     * SAY WHAT IS KNOWN, NOT WHY. "The display was not open" would be a cause nobody
+                     * here checked - in b141 the display was open and had just drawn the test pattern,
+                     * and the real reason was that the decoder produced no pictures to blit. An
+                     * over-confident diagnostic stops the next person looking.
                      */
                     ps3_log("       nothing reached the screen - %u picture(s) were available to blit\n",
                             c.decoded_pictures);
                 }
-                /*
-                 * THE THERMAL BASELINE. One fan serves the Cell and the RSX, so both readings are
-                 * printed together and neither is interesting alone - the question this answers is
-                 * whether moving the conversion and scaling off three SPEs and on to the RSX makes the
-                 * machine quieter, and that is settled by the pair, before and after.
-                 *
-                 * The raw word is printed beside the degrees because the decoding is UNCONFIRMED: the
-                 * top byte is understood to hold whole degrees Celsius and nothing here has verified it.
-                 * If the two columns disagree with a plausible idle temperature, the decoding is what is
-                 * wrong, not the console.
-                 */
                 if (c.stream_is_hevc) {
                     ps3_log("       CODEC: the console sent HEVC and this decoder handles H.264 only -"
                             " every video frame was dropped\n"
@@ -1160,7 +1052,7 @@ static int check_connect(void)
                     /*
                      * READS AND FRESH ARE SEPARATE, and b271 is why. The pad reports only when it has
                      * something to say, so most polls carry nothing new - which is normal. Printing one
-                     * number for both made "polled 7,500 times, 59 of them new" indistinguishable from
+                     * number for both makes "polled 7,500 times, 59 of them new" indistinguishable from
                      * "polled 59 times", and the second is a fault while the first is not.
                      */
                     ps3_log("       INPUT: %u poll(s), %u with new data; %u state and %u transition"
@@ -1249,6 +1141,17 @@ static int check_connect(void)
                     ps3_log("       SCALER: SPE (bilinear mode %d)\n", c.bilinear_upscale);
                 }
 
+                /*
+                 * THE THERMAL BASELINE. One fan serves the Cell and the RSX, so both readings are
+                 * printed together and neither is interesting alone - the question this answers is
+                 * whether moving the conversion and scaling off three SPEs and on to the RSX makes the
+                 * machine quieter, and that is settled by the pair, before and after.
+                 *
+                 * The raw word is printed beside the degrees because the decoding is UNCONFIRMED: the
+                 * top byte is understood to hold whole degrees Celsius and nothing here has verified it.
+                 * If the two columns disagree with a plausible idle temperature, the decoding is what is
+                 * wrong, not the console.
+                 */
                 if (c.thermal.samples >= 2u) {
                     /*
                      * THE SIGN IS TAKEN FROM THE DELTA, NOT FROM ITS INTEGER PART. b203 printed a Cell
@@ -1623,10 +1526,9 @@ static int check_connect(void)
             ps3_log("      no SESSION_ID. The console went quiet rather than saying no.\n");
         } else if (c.login_prompt) {
             /*
-             * NOTHING WAS SENT, which since the keyboard exists means the keyboard did not produce a
-             * passcode: it was dismissed, or it could not be raised at all. The old advice here - put
-             * `pin=` in the pairing record and re-run - described the only route there used to be and
-             * is now the fallback rather than the instruction.
+             * NOTHING WAS SENT, which means the keyboard did not produce a passcode: it was dismissed,
+             * or it could not be raised at all. A `pin=` in the pairing record is the fallback rather
+             * than the instruction.
              */
             ps3_log("       the console wants a sign-in passcode and none was sent. The keyboard was\n");
             ps3_log("       either dismissed or could not be raised; the line above says which. A\n");
@@ -1650,24 +1552,6 @@ static int check_connect(void)
     }
 }
 
-/*
- * WHAT THIS MEASURES AND WHY IT IS A STAGE RATHER THAN A NOTE.
- *
- * b140 split the demuxer's 829 us per packet into "crypto 837 us, everything else 11 us", which named the
- * cipher as the cost but not the reason for it. The reason turned out to be the shape of the code rather
- * than the amount of arithmetic: both AES and GHASH kept their state in a `uint8_t[16]` on the stack, and
- * the PPE is in-order, so every step stored a byte and the next step stalled reloading it. Both now keep
- * their state in 32-bit registers (see rc_aes.c and rc_gcm.h).
- *
- * This stage times the primitives directly so the next build's number is attributable to them and not
- * inferred from a live stream, where loss, decode and scheduling all move at once. The per-packet line at
- * the end is the quantity that actually matters: one GMAC plus one CTR pass over a full-MTU packet, which
- * is exactly what the demuxer's crypto seam does per A/V packet.
- *
- * It is a measurement, not a correctness test - but it opens with FIPS-197 C.1 anyway, because a word
- * rewrite is exactly the kind of change that a big-endian toolchain could break in a way the host suite
- * (little-endian) would never see.
- */
 #define RC_CRYPTO_BENCH_PACKET 1400
 #define RC_CRYPTO_BENCH_BLOCKS 2000
 #define RC_CRYPTO_BENCH_PASSES 200
@@ -1686,18 +1570,6 @@ static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
     return (unsigned)((ticks * 1000000000u) / hz / iterations);
 }
 
-/*
- * Does this console expose its own H.264 decoder, and on what terms?
- *
- * b144 made the case for asking: with the receive path finally clean the console tripled its bitrate,
- * and openh264 on the PPE went from ~37 ms per successful decode to somewhere near 70-83 ms, which is a
- * 12-14 fps ceiling on a 30 fps stream. cellVdec runs on the SPEs instead.
- *
- * vdecType.profile_level has no constant in any SDK header, so this sweeps it rather than guessing -
- * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory, which
- * is what the real implementation needs before it can be written honestly.
- */
-
 /* openh264's first-picture plane hashes, kept so check_vdec can identify the other decoder's layout by
  * reproducing them. check_decode runs first; see the stage list at the foot of main(). */
 static uint64_t s_reference_hash_y;
@@ -1708,6 +1580,16 @@ static void vdec_step_log(const char *message)
     ps3_log("%s\n", message);
 }
 
+/*
+ * Does this console expose its own H.264 decoder, and on what terms?
+ *
+ * b144 made the case for asking: with the receive path clean the console tripled its bitrate, and
+ * openh264 on the PPE went from ~37 ms per successful decode to somewhere near 70-83 ms, which is a
+ * 12-14 fps ceiling on a 30 fps stream. cellVdec runs on the SPEs instead.
+ *
+ * vdecType.profile_level has no constant in any SDK header, so this sweeps it rather than guessing -
+ * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory.
+ */
 static int check_vdec(void)
 {
     rc_vdec_probe_result v;
@@ -1757,10 +1639,10 @@ static int check_vdec(void)
             /*
              * The live path already proved this decoder correct (b159: Y, U and V bit-identical to
              * openh264, and its luma identical to ffmpeg's on the host), so re-running that comparison
-             * proves nothing. The open question is a different one: CAN IT HAND BACK RGB?
+             * proves nothing. This asks a different question: CAN IT HAND BACK RGB?
              *
-             * If it can, the YUV-to-RGB pass the SPEs do is unnecessary. Asked offline because the
-             * streaming path has no RGB blit, so switching format there would draw garbage to find out.
+             * If it can, the YUV-to-RGB pass the SPEs do is unnecessary. Asked offline, against the
+             * capture, so the answer does not depend on a session.
              */
             rc_vdec_decode_result rgb;
 
@@ -1913,6 +1795,21 @@ static int check_vdec(void)
     return 0;
 }
 
+/*
+ * Times the crypto primitives directly, so the figure is not inferred from a live stream where loss,
+ * decode and scheduling all move at once.
+ *
+ * b140 split the demuxer's 829 us per packet into "crypto 837 us, everything else 11 us". The cause was
+ * AES and GHASH keeping their state in a `uint8_t[16]` on the stack: the PPE is in-order, so every
+ * step stored a byte and the next stalled reloading it. Both keep their state in 32-bit registers
+ * (see rc_aes.c and rc_gcm.h).
+ *
+ * The per-packet line at the end is the quantity that matters: one GMAC plus one CTR pass over a
+ * full-MTU packet, which is what the demuxer's crypto seam does per A/V packet.
+ *
+ * A measurement, not a correctness test, but it opens with FIPS-197 C.1: word-based AES could break on
+ * a big-endian toolchain in a way the little-endian host suite would never see.
+ */
 static int check_crypto_speed(void)
 {
     /* rc_gmac_key carries ~5 KB of tables - far too much for a stack frame on this port. */
@@ -2007,7 +1904,7 @@ static int check_decode(void)
 
     if (!rc_decode_probe(RC_DECODE_STREAM_PATH, RC_DECODE_FRAMES, &r)) {
         if (!r.opened) {
-            /* Not a failure - see above. */
+            /* Not a failure - see RC_DECODE_STREAM_PATH. */
             ps3_log("dec:   no stream at %s - skipping (copy the capture there to run it)\n",
                     RC_DECODE_STREAM_PATH);
             return 0;
@@ -2054,22 +1951,19 @@ static int check_decode(void)
 }
 
 /*
- * THE TEST PATTERN, and it is designed to be read rather than merely seen.
- *
- * "Something appeared" is a weak result. Each element here answers a different question, so a partial
- * failure still says which part is wrong:
+ * The test pattern. Each element answers a different question, so a partial failure says which part
+ * is wrong:
  *
  *   - the WHITE BORDER, one pixel inside every edge, shows the buffer's real extent. If it is clipped
- *     or doubled, width/height/pitch disagree with what the display expects - the classic symptom of
- *     assuming pitch == width * 4.
+ *     or doubled, width/height/pitch disagree with what the display expects (assuming
+ *     pitch == width * 4, typically).
  *   - the COLOUR BARS are pure red, green and blue in that order from the left. Wrong order means the
  *     byte order is BGR rather than RGB; missing channels mean the format is not XRGB8888.
  *   - the DIAGONAL runs corner to corner. A stair-stepped or doubled diagonal means the pitch is being
- *     applied wrongly per line, which a flat colour would hide completely.
+ *     applied wrongly per line.
  *   - the GREY WEDGE across the bottom shows whether the full range survives, not just saturated values.
  *
- * Written with the CPU, one pixel at a time. At this size that is not fast, and it does not need to be:
- * nothing is being timed here, and a slow correct picture is the point.
+ * Written with the CPU, one pixel at a time; nothing is being timed here.
  */
 static void draw_test_pattern(uint32_t *buffer, int width, int height, int pitch, int frame)
 {
@@ -2153,33 +2047,20 @@ static int check_display(void)
             info.width > 0 ? info.pitch / info.width : 0, info.buffers, info.video_state);
 
     /*
-     * THE OVERLAY IS PREPARED HERE, as soon as there is a display to prepare it against.
-     *
-     * It used to be prepared deep inside the stream setup, which meant it existed only on runs that
-     * got as far as streaming. Every other run - and in particular every PAIRING run, which by
-     * definition has no pairing record and never reaches that code - had no bitmap, no font atlas, and
-     * a status screen that silently drew nothing. That is why three pairing attempts in a row showed a
-     * test pattern and then a blank screen: the cards were being asked for and were quietly declined.
-     *
-     * Preparing it early costs a couple of megabytes and a font atlas before the first frame, and it
-     * means anything that wants to say something to the viewer can, from the moment the display is up.
+     * The overlay is prepared here, as soon as there is a display to prepare it against, so the status
+     * screen can draw from the moment the display is up. Prepared only inside the stream setup, a run
+     * that never streams - every pairing run - has no bitmap and no font atlas, and the status screen
+     * silently draws nothing. It costs a couple of megabytes and a font atlas before the first frame.
      */
     rc_overlay_set_system_font(1);
     rc_overlay_set(1);
     ps3_log("       overlay: %s\n", rc_overlay_prepared() ? "ready" : "NOT PREPARED - no cards can be drawn");
 
     /*
-     * THE TEST PATTERN IS RETIRED, and this is the note that says why rather than a deletion nobody can
-     * account for.
-     *
-     * It answered four questions - the buffer's true extent, the byte order, the pitch applied per
-     * line, and the full grey range - and all four have been answered for hundreds of builds. What it
-     * is now is a second of colour bars between somebody pressing start and the thing they came for,
-     * on every single launch.
-     *
-     * The function is still here and still compiled. Build with -DRC_PS3_TEST_PATTERN to bring it back,
-     * which is what to do the next time the display code is touched in a way that could move any of
-     * those four answers.
+     * The test pattern is off by default: it answers four questions (extent, byte order, pitch per
+     * line, grey range) and costs a second of colour bars on every launch. The function is always
+     * compiled; build with -DRC_PS3_TEST_PATTERN to draw it when the display code changes in a way
+     * that could move any of those answers.
      */
 #ifdef RC_PS3_TEST_PATTERN
     for (frame = 0; frame < 60; frame++) {
@@ -2234,29 +2115,12 @@ int main(void)
     int i;
 
     /*
-     * Pick a log directory by trying them, not by believing one. See RC_PS3_LOG_DIRS above for why.
+     * The beacon, first of all: a string literal, one s32 and one syscall, with no buffer, formatting
+     * or helper, so it works even if the stack is what is wrong. If ripcord-alive.txt exists after a
+     * run, main() was entered and lv2 accepted a write; if it does not, the program died before or at
+     * its first instruction.
      *
-     * rc_log_open takes a path and uses its directory part, so a string that already ends in '/' names
-     * itself - that is rc_program_dir's documented behaviour, not a trick. Passing NULL would take the
-     * Makefile's compile-time fallback instead, which is exactly the assumption that produced a silent
-     * first run.
-     */
-    /*
-     * THE BEACON. Literally the first thing, and deliberately the stupidest thing in this file.
-     *
-     * Two runs have now produced no output whatsoever, and each time the question was the same: did the
-     * program not start, or did it start and fail to tell us? Every answer this file gives costs stack -
-     * a path buffer, a snprintf, a call into rc_log - and if the stack is what is wrong then every one
-     * of them is unavailable precisely when it is needed.
-     *
-     * So this uses a string literal, one s32, and one syscall. No buffer, no formatting, no helper. If
-     * ripcord-alive.txt exists after a run, main() was entered and lv2 accepted a write, and everything
-     * after this point is an ordinary bug. If it does not, the program is dying before or at its first
-     * instruction and no amount of logging machinery downstream would ever have shown it.
-     *
-     * It is not diagnostic scaffolding to be removed once this is solved. It costs one syscall at
-     * startup and it is the only thing in the program that can distinguish "did not run" from "ran
-     * badly", which is the distinction that cost the most time here.
+     * Keep it: it is the only thing in the program that can distinguish "did not run" from "ran badly".
      */
     {
         s32 beacon_fd = -1;
@@ -2293,6 +2157,14 @@ int main(void)
             break;
     }
 
+    /*
+     * Pick a log directory by trying them, not by believing one. See RC_PS3_LOG_DIRS above for why.
+     *
+     * rc_log_open takes a path and uses its directory part, so a string that already ends in '/' names
+     * itself - that is rc_program_dir's documented behaviour, not a trick. Passing NULL would take the
+     * Makefile's compile-time fallback instead, which is exactly the assumption that produced a silent
+     * first run.
+     */
     for (chosen = 0; chosen < LOG_DIR_COUNT; chosen++) {
         if (dir_accepts_a_file(g_log_dirs[chosen], "ps3-bringup.log"))
             break;
@@ -2314,13 +2186,12 @@ int main(void)
     /*
      * REGISTERED BEFORE ANYTHING ELSE RUNS, because the XMB can ask for this program at any point after
      * it starts and the answer has to be a clean exit rather than a force-termination. See
-     * rc_platform_ps3.h: until this existed, every quit from the PS menu took the console down with it.
+     * rc_platform_ps3.h: without it, a quit from the PS menu takes the console down with it.
      */
     rc_ps3_exit_watch();
 
-    /* The table, logged rather than merely acted on. This is the first thing a PS3 has ever been asked
-     * about this port, and "which directories may a packaged homebrew write to" is worth answering once
-     * and keeping. */
+    /* The table, logged rather than merely acted on: "which directories may a packaged homebrew write
+     * to" is an answer worth having in every log. */
     ps3_log("log:   channels carrying this run\n");
     ps3_log("       [%c] udp to %s:%u  (first sendto returned %ld)\n",
             rc_netlog_is_open() ? 'x' : ' ', RC_NETLOG_HOST, (unsigned)RC_NETLOG_PORT,
@@ -2334,21 +2205,18 @@ int main(void)
     ps3_log("\n");
 
     /*
-     * CAN THIS PROGRAM READ THE SYSTEM FONTS?
+     * Can this program read the system fonts?
      *
      * The console keeps its typefaces as ordinary TrueType files in /dev_flash/data/font, and
      * SCE-PS3-RD-R-LATIN.TTF is Rodin Regular - the face the XMB is set in. Reading one with the
      * FreeType portlib is the route left after cellFont refused to produce a renderer six times
-     * (DECODE.md has the full elimination), and it is a far better documented one.
+     * (DECODE.md has the full elimination).
      *
-     * The whole plan turns on a question nobody here can answer from a desk: whether a packaged
-     * homebrew may read /dev_flash at all. FTP can, but that is the FTP server's privileges and not
-     * this program's. So it is asked BEFORE anything is built on it, in the same shape as the
-     * writable-directory probe above and for the same reason - one run settles it, and finding out
-     * afterwards would mean discovering it underneath a font library.
+     * This asks whether a packaged homebrew may read /dev_flash at all (FTP can, but with the FTP
+     * server's privileges), in the same shape as the writable-directory probe above.
      *
-     * Both I/O routes are tried because they have disagreed before: this port exists in a build where
-     * newlib returned ENOSYS everywhere and the lv2 syscalls were fine.
+     * Both I/O routes are tried because they have disagreed before: newlib has returned ENOSYS
+     * everywhere while the lv2 syscalls were fine.
      */
     {
         static const char *const kFonts[] = {
@@ -2407,29 +2275,22 @@ int main(void)
     }
     ps3_log("\n");
 
-    /* The timestamp step 4 promised. It is also the first thing that proves the seam linked at all. */
+    /* The timestamp BRINGUP.md's step 4 asks for. It is also the first thing that proves the seam
+     * linked at all. */
     ps3_log("boot:  rc_time_ms() = %llu ms since power-on\n", (unsigned long long)rc_time_ms());
     ps3_log("       rc_tick()    = %llu\n\n", (unsigned long long)rc_tick());
 
     failures += measure_timebase();
     /*
-     * THE DISPLAY GOES FIRST, and the order is the experiment.
+     * The display comes up before the SPU, the core suites and the decoder, and the order matters.
      *
-     * rsxInit has refused with 0x802100FF across three builds - a 512 KB IO region (a real bug, fixed),
-     * a 1 MB one, and one with GCM_SYS and SYSUTIL both loading successfully. Three hypotheses about the
-     * call itself, all wrong, which is a sign the question is not about the call.
+     * rsxInit refused with 0x802100FF across three builds - a 512 KB IO region (a real bug), a 1 MB
+     * one, and one with GCM_SYS and SYSUTIL both loading successfully. In all three it ran last: after
+     * netInitialize, after a raw SPU had been created and torn down, after openh264 and mbedtls, and
+     * after the decoder. Any of those could hold a resource the RSX needs.
      *
-     * What the call has always had in common is WHEN it happens: dead last, after netInitialize, after
-     * a raw SPU has been created and torn down, after openh264 and mbedtls have taken whatever they
-     * take, and after the decoder has run. Any of those could hold a resource the RSX needs, and none of
-     * them can be ruled out by reading rsx.h.
-     *
-     * So the display is attempted before any of it. If it comes up here, the subject is something this
-     * program does earlier and the bisection continues downward. If it refuses here too, on a freshly
-     * started process that has done nothing but open its log files, then it is about how this program is
-     * built or launched and not about anything it runs.
-     *
-     * The order goes back once that is answered. It is a diagnostic arrangement, not a design.
+     * So the display is opened before any of them except the network log. The shell and the status
+     * screen draw on it, and check_display prepares the overlay they need.
      */
     failures += check_display();
 
@@ -2452,19 +2313,12 @@ int main(void)
     failures += check_core();
 
     /*
-     * THE COLOUR-CONVERSION SPEs, BEFORE THE STAGE THAT USES THEM.
+     * The colour-conversion SPEs. The ORDER is the constraint: after check_spu, which initialises the
+     * SPU subsystem for this process, and before check_connect, where the conversion happens (b99
+     * brought them up too late; they converted nothing and the blit stayed at the PPE's 11869 us).
      *
-     * b99 brought these up after check_decode, which reads sensibly and runs far too late: the
-     * conversion happens inside check_connect, which is two lines above it. Five SPEs came up, converted
-     * nothing, and the blit stayed at the PPE's 11869 us - a change that did exactly nothing and looked
-     * like a change that did not work.
-     *
-     * After check_spu, because that is what initialises the SPU subsystem for this process. Before
-     * check_connect, because that is what needs them. Both constraints are on the ORDER, which is why
-     * this sits between them rather than wherever it read best.
-     *
-     * Not a check in its own right: a console that gives this program no SPEs still streams, on the PPE,
-     * at the speed the last several runs measured.
+     * Not a check in its own right: a console that gives this program no SPEs still streams, on the
+     * PPE.
      */
     {
         int spes = rc_spu_yuv_init();
@@ -2478,10 +2332,9 @@ int main(void)
             ps3_log("\nspu:   %d SPE(s) up for colour conversion\n", spes);
 
             /*
-             * The agreement check, HERE and not on the first streamed frame. It used to run there, and
-             * at 1080p the stall cost the Takion channel - b112 received 58 packets where the run before
-             * received 6287. A synthetic picture tests the same thing better and costs the stream
-             * nothing.
+             * The agreement check, HERE and not on the first streamed frame. Run there, at 1080p the
+             * stall cost the Takion channel - b112 received 58 packets where the run before received
+             * 6287. A synthetic picture tests the same thing better and costs the stream nothing.
              */
             (void)rc_video_self_test();
             rc_video_verify_get(&checked, &match, &spu_hash, &ppe_hash);
@@ -2505,8 +2358,8 @@ int main(void)
     /*
      * CAN THIS CONSOLE TELL US ITS OWN PSN ACCOUNT ID? An investigation rather than a check, and it
      * never fails the run - see rc_account_ps3.h for what it looks for and why it looks for something
-     * it already has. It costs a few hundred small reads and answers a question that decides whether
-     * the worst step in the pairing flow can be deleted.
+     * it already has. The direct read is the one the pairing flow pre-fills the account id from; the
+     * search below costs a few hundred small reads and runs only when that read fails.
      */
     {
         halyard_pairing_record rec;
@@ -2535,33 +2388,18 @@ int main(void)
     }
 
     /*
-     * THE FRONT DOOR, and everything below it now runs because somebody asked for it.
+     * The shell: everything below runs because somebody asked for it, where everything above is a
+     * check that ran itself.
      *
-     * Up to here this program has been a list of checks that ran themselves: it read one console's
-     * address out of a text file put on the machine over FTP, connected to it, and reported to a log
-     * fetched afterwards from another computer. That is the right shape for finding out whether a
-     * decoder works and the wrong shape for using the thing - there was no way to choose a console, no
-     * way to change a setting, and the only signal that anything had gone wrong was a black screen.
+     * The shell and the session alternate for as long as somebody wants them to. Every exit from the
+     * loop is deliberate: Quit to the XMB from the shell (RC_SHELL_QUIT), or Quit from the PS menu at
+     * any point, which rc_ps3_exit_requested reports and which must not be answered by opening a menu.
      *
-     * THE CHECKS AFTER IT GO WITH IT. check_crypto_speed, check_decode and check_vdec draw test
-     * patterns and probe the decoder for several seconds each; somebody who chose "Quit to the XMB"
-     * asked to leave, and making them watch a decoder self-test first is not a reasonable reading of
-     * that. They still run in full on the path that streams, which is where their findings are wanted.
-     */
-    /*
-     * AND IT COMES BACK, which it did not before.
+     * A failed connect is not an exit. check_connect has already put the reason on the television and
+     * held it there, so returning here lands on the home screen.
      *
-     * This was one pass: the shell ran, a session ran, and the program left for the XMB. That reads as
-     * the application closing itself every time a stream ends - including when it ends because the
-     * console refused the connection, which is the moment somebody most wants to be back where they can
-     * try the other console or fix the setting. A menu you are ejected from is not a menu.
-     *
-     * So the two alternate for as long as somebody wants them to. Every exit from the loop is a
-     * deliberate one: Quit to the XMB from the shell (RC_SHELL_QUIT), or Quit from the PS menu at any
-     * point, which rc_ps3_exit_requested reports and which must not be answered by opening a menu.
-     *
-     * A FAILED CONNECT IS NOT AN EXIT. check_connect has already put the reason on the television and
-     * held it there, so returning here lands on the home screen with the failure just read.
+     * check_crypto_speed, check_decode and check_vdec draw test patterns and probe the decoder for
+     * several seconds each, so they run only on a run that streamed - see below.
      */
     {
         int streamed = 0;
@@ -2576,15 +2414,10 @@ int main(void)
             ps3_log("shell: closed without connecting\n");
 
         /*
-         * THE BRING-UP CHECKS RUN ONCE, ON THE WAY OUT, and that is a move rather than a demotion.
-         *
-         * They used to sit between the session and the program ending, which was the right place while
-         * the program ended there. Inside the loop they would run between every session and the menu
-         * coming back - several seconds of test patterns and decoder probes in the middle of somebody
-         * going back to pick a different console.
-         *
-         * Their findings are wanted from a run that streamed, which is what `streamed` records; the
-         * program is on its way out by the time they draw, so what they paint over is nothing.
+         * The bring-up checks run once, on the way out, not inside the loop: there they would put
+         * several seconds of test patterns and decoder probes between every session and the menu
+         * coming back. Their findings are wanted from a run that streamed, which is what `streamed`
+         * records.
          */
         if (streamed) {
             failures += check_crypto_speed();
@@ -2605,9 +2438,9 @@ int main(void)
     /*
      * THE SESSION'S OUTCOME, PUT BACK ON THE SCREEN LAST.
      *
-     * It was drawn when it happened and then painted over: three more checks run after the connect one,
-     * and they draw test patterns and decode probes. So the thing a viewer most wants to read was the
-     * one thing guaranteed to be gone by the time they looked.
+     * It is drawn when it happens and can then be painted over: three more checks run after the last
+     * connect, and they draw test patterns and decode probes. Without this the thing a viewer most
+     * wants to read is the one thing gone by the time they look.
      *
      * Redrawing it here costs nothing and makes it the last thing on screen, which is where it stays.
      */
@@ -2617,8 +2450,6 @@ int main(void)
         if (rc_status_screen_wants_draw(session) && session->headline[0] != '\0')
             rc_status_screen_draw(session);
     }
-    /* The generator was opened by the CSPRNG check and used by everything after it - see the note
-     * there. It is closed here, with the other process-wide resources, rather than by any one check. */
     {
         rc_spu_yuv_stats stats;
 
@@ -2629,8 +2460,8 @@ int main(void)
                     stats.frames, stats.spes, stats.avg_us, stats.worst_us, stats.fallbacks);
 
             /*
-             * The split that decides whether the ARGB32 route is worth building. The kernel blocks on
-             * every transfer, so waiting is idle time rather than bandwidth - and if it dominates, taking
+             * The split that says what the ARGB32 route is worth. The kernel blocks on every
+             * transfer, so waiting is idle time rather than bandwidth - and if it dominates, taking
              * RGB from the decoder makes things worse rather than better, because ARGB is 4 bytes a
              * pixel against YUV420's 1.5.
              */
@@ -2675,9 +2506,8 @@ int main(void)
      * THE LOGS CLOSE FIRST, and the order is not tidiness.
      *
      * b107 ran the whole stream successfully and then froze in the teardown below, which meant the last
-     * thing written was whatever happened to be flushed - and the teardown is precisely where this port
-     * has now hung twice. Anything that can hang belongs AFTER the evidence is on disk, so that a frozen
-     * console costs a reboot rather than the run that explains it.
+     * thing written was whatever happened to be flushed. Anything that can hang belongs AFTER the
+     * evidence is on disk, so that a frozen console costs a reboot rather than the run that explains it.
      */
     lv2_log_close();
     rc_log_close();
@@ -2685,6 +2515,8 @@ int main(void)
 
     rc_spu_yuv_exit();
     rc_video_close();
+    /* The generator was opened by the CSPRNG check and used by everything after it - see the note
+     * there. It is closed here, with the other process-wide resources, rather than by any one check. */
     rc_random_exit();
 
     return failures == 0 ? 0 : 1;

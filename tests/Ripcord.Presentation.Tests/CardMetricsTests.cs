@@ -107,9 +107,9 @@ public class CardMetricsTests
     }
 
     /// <summary>
-    /// The visible card is the cell minus the container's gutter. Getting this wrong is not obvious, which is
-    /// why it was wrong once already: at ItemHeight 176 the card came out 164 tall while the template's rows
-    /// were sized for 176, and the only Height="*" row absorbed the whole shortfall and clipped.
+    /// The visible card is the cell minus the container's gutter. Getting this wrong is not obvious: at
+    /// ItemHeight 176 the card comes out 164 tall, and if the template's rows are sized for 176 the only
+    /// Height="*" row absorbs the whole shortfall and clips.
     /// </summary>
     [Fact]
     public void EveryCellLeavesRoomForTheGutter()
@@ -127,8 +127,8 @@ public class CardMetricsTests
     }
 
     /// <summary>
-    /// The hero follows the window: half the page, between the smallest and largest hero. It was a fixed 520 at
-    /// every size, a strip in a big window and clipped through its play mark in a small one (2026-10-08).
+    /// The hero follows the window: half the page, between the smallest and largest hero. A fixed width is a
+    /// strip in a big window and clips through its play mark in a small one.
     /// </summary>
     [Theory]
     [InlineData(640, CardMetrics.HeroMinCardWidth)]
@@ -220,7 +220,7 @@ public class CardMetricsTests
     [InlineData(4)]
     public void LargerText_MakesTheCardTallerAndNothingElse(int consoles)
     {
-        // At 225% text a fixed cell clipped the status line and cut the caption at the wedge (2026-10-08).
+        // At 225% text a fixed cell clips the status line and cuts the caption at the wedge.
         CardLayout normal = CardMetrics.For(1280, consoles);
         CardLayout large = CardMetrics.For(1280, consoles, textScale: 2.25);
 

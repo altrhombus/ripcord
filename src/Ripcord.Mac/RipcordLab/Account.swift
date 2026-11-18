@@ -1,5 +1,5 @@
 // The lab's account-route commands: pairing through the account (no PIN), and the two rendezvous routes of
-// `connect`. The counterparts of ProtocolLab's account pairing and wanconnect, over libripcord.
+// `connect`. The counterparts of ProtocolLab's account pairing and wanconnect, over the Rust engine.
 //
 // Nothing here runs unless asked: every command needs a stored sign-in (`ripcord-lab signin`), talks to PSN
 // and to the console, and is the owner's live verification pass rather than anything a test runs.

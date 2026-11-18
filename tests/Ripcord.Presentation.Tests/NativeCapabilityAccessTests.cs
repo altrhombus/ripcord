@@ -4,22 +4,14 @@ using Xunit;
 namespace Ripcord.Presentation.Tests;
 
 /// <summary>
-/// Structural guard on the rule that a crash taught us: the native video-capability queries must be reached
-/// through exactly one adapter, which marshals them off the UI thread.
+/// Structural guard: the native video-capability queries must be reached through exactly one adapter, which
+/// marshals them off the UI thread.
 ///
 /// <para>
-/// <b>Why this is a test and not a comment.</b> <c>VideoCapabilities.IsCodecDecodeAvailable</c> is
-/// <c>MFStartup</c> plus <c>MFTEnumEx</c>, and calling it on the WinUI UI thread terminates the process with a
-/// stowed <c>E_UNEXPECTED</c> — no managed exception, nothing in the crash log, the window simply gone. There
-/// were two call sites. The About page wrapped its calls in <c>Task.Run</c> and worked; the settings page did
-/// not and crashed on every open. Both were written by people who had read the same code.
-/// </para>
-///
-/// <para>
-/// A convention that one of two call sites got wrong is not a convention. So there is now one call site, and
-/// this fails the build if a second appears. Same reasoning as
-/// <c>BundledInteropConstantsTests.Bundle_CarriesNoLiveVectorMaterial</c>, which is this repo's precedent for
-/// enforcing a rule that prose could not hold.
+/// <c>VideoCapabilities.IsCodecDecodeAvailable</c> is <c>MFStartup</c> plus <c>MFTEnumEx</c>, and calling it on
+/// the WinUI UI thread terminates the process with a stowed <c>E_UNEXPECTED</c> — no managed exception, nothing
+/// in the crash log, the window simply gone. A call site that does not wrap its calls in <c>Task.Run</c>
+/// crashes on every open. So there is one call site, and this fails the build if a second appears.
 /// </para>
 /// </summary>
 public class NativeCapabilityAccessTests
@@ -65,11 +57,10 @@ public class NativeCapabilityAccessTests
     /// thread is decided, and the reason says which thread that is.
     ///
     /// <para>
-    /// The capability query above is the case that crashed, but it is one of four native classes, and the ROADMAP
-    /// follow-up to that crash asked for the rest to be held to the same rule. Which call exactly cannot run on the
-    /// UI thread is still <c>[X]</c> (<c>MFStartup</c> from an STA is the suspect). This guard does not need the
-    /// answer: it keeps each class behind one owner whose threading is stated, so the answer, when it comes, has
-    /// one place to be applied.
+    /// The capability query above is one of four native classes, all held to the same rule. Which call exactly
+    /// cannot run on the UI thread is <c>[X]</c> (<c>MFStartup</c> from an STA is the suspect). This guard
+    /// does not need the answer: it keeps each class behind one owner whose threading is stated, so there is
+    /// one place per class to apply it.
     /// </para>
     /// </summary>
     private static readonly Dictionary<string, (string File, string Thread)> NativeOwners = new()

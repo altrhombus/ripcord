@@ -1,15 +1,12 @@
 /*
- * ripcord ports - the LAN wake datagram (rest mode -> awake).
+ * libripcord - the LAN wake datagram (rest mode -> awake).
  *
- * The companion to halyard_discovery.h, and the thing it could previously only watch happen: the SRCH
- * parser already reports `is_awake == 0` on a console answering "HTTP/1.1 620 Server Standby", and until
- * now no port could do anything about it. A console in rest mode is the ordinary state, not an edge case.
+ * The companion to halyard_discovery.h: the SRCH parser reports `is_awake == 0` on a console answering
+ * "HTTP/1.1 620 Server Standby", and this wakes it. Rest mode is the ordinary state, not an edge case.
  *
  * Derived from docs/protocol/ps5-local-discovery.md, "LAN wake (rest mode -> awake)", marked [V] from
  * cap49 - a capture taken with the console's internet blocked at the router, which is what establishes
- * that the wake is purely local and needs no cloud, no OAuth and no TLS. That is also why this belongs in
- * libripcord at all, while registration does not (see ports/ripcord-3ds/README.md, "Pairing happens on
- * a PC, not here").
+ * that the wake is purely local and needs no cloud, no OAuth and no TLS.
  *
  * THE SEQUENCE, all on the discovery port - 9302 for PS5, 987 for PS4, never the `host-request-port:997`
  * the standby reply advertises, which the spec calls a red herring for wake:
@@ -21,15 +18,14 @@
  *     console <- 200 Ok     awake
  *
  * NOTHING ACKNOWLEDGES THE WAKEUP. Readiness is observed by going back to halyard_discovery and watching
- * `is_awake` flip, which is the caller's loop rather than this module's job. A port that waits for a
- * reply to the WAKEUP itself waits forever.
+ * `is_awake` flip, in the caller's loop. A port that waits for a reply to the WAKEUP waits forever.
  *
- * LINE ENDINGS ARE BARE LINE FEEDS, NOT CRLF - and this is the detail most likely to be "corrected" by
- * someone tidying up. The vendor's SRCH uses CRLF and its WAKEUP does not, in the same exchange, on the
- * same port. The spec records the datagram verbatim for this reason. Do not make them consistent.
+ * LINE ENDINGS ARE BARE LINE FEEDS, NOT CRLF. The vendor's SRCH uses CRLF and its WAKEUP does not, in
+ * the same exchange, on the same port; the spec records the datagram verbatim. Do not make them
+ * consistent.
  *
  * The single-letter field values (client-type:vr, auth-type:R, model:w, app-type:r) are copied verbatim
- * and their meanings are not separately derived, so they are not editorialised here either.
+ * and their meanings are not separately derived.
  */
 #ifndef HALYARD_WAKE_H
 #define HALYARD_WAKE_H
@@ -59,16 +55,11 @@
  *
  * ps5-local-discovery.md pins it in the PS4 section, [W] from cap53-cap57: "the PS4's credential is
  * negative, which pins the field as a signed 32-bit decimal (a detail the positive PS5 sample left
- * ambiguous)". Every PS5 sample we hold is below 2^31, where signed and unsigned render identically,
- * which is exactly why the question went unnoticed.
+ * ambiguous)". Every PS5 sample we hold is below 2^31, where signed and unsigned render identically.
+ * The .NET side renders it signed too (HalyardPairingRecord.TryGetWakeCredential).
  *
- * The .NET side rendered it unsigned until 2026-09-26, when the engine comparisons brought it into line
- * (HalyardPairingRecord.TryGetWakeCredential). This file followed the spec throughout, per the rule
- * halyard_discovery.h states for exactly this situation.
- *
- * Why it matters: a key whose ASCII hex is >= 0x80000000 - roughly half of them - rendered unsigned gets
- * a credential the console does not recognise, and the only symptom is a console that does not wake.
- * There is no error to read.
+ * A key whose ASCII hex is >= 0x80000000 - roughly half of them - rendered unsigned gets a credential
+ * the console does not recognise, and the only symptom is a console that does not wake.
  */
 int halyard_wake_credential(const uint8_t *registkey, size_t registkey_length,
                             char *out, size_t out_size);

@@ -2,7 +2,7 @@
 //
 // docs/protocol/ps5-remoteplay-v1-spec.md: Opus, 48 kHz, stereo, 480 samples (10 ms) per frame. The
 // demuxer emits only each packet's source frame (the redundant copies are for loss concealment and are
-// dropped in stream_demux.c), so every call here is exactly one Opus packet. Core Audio has shipped an
+// dropped in the engine's demuxer), so every call here is exactly one Opus packet. Core Audio has shipped an
 // Opus codec for years; AVAudioConverter is the supported way in, and it means no third-party decoder.
 
 import AVFAudio

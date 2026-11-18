@@ -6,8 +6,8 @@
  * is shared with every other front end and with the .NET client that derived it.
  *
  * WHAT THIS PAD CAN AND CANNOT SEND. A DualShock 3 has both stick clicks and pressure-sensitive
- * shoulders, and the shared layer gained the bits for the first and a level for the second when this
- * port needed them. Its PS button never reaches an application: the system claims it, so
+ * shoulders, and the shared layer carries bits for the first and a level for the second.
+ * Its PS button never reaches an application: the system claims it, so
  * HALYARD_PAD_PS is never set from here, and a user wanting the console's own menu has the real one in
  * front of them.
  */

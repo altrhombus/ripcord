@@ -159,8 +159,7 @@ public sealed partial class PlayWedge : UserControl
     /// True when the console did not answer. The wedge goes quiet rather than disappearing.
     ///
     /// <para>
-    /// This is the one place the implementation departs from <c>docs/design.md</c>, deliberately and with the
-    /// design doc amended to match — the full argument is in the XAML. In short: "cannot be reached" is one
+    /// <c>docs/design.md</c> asks for this, and the full argument is in the XAML. In short: "cannot be reached" is one
     /// lost UDP datagram away from being wrong, so it may change how the affordance LOOKS and must not remove
     /// it. Muted keeps the doc's reasoning (a console that is off is a normal state, so nothing red and no
     /// error glyph) without rebuilding the dead end in paint.
@@ -199,9 +198,8 @@ public sealed partial class PlayWedge : UserControl
     /// at each binding site, so "which colour is the diagonal" has one answer in one place.
     ///
     /// <para>
-    /// This drives the <em>rim</em>, not a fill. It filled the whole zone in the first build, and moving it
-    /// to the edge is the change that took the wedge from a field of colour to a shape with a coloured edge
-    /// — which is what <c>docs/design.md</c> asks for and what survives high contrast.
+    /// This drives the <em>rim</em>, not a fill: a shape with a coloured edge is what <c>docs/design.md</c>
+    /// asks for and what survives high contrast.
     /// </para>
     /// </summary>
     public Brush? RimBrush
@@ -220,11 +218,10 @@ public sealed partial class PlayWedge : UserControl
     /// The family accent as a bare colour, for the bleed's gradient stops.
     ///
     /// <para>
-    /// A second input for the same fact, which is not ideal, and the reason is a framework one:
-    /// <see cref="Accent"/> is a <see cref="Brush"/> because that is what a fill and a stroke take, and a
-    /// gradient stop takes a <see cref="Windows.UI.Color"/>. Reading the colour back out of the brush would
-    /// work only while it happens to be a <see cref="SolidColorBrush"/>, which is an assumption about the
-    /// caller that this control should not make. <c>AccentResources</c> exposes both for the same reason.
+    /// A second input for the same fact, for a framework reason: <see cref="Accent"/> is a <see cref="Brush"/>
+    /// because that is what a fill and a stroke take, and a gradient stop takes a
+    /// <see cref="Windows.UI.Color"/>. Reading the colour back out of the brush would work only while it
+    /// happens to be a <see cref="SolidColorBrush"/>. <c>AccentResources</c> exposes both for the same reason.
     /// </para>
     /// </summary>
     public Color AccentColor
@@ -247,10 +244,8 @@ public sealed partial class PlayWedge : UserControl
     /// nothing across the bleed in every case.
     ///
     /// <para>
-    /// The wedge was the loudest element in the app and the only inert one: drawn at a third of the card,
-    /// reading unmistakably as a button, and responding to nothing. There was no pressed state anywhere on
-    /// the primary action of the product. These three steps are that response, and they are a change in the
-    /// light on the diagonal rather than a change to it - the shape never moves.
+    /// These three steps are the wedge's hover and pressed response: a change in the light on the diagonal
+    /// rather than a change to it - the shape never moves.
     /// </para>
     /// </summary>
     private const byte BleedAlphaRest = 0x24;
@@ -301,17 +296,14 @@ public sealed partial class PlayWedge : UserControl
         RimBrush = Muted ? MutedAccent : Accent;
 
         // No bleed on a console we could not reach - the rim still marks the shape, the light goes out of it -
-        // and none in high contrast, which is the case this got wrong on hardware.
+        // and none in high contrast.
         //
-        // AccentResources.Brush already resolves the accent to a system brush in high contrast, so the RIM was
+        // AccentResources.Brush already resolves the accent to a system brush in high contrast, so the RIM is
         // correct on its own. The bleed takes the accent as a bare Color instead, and that path has no such
-        // suppression: it kept painting a vendor blue at 14% over a high-contrast card. Decorative colour
-        // outside the system palette is precisely what high contrast is a contract against, and a user who
-        // turned it on to make the screen legible is the last person who should be given a decorative wash.
+        // suppression: unchecked, it paints a vendor blue at 14% over a high-contrast card.
         //
         // AccentWashOpacity is the existing answer to "how strongly may a decorative accent show", and it
-        // returns zero here. It had no callers after the card's old accent wash was deleted; this is the call
-        // it was written for.
+        // returns zero here.
         if (Muted || AppEffects.AccentWashOpacity(1.0) == 0)
         {
             Bleed.Fill = null;
@@ -348,7 +340,7 @@ public sealed partial class PlayWedge : UserControl
     /// <para>
     /// Press outranks hover because a press implies the pointer is there anyway, and because the moment
     /// worth marking is the one the player caused. Focus gets nothing from this: the ring owns focus, and a
-    /// second focus mark on the wedge would rebuild exactly the confusion the 2026-09-20 split removed.
+    /// second focus mark on the wedge would make hover and focus look alike.
     /// </para>
     /// </summary>
     private byte Alpha() => IsDown ? BleedAlphaDown : IsHot ? BleedAlphaHot : BleedAlphaRest;

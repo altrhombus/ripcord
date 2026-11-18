@@ -1,5 +1,5 @@
 // Pairing (DESIGN.md, "Pairing"): a sheet on the library. Sign-in leads, and the code route is one
-// unweighted press away (docs/design.md, amended 2026-09-22). The route is a mechanism, and the player has
+// unweighted press away (docs/design.md). The route is a mechanism, and the player has
 // no stake in it, so when the console is on the signed-in account it simply pairs.
 
 import SwiftUI

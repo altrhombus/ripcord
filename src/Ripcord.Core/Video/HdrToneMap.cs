@@ -60,9 +60,9 @@ public static class HdrToneMap
     public const double HdrContentAboveNits = 500.0;
 
     /// <summary>
-    /// The share of tiles allowed above the measured peak: none. Tried at one in a hundred on 2026-10-05, so that one
-    /// small highlight would not decide the curve, and that was backwards. Forza then measured near 318 nits, was
-    /// taken for SDR content, and its sun and headlights clipped to white again. One bright tile deciding is right:
+    /// The share of tiles allowed above the measured peak: none. At one in a hundred, meant to stop one small
+    /// highlight deciding the curve, Forza measured near 318 nits (2026-10-05), was taken for SDR content, and its
+    /// sun and headlights clipped to white. One bright tile deciding is right:
     /// in HDR content it selects the 1,000-nit curve, which cannot clip, and SDR content inside HDR10 has no such tile,
     /// its cursor and menus included, because the console renders all of it as SDR.
     /// </summary>

@@ -2,17 +2,15 @@
 <!--
     Keyboard controls, as a page.
 
-    This was a ContentDialog, and rebinding-by-capture fought the host it was in. A dialog reserves two keys:
-    Escape closes it, and Enter presses the default button. Both are keys a user may legitimately want to look
-    at — Enter is a DEFAULT binding here (Start) — and the second was worse than awkward. The dialog's default
-    button was "Reset to defaults", so a stray Enter while capture was not armed silently wiped every binding
-    the user had set. Capture only worked at all because it swallowed keys before the dialog saw them, which is
-    a workaround for being in the wrong container rather than a design.
+    Not a ContentDialog, because rebinding-by-capture fights that host. A dialog reserves two keys: Escape
+    closes it, and Enter presses the default button. Enter is a DEFAULT binding here (Start), and in a dialog
+    a stray Enter while capture is not armed presses whatever the default button is, which next to a "Reset to
+    defaults" silently wipes every binding the user has set.
 
-    A page reserves nothing. Enter and Escape behave like any other key, Back leaves in the ordinary way, and
-    there is no button that a mis-timed press can turn into a reset. Changes save as they are made, like the
-    rest of Settings — a page has no OK to press, and pretending otherwise is how a dialog's habits survive the
-    move.
+    A page reserves nothing of its own. Enter is captured like any other key, Back leaves in the ordinary way,
+    and there is no button that a mis-timed press can turn into a reset. Escape, F3 and F11 cannot be bound,
+    but that is the app keeping them for the stream, not the container. Changes save as they are made, like
+    the rest of Settings — a page has no OK to press.
 -->
 <Page
     x:Class="Ripcord_App.Pages.KeyBindingsPage"
@@ -45,7 +43,7 @@
     </Page.Resources>
 
     <ScrollViewer Padding="24,16,24,24">
-        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column shifted right of the others (Keyboard controls sat 40 px off Settings).  -->
+        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column would sit right of the others (this page, 40 px off Settings).  -->
         <Grid>
             <StackPanel MaxWidth="{StaticResource RipcordPageColumnWidth}" Spacing="16">
                 <StackPanel Spacing="4">
@@ -70,9 +68,9 @@
                     TextWrapping="Wrap" />
 
                 <!--
-                    Grouped, in the row cards Settings uses: it was one flat list of 26 rows in a different style
-                    from the page it opens from (showcase review, R3). The groups are built in code from one list of
-                    rows, so a rebind still updates a row in place and focus stays on its Change button.
+                    Grouped, in the row cards Settings uses, so the page matches the one it opens from and is not
+                    one flat list of every binding. The groups are built in code from one list of rows, so a
+                    rebind updates a row in place and focus stays on its Change button.
                 -->
                 <StackPanel x:Name="BindingGroups" Spacing="24" />
 

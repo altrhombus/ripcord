@@ -45,9 +45,8 @@ public static class HalyardRegistrationMessage
     /// The v2 PIN-registration <c>RP-Hmac</c> (base64 of <c>HMAC-SHA256(K16_reg, PIN u32 LE)</c>,
     /// <see cref="Crypto.V2.HalyardV2Registration"/>), or <see langword="null"/> for a v1 registration, which
     /// omits the header. Sending it is what makes the console pair the client as v2-capable. <b>[X]</b> the
-    /// header encoding (base64 assumed, by analogy with the other 32-byte headers) and its position are not yet
-    /// confirmed against a console — a hardware capture pins them; until then this stays an opt-in capability and
-    /// the shipping v1 pairing never sends it.
+    /// header encoding (base64 assumed, by analogy with the other 32-byte headers) and its position are
+    /// unconfirmed against a console. When it is non-null the request also carries <c>RP-SupportCmd</c>.
     /// </param>
     public static byte[] BuildRequest(
         HalyardRegistrationRequest request, string clientIp, ReadOnlySpan<byte> encryptedBody,
@@ -111,9 +110,9 @@ public static class HalyardRegistrationMessage
     /// As above, and also reports the console's own <c>RP-Application-Reason</c> when it sends one.
     ///
     /// <para>
-    /// That header is the console explaining itself, and discarding it made every refusal look alike: a
-    /// rejected registration reported only its HTTP status, so "wrong key", "wrong transport for this route"
-    /// and "no" were the same message. It is a hex application code (e.g. <c>80108bff</c>, which our own runs
+    /// That header is the console explaining itself. Without it every refusal looks alike: a rejected
+    /// registration reports only its HTTP status, so "wrong key", "wrong transport for this route" and "no"
+    /// are the same message. It is a hex application code (e.g. <c>80108bff</c>, which our own runs
     /// have seen for more than one cause), and it is the difference between a diagnosis and another guess.
     /// </para>
     /// </summary>

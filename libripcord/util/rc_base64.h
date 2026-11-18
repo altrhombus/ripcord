@@ -1,9 +1,9 @@
 /*
- * ripcord-3ds - base64 (RFC 4648, standard alphabet, with padding).
+ * libripcord - base64 (RFC 4648, standard alphabet, with padding).
  *
  * A generic codec, not protocol-specific: /sess/ctrl's encrypted RP-* header values are base64, and
  * /sess/init's RP-Nonce response header is base64-encoded 16 bytes. No PlayStation knowledge here -
- * source/session sits on top of this the same way source/halyard sits on top of source/crypto.
+ * session/ sits on top of this the same way halyard/ sits on top of crypto/.
  */
 #ifndef RC_BASE64_H
 #define RC_BASE64_H

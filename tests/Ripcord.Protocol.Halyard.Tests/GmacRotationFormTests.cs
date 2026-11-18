@@ -10,24 +10,17 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// <para><b>What this is and is not.</b> It is not a claim about the console — that was settled on the wire:
 /// <c>ps5-remoteplay-v1-spec.md</c> §5.4 records the chained form GMAC-verifying 13670 of 13672 A/V packets
 /// across <b>223 rotation windows</b>, the two misses being a torn capture tail, and marks it <b>[V]</b>. It
-/// is a regression guard on a specific mistake this project already made once and could quietly make
-/// again.</para>
+/// is a regression guard on one specific mistake.</para>
 ///
 /// <para><b>The mistake.</b> Window ≥ 1 re-folds <c>key0</c> — the already-folded window-0 GMAC key — with an
-/// incrementing IV. An earlier implementation folded <c>aes_key</c> instead. Both are one plausible line of
-/// code; both produce a correct-looking 16-byte key; both pass every test that only asks "does the key change
-/// at the boundary and stay put inside a window", which is what the existing boundary tests ask. The wrong
-/// one authenticated window 0 and rejected every packet after roughly the first half second of stream.</para>
+/// incrementing IV. The mistake is to fold <c>aes_key</c> instead. Both produce a correct-looking
+/// 16-byte key, and both pass every test that only asks "does the key change at the boundary and stay put
+/// inside a window", which is what the boundary tests ask. The wrong one authenticates window 0 and
+/// rejects every packet after roughly the first half second of stream.</para>
 ///
 /// <para>So this recomputes the spec's formula from its own words — fold, IV addition, the <c>0xAF6E</c>
 /// stride — and compares. Two implementations of one written rule, which is the only thing a test without a
 /// console can honestly check, and enough to catch a revert.</para>
-///
-/// <para>Also worth knowing, because it changes how alarming a bug here would be: an error in this is not
-/// subtle. Keystream offsets advance fast enough that a real session crosses windows continuously, so a wrong
-/// rotation does not produce a rare glitch — it produces a stream that dies seconds in, every time. The
-/// backlog described the symptom as "intermittent, very hard to diagnose"; the evidence says the opposite,
-/// and a failure mode that loud is one of the reasons this gap was never the risk it looked like.</para>
 /// </summary>
 public class GmacRotationFormTests
 {

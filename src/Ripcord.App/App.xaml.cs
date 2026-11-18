@@ -24,9 +24,8 @@ public partial class App : Application
 
     /// <summary>
     /// The main window. Kept for the two things that genuinely need the WinUI <see cref="Window"/> itself —
-    /// its content root, for window-wide key routing, and its <c>Activated</c> event. Everything a page used to
-    /// reach through here by casting to <c>MainWindow</c> now goes through <see cref="RipcordAppServices.Shell"/>
-    /// instead.
+    /// its content root, for window-wide key routing, and its <c>Activated</c> event. A page reaches window-level
+    /// operations through <see cref="RipcordAppServices.Shell"/>, not by casting this to <c>MainWindow</c>.
     /// </summary>
     public static Window? MainWindow { get; private set; }
 
@@ -50,7 +49,7 @@ public partial class App : Application
     /// Alongside the services graph rather than inside it: the graph is portable and this is not — it reaches
     /// GameInput and DualSense HID through Ripcord.Input, which targets Windows. Constructed here so its
     /// lifetime matches the app's; note that it does not start reading until a window asks it to, because
-    /// building a GameInput component before window content exists has crashed natively before.
+    /// building a GameInput component before window content exists can crash natively.
     /// </para>
     /// </summary>
     public static InputRouter Input => _input ?? throw new InvalidOperationException(
@@ -63,12 +62,9 @@ public partial class App : Application
     /// What the command line asked for, parsed once at startup.
     ///
     /// <para>
-    /// The point of it is that the fastest path to a game stops being "launch, home, press A" and becomes no
-    /// presses at all. The audience for this app does not launch things from a Start menu - they launch from
-    /// a handheld's game launcher, from Steam Big Picture, from a pinned icon, from a controller - and none
-    /// of those could express "play on the living room PS5" while the executable took no argument saying so.
-    /// One argument unlocks every one of those entry points at once, including the ones nobody has thought
-    /// of, and it works from the zip as well as from a package.
+    /// One argument lets a handheld's game launcher, Steam Big Picture, a pinned icon or a controller express
+    /// "play on the living room PS5" with no presses in the app, and it works from the zip as well as from a
+    /// package.
     /// </para>
     /// </summary>
     public static LaunchIntent Launch { get; private set; } = LaunchIntent.Shell;
@@ -77,9 +73,8 @@ public partial class App : Application
     {
         InitializeComponent();
 
-        // The app previously had no crash reporting of any kind: an unhandled exception — a XAML parse error on
-        // a page, a bad resource lookup, a faulted event handler — terminated the process with nothing written
-        // anywhere, so "it crashes when I click X" was the entire available diagnostic. Capture it instead.
+        // Left alone, an unhandled exception — a XAML parse error on a page, a bad resource lookup, a faulted
+        // event handler — terminates the process with nothing written anywhere. Capture it instead.
         UnhandledException += OnUnhandledException;
     }
 
@@ -130,10 +125,9 @@ public partial class App : Application
 
     /// <summary>
     /// A settings row puts its control beside its text until the row is narrower than a threshold, then stacks
-    /// it underneath. The threshold is a width, and Windows' text size is not part of it: at 225% text the row is
-    /// as wide as ever, so it never stacked, and the long drop-downs crushed their row's text into a column one
-    /// word wide ("Optio / ns", visual audit 2026-10-08). Scaling the threshold with the text makes a row stack
-    /// once its words stop fitting, whatever made them stop.
+    /// it underneath. The threshold is a width, and Windows' text size is not part of it: unscaled, at 225% text
+    /// the row never stacks, and the long drop-downs crush their row's text into a column one word wide ("Optio /
+    /// ns"). Scaling the threshold with the text makes a row stack once its words stop fitting.
     ///
     /// <para>
     /// The base widths are ours, set where a row at 100% text stops fitting. Read once at start-up, so a text-size

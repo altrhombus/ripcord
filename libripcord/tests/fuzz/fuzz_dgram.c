@@ -2,7 +2,7 @@
  * libripcord fuzzing - the account route's 9303 transport: the prelude, the chunk walk, HTTP completeness,
  * and the association fed a sequence of datagrams.
  *
- * On the internet path this port faces whatever can reach the socket's reflexive address, before anything
+ * On the internet path the core faces whatever can reach the socket's reflexive address, before anything
  * is authenticated. Each record is one datagram, fed to one association that lives for the whole input,
  * because the interesting states - a connection half open, a payload half accumulated, a sequence about to
  * wrap - only exist between datagrams. The association is driven through each role: it opens the prelude

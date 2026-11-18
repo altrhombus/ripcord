@@ -94,9 +94,9 @@ pub fn parse_reply(data: &[u8]) -> Option<Console> {
 
 /// The wake datagram's user-credential: the registration key's ASCII hex digits read as a 32-bit number and
 /// written as a SIGNED decimal. C's rule, from a PS4 capture that carried a negative credential; .NET writes
-/// it unsigned, which would misstate every key at or above 0x80000000 (on the roadmap). Surrounding
-/// whitespace and extra leading zeros are allowed, as .NET's parse allows; `None` for anything that is not
-/// a 32-bit hex number, where .NET throws.
+/// it unsigned, which would misstate every key at or above 0x80000000. Surrounding whitespace and extra
+/// leading zeros are allowed, as .NET's parse allows; `None` for anything that is not a 32-bit hex number,
+/// where .NET throws.
 pub fn wake_credential(registration_key: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(registration_key).ok()?.trim();
     if text.is_empty() || !text.bytes().all(|b| b.is_ascii_hexdigit()) {

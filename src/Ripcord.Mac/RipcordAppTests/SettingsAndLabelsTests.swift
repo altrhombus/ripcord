@@ -10,7 +10,7 @@ import Testing
 struct SettingsAndLabelsTests {
     @Test("settings saved by an older build keep what they had and take defaults for the rest")
     func partialDecoding() throws {
-        // Written before most of today's settings existed, with one whose type has since changed.
+        // An older build's file: most settings absent, and one of a type that does not decode.
         let old = #"{"width":1280,"height":720,"fps":30,"bitrateKbps":8000,"allowHEVC":false,"hdr":"yes"}"#
         let settings = try JSONDecoder().decode(StreamSettings.self, from: Data(old.utf8))
         #expect(settings.height == 720)

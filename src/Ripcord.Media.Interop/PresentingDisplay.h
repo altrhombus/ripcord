@@ -4,16 +4,16 @@
 //
 // Two callers need it and must agree: VideoCapabilities::IsHdrDisplayAvailable, which the settings page's
 // readiness check reads, and VideoRenderer, which decides whether to present HDR10 or ask the driver to
-// tone-map. Both used to scan for ANY output in G2084, which answered "is some display here HDR". On a laptop
-// whose HDR panel is on while the window sits on an SDR external monitor, that said yes about a screen the
-// video was not on: the settings page offered HDR, and the renderer would have presented PQ to an SDR panel.
+// tone-map. Scanning for ANY output in G2084 answers "is some display here HDR": on a laptop whose HDR panel
+// is on while the window sits on an SDR external monitor, that offers HDR and would present PQ to an SDR
+// panel.
 //
 // The window's monitor is resolved with MonitorFromWindow and matched against DXGI_OUTPUT_DESC1::Monitor,
 // across every adapter. Every adapter still matters: on a hybrid laptop the display often hangs off the
 // integrated GPU while the device decodes on the discrete one, whose EnumOutputs is empty.
 //
 // A null or stale window handle falls back to the primary monitor, which is the display a window with no
-// placement yet would open on - an answer about one real display rather than a guess across all of them.
+// placement yet would open on.
 //
 // Same namespace rule as CodecSubtypes.h: a top-level name, because "Ripcord" inside
 // winrt::Ripcord::Media::Interop resolves to winrt::Ripcord first.

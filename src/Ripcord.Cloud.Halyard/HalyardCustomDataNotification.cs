@@ -66,8 +66,7 @@ public static class HalyardCustomDataNotification
     /// <para>
     /// Worth surfacing on its own because it is the earliest moment a client can usefully act. A
     /// <c>sessionMessage</c> may only be sent to a member, so an OFFER before this 404s; and the console begins
-    /// opening its own control association shortly afterwards, so a client that waits for the console's OFFER
-    /// before sending its own has already given up the initiative. The frame names the joining platform —
+    /// opening its own control association shortly afterwards. The frame names the joining platform —
     /// our own join arrives here too, tagged <c>REMOTE_PLAY</c>, and must not be mistaken for the console's.
     /// </para>
     /// </summary>

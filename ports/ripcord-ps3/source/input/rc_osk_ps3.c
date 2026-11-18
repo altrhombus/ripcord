@@ -16,15 +16,10 @@
 
 
 /*
- * How long to wait for the user. Generous: someone typing an eight-digit PIN off another screen, or an
- * address they have to go and look up, is not in a hurry and should not be timed out mid-word. This
- * only exists so a dialog that never reports back cannot hang the program forever.
- */
-/*
- * Generous, because the mechanism works now and the thing being typed can be long: a PSN account id is
- * a nineteen-digit number entered with a controller. It was cut to 45 seconds while the dialog was
- * being diagnosed and a failure meant waiting; it exists only so a dialog that never reports back
- * cannot hang the program forever, and it should never be reachable by someone who is still typing.
+ * How long to wait for the user. Generous, because the thing being typed can be long: a PSN account id
+ * is a nineteen-digit number entered with a controller. It exists only so a dialog that never reports
+ * back cannot hang the program forever, and it should never be reachable by someone who is still
+ * typing.
  */
 #define RC_OSK_TIMEOUT_MS 240000u
 
@@ -114,11 +109,9 @@ static int narrow(const u16 *in, char *out, size_t out_size)
 }
 
 /*
- * EVERY EVENT THIS RECEIVES IS RECORDED, and none of them is logged from in here.
- *
- * b311 timed out with "the callback is not being delivered", which is one of two very different
- * things: the callback is never called at all, or it is called with statuses this does not recognise.
- * Those need opposite fixes and the timeout cannot tell them apart.
+ * EVERY EVENT THIS RECEIVES IS RECORDED, and none of them is logged from in here. A timeout alone
+ * (b311) cannot tell a callback that is never called from one called with statuses this does not
+ * recognise, and those need opposite fixes.
  *
  * Recorded into an array rather than logged directly because this runs from inside a system callback,
  * and rc_log opens and writes a file. The pump loop prints the list afterwards, where that is safe.
@@ -145,16 +138,10 @@ static void handle_event(u64 status)
     s_event_count++;
 
     /*
-     * THIS ONLY RECORDS. Nothing here calls back into the OSK, and b315 is why.
-     *
-     * The first version collected the text and tore the dialog down from inside this function, which
-     * is a system callback. Two things went wrong with that. It ran twice, because two callbacks were
-     * registered during the A/B and each did the teardown. And calling a dialog's own API from inside
-     * its event delivery is asking the library to re-enter itself - which is the likeliest reason
-     * UNLOADED never arrived and the pump waited out its whole timeout.
-     *
-     * So the flags are set here and the work happens in the loop, where calling into the SDK is
-     * ordinary.
+     * THIS ONLY RECORDS. Nothing here calls back into the OSK, and b315 is why: calling a dialog's own
+     * API from inside its event delivery is asking the library to re-enter itself, which is the
+     * likeliest reason UNLOADED never arrived when the teardown was done from here. So the flags are
+     * set here and the work happens in the loop, where calling into the SDK is ordinary.
      */
     switch (status) {
     case SYSUTIL_OSK_INPUT_CANCELED:
@@ -189,7 +176,7 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     widen(initial, s_initial, RC_OSK_MAX_CHARS + 1u);
     memset(s_result, 0, sizeof(s_result));
     /*
-     * AND THE UNLOAD'S BUFFER, which was cleared once by .bss and never again.
+     * AND THE UNLOAD'S BUFFER, on every call - .bss clears it only once.
      *
      * The teardown's copy is where the text usually arrives - see the note at the collection - and it is
      * copied over s_result wholesale, after which narrow() reads up to the first NUL. So a shorter entry
@@ -219,28 +206,17 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
         }
         /*
          * ONE REGISTRATION. b315 registered two - the plain wrapper and the Ex form with a 32-bit
-         * descriptor - to settle whether this platform's usual descriptor trap applied here. It does
+         * descriptor - to settle whether this platform's usual descriptor trap applies here. It does
          * not: every event arrived on BOTH, so PSL1GHT's wrapper adapts the pointer correctly and the
-         * A/B is finished with. It also did harm, which is the note worth keeping: two registrations
-         * meant the DONE handler ran twice, and it was a handler that tore the dialog down.
+         * plain one is enough. Two registrations also do harm: the DONE handler runs twice.
          */
     }
 
     /*
-     * THE CONTAINER SIZE IS PART OF THE LOAD SWEEP, and separating them is what made b306 useless.
-     *
-     * b304 swept container sizes DOWNWARD - a megabyte, then a half, then a quarter - on the reasoning
-     * that a binary with 54 MB of BSS might not have a megabyte to spare. The first size succeeded, so
-     * that sweep proved only that a container can be created. b306 then varied five parameter shapes
-     * against that one container and all five were refused identically.
-     *
-     * The error is 0x8002B504, a PARAMETER error, and a container that is too SMALL is a bad parameter
-     * just as surely as a missing flag is. Sweeping only downward could never have found it, and
-     * choosing the size before the load sweep meant no shape tried afterwards could have helped.
-     *
-     * So size is the outer loop and it goes UP: eight megabytes down to one. The general form is worth
-     * keeping - when a call rejects an argument and will not say which, an axis swept in one direction
-     * is an axis half tested.
+     * THE CONTAINER SIZE IS PART OF THE LOAD SWEEP. The load error is 0x8002B504, a PARAMETER error,
+     * and a container that is too SMALL is a bad parameter just as surely as a missing flag is. b306
+     * varied five parameter shapes against a one-megabyte container and all five were refused
+     * identically, so size is the outer loop and it starts above that: eight megabytes down to one.
      */
     {
         static const unsigned kSizes[] = {
@@ -290,19 +266,13 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     }
 
     /*
-     * PUMP, AND KEEP PRESENTING. Two things, and b308 proved the second is not optional.
+     * PUMP, AND KEEP PRESENTING. sysUtilCheckCallback is what delivers the events above; without it the
+     * dialog accepts input and never tells anyone.
      *
-     * sysUtilCheckCallback is what delivers the events above; without it the dialog accepts input and
-     * never tells anyone. That much was there.
-     *
-     * WHAT WAS MISSING IS THE FLIP. A system dialog on this machine does not draw itself onto the
-     * screen - it composites into the APPLICATION'S flip stream, so an application that stops
-     * presenting stops the dialog appearing at all. b308 raised it successfully and then sat in a loop
-     * that called nothing but the callback pump, so nothing was ever shown and the three-minute
-     * timeout read as a hang.
-     *
-     * The hook is the caller's because this file has no idea what should be behind the keyboard. It
-     * draws and flips; here that is one call a frame.
+     * The flip is not optional either (b308). A system dialog on this machine does not draw itself onto
+     * the screen - it composites into the APPLICATION'S flip stream, so an application that stops
+     * presenting stops the dialog appearing at all. The hook is the caller's because this file has no
+     * idea what should be behind the keyboard. It draws and flips; here that is one call a frame.
      */
     deadline = rc_time_ms() + RC_OSK_TIMEOUT_MS;
     {

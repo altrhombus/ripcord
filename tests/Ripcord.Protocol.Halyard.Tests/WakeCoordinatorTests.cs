@@ -40,19 +40,17 @@ public class WakeCoordinatorTests
     /// a real deadline still stops after the right NUMBER of polls while costing no wall-clock time.
     ///
     /// <para>
-    /// This is the fix for a flake, and the flake is worth stating because the shape recurs.
+    /// With a real clock the budget, not the script, decides the outcome.
     /// <c>Standby_WakesThenReportsAwake</c> scripts three probe answers and needs the third one, so it needs
-    /// two polls; with a 1 ms interval and a 50 ms budget it passed easily on a developer machine and failed
-    /// on <c>osx-arm64</c>, where <c>Task.Delay(1)</c> does not cost anything like 1 ms. The budget, not the
-    /// script, was deciding the outcome — a test about a sequence of answers was answering a question about
-    /// how fast the host was. Every test in this class is now decided by its script alone.
+    /// two polls; with a 1 ms interval and a 50 ms budget it fails on <c>osx-arm64</c>, where
+    /// <c>Task.Delay(1)</c> does not cost anything like 1 ms. Every test in this class is decided by its
+    /// script alone.
     /// </para>
     ///
     /// <para>
     /// Deliberately not <c>FakeTimeProvider</c> from <c>Microsoft.Extensions.TimeProvider.Testing</c>. That
     /// type is built for tests that drive the clock by hand, which needs the advance to be ordered against a
-    /// timer the code under test has not registered yet; this needs no ordering at all, and is small enough
-    /// that a package is the larger thing to justify.
+    /// timer the code under test has not registered yet; this needs no ordering at all.
     /// </para>
     /// </summary>
     private sealed class NoWaitClock : TimeProvider

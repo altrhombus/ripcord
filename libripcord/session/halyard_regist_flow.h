@@ -6,12 +6,10 @@
  * halyard_control_arm.h is the search probe. This assembles them and is the only part that opens a
  * socket.
  *
- * WHY EVERY FAILURE HAS A NAME. Registration is the one flow a user drives, standing in front of two
- * screens, with a PIN that expires. When it fails the only useful output is which of a small number of
- * things went wrong - and the console is no help: it answers a wrong PIN, a wrong transport, an
- * unrecognised client and a stale search probe with the same 403 and the same generic application
- * reason. So the statuses below distinguish what THIS side can distinguish, and carry the console's own
- * reason when it gives one, rather than collapsing everything into "registration failed".
+ * WHY EVERY FAILURE HAS A NAME. The console answers a wrong PIN, a wrong transport, an unrecognised
+ * client and a stale search probe with the same 403 and the same generic application reason. So the
+ * statuses below distinguish what THIS side can distinguish, and carry the console's own reason when
+ * it gives one.
  */
 #ifndef HALYARD_REGIST_FLOW_H
 #define HALYARD_REGIST_FLOW_H

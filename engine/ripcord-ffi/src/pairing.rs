@@ -1,6 +1,6 @@
-//! Everything around a session that the Mac takes from the C core today: discovery and wake (the
-//! datagrams; the host owns those sockets), the account-id normaliser, the account seed, and
-//! registration on both routes. Registration returns a [`RipcordPairingRecord`]; saving it is the host's.
+//! Everything around a session: discovery and wake (the datagrams; the host owns those sockets), the
+//! account-id normaliser, the account seed, and registration on both routes. Registration returns a
+//! [`RipcordPairingRecord`]; saving it is the host's.
 
 use std::ffi::{CStr, c_char, c_void};
 

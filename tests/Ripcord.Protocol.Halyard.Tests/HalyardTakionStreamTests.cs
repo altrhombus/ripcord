@@ -23,9 +23,8 @@ public class HalyardTakionStreamTests
 {
     /// <summary>
     /// 17 (0x11) — the protocol version our own capture negotiated, and the only range whose ECDH curve has
-    /// been observed. This mock answered 9 until 2026-09-11, which put the full-stack decrypt test on the
-    /// P-256 branch that <c>CurveForVersion</c> used to guess at for unknown versions. The most end-to-end
-    /// test in the suite was therefore covering a curve no console has been seen to use.
+    /// been observed. The mock answers with it so that the full-stack decrypt test, the most end-to-end test
+    /// in the suite, covers the curve a console has been seen to use.
     /// </summary>
     private const int LiveVersion = 17;
 
@@ -69,8 +68,8 @@ public class HalyardTakionStreamTests
 
     /// <summary>
     /// A console that hangs up says so with a Takion DISCONNECT, often with the only account of why (a rejected
-    /// launchSpec sends one). The stream used to ignore it; now it raises ConsoleDisconnected with the reason,
-    /// and the session ends on it.
+    /// launchSpec sends one). The stream raises ConsoleDisconnected with the reason, and the session ends on
+    /// it.
     /// </summary>
     [Fact]
     public async Task AConsoleDisconnect_IsRaisedWithItsReason()
@@ -292,7 +291,7 @@ public class HalyardTakionStreamTests
 
                 if (heartbeats is not null)
                 {
-                    // Longer than the one-second timer the client used to run, so an unsolicited beat would show.
+                    // Longer than a second, so a client beating unsolicited on a one-second timer would show.
                     _ = Task.Run(async () =>
                     {
                         await Task.Delay(1200, ct).ConfigureAwait(false);

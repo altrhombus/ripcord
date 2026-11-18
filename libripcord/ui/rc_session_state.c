@@ -62,12 +62,11 @@ void rc_session_set(rc_session_state *state, rc_phase phase,
     state->revision++;
 
     /*
-     * SAID IN THE LOG AS WELL AS ON THE SCREEN, and b302 is why this is not optional.
+     * SAID IN THE LOG AS WELL AS ON THE SCREEN, and that is not optional.
      *
-     * The screen was the point of this file, so the first version only drew. Then a pairing attempt
-     * failed before it reached any of its own logging, the card it drew was replaced within a second
-     * by the next thing the harness did, and the log recorded nothing at all - the state that existed
-     * precisely to explain a failure explained it to a television nobody was recording.
+     * A step can fail before it reaches any logging of its own, and the card drawn for it can be
+     * replaced within a second by the next one. Drawing alone then leaves no record (b302: a failed
+     * pairing attempt explained itself to a television nobody was recording, and the log held nothing).
      *
      * A screen is where the person is; a log is where the evidence is. Both, always.
      */

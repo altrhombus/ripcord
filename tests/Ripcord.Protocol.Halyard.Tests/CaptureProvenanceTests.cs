@@ -12,28 +12,19 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// captures. A literal that appears verbatim in captured traffic was lifted from the wire, whatever the
 /// comment above it says.
 ///
-/// <para><b>Why this exists, and why sixteen rounds of <see cref="PublishedTreeSweepTests"/> could not have
-/// found it.</b> That sweep asks whether a hex run is <em>declared</em> — allowlisted, pinned, or carrying a
-/// comment that says where it came from. Nothing in it can ask whether the declaration is <em>true</em>. On
-/// 2026-09-11 a 17-byte fixture in <c>HalyardCtrlMessageTests</c> and <c>ports/ripcord-3ds/tests/session_test.c</c>,
-/// labelled "Synthetic … Nothing captured.", turned out to be the payload of a real <c>0x0033</c> control
-/// frame, lifted out of <c>cap45.pcapng</c> with its <c>00000011 00330000</c> header still attached. The
-/// console encrypts that frame, so the committed bytes were ciphertext; against the plaintext
-/// <c>docs/protocol/ps5-session-transport.md</c> publishes for it, they gave up 17 bytes of session
-/// keystream. Three audit rounds and a full ports audit cleared it — every one of them by reading the
-/// comment.</para>
+/// <para><b>Why this exists.</b> <see cref="PublishedTreeSweepTests"/> asks whether a hex run is
+/// <em>declared</em>: allowlisted, pinned, or carrying a comment that says where it came from. Nothing in it
+/// can ask whether the declaration is <em>true</em>. A fixture labelled as synthetic can still be the payload
+/// of a real control frame. The console encrypts such a frame, so against the plaintext
+/// <c>docs/protocol/ps5-session-transport.md</c> publishes for it, the committed bytes would give up that
+/// many bytes of session keystream. A declared hex run is where the reader stops, so provenance is checked
+/// here against the only thing that can refute it.</para>
 ///
-/// <para><b>A false declaration is stronger than no declaration</b>, because an undeclared hex run draws the
-/// eye and a declared one is where the reader stops. So provenance cannot stay a claim the tree makes about
-/// itself. It is checked here against the only thing that can refute it.</para>
-///
-/// <para><b>The bound, stated rather than tuned.</b> Sixteen bytes and up, and no entropy or
-/// "looks-random" heuristic — those were tried and rejected. A threshold that separates cipher material
-/// from framing is a knob whose setting is an argument, and this repository's standing lesson is that a
-/// mechanism inherits more generality than its reason required. Instead every literal that legitimately
-/// appears in a capture is named in <see cref="Allowed"/> with the sentence explaining why publishing it
-/// gives nothing away, and <see cref="EveryAllowedEntry_IsReallyInACapture"/> stops those entries going
-/// inert. Fifteen entries is the whole cost.</para>
+/// <para><b>The bound.</b> Sixteen bytes and up, and no entropy or "looks-random" heuristic: a threshold
+/// that separates cipher material from framing is a knob whose setting is an argument. Instead every literal
+/// that legitimately appears in a capture is named in <see cref="Allowed"/> with the sentence explaining why
+/// publishing it gives nothing away, and <see cref="EveryAllowedEntry_IsReallyInACapture"/> stops those
+/// entries going inert.</para>
 ///
 /// <para>Skips when the captures folder is absent, like <see cref="LiveControlVectorTests"/>, so CI stays green
 /// and this runs on the machine where fixtures actually get invented.</para>
@@ -142,8 +133,7 @@ public class CaptureProvenanceTests
     }
 
     /// <summary>
-    /// An allowlist entry that no longer matches anything is a line of prose pretending to be a control.
-    /// This repository has had allowlist entries go inert twice, by three different mechanisms, so the
+    /// An allowlist entry that matches nothing is a line of prose pretending to be a control, so the
     /// entries are checked rather than trusted — the same reason the sweep carries
     /// <c>EveryAllowlistEntry_SuppressesSomethingReal</c>.
     /// </summary>
@@ -233,12 +223,11 @@ public class CaptureProvenanceTests
                 WorkingDirectory = root,
                 // UTF-8 explicitly. Without this .NET decodes a redirected child's stdout with the
                 // console's ANSI code page on Windows, and git emits UTF-8 - so every non-ASCII byte in a
-                // commit message arrived mangled. This repository writes em-dashes and ellipses into commit
-                // messages constantly, and the truncated-fragment detector keys on the ellipsis, so the
-                // message corpus was swept against mojibake on the one platform its author uses. It passed
-                // here and failed on every Linux and macOS runner, for the same commit, on the same history:
-                // a commit message quoting two pin digests in truncated form sailed past on Windows and was
-                // caught on Linux. A guard whose reach depends on the host's code page is not a guard.
+                // commit message arrives mangled. Commit messages here carry em-dashes and ellipses, and the
+                // truncated-fragment detector keys on the ellipsis, so on Windows the message corpus would
+                // be swept as mojibake: a message quoting a digest in truncated form passes there and fails
+                // on Linux and macOS, for the same commit, on the same history. A guard whose reach depends
+                // on the host's code page is not a guard.
                 StandardOutputEncoding = System.Text.Encoding.UTF8,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

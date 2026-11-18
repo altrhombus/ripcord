@@ -1,22 +1,20 @@
 /*
  * ripcord-ps3 - the console's own typeface, for the overlay.
  *
- * WHAT THIS IS. cellFont can open a fontset the FIRMWARE supplies rather than a file the application
- * ships, and FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET is New Rodin - the face the XMB is set in. Nothing is
- * redistributed and nothing is read off the flash by hand: the system font library is asked for a
- * glyph and hands back its coverage.
+ * WHAT THIS IS. The firmware's faces are ordinary TrueType files in /dev_flash/data/font. This opens
+ * one at run time - Rodin Regular first, the face the menus are set in - and the FreeType portlib
+ * parses it. Nothing is redistributed: the file stays on the console and is read at run time.
+ * rc_sysfont.c says why this is the route rather than cellFont.
  *
- * WHY IT DID NOT COME FIRST. The hand-drawn 5x7 exists because libfont and libfontFT looked like a
- * dependency on firmware contents that could fail to load, and that judgement still holds - which is
- * why this reports whether it opened and the drawn font stays as the fallback. What was wrong was the
- * conclusion that the dependency was not worth it: the system face is antialiased, scales to any size,
- * has a full character set, and is the one the console itself uses, which no hand-drawn bitmap at 9
- * rows is going to match.
+ * WHY THE DRAWN FONT REMAINS. This depends on firmware contents that can fail to load, which is why it
+ * reports whether it opened and the hand-drawn 5x7 stays as the fallback. The dependency is worth it:
+ * the system face is antialiased, scales to any size, has a full character set, and is the one the
+ * console itself uses, which no hand-drawn bitmap at 9 rows is going to match.
  *
  * COVERAGE, NOT PIXELS. A glyph comes back as 8-bit coverage, which the caller composites in whatever
- * colour it wants. That is what makes the antialiasing real, and it is also why the panel bitmap had to
- * move out of RSX memory: blending needs the destination read, and a Cell read from there is roughly
- * two orders of magnitude slower than a write.
+ * colour it wants. That is what makes the antialiasing real, and it is also why the panel bitmap lives
+ * in main memory rather than RSX memory: blending needs the destination read, and a Cell read from RSX
+ * memory is roughly two orders of magnitude slower than a write.
  */
 #ifndef RC_SYSFONT_H
 #define RC_SYSFONT_H
@@ -24,7 +22,7 @@
 #include <stdint.h>
 
 /*
- * Brings up the system font and renders its atlas at the TWO sizes the caller will use. Both are
+ * Brings up the system font and renders its atlas at the THREE sizes the caller will use. All are
  * given rather than one and a ratio, because the caller derives them from the display and a ratio here
  * would silently ignore that. 0 if anything refused, and the caller must then use
  * its own font - every step is reported through rc_sysfont_status() so a refusal names itself rather

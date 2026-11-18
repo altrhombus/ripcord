@@ -2,19 +2,17 @@
 <!--
     Settings, as SettingsCard rows.
 
-    This page was 438 lines of hand-rolled two-column grid-in-border, one copy per row, and every copy was a
-    chance for a label to sit a pixel off or an AutomationProperties.Name to be forgotten. SettingsCard is the
-    same layout with the keyboard and screen-reader behaviour supplied — Header, Description and a content slot,
-    which is exactly the shape every row here already had.
+    Every row is a SettingsCard (CommunityToolkit.WinUI.Controls.SettingsControls): Header, Description and a
+    content slot, with the keyboard and screen-reader behaviour supplied. A hand-rolled grid-in-border per row
+    is a chance per row for a label to sit a pixel off or an AutomationProperties.Name to be forgotten.
 
-    It is the project's first non-SDK package reference, and it was measured before being taken: a trimmed
-    Release publish produces the identical 37 ILLink warnings with and without it, all of them from CsWinRT's
-    ABI layer, and the published output is the same size to a tenth of a megabyte. It neither helps nor hinders
-    the standing PublishTrimmed work.
+    The package costs a trimmed publish nothing: measured, a trimmed Release publish produces the identical 37
+    ILLink warnings with and without it, all of them from CsWinRT's ABI layer, and the published output is the
+    same size to a tenth of a megabyte.
 
     Group rhythm comes from the containers, not from margins on the headers — one StackPanel per group spacing
-    its rows, an outer one spacing the groups. That is what finally let GroupHeaderStyle go: it differed from
-    the shared section header only by the margin it carried.
+    its rows, an outer one spacing the groups. The headers are the shared RipcordSectionHeaderStyle, which
+    carries no margin.
 -->
 <Page
     x:Class="Ripcord_App.Pages.SettingsPage"
@@ -28,26 +26,24 @@
     mc:Ignorable="d">
 
     <!--
-        RectilinearDistance, not the default overlap rule. MEASURED, not reasoned about — three earlier
-        attempts at this were guesses and all three were wrong.
+        RectilinearDistance on the column below, not the default overlap rule. The reason is MEASURED.
 
         By default XY focus only considers a candidate that geometrically OVERLAPS the focused element on the
-        perpendicular axis. On this page the controls do not line up: the sliders occupy x 776-996, because
-        their value readout sits to their right and pushes them left, while every ToggleSwitch occupies
+        perpendicular axis. On this page the controls do not line up: the sliders were measured at x 776-996,
+        because their value readout sits to their right and pushes them left, and every ToggleSwitch at
         x 1008-1080. A twelve-pixel gap, so a slider and a toggle have no overlap at all and are invisible to
-        each other. Pressing Down on the bitrate slider stepped straight over the adaptive-bitrate toggle to
-        the next ComboBox, which is wide enough to overlap.
+        each other. Under the default rule, Down on a slider steps straight over a toggle below it to the
+        next ComboBox, which is wide enough to overlap.
 
-        Projection was tried first and could not have worked: it projects the focused element's bounds along
-        the direction of travel, which still requires perpendicular overlap. RectilinearDistance ranks
-        candidates by distance instead and needs no overlap, which is what "the next control down" means to a
-        person reading a settings list.
+        Projection does not help: it projects the focused element's bounds along the direction of travel,
+        which still requires perpendicular overlap. RectilinearDistance ranks candidates by distance instead
+        and needs no overlap, which is what "the next control down" means to a person reading a settings list.
 
-        On the container, not as XYFocusUp/Down element references — the plan's rule, and the reason is
-        visible right here: the exact alignment that broke this is the kind of thing markup changes silently.
+        On the container, not as XYFocusUp/Down element references: the alignment that defeats the default
+        rule is the kind of thing markup changes silently, and element references would go stale with it.
     -->
     <ScrollViewer Padding="24,16,24,24">
-        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column shifted right of the others (Keyboard controls sat 40 px off Settings).  -->
+        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column would sit right of the others.  -->
         <Grid>
             <StackPanel
                 MaxWidth="{StaticResource RipcordPageColumnWidth}"
@@ -160,19 +156,19 @@
                     </tk:SettingsCard>
 
                     <!--
-                        The live pad readout, moved here from the stream's rung 3.
+                        The live pad readout, here and not on the stream's rung 3.
 
                         It is a CONTROLLER diagnostic, not a stream one: what it answers is "is this pad reaching
                         Ripcord, and is that stick centred", and both questions are asked while looking at the
-                        bindings rather than while looking at a game. On rung 3 it was competing with twenty
-                        instruments about the picture, on a surface you have to be streaming to open - so the one
-                        place it could not be read was the place somebody would be holding the pad to test it.
+                        bindings rather than while looking at a game. Rung 3 is twenty instruments about the
+                        picture, on a surface you have to be streaming to open - the one place somebody holding
+                        the pad to test it could not read it.
                     -->
                     <tk:SettingsCard x:Uid="SettingsPage_LivePadReadout">
                         <StackPanel MinWidth="260" HorizontalAlignment="Right">
                             <!--
-                                Says something before the first frame. It was blank until a pad reported, so with none
-                                connected the row read as broken (visual audit, 2026-10-08). The first frame replaces it.
+                                Says something before the first frame: blank until a pad reports, the row would read as
+                                broken with none connected. The first frame replaces it.
                             -->
                             <TextBlock
                                 x:Name="PadButtonsText"
@@ -228,8 +224,8 @@
                     </tk:SettingsCard>
 
                     <!--
-                        Windows' own navigation sounds with a pad (showcase plan, decision D). A switch because a sound
-                        is the one thing a player can't look away from (owner, pad pass, 2026-10-09).
+                        Windows' own navigation sounds with a pad. A switch because a sound is the one thing a player
+                        can't look away from.
                     -->
                     <tk:SettingsCard x:Uid="SettingsPage_NavigationSounds">
                         <ToggleSwitch
@@ -266,7 +262,7 @@
                     <tk:SettingsCard
                         x:Uid="SettingsPage_FrameRateLatencyPacket">
                         <!--
-                            A picker, not a switch: there are three answers now. It is also the only control a
+                            A picker, not a switch: there are three answers. It is also the only control a
                             pad-only player has over the HUD, since nothing in the stream layer takes gamepad
                             input by design, so "which rung" has to be answerable before connecting.
                         -->
@@ -280,9 +276,9 @@
                 <!--
                     ============ Account ============
 
-                    NOT first, though it was, and the argument for putting it there was a real one: it is the
-                    only section that changes what the others can do - signed in, pairing stops asking for an
-                    account ID and a console off this network can still be woken.
+                    NOT first, though there is a real argument for putting it there: it is the only section
+                    that changes what the others can do - signed in, pairing stops asking for an account ID
+                    and a console off this network can still be woken.
 
                     That is about capability, not about use. LAN play against a paired console needs none of it,
                     the README says so outright, and a settings page that opens on a sign-in prompt makes an
@@ -304,7 +300,7 @@
                         </StackPanel>
                     </tk:SettingsCard>
 
-                    <!--  Only shown when there is something to say — an error, or the account's console list.  -->
+                    <!--  Each shown only when there is something to say: this bar for an error, the expander below for the account's console list.  -->
                     <InfoBar
                         x:Name="AccountError"
                         IsOpen="False"
@@ -327,17 +323,16 @@
                     an expander is the ordinary Windows way to say so - it is a Fluent behaviour, which is the
                     half of the position the app borrows rather than invents.
 
-                    NO SEARCH BOX, and docs/design.md is amended in the same commit for prescribing one.
+                    NO SEARCH BOX, as docs/design.md has it.
                     Twenty settings on one scrolling page do not need search; it is a Windows Settings
                     mannerism rather than a Fluent behaviour, and the distinction is exactly the line the
                     design position draws. A search box would also be the only control here that has to be
                     taught what every setting is called.
                 -->
                 <!--
-                    A SettingsExpander, like the HDR and account rows above it. It was a stock Expander, which drew
-                    a different height, no icon and no description, and nested its rows as cards inside a card, so
-                    the one section a reader opens on purpose looked like it came from another app (visual audit,
-                    2026-10-08).
+                    A SettingsExpander, like the HDR and account rows above it. A stock Expander draws a different
+                    height, no icon and no description, and nests its rows as cards inside a card, so the one
+                    section a reader opens on purpose would look like it came from another app.
                 -->
                 <tk:SettingsExpander x:Uid="SettingsPage_AdvancedExpander">
                     <tk:SettingsExpander.HeaderIcon>
@@ -362,8 +357,8 @@
                             Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.
 
                             The picker sits under its label, full width, rather than beside it. An adapter's name plus
-                            why it is a poor choice runs to eighty characters, and beside the label it squeezed
-                            "Specific adapter" to a letter a line (2026-10-02).
+                            why it is a poor choice runs to eighty characters, and beside the label it squeezes
+                            "Specific adapter" to a letter a line.
                         -->
                         <tk:SettingsCard
                             x:Name="AdapterCard"
@@ -380,8 +375,8 @@
 
                     <!--
                         The two bars go in the footer, not among the items: the expander styles every item as a
-                        SettingsCard, and an InfoBar cannot take that style - opening Advanced crashed the app
-                        (caught while making this change, 2026-10-08).
+                        SettingsCard, and an InfoBar cannot take that style - among the items, opening Advanced
+                        crashes the app.
                     -->
                     <tk:SettingsExpander.ItemsFooter>
                         <StackPanel Padding="16,8" Spacing="8">
@@ -392,9 +387,9 @@
                                 Severity="Warning" />
 
                             <!--
-                                Moved here from a section of its own. It is one always-open InfoBar reporting whether
-                                pairing credentials are encrypted at rest - a fact about how the app stores things, which
-                                is what this section is for, and not something a heading of its own made easier to find.
+                                One always-open InfoBar reporting whether pairing credentials are encrypted at rest - a
+                                fact about how the app stores things, which is what this section is for, and not
+                                something a heading of its own would make easier to find.
                             -->
                             <InfoBar
                                 x:Name="CredentialProtectionBar"

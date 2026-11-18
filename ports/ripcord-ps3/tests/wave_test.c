@@ -1,39 +1,27 @@
 /*
  * ripcord-ps3 - the background's twelve colours, checked without waiting a year.
  *
- * THE SEASONAL HUE IS THE ONE PIECE OF THIS SHELL NOBODY CAN REVIEW BY LOOKING AT IT. It takes its
- * colour from the month, so eleven twelfths of the design is invisible on any given day, and
- * SHELL-DESIGN.md's own plan for checking it was to move the console's clock twelve times. That is a
- * dozen reboots to answer a question that is arithmetic, and it is the sort of check nobody repeats
- * after the first time - which is exactly when a table of twelve hand-picked colours gets edited.
- *
- * So the properties the design actually depends on are asserted here instead:
+ * The shell takes its colour from the month, so eleven twelfths of the design is invisible on any given
+ * day, and SHELL-DESIGN.md's own plan for checking it was to move the console's clock twelve times. The
+ * properties the design depends on are asserted here instead:
  *
  *   IT IS A BACKGROUND. Every month's wave has to stay dark. What gets measured is the NINETY-NINTH
- *   PERCENTILE rather than the single brightest pixel, and that is not a softening of the test - the
- *   motes are points of light by design and are meant to be the brightest thing in the picture. A check
- *   on the maximum would be a check on the motes, which is a different question and is answered by
- *   looking at one. The percentile is the ribbons where all three cross, which is the ambient level the
- *   cards have to sit on top of.
+ *   PERCENTILE rather than the single brightest pixel, because the motes are points of light by design
+ *   and are meant to be the brightest thing in the picture. The percentile is the ribbons where all
+ *   three cross, which is the ambient level the cards have to sit on top of.
  *
  *   THE ACCENT HAS TO CARRY SMALL TEXT. It sets the family tag on a card, the rule under the wordmark
  *   and the value in a settings row, all at the body size on the card's near-black fill. Contrast is
- *   measured the way WCAG defines it, against that fill rather than against the wave, because that is
- *   what the text actually sits on.
+ *   measured the way WCAG defines it, against that fill rather than against the wave.
  *
- *   AND THE YEAR HAS TO GO SOMEWHERE. The conceit is that somebody launching in October and again in
- *   July sees something they cannot name - a claim about the year having variety, not about any
- *   particular pair. Two earlier versions of this check were wrong in the same way, by asserting
- *   something the table deliberately does not do: consecutive months differing (December and January are
- *   both blue, because winter is), and opposite halves differing (January and July are eighteen degrees
- *   apart because the table calls July "high summer, and the COLDEST blue", which is the joke).
+ *   THE TWELVE COVER THE WHEEL. No two months are the same colour, and the largest gap left in the
+ *   ring of hues is not so wide that the year lives in one corner of it. The table deliberately does
+ *   NOT make consecutive months differ (December and January are both blue, because winter is) or
+ *   opposite halves differ (January and July are eighteen degrees apart because the table calls July
+ *   "high summer, and the COLDEST blue"), so neither is asserted.
  *
- *   What is actually claimed is that the twelve cover the wheel. So: no two months are the same colour,
- *   and the largest gap left in the ring of hues is not so wide that the year lives in one corner of it.
- *
- * WHAT THIS CANNOT DO is tell you the colours are NICE. Taste is not checkable and the table's own
- * comment says so. It can tell you they are dark, legible and distinct, which is every property the
- * design states in prose.
+ * WHAT THIS CANNOT DO is tell you the colours are NICE. It can tell you they are dark, legible and
+ * distinct, which is every property the design states in prose.
  */
 #include <stdio.h>
 #include <stdlib.h>

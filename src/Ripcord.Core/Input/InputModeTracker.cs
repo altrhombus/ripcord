@@ -17,30 +17,24 @@ public enum InputMode
 }
 
 /// <summary>
-/// Decides which input mode the app is in, and refuses to be jumpy about it.
+/// Decides which input mode the app is in, and keeps it stable: the hint bar's button prompts and the focus
+/// visuals follow it.
 ///
 /// <para>
-/// The interface adapts to this — an on-screen hint bar showing button prompts, focus visuals sized to be
-/// legible from a sofa. That adaptation is only worth having if it is stable, which is the entire reason this
-/// is a class with a rule rather than a field assigned by whichever handler fired last.
+/// <b>The rule is deliberately asymmetric.</b> Switching <em>to</em> Controller is immediate. Switching
+/// <em>away</em> from Controller needs a deliberate act — a click, a key, a touch, never mere pointer
+/// movement — and then a dwell before it takes effect, so a knocked mouse does not strip the prompts off a
+/// couch session.
 /// </para>
 ///
 /// <para>
-/// <b>The rule is deliberately asymmetric.</b> Switching <em>to</em> Controller is immediate: picking up a pad
-/// is unambiguous, and making someone wait for prompts they just asked for by pressing a button is exactly
-/// backwards. Switching <em>away</em> from Controller needs a deliberate act — a click, a key, a touch, never
-/// mere pointer movement — and then a dwell before it takes effect. A pad nudged on the sofa, a cat on the
-/// desk, or a mouse knocked while reaching for a drink must not strip the prompts off a couch session.
+/// Pointer <em>movement</em> never switches modes at all: it is the least intentional signal on a desktop — a
+/// window appearing under a stationary cursor generates it.
 /// </para>
 ///
 /// <para>
-/// Pointer <em>movement</em> never switches modes at all. It is the single most easily triggered signal on a
-/// desktop and the least intentional — a window appearing under a stationary cursor generates it.
-/// </para>
-///
-/// <para>
-/// Pure and clock-injected, following <see cref="ExitGestureDetector"/> and <see cref="NavIntentReader"/>: the
-/// dwell is testable rather than something to sit and watch.
+/// Pure and clock-injected, following <see cref="ExitGestureDetector"/> and <see cref="NavIntentReader"/>, so
+/// the dwell is testable.
 /// </para>
 /// </summary>
 public sealed class InputModeTracker

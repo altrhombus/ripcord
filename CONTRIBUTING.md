@@ -4,7 +4,7 @@ Thanks for wanting to help! Here's the quick version, then the details.
 
 ## Quick start
 
-1. **Open an issue first** for anything big, so we don't end up building the same thing twice.
+1. **Open an issue first** for anything big, so we don't build the same thing twice.
    [`ROADMAP.md`](ROADMAP.md) has what's planned, and [`docs/README.md`](docs/README.md) maps everything else.
 2. **Build it.** The Windows app needs Windows, the .NET 10 SDK and a C++ toolchain; the Rust engine, the C
    core and both .NET test suites build anywhere, Linux and macOS included. [`README.md`](README.md) has the
@@ -104,12 +104,11 @@ unflagged one found later puts every line around it under suspicion.
 ## 3. Practical bits
 
 - **Tests.** Keep both suites green and add coverage for what you change. Some tests read real captures held
-  outside the repository and skip themselves when they're missing. That's expected.
+  outside the repository and skip themselves when they're missing, which is expected.
 - **Never commit** captures, key material or vendor binaries. `docs/protocol/captures/` is gitignored and stays
   that way. The test is **generic versus personal**: anything tied to one console, account or session stays
   out. Two generic sets of values are committed on purpose (the v1 interop constants and the application OAuth
-  credential), and widening that needs [`NOTICE`](NOTICE) amended, so
-  raise it in an issue first.
+  credential), and widening that needs [`NOTICE`](NOTICE) amended, so raise it in an issue first.
 - **Leak-shaped test values are synthetic.** When you widen a detector, illustrate it with a made-up value,
   never a real one. `PublishedTreeSweepTests.cs` keeps a table of fixtures for exactly this.
 - **Strings go in the catalogue,** with three exceptions: exception messages for programmer error, the

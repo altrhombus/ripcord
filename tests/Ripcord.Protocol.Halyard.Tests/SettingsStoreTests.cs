@@ -74,7 +74,7 @@ public class SettingsStoreTests : IDisposable
         Assert.True(s.AdaptiveQuality);
         Assert.Equal(GpuPreference.Auto, s.GpuPreference);
 
-        // The overlay used to be on by default, printing stick coordinates over the game.
+        // The overlay is off by default: it prints stick coordinates over the game.
         Assert.False(s.ShowDiagnosticsOverlay);
 
         // There must always be a way out of a stream with a controller.
@@ -83,7 +83,7 @@ public class SettingsStoreTests : IDisposable
         // Unvalidated protocol writes must be opt-in, never on by default.
         Assert.False(s.ReportConnectionQuality);
 
-        // H.264 and SDR (the owner's decision, 2026-10-05): every PC decodes it. HEVC and HDR are a choice.
+        // H.264 and SDR: every PC decodes it. HEVC and HDR are a choice.
         Assert.Equal(VideoCodec.H264, s.Codec);
         Assert.False(s.RequestHdr);
         Assert.Equal(DynamicRange.Sdr, s.ToSessionConfig().RequestedDynamicRange);
@@ -183,7 +183,7 @@ public class SettingsStoreTests : IDisposable
     [Fact]
     public void ToSessionConfig_NeverReportsConnectionQuality_WhateverWasStored()
     {
-        // The switch was taken out of Settings (2026-10-02). An install that had turned it on must not keep sending.
+        // Settings has no switch for it, so an install whose stored record has it on must not keep sending.
         SessionConfig c = new RipcordSettings { ReportConnectionQuality = true }.ToSessionConfig();
 
         Assert.False(c.ReportConnectionQuality);

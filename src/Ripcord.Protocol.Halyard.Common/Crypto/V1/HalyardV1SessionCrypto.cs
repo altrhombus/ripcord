@@ -8,7 +8,7 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 /// (<see cref="HalyardStreamKeySchedule"/>, <see cref="HalyardPacketCrypto"/>) behind the session seam.
 ///
 /// The extracted interop constants (KDF tables, context keys) are injected via
-/// <see cref="HalyardControlSecrets"/> - supplied from the gitignored captures folder, never committed.
+/// <see cref="HalyardControlSecrets"/>; that type's remarks say where they are loaded from.
 /// </summary>
 public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
 {
@@ -100,8 +100,8 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
         if (!receive.VerifyPacket(layout.KeystreamOffset, packet, layout.TagOffset))
             return false;
 
-        // Decrypt the payload genuinely in place (AES-CTR is symmetric) — the previous form allocated a result
-        // buffer and copied it back, per packet.
+        // Decrypt the payload in place (AES-CTR is symmetric), so the receive path allocates no result buffer
+        // per packet.
         receive.CryptPayloadInPlace(layout.KeystreamOffset, packet[layout.PayloadOffset..]);
         return true;
     }
@@ -110,7 +110,7 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
     {
         var send = _send ?? throw new InvalidOperationException("Stream crypto not established.");
 
-        // Encrypt the payload in place, then MAC the whole (encrypted) packet and write the tag.
+        // Encrypt the payload and copy it back, then MAC the whole (encrypted) packet and write the tag.
         var encrypted = send.CryptPayload(layout.KeystreamOffset, packet[layout.PayloadOffset..]);
         encrypted.CopyTo(packet[layout.PayloadOffset..]);
 
@@ -167,11 +167,6 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
     // recomputed over cap48 (a full gameplay session whose stream keys were dumped in the same run), 300/300
     // loss reports reproduce their on-wire tag with tag+keystream_offset zeroed, and the tag-only A/V rule
     // matches none of them. So control and loss reports share a rule, and input is the odd one out.
-    //
-    // Worth keeping, because it cost a planned console trip: this was recorded as needing "a capture that
-    // reaches streaming with correlated keys", which cap48 had *already* been for days. The claim descended
-    // from a capture inventory written before cap48 existed and never revisited. Check the captures folder against
-    // the claim before believing a capture-blocked note.
     private const int LossReportTagOffset = 7;
     private const int LossReportKeystreamOffsetAt = 0xb;
     private const int LossReportLength = 15;
@@ -223,7 +218,7 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
 
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(InputKeystreamOffsetAt, 4), (uint)keystreamOffset);
 
-        // Encrypt the payload genuinely in place, then MAC the whole (encrypted) packet with only the tag zeroed.
+        // Encrypt the payload in place, then MAC the whole (encrypted) packet with only the tag zeroed.
         send.CryptPayloadInPlace(keystreamOffset, packet[payloadOffset..]);
         byte[] tag = send.ComputeTag(keystreamOffset, packet, InputTagOffset, zeroKeystreamOffset: false);
         tag.CopyTo(packet.Slice(InputTagOffset, HalyardPacketCrypto.TagLength));

@@ -16,10 +16,9 @@ namespace Ripcord.Protocol.Halyard.Transport;
 ///
 /// <para>
 /// <b>Shape.</b> Deliberately the same as <see cref="HalyardTcpControlChannel"/>: a byte pipe plus the two
-/// <c>TryParse</c> loops. Everything that knows about HTTP or control-frame framing already lives in
-/// <see cref="SessResponse"/> and <see cref="HalyardCtrlMessage"/>, and duplicating that knowledge here to
-/// suit a different transport is how two codecs drift apart. The only real difference is what fills the
-/// buffer.
+/// <c>TryParse</c> loops. Everything that knows about HTTP or control-frame framing lives in
+/// <see cref="SessResponse"/> and <see cref="HalyardCtrlMessage"/>; the only difference here is what fills
+/// the buffer.
 /// </para>
 ///
 /// <para>

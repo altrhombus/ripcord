@@ -164,7 +164,7 @@ internal static class HidInterop
         if (handle.IsInvalid)
         {
             handle.Dispose();
-            // Retry read-only: output access (needed later for haptics) may be denied while input isn't.
+            // Retry read-only: output access may be denied while input isn't.
             handle = CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
             if (handle.IsInvalid)
             {

@@ -8,9 +8,10 @@ namespace Ripcord.Protocol.Halyard.Transport;
 
 /// <summary>
 /// The direct-console control channel: sends the /sess request/response handshake and then carries
-/// RPCS frames. Two transports exist (docs/protocol/ps5-local-discovery.md): plain TCP for a
-/// directly-reachable LAN console (implemented here) and RUDP-over-UDP for cloud/relay paths (a
-/// later addition). The application-layer protocol is identical either way.
+/// the persistent binary control messages. Two transports exist (docs/protocol/ps5-local-discovery.md):
+/// plain TCP for a directly-reachable LAN console (<see cref="HalyardTcpControlChannel"/>) and the UDP
+/// 9303 association for the account route (<see cref="HalyardDatagramSessionControlChannel"/>). The
+/// application-layer protocol is identical either way.
 /// </summary>
 public interface IHalyardControlChannel : IAsyncDisposable
 {
@@ -27,7 +28,7 @@ public interface IHalyardControlChannel : IAsyncDisposable
 
 /// <summary>
 /// The v2 during-stream RPCS channel's raw frame I/O, over whatever connection carried <c>/sess/ctrl</c> (it
-/// stays open). Only the plain-TCP channel implements it today; the datagram (rendezvous) channels do not yet, so
+/// stays open). The plain-TCP channel implements it and the datagram (rendezvous) channels do not, so
 /// the session checks for it with <c>is IHalyardRpcsTransport</c>. Frames are the
 /// <see cref="HalyardRpcsChannel"/> wire form (<c>"RPCS"‖be32(len)‖ct‖tag16</c>); the GCM seal/open and the
 /// per-direction counters live in <see cref="HalyardRpcsChannel"/>, so this moves bytes only.

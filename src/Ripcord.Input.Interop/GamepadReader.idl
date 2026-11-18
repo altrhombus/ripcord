@@ -28,10 +28,10 @@ namespace Ripcord.Input.Interop
     {
         GamepadReader();
 
-        // One reading per connected gamepad, each read from its own device. This replaced GetLatestState, which
-        // asked GameInput for "the latest reading from ANY gamepad": with a DualSense attached, which reports
-        // continuously, an Xbox pad never produced a single press (measured 2026-08-06). Empty when no pad is
-        // connected or the GameInput runtime is unavailable.
+        // One reading per connected gamepad, each read from its own device. Asking GameInput for "the latest
+        // reading from ANY gamepad" starves the rest: with a DualSense attached, which reports continuously,
+        // an Xbox pad never produced a single press (measured 2026-08-06). Empty when no pad is connected or
+        // the GameInput runtime is unavailable.
         Windows.Foundation.Collections.IVectorView<GamepadState> GetConnectedStates();
 
         // Whether the GameInput runtime is installed and usable: creates it once and lets it go. False on a machine

@@ -4,10 +4,8 @@ namespace Ripcord.Diagnostics;
 /// A fixed-size rolling window of samples for one metric, plus the normalisation needed to plot it.
 ///
 /// <para>
-/// Exists because instantaneous readouts hide exactly the behaviour that matters most: a stream that alternates
-/// between "healthy" and "below target" several times a second shows up as a flickering verdict and a number
-/// that will not sit still, which tells you something is wrong but nothing about what. A short history makes
-/// oscillation, spikes and slow drift visually distinguishable.
+/// An instantaneous readout of a stream that alternates between "healthy" and "below target" several times a
+/// second is a flickering verdict; a short history makes oscillation, spikes and slow drift distinguishable.
 /// </para>
 ///
 /// <para>Pure and allocation-light: a preallocated ring, no per-sample allocation.</para>

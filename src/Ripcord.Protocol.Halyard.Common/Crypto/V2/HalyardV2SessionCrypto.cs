@@ -7,11 +7,10 @@ using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 
 /// <summary>
-/// The v2 (PS5) session crypto. A <b>seam-and-stub</b> at present (docs/architecture.md, "The crypto seam pattern": "Prefer this
-/// seam-and-stub shape for new unsolved work"): the shape is fixed and the design is captured, and the real
-/// transforms land phase by phase, each gated by the known-answer vectors in docs/protocol/captures
-/// (v2 spec §8). It is wired to nothing live until the control-plane and state machine are done,
-/// so v1 behaviour is unchanged.
+/// The session crypto for the v2 control plane (PS5), checked against the known-answer vectors in
+/// docs/protocol/captures (v2 spec, docs/protocol/ps5-v2-control-plane.md, §8). It implements both
+/// <see cref="IHalyardSessionCrypto"/> and <see cref="IHalyardV2ControlCrypto"/>;
+/// <see cref="HalyardV1SessionCrypto"/> does not depend on it.
 ///
 /// <para><b>What goes where.</b> v2 is a set of deltas on v1:</para>
 /// <list type="bullet">
@@ -19,37 +18,26 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V2;
 ///   <see cref="IHalyardV2ControlCrypto"/> (Path A) replaces v1's per-field CFB. The v1 field methods on
 ///   <see cref="IHalyardSessionCrypto"/> therefore throw here.</description></item>
 ///   <item><description><b>launchSpec</b> — still AES-128-OFB under the v1 control KDF (M = KDF(RP-Nonce,
-///   RP-Key)), counter 0, so <see cref="CryptStreaminfo"/> is reused (Phase 1).</description></item>
+///   RP-Key)), counter 0, so <see cref="CryptStreaminfo"/> is v1's field crypto.</description></item>
 ///   <item><description><b>Stream key agreement</b> — the v1 schedule with the per-session secret <c>X</c> in the
-///   <c>handshakeKey</c> role (<see cref="HalyardStreamKeySchedule"/>), so the agreement methods carry over
-///   (Phase 2, implemented here). <c>X</c> arrives as the <c>handshakeKey</c> argument exactly as v1's launchSpec
-///   X did.</description></item>
-///   <item><description><b>Per-packet</b> — v2 shifts the A/V header offsets (tag@18, keystream_offset@22, the caller's
-///   <see cref="HalyardPacketLayout"/>); the GMAC key rotation
+///   <c>handshakeKey</c> role (<see cref="HalyardStreamKeySchedule"/>), so the agreement methods are v1's.
+///   <c>X</c> arrives as the <c>handshakeKey</c> argument; this class does not derive it.</description></item>
+///   <item><description><b>Per-packet</b> — the GMAC key rotation
 ///   (<see cref="HalyardPacketCrypto.WindowOf"/>) and AES-CTR's little-endian block counter are v1's
-///   unchanged. So the per-packet methods reuse <see cref="HalyardPacketCrypto"/>
-///   (Phase 2, implemented here for the s2c A/V receive path + key agreement).</description></item>
+///   unchanged, so the per-packet methods reuse <see cref="HalyardPacketCrypto"/>. The v2 wire shifts the A/V
+///   header offsets (tag@18, keystream_offset@22); for A/V this class takes the offsets from the caller's
+///   <see cref="HalyardPacketLayout"/> and holds none of its own.</description></item>
 /// </list>
 ///
-/// <para><b>How <c>X</c> is produced — UNSOLVED (<c>[X]</c>), and the earlier "SOLVED = launchSpec handshakeKey"
-/// answer was WRONG.</b> Hardware disproved it (2026-10-22): on a live PS5 that reached SESSION_REPLY, the
-/// console's stream-pubkey signature is <b>not</b> <c>HMAC(launchSpecHandshakeKey, pubkey)</c> — nor HMAC of the
-/// RP-VerifyKey, K16, companion, sk8/sk9, or any derivation of the control ECDH secret Z we tried (~1400
-/// candidates). So the stream key is <b>console-side / derived, never the client-random launchSpec value</b>.
-/// Our own 8.5 captures + our own binary analysis (cross-referenced against our own 9.5 RE) point to the real
-/// mechanism: the stream uses a <b>single HMAC key bound to the control-plane secret Z</b> for BOTH the
-/// console-pubkey authentication (what we call the ecdhSignature) AND the per-direction stream KDF (with the
-/// stream ECDH secret <c>Z_stream</c> as the KDF message). That means the <c>handshakeKey</c>/<c>X</c> role here
-/// is mismodelled and the key/secret arguments to the stream KDF are likely swapped. The exact derivation of that
-/// HMAC key from Z is the open <c>[X]</c> — to pin by RE of our own 8.5 binary ("ECDH hmac key generation") and
-/// confirm on our own 8.5 wire. Until then the v2 stream plane does not establish against a real console.</para>
+/// <para><b>What <c>X</c> is — <c>[X]</c>.</b> The session passes the 16 client-random bytes it also writes into
+/// the launchSpec as <c>handshakeKey</c>, as v1 does. Whether a console signs with that value on this path is
+/// unconfirmed: on the hardware run that reached SESSION_REPLY (2026-10-22), the console's stream-pubkey
+/// signature was <b>not</b> <c>HMAC(launchSpecHandshakeKey, pubkey)</c> (v2 spec §5, §7).</para>
 ///
 /// <para>The c2s send-authentication methods (<c>SealControlMessage</c>/<c>SealLossReport</c>/
-/// <c>SealInputPacket</c>) are implemented (Phase 2): each is a v1 layout under the v1 client->console key,
-/// with the v2 per-format header offsets and the v2 GMAC window rule. They were confirmed byte-exact c2s against
-/// our own captures 003/004 (v2 spec §8; the known-answer fixtures stay with the private captures). The remaining v2 work is
-/// the live wiring (running the GCM control handshake and selecting this crypto in the session path), not the
-/// transforms.</para>
+/// <c>SealInputPacket</c>) are each a v1 layout under the v1 client->console key, with the v2 per-format header
+/// offsets. They were confirmed byte-exact c2s against our own captures 003/004 (v2 spec §8; the known-answer
+/// fixtures stay with the private captures).</para>
 /// </summary>
 public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2ControlCrypto, IDisposable
 {
@@ -60,8 +48,8 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private readonly HalyardControlKdf _kdf;
 
     // The launchSpec cipher is v1's unchanged: AES-128-OFB under M = KDF(RP-Nonce, RP-Key), IV keyed by the
-    // selectorOne context key. The v2 launchSpec differs from v1 only by counter 0 — it still carries the same
-    // client-random handshakeKey (it is NOT dropped; see the class remarks) — so v2 reuses the v1 field crypto.
+    // context key the material's selectors pick. The v2 launchSpec differs from v1 only by counter 0 — it
+    // carries the same client-random handshakeKey (see the class remarks) — so v2 reuses the v1 field crypto.
     private HalyardControlFieldCrypto? _field;
 
     // Path A (control plane). The purposes are the info-string's second byte: 0x09 client->console, 0x08 the
@@ -74,7 +62,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     private HalyardStreamKeySchedule.DirectionKeys? _skClientToConsole; // sk_9: AesKey = sk[0:16], BaseIv = sk[16:32]
     private HalyardStreamKeySchedule.DirectionKeys? _skConsoleToClient; // sk_8
 
-    // Stream plane (Phase 2): its own ephemeral ECDH, separate from the control plane's, and the per-direction
+    // Stream plane: its own ephemeral ECDH, separate from the control plane's, and the per-direction
     // packet crypto.
     private ECDiffieHellman? _streamEcdh;
     private HalyardPacketCrypto? _send;    // client -> console (input)
@@ -88,8 +76,8 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
 
     // ---- IHalyardSessionCrypto: control plane ----
 
-    // v2 does NOT field-encrypt the control plane; it uses the GCM envelope on IHalyardV2ControlCrypto. These
-    // are a deliberate not-supported, distinct from the phased "not implemented yet" below.
+    // v2 does NOT field-encrypt the control plane; it uses the GCM envelope on IHalyardV2ControlCrypto. The
+    // two field methods throw NotSupportedException with this message.
     private const string NoFieldCrypto =
         "v2 has no per-field control crypto; use the IHalyardV2ControlCrypto GCM envelope.";
 
@@ -114,16 +102,16 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         => throw new NotSupportedException(NoFieldCrypto);
 
     /// <summary>
-    /// Encrypt/decrypt the launchSpec config (AES-128-OFB), byte-identical to v1. v2 uses it at counter 0 (v1
-    /// used 5, after its five field-crypt headers), over the v1 template minus <c>handshakeKey</c>.
+    /// Encrypt/decrypt the launchSpec config (AES-128-OFB), byte-identical to v1. The caller passes the counter;
+    /// the session passes 0, over the v1 launchSpec template including its <c>handshakeKey</c>.
     /// </summary>
     public byte[] CryptStreaminfo(ulong counter, ReadOnlySpan<byte> data)
         => (_field ?? throw new InvalidOperationException("launchSpec crypto not established (call EstablishControl first)."))
             .StreaminfoCrypt(counter, data);
 
-    // ---- IHalyardSessionCrypto: stream key agreement (Phase 2) ----
+    // ---- IHalyardSessionCrypto: stream key agreement ----
     // Identical to v1: the stream ECDH + per-direction KDF (HalyardStreamKeySchedule), with X in the handshakeKey
-    // role. v2 differs from v1 only in the per-packet window rule below, so these carry over unchanged.
+    // role. These make the same calls HalyardV1SessionCrypto makes.
 
     public byte[] GenerateEphemeralPublicKey(int protocolVersion)
     {
@@ -134,10 +122,9 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         return publicKey;
     }
 
-    /// <summary><c>ecdhSignature = HMAC-SHA256(key, publicKey)</c>. The structure (HMAC over the pubkey) matched
-    /// our captured 003/004 vectors, but the <b>key</b> is <c>[X]</c>: on hardware the console does NOT sign with
-    /// the launchSpec <c>handshakeKey</c> this takes — see the class remarks. Verifying with that key fails against
-    /// a real console, so this call is correct in shape only until the real key (bound to Z) is derived.</summary>
+    /// <summary><c>ecdhSignature = HMAC-SHA256(handshakeKey, publicKey)</c>. The structure (HMAC over the pubkey)
+    /// matched our captured 003/004 vectors, but the <b>key</b> a console signs with on this path is <c>[X]</c>
+    /// — see the class remarks.</summary>
     public byte[] ComputeEcdhSignature(ReadOnlySpan<byte> handshakeKey, ReadOnlySpan<byte> publicKey)
         => HalyardStreamKeySchedule.ComputeEcdhSignature(handshakeKey, publicKey);
 
@@ -148,7 +135,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     /// Complete the stream key agreement. <paramref name="handshakeKey"/> is the per-session secret <c>X</c>
     /// (<see cref="HalyardV2SessionCrypto"/> class remarks): the caller supplies it; this class does not derive
     /// it. Per-direction keys follow the v1 schedule <c>HMAC(Z_stream, 01|dir|00|X|0100)</c>, dir 2 = c2s,
-    /// dir 3 = s2c — the packet crypto then applies the v2 window rule.
+    /// dir 3 = s2c. Returns false when the peer's public key is unusable.
     /// </summary>
     public bool TryEstablishStream(ReadOnlySpan<byte> peerPublicKey, ReadOnlySpan<byte> handshakeKey)
     {
@@ -174,10 +161,13 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
 
     public bool IsStreamEstablished => _send is not null && _receive is not null;
 
-    // ---- IHalyardSessionCrypto: per-packet stream crypto (Phase 2) ----
+    // ---- IHalyardSessionCrypto: per-packet stream crypto ----
 
-    /// <summary>Verify the 4-byte GMAC then AES-CTR-decrypt an incoming (s2c A/V) packet in place. The caller's
-    /// <paramref name="layout"/> carries the v2 offsets (A/V tag@18, keystream_offset@22, payload@26).</summary>
+    /// <summary>Verify the 4-byte GMAC then AES-CTR-decrypt an incoming (s2c A/V) packet in place, at the offsets
+    /// in the caller's <paramref name="layout"/>. The v2 A/V header puts the tag at 18 and the keystream offset
+    /// at 22 (v2 spec §8); <see cref="Streaming.HalyardStreamDemuxer"/> passes
+    /// <see cref="HalyardPacketLayout.Av"/>, whose tag offset is 10. Returns false before the stream is
+    /// established.</summary>
     public bool TryOpenPacket(Span<byte> packet, in HalyardPacketLayout layout)
     {
         var receive = _receive;
@@ -201,14 +191,14 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
         tag.CopyTo(packet.Slice(layout.TagOffset, HalyardPacketCrypto.TagLength));
     }
 
-    // ---- IHalyardSessionCrypto: c2s send-authentication (Phase 2) ----
+    // ---- IHalyardSessionCrypto: c2s send-authentication ----
     //
     // Each outgoing authenticated format is a v1 layout under the v1 client->console (dir-2) key held in _send,
-    // with two v2 deltas: _send already rotates the GMAC key on the v2 window rule, and the per-format header
-    // offsets shift. Confirmed byte-exact c2s over our captures 003/004 (v2 spec §8; 004 482/482,
-    // 003 287/287). The three formats:
+    // with one v2 delta: the per-format header offsets shift. The GMAC key rotation is v1's
+    // (HalyardPacketCrypto.WindowOf). Confirmed byte-exact c2s over our captures 003/004 (v2 spec §8;
+    // 004 482/482, 003 287/287). The three formats:
     //   * control DATA (base type 0x00): GMAC tag@5, keystream_offset@9; AAD zeroes tag+keystream_offset; payload NOT encrypted.
-    //     Same offsets as v1 control — only the GMAC window rule differs.
+    //     Same offsets and rule as v1 control.
     //   * loss report/RTT (base type 0x05): the v2/PS5 23-byte form (seq@1, 90 kHz ts@3), GMAC tag@15,
     //     keystream_offset@19; AAD zeroes tag+keystream_offset. v1/PS4 uses the 15-byte form at tag@7/keystream_offset@11 (V1-STREAM-AUDIT).
     //   * input (base type 0x06 state / 0x01 history): keystream_offset@12, GMAC tag@16, payload@20 (the caller's
@@ -269,7 +259,7 @@ public sealed class HalyardV2SessionCrypto : IHalyardSessionCrypto, IHalyardV2Co
     }
 
     // Reserve a keystream offset, advancing the shared counter by the packet's 16-byte-aligned length so distinct
-    // formats sealed from different threads never collide on a (key, nonce) — the v1 rule.
+    // formats sealed from different threads never collide on a (key, nonce) — as HalyardV1SessionCrypto does.
     private ulong ReserveKeystreamOffset(int packetLength)
     {
         int aligned = packetLength + (HalyardPacketCrypto.BlockSize - packetLength % HalyardPacketCrypto.BlockSize) % HalyardPacketCrypto.BlockSize;

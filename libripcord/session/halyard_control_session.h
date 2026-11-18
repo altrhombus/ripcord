@@ -1,27 +1,21 @@
 /*
- * ripcord-3ds - the control-plane session, as a reusable object.
+ * libripcord - the control-plane session, as a reusable object.
  *
- * This is the orchestration that source/session/main.c proved against a real PS5 on 2026-08-12 (arm ->
- * /sess/init -> /sess/ctrl -> the persistent binary channel), lifted out so the connect flow in
- * source/connect/ can run the same sequence and then keep going into the stream plane.
- *
- * WHY EXTRACT RATHER THAN COPY. This sequence is the only part of the port with hardware evidence behind
- * it. A second hand-maintained copy would drift from the validated one silently, and the drift would
- * only ever show up as a console rejecting a session for no visible reason. source/session/main.c
- * remains the known-good reference program; if it and source/connect/ ever disagree about the control
- * plane, that one is right.
+ * The orchestration arm -> /sess/init -> /sess/ctrl -> the persistent binary channel, as one object, so
+ * a connect flow (libripcord/client, or a port's own) can run the sequence and then keep going into the
+ * stream plane. The same sequence, written out in ports/ripcord-3ds/source/session/main.c, ran against
+ * a real PS5 on 2026-08-12.
  *
  * SINGLE-THREADED AND NON-BLOCKING BY DESIGN. Everything here polls: the socket is non-blocking from the
- * moment it connects, and service() does at most one unit of work per call. That is what lets one thread
- * hold this channel open - answering HEARTBEAT_REQ, which a console requires or it resets the session
- * ~15-30 s in - while simultaneously driving the UDP senkusha/Takion work that follows. The 3DS has no
- * spare core to put a blocking read on, and this port creates no threads anywhere.
+ * moment it connects, and service() does at most one unit of work per call. That lets one thread hold
+ * this channel open - answering HEARTBEAT_REQ, which a console requires or it resets the session
+ * ~15-30 s in - while driving the UDP senkusha/Takion work that follows. Nothing here creates a thread.
  *
- * THE COUNTER IS THE SUBTLE PART. The control-field cipher runs one counter per CONNECTION, not per
- * field or per message type: the five /sess/ctrl headers consume 0-4 (halyard_sess_fields.h), and
- * anything encrypted later on this same connection - a login passcode, the launch spec - continues from
- * `next_counter` below. Restarting it reuses an IV, which is a real key-recovery bug and looks like
- * nothing at all on the wire. Take the value from here; never hardcode one.
+ * THE COUNTER. The control-field cipher runs one counter per CONNECTION, not per field or per message
+ * type: the five /sess/ctrl headers consume 0-4 (halyard_sess_fields.h), and anything encrypted later
+ * on this same connection - a login passcode, the launch spec - continues from `next_counter` below.
+ * Restarting it reuses an IV, a key-recovery bug that shows nothing on the wire. Take the value from
+ * here; never hardcode one.
  */
 #ifndef HALYARD_CONTROL_SESSION_H
 #define HALYARD_CONTROL_SESSION_H
@@ -39,7 +33,7 @@
  *
  * Every payload-carrying frame SPENDS a counter whether or not this decrypts it - the console's sequence
  * does not care what we can hold - so a payload larger than this advances the counter and arrives with
- * plaintext_length 0 rather than desynchronising everything after it. The frames anyone reads today are
+ * plaintext_length 0 rather than desynchronising everything after it. The frames the callers read are
  * far smaller than this: the login verdict is one byte.
  */
 #define HALYARD_CONTROL_PLAINTEXT_MAX 256
@@ -50,14 +44,12 @@
 /*
  * THE BYTE PIPE: what the control session asks of the transport underneath it, and nothing else.
  *
- * WHY A SEAM, AND WHY THIS NARROW. A LAN console serves /sess/init, /sess/ctrl and the binary frames on
- * TCP 9295. A console reached through the cloud rendezvous serves the same three things over the UDP 9303
- * association (halyard_dgram_channel.h) and refuses 9295 with a generic 403. Everything that knows about
- * HTTP, the frame format and the counters is identical on both, and lives in this file; the only thing
- * that differs is what fills the buffer. So the seam is a byte pipe - the same cut the .NET side made with
- * IHalyardControlChannel and its two implementations, HalyardTcpControlChannel and
- * HalyardDatagramSessionControlChannel - and duplicating the HTTP or frame knowledge per transport is how
- * two codecs would drift apart.
+ * A LAN console serves /sess/init, /sess/ctrl and the binary frames on TCP 9295. A console reached
+ * through the cloud rendezvous serves the same three things over the UDP 9303 association
+ * (halyard_dgram_channel.h) and refuses 9295 with a generic 403. HTTP, the frame format and the counters
+ * are identical on both and live in this file; only what fills the buffer differs. This is the cut the
+ * .NET side makes with IHalyardControlChannel (HalyardTcpControlChannel and
+ * HalyardDatagramSessionControlChannel).
  *
  *   open      ONE REQUEST CONNECTION. /sess/init and /sess/ctrl each get a fresh one (init is served
  *             Connection: close). TCP: a connect to host:port, made non-blocking. Datagram: a fresh chunk
@@ -73,9 +65,8 @@
  *             sessions until it is rebooted (HalyardDatagramSessionControlChannel.DisposeAsync).
  *   name      for log lines only ("TCP", "datagram").
  *
- * The TCP pipe below is not a new implementation: its four functions are the four call sites this file
- * always had (rc_tcp_connect + rc_socket_set_nonblocking, rc_tcp_send_all, rc_tcp_recv, close), moved
- * behind the pointer unchanged, so the LAN path's syscalls are the same in the same order.
+ * The TCP pipe below wraps rc_tcp_connect + rc_socket_set_nonblocking, rc_tcp_send_all, rc_tcp_recv and
+ * close.
  */
 typedef struct {
     const char *name;
@@ -103,8 +94,8 @@ extern const halyard_control_pipe halyard_control_pipe_tcp;
  *   connection_path      RP-ConPath: 1 LOCAL, 3 RENDEZVOUS ([W] both seen on the wire; 2 unclaimed). The
  *                        console runs a different A/V bring-up for each, so this is not decoration.
  *   host_header          .NET's HostHeader(): the address right-aligned in three columns with the port
- *                        (halyard_dgram_host_header). A LAN console accepts the plain form this file has
- *                        always sent, so the TCP path keeps it.
+ *                        (halyard_dgram_host_header). A LAN console accepts the plain form, the
+ *                        record's host as written, so the TCP path sends that.
  *   init_version_header  .NET sends "Rp-Version" on /sess/init (as the captured client does) and
  *                        "RP-Version" on /sess/ctrl. The TCP path's "RP-Version" is hardware-validated and
  *                        stays; the datagram route follows the capture.
@@ -172,32 +163,26 @@ typedef struct {
     /*
      * TCP receive activity, to separate "the console sent nothing" from "we failed to read it".
      *
-     * Those look identical from outside and want opposite fixes. Hardware shows A/V flowing normally
-     * while the TCP control channel goes silent for exactly ~38 s and is then closed - so either the
-     * console stopped writing to a socket it was still reading, or we stopped draining one it was still
-     * writing to. Counting the reads and the bytes settles it.
+     * Hardware shows A/V flowing normally while the TCP control channel goes silent for ~38 s and is
+     * then closed: either the console stopped writing, or we stopped draining. These counts tell which.
      */
     long recv_calls;
     long recv_bytes;
     long recv_would_block;
 
     /* Control-frame resynchronisations, and how many bytes they threw away. Should be zero; a non-zero
-     * count means the desync described in the .c is still happening and has merely been survived. */
+     * count means the desync described in the .c happened and was survived. */
     long resyncs;
     long resync_discarded;             /* set once SESSION_ID has been seen */
 
     /*
      * THE LAST FEW FRAMES PARSED, so a resync can name what preceded it.
      *
-     * An 80-minute session resynced 14 times and discarded EXACTLY 8 bytes each time - never 7, never 9.
-     * A constant is a field, not corruption: some message's real length exceeds its declared length by
-     * one header's worth, and the next frame starts 8 bytes late. Which message is the whole question,
-     * and it is answerable without a packet capture, because the culprit is simply whatever we parsed
-     * immediately before. Recording a few frames of history rather than one gives the surrounding
-     * sequence too - a rare message type is only suspicious if it is rare in the same way each time.
+     * An 80-minute session resynced 14 times and discarded exactly 8 bytes each time, so some message's
+     * real length exceeds its declared length by one header's worth, and the culprit is whatever was
+     * parsed immediately before. A few frames of history give the surrounding sequence too.
      *
-     * Newest at index 0. Kept small: this sits in a struct the session owns, and 4 entries is enough to
-     * see a pattern in 14 samples.
+     * Newest at index 0.
      */
     struct {
         unsigned type;
@@ -209,8 +194,8 @@ typedef struct {
     size_t buffered;
 
     /* The transport `sock` belongs to - see halyard_control_pipe. Set by open; NULL reads as TCP, so a
-     * session some older caller zeroed by hand behaves as it always did. Last, so the fields above keep
-     * their offsets. */
+     * session a caller zeroed by hand uses the TCP pipe. Last, so the fields above keep their
+     * offsets. */
     const halyard_control_pipe *pipe;
 } halyard_control_session;
 
@@ -246,25 +231,21 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
  * ANSWER THE SIGN-IN GATE: encrypt `pin` as a control field and send it as TYPE_LOGIN_SUBMIT.
  *
  * A console whose account is locked sends TYPE_LOGIN_PROMPT and then, per halyard_ctrl_message.h,
- * "silently drops every stream handshake" until this is answered. Nothing about that is visible except a
- * session that opens, stays healthy, and never reaches SESSION_ID - which is precisely the state
- * ports/ripcord-ps3 reached against a real console, and could not distinguish from a slow one.
+ * "silently drops every stream handshake" until this is answered: the session opens, stays healthy,
+ * and never reaches SESSION_ID.
  *
  * PORTED FROM THE REFERENCE, NOT FROM ANOTHER PORT. src/Ripcord.Protocol.Halyard/Session/
- * HalyardStreamingSession.cs is what this follows; ports/ripcord-3ds treats the prompt as fatal, which
- * is that port's limitation rather than the protocol's.
+ * HalyardStreamingSession.cs is what this follows. A port may still treat the prompt as fatal; that is
+ * the port's choice rather than the protocol's.
  *
- * THE COUNTER ADVANCES ON EVERY CALL, INCLUDING RETRIES, and that is the part to be careful with. It is
- * one running per-connection value: the five /sess/ctrl headers consumed 0-4, so the first submit is 5,
- * and the reference is explicit that "each retry MUST advance it - a fresh IV per submit, never reused".
- * Reusing a counter reuses an IV under the same key, which is a real key-recovery bug and looks like
- * nothing at all on the wire. This function takes the value from the session and advances it there; no
- * caller should be passing one in.
+ * THE COUNTER ADVANCES ON EVERY CALL, INCLUDING RETRIES. It is one running per-connection value: the
+ * five /sess/ctrl headers consumed 0-4, so the first submit is 5, and the reference is explicit that
+ * "each retry MUST advance it - a fresh IV per submit, never reused". This function takes the value
+ * from the session and advances it there; no caller passes one in.
  *
- * The caller is expected to be watching for the console's answer already - TYPE_LOGIN carries its
- * verdict and SESSION_ID means outright success. The reference arms that wait BEFORE submitting,
- * because on a LAN the console replies in milliseconds and a result that arrives while the listener is
- * still being set up is simply lost.
+ * The caller should already be watching for the console's answer - TYPE_LOGIN carries its verdict and
+ * SESSION_ID means outright success. On a LAN the console replies in milliseconds, so the reference
+ * arms that wait BEFORE submitting.
  *
  * `pin` is ASCII digits. Returns 1 if the frame was sent, 0 on a bad passcode, a session without
  * established control crypto, or a send failure.

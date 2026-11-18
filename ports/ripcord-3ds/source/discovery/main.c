@@ -1,13 +1,13 @@
 /*
- * ripcord-3ds - Phase 3 LAN discovery, on-device.
+ * ripcord-3ds - LAN discovery, on-device.
  *
  * Broadcasts the SRCH probe for both console families (halyard_discovery.h) and lists every distinct
  * console - deduplicated by host-id - that answers within a fixed search window. Four seconds, the same
- * generous window the .NET side's own pairing UI settled on, because a resting console answers slowly.
+ * generous window the .NET side's own pairing UI uses, because a resting console answers slowly.
  *
- * This is Phase 3's on-device half. tests/discovery_test.c already checks the parser without hardware,
- * against hand-transcribed examples from docs/protocol/ps5-local-discovery.md; only a real broadcast on
- * a real LAN proves the wire format still matches an actual console rather than just those examples.
+ * libripcord/tests/discovery_test.c checks the parser without hardware, against hand-transcribed
+ * examples from docs/protocol/ps5-local-discovery.md. This program puts a real broadcast on a real LAN,
+ * which is what shows the wire format matches an actual console rather than just those examples.
  */
 #include "../net/rc_soc.h"
 #include "util/rc_log.h"
@@ -72,19 +72,15 @@ static int run_search(void)
     }
 
     /*
-     * A FIXED local port, and NOT the ephemeral port 0 that the obvious port of this code would use.
-     *
-     * The .NET side binds IPAddress.Any:0 here (HalyardControlSearch) and is right to - on Windows and
-     * Linux the stack picks a free port and everything works. On the 3DS it does not: SOC rejects a zero
-     * port outright with EINVAL. Confirmed on real hardware 2026-08-12, where this call failed with
-     * errno 22 for both an awake and a resting console, while source/linktest/main.c's otherwise
-     * identical bind to a nonzero port had already been working on the same device since Phase 2. That
-     * differential is what identified it: same socket type, same INADDR_ANY, same addrlen - only the
-     * port differed.
+     * A FIXED local port, and NOT the ephemeral port 0: SOC rejects a zero port outright with EINVAL.
+     * Confirmed on real hardware 2026-08-12, where this call failed with errno 22 for both an awake and
+     * a resting console, while source/linktest/main.c's otherwise identical bind to a nonzero port
+     * worked on the same device. (The .NET side binds IPAddress.Any:0 here, HalyardControlSearch, and is
+     * right to on Windows and Linux.)
      *
      * Any port will do, because a console answers SRCH to whatever source port the probe arrived from.
-     * "Let the stack choose" is the single option unavailable. The small range exists so that a port
-     * left occupied by a previous run is a retry rather than a second trip to the console.
+     * The small range exists so that a port left occupied by a previous run is a retry rather than a
+     * second trip to the console.
      */
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_family = AF_INET;

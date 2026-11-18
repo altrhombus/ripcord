@@ -6,19 +6,15 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// <summary>
 /// The video FEC math: GF(2^8) field laws and systematic Cauchy Reed-Solomon round-trips.
 ///
-/// <para><b>Scope — these are self-consistency tests, not ground truth.</b> They prove our decoder inverts
-/// our encoder. They cannot prove either matches the console, because no capture in the captures folder pairs A/V
-/// traffic with usable stream keys (the one session with keys never reached streaming), so there is no
-/// console-produced parity unit to compare against. The earlier version of this comment claimed these
-/// validated "exactly what the console's encoder produced" — they never did, and that wording is the reason
-/// the matrix form went unexamined for so long.</para>
+/// <para><b>Scope — the round-trip tests are self-consistency tests, not ground truth.</b> They prove our
+/// decoder inverts our encoder, over synthetic frames. Recovery from parity the console itself produced is
+/// <see cref="FecRealFrameRecoveryTests"/>, which needs a private fixture.</para>
 ///
-/// <para>What backs the console-agreement claim instead is first-party analysis of our own client, on both
-/// halves that had to agree: the matrix form is [C]-confirmed by decompilation (see
-/// <see cref="CauchyReedSolomon"/>), and as of 2026-08-02 the field it is built over is [V]-confirmed by a
-/// runtime dump of the client's inverse table (<see cref="GaloisField256_MatchesConsoleInverseTable"/>).
-/// Those were only ever safe as a pair. Round-trip coverage below is still self-consistency, but it now runs
-/// over a field and a matrix that are both pinned to the console.</para>
+/// <para>What ties these tests to the console is first-party analysis of our own client, on both halves that
+/// had to agree: the matrix form is [C]-confirmed by decompilation (see <see cref="CauchyReedSolomon"/>), and
+/// the field it is built over is [V]-confirmed by a runtime dump of the client's inverse table on 2026-08-02
+/// (<see cref="GaloisField256_MatchesConsoleInverseTable"/>). The round-trips run over that field and that
+/// matrix.</para>
 /// </summary>
 public class FecTests
 {

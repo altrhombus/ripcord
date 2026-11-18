@@ -14,22 +14,19 @@ namespace Ripcord_App.Controls;
 ///
 /// <para>
 /// <b>It knows nothing about pages.</b> It draws whatever the top input scope declares, so a new surface gets
-/// correct prompts by declaring them where it already declares its focus root — and "who owns the pad" and
-/// "what the pad does" cannot drift apart, because they are the same object. The bar subscribes to the scope
-/// stack and to the input mode, and has no other inputs.
+/// correct prompts by declaring them where it already declares its focus root. The bar subscribes to the
+/// scope stack and to the input mode, and has no other inputs.
 /// </para>
 ///
 /// <para>
 /// <b>Visible in Controller mode, mostly absent otherwise</b>, which is the whole reason the mode tracker has
 /// hysteresis. On a pad the prompts are the only way to discover what the buttons do. With a mouse or a finger
-/// every action already corresponds to a visible control, so the bar would be a strip of noise restating it.
-/// A keyboard sits between: it shows only the prompts carrying a key label, which are by definition the ones
-/// nobody would guess — Enter and Escape do not need announcing.
+/// every action already corresponds to a visible control. A keyboard sits between: it shows only the prompts
+/// carrying a key label — Enter and Escape do not need announcing.
 /// </para>
 ///
 /// <para>
-/// Never a focus target. It describes what the buttons do; landing on it would be focus disappearing into
-/// something that cannot be activated, which is exactly the bug the title bar had.
+/// Never a focus target: it describes what the buttons do and cannot be activated.
 /// </para>
 /// </summary>
 public sealed class InputHintBar : ContentControl
@@ -99,10 +96,9 @@ public sealed class InputHintBar : ContentControl
     /// Whether a pad is attached at all, which decides whether a keyboard user is shown anything.
     ///
     /// <para>
-    /// <b>Because the bar was appearing and vanishing on a desk with no controller on it.</b> In Keyboard
-    /// mode it offers the one prompt a keyboard user might not know — the Menu key for a context menu — and
-    /// the input mode follows whichever device was touched last. So alternating between keyboard and mouse
-    /// made the bar flicker, for a hint about a key, to somebody who had no pad and never would.
+    /// In Keyboard mode the bar offers the one prompt a keyboard user might not know — the Menu key for a
+    /// context menu — and the input mode follows whichever device was touched last, so with no pad attached,
+    /// alternating between keyboard and mouse made the bar flicker.
     /// </para>
     ///
     /// <para>

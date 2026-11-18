@@ -55,23 +55,20 @@ public sealed record ConnectPlan(SessionConfig Config, StreamingRoute Route, str
 /// <see langword="null"/> when it cannot — in which case the last stage reported was terminal and says why.
 ///
 /// <para>
-/// <b>Why this is not in the page.</b> It lived in <c>SessionPage.xaml.cs</c> with its stage strings inline
-/// in English, which made the longest-running, most-watched surface in the app the one piece of the session
-/// lifecycle that could not be tested off-device or translated. Nothing here touches a GPU or a native
-/// handle: the one part that does is behind <see cref="IVideoPipelinePreparer"/>.
+/// Portable and testable off-device: nothing here touches a GPU or a native handle, and the one part that
+/// does is behind <see cref="IVideoPipelinePreparer"/>.
 /// </para>
 ///
 /// <para>
 /// <b>Each phase announces itself BEFORE it runs</b>, so when one hangs, the last message on screen names it.
-/// Video device creation especially — it is a plausible place to stall on unfamiliar hardware, and it used to
-/// be indistinguishable from a network problem because the overlay said "Connecting…" throughout.
+/// Video device creation especially: it is a plausible place to stall on unfamiliar hardware, and must not
+/// be indistinguishable from a network problem.
 /// </para>
 ///
 /// <para>
 /// <b>What this deliberately does not do:</b> build the session controller, own the power monitor, or start
 /// the stream. Those need the pipeline, the input stack and a platform power source — devices, all of them —
-/// so the caller does that with the plan this returns. The split is the same one the architecture rules draw:
-/// a device gets a seam, data is passed as a value.
+/// so the caller does that with the plan this returns.
 /// </para>
 /// </summary>
 public sealed class ConnectFlow
@@ -123,8 +120,8 @@ public sealed class ConnectFlow
         // Before the decoder is built for it: HEVC is a choice in Settings, and not every PC can decode it.
         //
         // Awaited on the caller's context, unlike the awaits below. The video pipeline is prepared next, and that
-        // builds XAML, which only the UI thread may touch; the check answers on a worker, and resuming there failed
-        // every connect with RPC_E_WRONG_THREAD (2026-10-05).
+        // builds XAML, which only the UI thread may touch; the check answers on a worker, and resuming there fails
+        // every connect with RPC_E_WRONG_THREAD.
         string? codecNote = null;
         if (config.CodecPreference == VideoCodec.Hevc)
         {
@@ -163,9 +160,9 @@ public sealed class ConnectFlow
         }
 
         // HDR is asked of the console when it will reach the panel, or when Ripcord can tone-map it for an SDR one.
-        // Asking for SDR instead was the answer while only the GPU driver could tone-map (every vendor's differed,
-        // 2026-10-01), but the console's own SDR stream clips its highlights when its HDR is on (2026-10-02), so the
-        // HDR stream, tone-mapped by Ripcord, is the better picture. SDR only where neither is possible.
+        // The GPU driver's own tone-map differs by vendor (2026-10-01), and the console's own SDR stream clips its
+        // highlights when its HDR is on (2026-10-02), so the HDR stream, tone-mapped by Ripcord, is the better
+        // picture. SDR only where neither is possible.
         if (config.RequestedDynamicRange == DynamicRange.Hdr && !prepared.CanPresentHdr && !prepared.CanToneMapHdr)
         {
             config = config with { RequestedDynamicRange = DynamicRange.Sdr };
@@ -174,8 +171,8 @@ public sealed class ConnectFlow
         Report(stages, Strings.Connect_CheckingCredentialsHeadline, Strings.Connect_CheckingCredentialsDetail, terminal: false, ConnectPhase.Preparing);
 
         // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
-        // the handshake can never complete. This used to be noted in the diagnostics panel and the connect was
-        // attempted anyway, leaving "Connecting…" on screen indefinitely with no stated cause.
+        // the handshake can never complete. Attempting the connect anyway would leave "Connecting…" on screen
+        // indefinitely with no stated cause.
         StreamingAvailability streaming = _sessions.Availability;
         if (!streaming.Available)
         {
@@ -202,8 +199,8 @@ public sealed class ConnectFlow
         }
         catch (Exception ex)
         {
-            // Said, not thrown: this runs fire-and-forget from the page, so an escape left "Connecting" on screen
-            // with nothing to say why (review, 2026-10-05).
+            // Said, not thrown: this runs fire-and-forget from the page, so an escape would leave "Connecting" on
+            // screen with nothing to say why.
             ReportFailure(stages, Strings.Session_CouldNotConnect, ex, ConnectPhase.Connecting);
             return null;
         }

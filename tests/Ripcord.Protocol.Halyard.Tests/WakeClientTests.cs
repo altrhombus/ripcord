@@ -27,8 +27,8 @@ public class WakeClientTests
     }
 
     [Theory]
-    // Signed, per ps5-local-discovery.md: the PS4 captures carry a negative credential. This test asserted
-    // the unsigned form until 2026-09-26, which is right for every key below 0x80000000 and wrong for the rest.
+    // Signed, per ps5-local-discovery.md: the PS4 captures carry a negative credential. The unsigned form
+    // is right for every key below 0x80000000 and wrong for the rest.
     [InlineData("ffffffff", "-1")]
     [InlineData("80000000", "-2147483648")]
     [InlineData("7fffffff", "2147483647")]

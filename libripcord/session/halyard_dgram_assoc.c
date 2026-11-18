@@ -1,20 +1,18 @@
 /*
  * libripcord - the 9303 control association: a state machine with no I/O.
  *
- * Ported from src/Ripcord.Protocol.Halyard.Common/Control/HalyardControlAssociation.cs, which remains
- * the reference and carries the full reasoning behind each rule; the comments here keep enough of it
- * that a reader of this file alone does not "fix" a rule the wire forced. Feed it a datagram, and it
- * calls back with the datagrams to send and the events that occurred.
+ * Ported from src/Ripcord.Protocol.Halyard.Common/Control/HalyardControlAssociation.cs, which is
+ * the reference and carries the full reasoning behind each rule. Feed it a datagram, and it calls back
+ * with the datagrams to send and the events that occurred.
  *
- * WHY A PEER ASSOCIATION AND NOT A CLIENT. On a WAN path the client opens the prelude to punch out
- * through NAT; on a shared LAN the console may open it as soon as signaling hands it our candidate. Both
- * sides echo, and either may open a chunk connection. Encoding a role would make every new observation a
- * restructuring, so neither role is a mode here - it is simply what arrives.
+ * A PEER ASSOCIATION, NOT A CLIENT. On a WAN path the client opens the prelude to punch out through
+ * NAT; on a shared LAN the console may open it as soon as signaling hands it our candidate. Both sides
+ * echo, and either may open a chunk connection, so neither role is a mode here.
  *
  * RANDOMNESS ORDER IS PART OF THE PORT. Every branch draws its random bytes in the same order and sizes
  * as the .NET type (a 2-byte tag half then a 4-byte token; a 2-byte sequence then a 4-byte connection
- * tag; ...). That is what lets tests/dgram_test.c replay the .NET association's own transcript with the
- * same counting source and compare every emitted byte. Where C must draw before mutating state - so an
+ * tag; ...), so tests/dgram_test.c can replay the .NET association's own transcript with the same
+ * counting source and compare every emitted byte. Where C must draw before mutating state - so an
  * entropy failure leaves the association untouched, which .NET's infallible source never needed - the
  * draws are hoisted but their order is kept.
  */
@@ -102,8 +100,8 @@ static void emit_simple(halyard_dgram_assoc *assoc, halyard_dgram_event_kind kin
 }
 
 /*
- * Reported, never dropped: the first live runs of this transport could only say "the console sent
- * nothing", which said nothing about what it HAD sent.
+ * Reported, never dropped: a run that can only say "the console sent nothing" says nothing about
+ * what it HAD sent.
  */
 static void emit_unhandled(halyard_dgram_assoc *assoc, const char *reason, const uint8_t *datagram,
                            size_t length, uint8_t chunk_type)
@@ -390,8 +388,8 @@ halyard_dgram_status halyard_dgram_assoc_send(halyard_dgram_assoc *assoc, const 
         memcpy(data + 10, payload, length);
 
     /*
-     * Each payload gets its own sequence. Without this the console took the first payload on a connection
-     * and discarded every later one as a duplicate - invisible to request/response, which sends once per
+     * Each payload gets its own sequence. Without this the console takes the first payload on a connection
+     * and discards every later one as a duplicate - invisible to request/response, which sends once per
      * connection, and fatal to the persistent control channel that follows.
      */
     assoc->sequence++;
@@ -543,7 +541,7 @@ static halyard_dgram_status on_chunk(halyard_dgram_assoc *assoc, const halyard_d
 
     case HALYARD_DGRAM_CHUNK_ACK:
     case HALYARD_DGRAM_CHUNK_ACK_EXTENDED:
-        /* Nothing is retransmitted at this layer yet, so an acknowledgement is only information. */
+        /* This layer retransmits nothing, so an acknowledgement is only information. */
         return HALYARD_DGRAM_OK;
 
     case HALYARD_DGRAM_CHUNK_CLOSE:

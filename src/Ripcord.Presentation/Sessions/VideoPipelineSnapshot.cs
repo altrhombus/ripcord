@@ -4,11 +4,9 @@ namespace Ripcord.Presentation.Sessions;
 /// Everything the diagnostics readout needs to know about the decode pipeline, as plain data.
 ///
 /// <para>
-/// This mirrors <c>Ripcord.Media.PipelineStats</c> field for field, and the duplication is deliberate rather
-/// than an oversight. <c>PipelineStats</c> is already nothing but numbers and strings — but it lives in
-/// <c>Ripcord.Media</c>, which targets <c>net10.0-windows</c> and carries the WinRT projections for the native
-/// D3D12 interop. Referencing it here would drag that whole graph into the portable layer and fail
-/// <c>PresentationPortabilityTests</c> on the spot, for the sake of avoiding one mapping function.
+/// Mirrors <c>Ripcord.Media.PipelineStats</c> field for field, deliberately: <c>Ripcord.Media</c> targets
+/// <c>net10.0-windows</c> and carries the WinRT projections for the native D3D12 interop, so referencing it
+/// here would drag that whole graph into the portable layer and fail <c>PresentationPortabilityTests</c>.
 /// </para>
 ///
 /// <para>

@@ -83,7 +83,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         // Whether the display the window is on can accept HDR10. Probed at device creation and again by
         // RefreshPresentingDisplay when the window changes monitor. A user toggling "Use HDR" without moving
-        // the window is still not noticed mid-session.
+        // the window is not noticed mid-session.
         void ProbeDisplayHdr(IDXGIFactory1* factory);
         void EnsureFrameTexture(uint32_t width, uint32_t height);
         void UploadFrameTexture(const uint8_t* bgra, uint32_t width, uint32_t height);
@@ -92,7 +92,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Full pipeline drain. Correct for resize/teardown/resource recreation ONLY — never per frame.
         void WaitForGpu();
 
-        // Per-frame bracket replacing the old "Present then WaitForGpu" pattern. BeginFrame throttles on the
+        // Per-frame bracket, in place of a "Present then WaitForGpu" pattern. BeginFrame throttles on the
         // swap chain's frame-latency waitable object, waits for only THIS slot's prior GPU work to retire (the
         // other frames stay in flight), and resets that slot's allocator. EndFrame submits, presents, and
         // records the slot's completion fence value. Together they let CPU and GPU overlap instead of running
@@ -100,7 +100,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t BeginFrame();
         void EndFrame(uint32_t frameIndex);
 
-        // Layer 3 decode (Media Foundation decoder MFT, DXVA-accelerated when possible).
+        // Decode (Media Foundation decoder MFT, DXVA-accelerated when possible).
         void EnsureDecoder();
         bool TryEnableHardwareDecode();         // stand up a D3D11 device manager so the MFT decodes on the GPU
         bool CreateDecoderForCodec(VideoCodecKind codec);  // pick a SYNC decoder MFT for the codec (see the .cpp)
@@ -109,7 +109,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         bool TryGeometryFromSample(IMFSample* produced); // measure the decoded surface when the type says nothing
         void DrainDecoderToLatest();            // pull out decoded frames, retain the newest NV12 (no present)
 
-        // GPU NV12->RGB present path (the live video path): two planar textures (Y = R8, UV = R8G8)
+        // GPU NV12->RGB present path (the CPU-readback path): two planar textures (Y = R8, UV = R8G8)
         // sampled and colour-converted in the pixel shader, so no CPU conversion per frame.
         void CreateNv12Pipeline();
         void CreateUpscalePipeline();           // final-present pipeline with a selectable spatial filter
@@ -133,8 +133,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             uint32_t height);
         void PresentNv12Latest();               // draw the retained (CPU-uploaded) NV12 frame via the GPU shader
 
-        // Zero-copy path: keep the DXVA-decoded NV12 on the GPU. The D3D11 decode device copies the decoder's
-        // output texture into a texture SHARED with the D3D12 render device, synchronised by a shared fence, so
+        // Zero-copy path: keep the DXVA-decoded frame on the GPU. The D3D11 decode device converts the decoder's
+        // output texture into a BGRA texture SHARED with the D3D12 render device, synchronised by a shared fence, so
         // the render path samples it directly with no CPU readback+upload. Best-effort: any failure sticks the
         // pipeline on the CPU readback path for the rest of the session.
         bool TryCreateSharedFence();                        // one-time cross-API fence setup
@@ -149,7 +149,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
         Microsoft::WRL::ComPtr<ID3D12Resource> m_renderTargets[FrameCount];
         // One allocator per in-flight frame: a single shared allocator cannot be reset while the GPU may still
-        // be executing commands recorded from it, which is what forced the per-frame full drain.
+        // be executing commands recorded from it, which would force a per-frame full drain.
         Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_commandAllocators[FrameCount];
         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_commandList;
         Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
@@ -174,7 +174,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         bool m_shutDown = false;   // Shutdown has run; it runs once (see there)
         HRESULT m_deviceRemovedReason = S_OK;
 
-        // Layer 2 graphics pipeline: fullscreen-triangle draw sampling a BGRA frame texture.
+        // BGRA graphics pipeline: fullscreen-triangle draw sampling a BGRA frame texture.
         Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
         Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pipelineState;
         Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvHeap;
@@ -185,7 +185,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t m_frameTextureHeight = 0;
         uint32_t m_frameUploadRowPitch = 0;
 
-        // Layer 3 decode state.
+        // Decode state.
         Microsoft::WRL::ComPtr<IMFTransform> m_decoder;
         bool m_mfStarted = false;
         bool m_decoderProvidesSamples = false;
@@ -195,10 +195,6 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t m_decodeHeight = 0;
         uint32_t m_decodeStride = 0;            // NV12 row stride (MF_MT_DEFAULT_STRIDE; >= width, may be padded)
 
-        // VISIBLE region within the coded frame (MF_MT_MINIMUM_DISPLAY_APERTURE). This — not the coded size — is
-        // the real picture; everything downstream of the decoder works in these dimensions.
-        // Which YCbCr matrix the stream signalled: 0 = BT.601, 1 = BT.709. Read from MF_MT_YUV_MATRIX rather
-        // than assumed, and false-by-default so an unsignalled stream keeps the known-good BT.601 behaviour.
         // Codec and the resolved decoder. m_inputSubtype records which subtype GUID the MFT actually accepted,
         // since the Annex B and elementary-stream variants are distinct GUIDs and only one will bind.
         VideoCodecKind m_codec = VideoCodecKind::H264;
@@ -218,8 +214,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         std::atomic<int32_t> m_geomStage{ 0 };
 
         // The decoder's output subtype as the worker last set it (its FOURCC, the GUID's first field), for
-        // DecoderDiagnostic. That used to ask the decoder itself from the UI thread, while the worker could be
-        // resetting it on a codec mismatch: a use-after-free (review, 2026-10-05). 0 before one is set.
+        // DecoderDiagnostic. Asking the decoder itself from the UI thread, while the worker could be
+        // resetting it on a codec mismatch, would be a use-after-free. 0 before one is set.
         std::atomic<uint32_t> m_outputSubtypeFourcc{ 0 };
 
         // Codec actually detected in the bitstream, versus what was requested.
@@ -242,15 +238,17 @@ namespace winrt::Ripcord::Media::Interop::implementation
         std::atomic<bool> m_toneMapInShader{ false };   // read by the diagnostics string on the UI thread
         std::atomic<bool> m_tenBitUnrenderable{ false };   // read by the UI thread (diagnostics)
 
+        // Which YCbCr matrix is in use: 0 = BT.601, 1 = BT.709. Read from MF_MT_YUV_MATRIX when the stream
+        // signals one (m_yuvMatrixSignalled); otherwise defaulted by resolution, BT.709 from 720 rows up.
         int32_t m_yuvMatrix = 0;
         bool m_yuvMatrixSignalled = false;
 
         // Transfer function and primaries the stream actually signals, read rather than inferred. Bit depth is
         // NOT a transfer function: a 10-bit stream can be plain BT.709, and declaring it PQ would tone-map a
-        // picture that needs no tone-mapping. This is the same trap the yuvCoefficient work already hit once -
-        // the console ignores what we ask for and signals what it likes, so read the decoder output type.
+        // picture that needs no tone-mapping. As with yuvCoefficient, the console ignores what we ask for and
+        // signals what it likes, so read the decoder output type.
         // MFVideoTransFunc_Unknown / MFVideoPrimaries_Unknown mean "nothing signalled"; callers then fall back
-        // to the previous behaviour rather than guessing something new.
+        // to their own defaults.
         uint32_t m_transferFunction = 0;   // MFVideoTransferFunction
         uint32_t m_videoPrimaries = 0;     // MFVideoPrimaries
         bool m_transferFunctionSignalled = false;
@@ -321,6 +319,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // space and whether the video processor tone-maps.
         std::atomic<bool> m_presentingHdr{ false };   // read by the UI thread (diagnostics)
 
+        // VISIBLE region within the coded frame (MF_MT_MINIMUM_DISPLAY_APERTURE). This — not the coded size — is
+        // the real picture; everything downstream of the decoder works in these dimensions.
         uint32_t m_displayWidth = 0;
         uint32_t m_displayHeight = 0;
         uint32_t m_displayOffsetX = 0;
@@ -347,7 +347,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         Microsoft::WRL::ComPtr<ID3D11Texture2D> m_sharedDecodeTex11; // same resource opened on the decode device
 
         // D3D11 VideoProcessor converts the decoder's NV12 output to BGRA (into the shared texture) — BGRA
-        // shares cleanly D3D12<->D3D11 where planar NV12 did not, and yields a render-ready RGB texture.
+        // shares cleanly D3D12<->D3D11 where planar NV12 does not, and yields a render-ready RGB texture.
         Microsoft::WRL::ComPtr<ID3D11VideoDevice> m_videoDevice;
         Microsoft::WRL::ComPtr<ID3D11VideoContext> m_videoContext;
         Microsoft::WRL::ComPtr<ID3D11VideoProcessorEnumerator> m_vpEnumerator;
@@ -361,8 +361,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         UINT64 m_latestFenceValue = 0;   // value the render path must wait for
 
         // Reverse direction, D3D12 -> D3D11: "the render path has finished reading the shared texture."
-        // Without this, the only thing stopping the next VideoProcessorBlt from overwriting the texture
-        // mid-read was the full GPU drain after Present — so removing that drain requires this fence.
+        // Without this, the only thing that would stop the next VideoProcessorBlt from overwriting the texture
+        // mid-read is a full GPU drain after Present.
         Microsoft::WRL::ComPtr<ID3D12Fence> m_readFence;
         Microsoft::WRL::ComPtr<ID3D11Fence> m_readFence11;
         UINT64 m_readFenceValue = 0;     // monotonic value signalled by the D3D12 render path

@@ -1,24 +1,22 @@
 /*
- * ripcord-3ds - Phase 2 UDP link test.
+ * ripcord-3ds - UDP link test.
  *
- * The `ftpd` measurement in BRINGUP.md (~10 Mbps sustained, TCP, upload direction, idle CPU) was the
- * encouraging ceiling, not the answer: it says nothing about UDP receive - the direction and protocol the
- * actual A/V path uses - and nothing about what happens once this core is also busy decoding. This is the
- * test that settles both questions.
+ * The `ftpd` measurement in BRINGUP.md (~10 Mbps sustained, TCP, upload direction, idle CPU) says
+ * nothing about UDP receive - the direction and protocol the A/V path uses - and nothing about what
+ * happens once this core is also busy decoding. This test measures both.
  *
- * A host runs tools/udp_link_test_sender.py, which ramps a fixed-size UDP payload from 1 to 12 Mbps in
- * per-rate stages; this receives it, and for each stage reports goodput, sequence-gap loss, and p99
- * inter-arrival jitter. Press Y to toggle a simulated CPU load between stages, to see whether the answer
+ * A host runs libripcord/tools/udp_link_test_sender.py, which ramps a fixed-size UDP payload from 1 to
+ * 12 Mbps in per-rate stages; this receives it, and for each stage reports goodput, sequence-gap loss,
+ * and p99 inter-arrival jitter. Press Y to toggle a simulated CPU load, to see whether the answer
  * changes once this core is not the only thing running - the console's bottom rung wants roughly 1.5-3
  * Mbps, so the interesting stages are the ones either side of that line.
  *
- * WIRE FORMAT (this test's own, not a PlayStation protocol - see tools/udp_link_test_sender.py):
+ * WIRE FORMAT (this test's own, not a PlayStation protocol - see libripcord/tools/udp_link_test_sender.py):
  *   offset  0, 8 bytes : sequence number, little-endian, resets to 0 at the start of each stage
  *   offset  8, 2 bytes : target rate for this stage in Mbps, little-endian; 0xFFFF marks end-of-run
- *   offset 10, 2 bytes : reserved, currently 0
- *   offset 12, 4 bytes : sender's send timestamp in microseconds, truncated to 32 bits; unused here,
- *                        kept for a host-side capture to cross-check one-way delay later if that ever
- *                        becomes the interesting question instead of jitter
+ *   offset 10, 2 bytes : reserved, 0
+ *   offset 12, 4 bytes : sender's send timestamp in microseconds, truncated to 32 bits; unused here.
+ *                        A host-side capture can use it to cross-check one-way delay.
  *   offset 16..1425    : filler, uninspected
  *
  * NO PER-PACKET output. Console output alone caps throughput well below the Wi-Fi link - SETUP.md names
@@ -245,19 +243,18 @@ static int run_linktest(void)
     fcntl(sock, F_SETFL, O_NONBLOCK);
 
     {
-        /* Best-effort: a bigger cushion between "the packet arrived" and "we called recvfrom" is cheap
-         * insurance now that draining no longer waits on vblank, but it was never the fix for that -
-         * the frame-quantised drain below was. */
+        /* Best-effort: a bigger cushion between "the packet arrived" and "we called recvfrom". It does
+         * not replace draining the socket off the vblank clock, below. */
         int rcvbuf = 131072;
         setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
     }
 
     /* Redraw the HUD roughly 10 times a second, on its own clock, INSTEAD of once per vblank in the same
-     * loop that drains the socket. Tying both to gspWaitForVBlank() was the bug the first run of this
-     * test exposed: at 60 Hz, packets bunch up for up to ~16.7 ms between drains, so most inter-arrival
-     * deltas were near-zero (same-frame packets) and the rest were exactly one or two frame periods -
-     * which is why every stage's p99 landed within a few hundred microseconds of 16,850 or 33,400 us
-     * regardless of target rate. That was this loop's own cadence, not the network's. */
+     * loop that drains the socket. With both tied to gspWaitForVBlank(), packets bunch up for up to
+     * ~16.7 ms between drains, so most inter-arrival deltas are near-zero (same-frame packets) and the
+     * rest are exactly one or two frame periods: every stage's p99 then lands within a few hundred
+     * microseconds of 16,850 or 33,400 us regardless of target rate. That is the loop's own cadence,
+     * not the network's. */
     {
         uint64_t last_redraw_tick = svcGetSystemTick();
         const double redraw_interval_us = 100000.0;

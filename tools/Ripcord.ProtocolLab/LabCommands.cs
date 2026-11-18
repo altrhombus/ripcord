@@ -51,15 +51,14 @@ internal static class LabCommands
     }
 
     private static bool _warnedSecrets;
-    // ---- Stage 5: registration (PIN pairing) ----
+    // ---- registration (PIN pairing) ----
 
     /// <summary>
     /// register &lt;consoleIp&gt; &lt;passcode&gt; &lt;accountId&gt; [clientIdHex(32B)] [ps4|ps5]
     /// Drives a live first-time pairing: derives the transport key from a fresh context + the on-screen
     /// passcode, POSTs the registration request, and decrypts the response into the pairing record
-    /// (registkey + companion). Recovery of those fields is robust to the still-open send-side material
-    /// question (they ride in IV-free CFB blocks); a console rejection here is itself the answer to whether
-    /// the console requires the request field's block 0.
+    /// (registkey + companion). Those fields ride in CFB blocks that decrypt from the key alone, so
+    /// recovering them does not depend on the response's IV.
     /// </summary>
     public static async Task<int> RegisterAsync(string[] args)
     {
@@ -78,8 +77,8 @@ internal static class LabCommands
         var platform = args.Any(a => a.Equals("ps4", StringComparison.OrdinalIgnoreCase))
             ? HalyardConsolePlatform.Ps4 : HalyardConsolePlatform.Ps5;
 
-        // The same resolver the app uses. The lab used to carry its own copy, and today the identical
-        // family-keying bug had to be fixed in both — so one implementation, exercised by two callers.
+        // The same resolver the app uses: one implementation, exercised by two callers, so a family-keying
+        // fault cannot exist in one and not the other.
         HalyardRegistrationCipherResolution resolved = new HalyardRegistrationCipherResolver().Resolve(platform);
         IHalyardRegistrationCipher cipher = resolved.Cipher;
         Console.WriteLine($"registration cipher: available={cipher.IsAvailable}  family={platform}  ({resolved.Source})");
@@ -129,9 +128,9 @@ internal static class LabCommands
     /// <para>
     /// Deliberately driven through <see cref="HalyardAccountConsolePairing"/> — the very object the app
     /// composes — rather than through <see cref="HalyardAccountPairing"/> directly. The coordinator already has
-    /// unit tests over scripted frames; what is unverified against hardware is the wiring around it (which
-    /// crypto source won, the token, the push-server lookup, a real socket), and a harness that assembled its
-    /// own version of that would verify a second wiring instead of the shipping one.
+    /// unit tests over scripted frames; what this command puts in front of hardware is the wiring around it
+    /// (which crypto source won, the token, the push-server lookup, a real socket), and a harness that
+    /// assembled its own version of that would verify a second wiring instead of the app's.
     /// </para>
     /// </summary>
     public static async Task<int> AccountPairAsync(string[] args)
@@ -407,7 +406,7 @@ internal static class LabCommands
         }
     }
 
-    // ---- Stage 2: LAN discovery ----
+    // ---- LAN discovery ----
 
     /// <summary>
     /// Probes every console family, not just PS5: the two families listen on different ports with different
@@ -466,7 +465,7 @@ internal static class LabCommands
         return 0;
     }
 
-    // ---- Stage 0: demux verification ----
+    // ---- demux verification ----
 
     public static Task<int> ReplayAsync(string[] args)
     {
@@ -535,7 +534,7 @@ internal static class LabCommands
         return 0;
     }
 
-    // ---- Stage 1/2: cloud ----
+    // ---- cloud ----
 
     public static int PrintAuthUrl()
     {
@@ -652,7 +651,7 @@ internal static class LabCommands
         return 0;
     }
 
-    // ---- Stage 4: direct handshake (stub crypto) ----
+    // ---- direct handshake ----
 
     public static async Task<int> ConnectAsync(string[] args)
     {
@@ -664,8 +663,8 @@ internal static class LabCommands
             return 1;
         }
 
-        // Positional ports, skipping any --flags: they used to be read by index, so a --watch= or --passcode=
-        // in position 2 was parsed as a port number and the command died before it connected.
+        // Positional ports, skipping any --flags: read by index, a --watch= or --passcode= in position 2
+        // would be parsed as a port number and the command would die before it connected.
         string[] positional = [.. args.Skip(2).Where(a => !a.StartsWith("--", StringComparison.Ordinal))];
         int ctrlPort = positional.Length >= 1 ? int.Parse(positional[0]) : 9295;
         int strmPort = positional.Length >= 2 ? int.Parse(positional[1]) : 9296;
@@ -675,12 +674,13 @@ internal static class LabCommands
             ControlEndpoint: new IPEndPoint(ip, ctrlPort),
             StreamEndpoint: new IPEndPoint(ip, strmPort));
 
-        // Built through the same factory the app uses, so this exercises the shipping composition: the real
-        // control crypto when the captures-folder secrets are present, and the per-user credential store.
+        // Built through the same factory the app uses, so this exercises the app's composition: the real
+        // control crypto when HalyardControlSecretsLoader finds its constants (cryptoSource says where), and
+        // the per-user credential store.
         //
-        // This command previously hard-wired a NullCredentialStore and the passthrough crypto, which meant
-        // /sess/init went out with no RP-Registkey and came back 403 whether or not a pairing existed -- so a
-        // perfectly good pairing record was indistinguishable from none at all.
+        // With a null credential store and the passthrough crypto, /sess/init would go out with no
+        // RP-Registkey and come back 403 whether or not a pairing existed -- so a perfectly good pairing
+        // record would be indistinguishable from none at all.
         HalyardSessionFactory factory = HalyardSessionFactory.CreateDefault(out string cryptoSource);
         bool paired = await HalyardPairingCredentialStore.ForCurrentUser()
             .LoadAsync(ip.ToString(), CancellationToken.None) is not null;
@@ -730,7 +730,7 @@ internal static class LabCommands
         return result.Succeeded ? 0 : 0; // a rejection here is expected until Stage 5; not a lab failure
     }
 
-    // ---- Stage 6: media + input wiring ----
+    // ---- media + input wiring ----
 
     public static async Task<int> MediaDemoAsync()
     {
@@ -785,15 +785,14 @@ internal static class LabCommands
     // ---- helpers ----
 
     /// <summary>
-    /// Drive the cloud rendezvous as far as it currently goes: create the session, trigger the console, and
-    /// send the OFFER with our candidates.
+    /// Drive the cloud rendezvous up to the OFFER and stop: create the session, trigger the console, send
+    /// the OFFER with our candidates, and leave the session.
     ///
     /// <para>
-    /// <b>This does not establish a WAN session, and is not expected to.</b> It exists to make the boundary
-    /// observable — everything up to and including the OFFER is implemented and can be run against real
-    /// hardware; the console's ANSWER comes back over the push channel, which we neither implement nor have
-    /// ever captured. Running this against a real console is how that boundary gets tested rather than assumed,
-    /// and it is the harness this project uses for every other protocol stage.
+    /// <b>This does not establish a WAN session, and is not expected to.</b> It opens no push channel, so
+    /// the console's answer, which comes back over that channel, is never read here. It exercises the three
+    /// calls before it against a real console on their own. <see cref="WanConnectAsync"/> runs the whole
+    /// rendezvous, push channel included.
     /// </para>
     /// </summary>
     public static async Task<int> SignalingAsync(string[] args)
@@ -814,10 +813,10 @@ internal static class LabCommands
         string localIp = args.Length >= 3 ? args[2] : LocalAddress();
         int port = args.Length >= 4 ? int.Parse(args[3]) : 9296;
 
-        // LOCAL only. The vendor also advertises a STATIC (reflexive) candidate, which requires a STUN client
-        // to discover — we have none, so a console off this network has no route to offer back even once the
-        // push channel is understood. Stated here because "the OFFER succeeded" would otherwise read as
-        // progress toward WAN play that it is not.
+        // LOCAL only. The vendor also advertises a STATIC (reflexive) candidate, which takes a STUN query to
+        // discover — this command makes none, so a console off this network has no route to offer back.
+        // Stated here because "the OFFER succeeded" would otherwise read as progress toward WAN play that
+        // it is not.
         var candidates = new List<HalyardCandidate> { new("LOCAL", localIp, port) };
 
         var coordinator = new HalyardSessionCoordinator(gateway.Cloud);
@@ -846,7 +845,7 @@ internal static class LabCommands
     /// <para>
     /// This is the culmination of the connect path: unlike <see cref="SignalingAsync"/> (which stops at the
     /// OFFER), it opens the real push WebSocket and waits for the console to answer, so a success means we hold
-    /// the console's reachable candidates — the last input the direct transport needs. Two things are still
+    /// the console's reachable candidates — the last input the direct transport needs. Two things are
     /// <c>[X]</c> and this is where they get tested against hardware: whether the push upgrade accepts a bearer
     /// token, and whether the console answers an OFFER whose <c>skey</c> is zeroed.
     /// </para>

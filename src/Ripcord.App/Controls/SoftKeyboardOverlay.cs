@@ -17,31 +17,27 @@ namespace Ripcord_App.Controls;
 /// Text entry for someone holding a controller.
 ///
 /// <para>
-/// <b>The hole this fills.</b> Four text fields stand between a user and a paired console — link code, account
-/// id, host address, name — and a pad could operate none of them. Pressing Select on a text box did nothing at
-/// all, because a <c>TextBox</c> exposes no Invoke pattern, so the pairing flow simply could not be completed
-/// without reaching for a keyboard. On a handheld there isn't one.
+/// Four text fields stand between a user and a paired console — link code, account id, host address, name —
+/// and pressing Select on a text box does nothing by itself, because a <c>TextBox</c> exposes no Invoke
+/// pattern. On a handheld there is no keyboard to reach for.
 /// </para>
 ///
 /// <para>
-/// <b>Why a Popup, and why that is the whole trick.</b> It renders in the XamlRoot's popup root, so it appears
-/// above a <c>ContentDialog</c> — which matters, since the login-pin prompt is itself a dialog and is exactly
-/// where a keypad is needed. And because <see cref="FocusPilot.DirectionalRoot"/> already prefers the popup
-/// holding focus, directional navigation works inside it with <em>zero</em> special-casing here. That is the
-/// return on having fixed the search root properly rather than special-casing dialogs at the time.
+/// <b>Why a Popup.</b> It renders in the XamlRoot's popup root, so it appears above a <c>ContentDialog</c> —
+/// which matters, since the login-pin prompt is itself a dialog and is exactly where a keypad is needed. And
+/// because <see cref="FocusPilot.DirectionalRoot"/> already prefers the popup holding focus, directional
+/// navigation works inside it with <em>zero</em> special-casing here.
 /// </para>
 ///
 /// <para>
-/// <b>Not per-digit spinners.</b> The obvious cheap alternative — up/down on each character — is miserable for
-/// an IP address and unusable for an account id, and it invents an interaction nobody has seen before. A
-/// keyboard is the thing every console does, so it needs no explaining.
+/// <b>Not per-digit spinners.</b> Up/down on each character is miserable for an IP address and unusable for
+/// an account id; a keyboard is what every console does.
 /// </para>
 ///
 /// <para>
 /// Writes go through <see cref="IValueProvider"/> rather than to <c>TextBox.Text</c>, so the validation the
-/// pairing flow already hangs off <c>TextChanged</c> keeps working untouched, and so a future non-TextBox
-/// target needs no change here. Keys are ≥56×56, which makes this the touch keyboard on a handheld as well —
-/// one control rather than two, and the mode that gets less testing is the one that would have rotted.
+/// pairing flow hangs off <c>TextChanged</c> keeps working untouched, and so a non-TextBox target needs no
+/// change here. Keys are ≥56×56, which makes this the touch keyboard on a handheld as well.
 /// </para>
 /// </summary>
 public sealed class SoftKeyboardOverlay
@@ -60,11 +56,9 @@ public sealed class SoftKeyboardOverlay
     /// Put the keyboard up for <paramref name="target"/>. Returns whether it went up.
     ///
     /// <para>
-    /// <b>Synchronous, and that is a correction.</b> This was <c>Task&lt;bool&gt; ShowAsync</c> completing on
-    /// dismissal, and every caller discarded the task — so a failure to open, including a thrown exception,
-    /// vanished into an unobserved Task while the caller still reported the press as handled. The button did
-    /// nothing and said nothing. Opening a popup was never asynchronous work; only waiting for it to close
-    /// was, and nobody was waiting.
+    /// Synchronous on purpose. A <c>Task&lt;bool&gt;</c> completing on dismissal is one callers discard, so a
+    /// failure to open, including a thrown exception, would vanish into an unobserved Task while the caller
+    /// reported the press as handled. Opening a popup is not asynchronous work.
     /// </para>
     ///
     /// <para>
@@ -142,9 +136,9 @@ public sealed class SoftKeyboardOverlay
     /// Which keyboard a field wants, taken from the <c>InputScope</c> it already declares.
     ///
     /// <para>
-    /// <c>LoginPinDialog</c> declares <c>NumericPin</c> today, purely as a hint to the OS touch keyboard, so it
-    /// selects the keypad here with no change to that file. A field that wants a keypad should say so the same
-    /// way rather than by being named in this class.
+    /// <c>LoginPinDialog</c> declares <c>NumericPin</c> as a hint to the OS touch keyboard, and that selects the
+    /// keypad here. A field that wants a keypad should say so the same way rather than by being named in this
+    /// class.
     /// </para>
     /// </summary>
     private static bool WantsKeypad(Control target)
@@ -411,12 +405,11 @@ public sealed class SoftKeyboardOverlay
     /// How to edit a control's text, preferring the automation pattern and falling back to the property.
     ///
     /// <para>
-    /// <b>The fallback is the point.</b> This used to require <see cref="IValueProvider"/> and return false
-    /// without it, which made an automation-peer detail into a gate on the keyboard appearing at all — and on
-    /// hardware the keyboard did not appear, silently, with the peer as the only suspect I could not rule out
-    /// by reading. Writing to <c>TextBox.Text</c> raises <c>TextChanged</c> exactly as the pattern does, so
-    /// the validation the pairing flow hangs off keeps working either way. The pattern stays preferred because
-    /// it is the general path a non-TextBox target would need; it is no longer allowed to be a veto.
+    /// The fallback must stay: requiring <see cref="IValueProvider"/> makes an automation-peer detail a gate on
+    /// the keyboard appearing at all, and where the pattern is missing the keyboard silently does not appear.
+    /// Writing to <c>TextBox.Text</c> raises <c>TextChanged</c> exactly as the pattern does, so the validation the
+    /// pairing flow hangs off keeps working either way. The pattern stays preferred because it is the general
+    /// path a non-TextBox target would need.
     /// </para>
     /// </summary>
     private static TextTarget? TargetFor(Control control)

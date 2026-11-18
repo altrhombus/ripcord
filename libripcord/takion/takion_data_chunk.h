@@ -1,10 +1,10 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport: the DATA chunk.
+ * libripcord - Takion transport: the DATA chunk.
  *
  * Ported from Ripcord.Protocol.Halyard.Takion.TakionDataChunk. Carries SESSION_REQUEST/REPLY,
  * STREAMINFO and input reliably (acked by SACK, see takion_sack_chunk.h) - the unreliable A/V/input/
- * loss-report base types never use DATA chunks at all; they rely on FEC instead (out of scope for this
- * phase, and for good reason: it lives entirely in the A/V demux/reassembly layer, not here).
+ * loss-report base types never use DATA chunks at all; they rely on FEC instead, which lives entirely
+ * in the A/V demux/reassembly layer (stream/), not here.
  *
  * WIRE FORMAT, chunk header (SCTP-standard shape):
  *   offset 0, 1 byte : chunk type = TAKION_CHUNK_DATA (0x00)
@@ -26,14 +26,11 @@
  *   offset 6, 2 bytes: reserved (zero)
  *   offset 8         : payload
  *
- * THE CHANNEL IS PRESENT IN CONTINUATIONS, AND THIS PORT USED TO GET IT WRONG. Only the reserved region
- * differs between the two fragment shapes - 3 bytes in a first fragment, 2 in a continuation - so the
- * payload lands at 9 vs 8. The channel field itself is in both. This file previously described offset
- * 4..8 of a continuation as four unconfirmed reserved bytes and zero-filled them, which sent every
- * continuation labelled channel 0 - and 0 is the channel the CONSOLE sends on. It went unnoticed because
- * nothing this port sent had ever exceeded one chunk until the 1716-byte SESSION_REQUEST of the connect
- * flow, whose first two hardware runs reached Takion ESTABLISHED and then got silence. Corrected against
- * TakionDataChunk.Build, which writes the channel unconditionally and shrinks only the reserved region.
+ * THE CHANNEL IS PRESENT IN CONTINUATIONS. Only the reserved region differs between the two fragment
+ * shapes - 3 bytes in a first fragment, 2 in a continuation - so the payload lands at 9 vs 8, as
+ * TakionDataChunk.Build writes it. Zero-filling offset 4..8 of a continuation labels it channel 0, the
+ * channel the CONSOLE sends on: the 1716-byte SESSION_REQUEST then reaches Takion ESTABLISHED and gets
+ * silence.
  */
 #ifndef TAKION_DATA_CHUNK_H
 #define TAKION_DATA_CHUNK_H

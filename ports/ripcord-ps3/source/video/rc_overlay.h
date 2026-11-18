@@ -33,7 +33,7 @@
 #define RC_OV_TRACK    0xFF232B34u   /* the empty part of a sparkline                       */
 
 /* Ask for the platform's own font. Must be called BEFORE rc_overlay_set, which is where it is tried.
- * Off by default on this port - it does not work here, and DECODE.md records what was eliminated. */
+ * Off until called; rc_sysfont.c says how the face is read and why the drawn font is the fallback. */
 void rc_overlay_set_system_font(int on);
 
 /*
@@ -65,14 +65,12 @@ int  rc_overlay_using_system_font(void);
 int rc_overlay_px(int design);
 
 /*
- * THE SURFACE IS THE SCREEN. rc_overlay_surface_width/height report the display's own size, so a
- * caller laying out against it works in real pixels and scales its own design measurements.
- */
-
-/*
  * THE PANEL and THE SURFACE are different sizes. The panel is the region the diagnostics overlay and
  * the status card lay out against; the surface is the whole bitmap, which is larger so that a menu can
  * share this file's font, blending and blit rather than carrying a second copy of all three.
+ *
+ * THE SURFACE IS THE SCREEN. rc_overlay_surface_width/height report the display's own size, so a
+ * caller laying out against it works in real pixels and scales its own design measurements.
  */
 int rc_overlay_width(void);
 int rc_overlay_height(void);
@@ -89,15 +87,14 @@ int rc_overlay_cap_height(int scale);
 /*
  * THE y TO HAND rc_overlay_text SO A LABEL SITS CENTRED IN A BOX, given the box's top and height.
  *
- * Every caller that wanted this was doing it by subtracting a guessed constant from the box height, and
- * every one of those guesses was the line height rather than the height of the letters - so the text in
- * a pill and the text in a list row both hung high by the space a descender would have used. It is one
- * calculation and it belongs where the metrics are, not in four layout sites with four constants.
+ * Centring by the line height rather than the height of the letters hangs the text high by the space a
+ * descender would have used, in a pill and in a list row alike. It is one calculation and it belongs
+ * where the metrics are, not in each layout site with a constant of its own.
  */
 int rc_overlay_text_y(int box_y, int box_h, int scale);
 
 /*
- * Starts a rebuild. 0 means "not yet" - the bitmap still holds the last text and the caller should go
+ * Starts a rebuild. 0 means "not due" - the bitmap still holds the last text and the caller should go
  * straight to rc_overlay_end() to queue the copy.
  */
 int  rc_overlay_begin(void);
@@ -140,8 +137,8 @@ void rc_overlay_target(uint32_t *px, int pitch);
  */
 void rc_overlay_set_ink_hook(void (*hook)(int y, int x0, int x1));
 
-/* 1 when the RSX reads the bitmap in main memory rather than a copy of it in its own - which is what
- * removed an eight-megabyte copy a frame, and what makes cache flushing this side's problem. */
+/* 1 when the RSX reads the bitmap in main memory rather than a copy of it in its own - which saves an
+ * eight-megabyte copy a frame, and makes cache flushing this side's problem. */
 int rc_overlay_reads_main(void);
 
 /* The position is an argument rather than shared state - see the note in the .c for what making it
@@ -155,15 +152,13 @@ void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb);
 
 /*
  * A CONTROLLER BUTTON, as its shape, in a square box `size` on a side. Returns the width consumed, so a
- * row of hints is laid out by chaining rather than by hand-measured offsets - which is how the last one
- * ended up off-centre in the shell.
+ * row of hints is laid out by chaining rather than by hand-measured offsets.
  *
- * CIRCLE AND CROSS ONLY. Those are the two the in-session menu names, and a shape nobody draws is a
- * shape nobody checks - the shell has its own richer set because it needs triangle and the two word
- * pills. Anything else asked for here is drawn as nothing rather than as an approximation.
+ * CIRCLE AND CROSS ONLY. Those are the two the in-session menu names; the shell has its own richer set
+ * because it needs triangle and the two word pills. Anything else asked for here is drawn as nothing
+ * rather than as an approximation.
  *
- * Takes `button` as a HALYARD_PAD_* bit so callers pass the same value they test input against, rather
- * than a second enumeration that has to be kept in step with the first.
+ * Takes `button` as a HALYARD_PAD_* bit so callers pass the same value they test input against.
  */
 int rc_overlay_glyph(uint32_t button, int x, int y, int size, uint32_t argb);
 
@@ -179,15 +174,10 @@ uint32_t *rc_overlay_pixels(int *pitch_px);
  *
  * _num is the monospaced 5x7, and is for anything that CHANGES. A column of figures has to hold still
  * while the figures change: a digit one pixel narrower than its neighbour shuffles the whole row every
- * time it ticks, and a number that moves while you read it is a number you read twice. Prefer
- * _num_right for those, so the digits grow leftwards from a fixed edge.
- */
-/*
+ * time it ticks. Prefer _num_right for those, so the digits grow leftwards from a fixed edge.
+ *
  * BOTH RETURN THE ADVANCE, so a caller chains `x += rc_overlay_text(x, ...)` rather than writing down
- * where the next piece goes. The first version of the panel used hand-measured pixel offsets for every
- * run that mixed words and figures; they were measured against one font at one size, and the first
- * time either changed the labels started cutting into the numbers beside them. An offset that has to
- * be recomputed by hand whenever anything moves is a bug with a delay on it.
+ * where the next piece goes. Hand-measured pixel offsets break the first time a font or a size changes.
  */
 int rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
 int rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...);

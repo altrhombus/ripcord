@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport self-test.
+ * libripcord - Takion transport self-test.
  *
  * Known-answer vectors are full captured packets (Takion header + SCTP chunk together) lifted from
  * Ripcord.Protocol.Halyard.Takion's own test suite (TakionTests.cs, TakionDataChunkTests.cs,
@@ -14,7 +14,7 @@
  * see their own header comments for exactly what is and isn't confirmed - so those are checked by
  * round-trip (build, then parse, then compare fields) instead.
  *
- * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
+ * THIS BUILDS FOR THE HOST, NOT A CONSOLE - see tests/Makefile.
  */
 #include "../takion/takion_data_chunk.h"
 #include "../takion/takion_handshake.h"
@@ -246,9 +246,9 @@ static void test_data_chunk_build_matches_vector(void)
 static void test_data_chunk_continuation_round_trip(void)
 {
     /* No captured continuation-fragment vector exists (see the header comment) - self-consistency only.
-     * The CHANNEL assertions below are not decoration: this port shipped continuations with the channel
-     * zero-filled, which put every fragment after the first on channel 0 - the console's own channel -
-     * and a round-trip test that ignored the field was exactly why nothing caught it. */
+     * The CHANNEL assertions below are not decoration: a continuation built with the channel zero-filled
+     * puts every fragment after the first on channel 0 - the console's own channel - and a round-trip
+     * test that ignores the field cannot catch it. */
     static const uint8_t payload[5] = { 0x11, 0x22, 0x33, 0x44, 0x55 };
     uint8_t buf[32];
     size_t n = takion_data_build_continuation(0x00004826u, TAKION_CHANNEL_SESSION, 1,
@@ -343,16 +343,11 @@ static void test_reassembler(void)
         "single-fragment message content mismatch");
 
     /*
-     * THE LIFETIME, not the content - and it is the half that actually broke.
-     *
-     * Both headers promise the returned pointer aims at the reassembler's own buffer and stays valid
-     * until the next call. The single-fragment path did not: it handed back the caller's `payload`
-     * pointer, which in takion_channel_poll is a LOCAL receive buffer, so a complete message under
-     * about a kilobyte - the common case - was valid only until poll's frame went away.
-     *
-     * Content comparison could never catch that; the bytes are identical either way, right up until
-     * something else uses the stack. So this asserts on provenance: the message must come from inside
-     * the reassembler, and must NOT be the pointer that was passed in.
+     * THE LIFETIME, not the content. Both headers promise the returned pointer aims at the
+     * reassembler's own buffer and stays valid until the next call. A single-fragment path that hands
+     * back the caller's `payload` pointer - in takion_channel_poll a LOCAL receive buffer - passes any
+     * content comparison. So this asserts the message comes from inside the reassembler and is NOT the
+     * pointer that was passed in.
      */
     CHECK(message != whole,
         "a completed message must not alias the caller's buffer - that buffer is poll's stack frame");

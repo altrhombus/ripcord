@@ -1,22 +1,22 @@
 /*
- * ripcord-3ds - splits the multiplexed A/V stream into video/audio/other by packet type, authenticates +
+ * libripcord - splits the multiplexed A/V stream into video/audio/other by packet type, authenticates +
  * decrypts each media packet through the crypto seam below, and reassembles video fragments into whole
  * Annex-B frames (recovering lost source units via FEC when enough units survive). Ported from
  * HalyardStreamDemuxer.cs - see that file for the fuller rationale behind each piece; comments here cover
- * only where this port's fixed-buffer C differs from the reference's dynamically-growing C# arrays.
+ * only where this core's fixed-buffer C differs from the reference's dynamically-growing C# arrays.
  *
  * Video reassembly keys on the frame index: units accumulate in one buffer, laid out as the console lays
  * them out (unit u at u * coded_length, spec sec6.2), while the frame index is constant, and the previous frame is flushed when a new index
  * arrives (spec sec6.1). Audio packs one Opus source frame plus redundant loss-concealment copies of the
  * same 10ms per packet; only the first (source) unit is ever emitted - see stream_demux.c's ingest_audio.
  *
- * FEC_MAX_TOTAL_UNITS bounds units-per-frame (shared with fec_reed_solomon.h - a frame's FEC group can
- * never exceed what that module can recover anyway). STREAM_DEMUX_MAX_CODED_LENGTH is this port's own cap
- * on a single unit's coded length: unlike the reference's List<byte>/Array.Resize, nothing in this port
- * allocates, so a frame whose declared geometry would exceed either cap is skipped defensively (see
- * open_frame in the .c) rather than risking a buffer overflow from console-controlled wire fields.
- * Both caps are sized generously above what a 3DS-appropriate stream resolution/bitrate needs - see the
- * .c file's open_frame for the exact reasoning - not derived from any protocol constant.
+ * STREAM_DEMUX_MAX_UNITS_PER_FRAME bounds the units a frame may occupy (see its note below);
+ * FEC_MAX_TOTAL_UNITS, from fec_reed_solomon.h, is the smaller bound on a group that can be RECOVERED,
+ * and a larger frame is assembled from whatever arrived. STREAM_DEMUX_MAX_CODED_LENGTH is this core's
+ * own cap on a single unit's coded length, not derived from any protocol constant. Unlike the
+ * reference's List<byte>/Array.Resize, nothing here allocates, so a frame whose declared geometry
+ * would exceed either cap is skipped defensively (see open_frame in the .c) rather than risking a
+ * buffer overflow from console-controlled wire fields.
  */
 #ifndef STREAM_DEMUX_H
 #define STREAM_DEMUX_H
@@ -34,15 +34,12 @@
 #define STREAM_DEMUX_MAX_CODED_LENGTH 4096
 
 /*
- * UNITS PER FRAME, WHICH IS NOT THE SAME NUMBER AS THE FEC GROUP SIZE, and conflating the two is what
- * kept 1080p from working at all.
+ * UNITS PER FRAME, WHICH IS NOT THE SAME NUMBER AS THE FEC GROUP SIZE.
  *
  * FEC_MAX_TOTAL_UNITS bounds what fec_reed_solomon.c can RECOVER - k+m against its fixed working
- * buffers. The units a frame occupies is a different quantity that merely happens to have been smaller
- * on every stream this code had seen: 640x360 needs a handful and 1280x720 measured about 21, both
- * comfortably inside 64. A 1920x1080 frame needs well over a hundred, and the frame was then abandoned
- * before assembly began - silently, which is why 103,371 video packets became 32 frames and nobody
- * could see where they went.
+ * buffers. The units a frame occupies is a different quantity: 640x360 needs a handful, 1280x720
+ * measured about 21, and a 1920x1080 frame needs well over a hundred. With a cap of 64, 1080p frames
+ * are refused before assembly (measured: 103,371 video packets became 32 frames).
  *
  * 256 is derived, not chosen: the console's Cauchy matrix builder forms every coefficient as the
  * GF(2^8) inverse of (m + j) XOR i, and that lookup is an inverse only while both operands are below
@@ -51,12 +48,9 @@
  * captures is 130 units. The same number sizes HalyardStreamDemuxer's dynamic buffers; here it is a fixed
  * buffer, 1 MB at this coded length.
  *
- * NOT OVERRIDABLE, AND THAT IS THE POINT. b168 made it a per-port -D and the console hung before it
- * reached the network: this port's core-test objects are compiled from their own flag list rather than
- * from CFLAGS, so stream_demux.c saw 512 while the test translation units saw 64. One struct, two sizes,
- * one binary - writes past the end of an object the rest of the program believed was sixteen times
- * larger. A type whose size depends on a command-line define is a trap that is set once and sprung
- * somewhere else, so there is one number here and no way to vary it.
+ * NOT OVERRIDABLE. As a per-port -D (b168) the console hung before it reached the network: the PS3
+ * port's core-test objects are compiled from their own flag list rather than from CFLAGS, so
+ * stream_demux.c saw 512 while the test translation units saw 64 - one struct, two sizes, one binary.
  */
 #define STREAM_DEMUX_MAX_UNITS_PER_FRAME 256
 #define STREAM_DEMUX_VIDEO_HEADER_CAPACITY 512
@@ -81,8 +75,8 @@ typedef struct {
 } stream_demux_crypto;
 
 /* Identity stub - matches PassthroughHalyardSessionCrypto: always succeeds, never touches the packet. Lets
- * the rest of this pipeline (framing, demux, FEC) run against captures/synthetic data before real stream
- * crypto exists (ECDH/session establishment is a separate, not-yet-started backlog item). */
+ * the rest of this pipeline (framing, demux, FEC) run against captures/synthetic data with no keys; the
+ * tests use it. */
 stream_demux_crypto stream_demux_passthrough_crypto(void);
 
 /* Wires an already-established stream_packet_crypto (see stream_packet_crypto.h) as the real crypto
@@ -105,11 +99,12 @@ typedef struct {
 } stream_demux_sink;
 
 /*
- * ~513 KB - by far the largest object in this port (whole-frame reassembly buffers x FEC units).
+ * ~2 MB - by far the largest object in this core (`units` and `assembly` are each
+ * STREAM_DEMUX_MAX_UNITS_PER_FRAME x STREAM_DEMUX_MAX_CODED_LENGTH, 1 MB).
  * NEVER DECLARE ONE AS A LOCAL, and do not casually put one per-session on a 3DS either: a .3dsx main
  * thread gets a 32 KB stack, so a local is an instant data abort in the prologue with nothing logged.
- * File scope, `static`, or the heap. See takion_reliable_channel.h - the same mistake, 10x smaller, is
- * what actually crashed on hardware; the 3DS build's -Wframe-larger-than=8192 now catches both.
+ * File scope, `static`, or the heap. See takion_reliable_channel.h - the same mistake with a far smaller
+ * struct is what actually crashed on hardware; the 3DS build's -Wframe-larger-than=8192 flags both.
  */
 typedef struct {
     stream_demux_crypto crypto;
@@ -138,12 +133,11 @@ typedef struct {
     long stat_units_received;
     long stat_units_lost;
     /* Frames refused because they wanted more units than STREAM_DEMUX_MAX_UNITS_PER_FRAME. Counted
-     * because this used to be a bare `return` - see that constant's note. */
+     * because an uncounted refusal looks like network loss - see that constant's note. */
     long stat_frames_too_many_units;
     long auth_failures;
 } stream_demux;
 
-/* Zeroes *demux and installs the crypto seam + callback sink. */
 /*
  * sizeof(stream_demux) as the LIBRARY was compiled, so a caller can check it against its own. There is
  * no way to catch a struct that two translation units disagree about at compile time in C, and b168
@@ -152,6 +146,7 @@ typedef struct {
  */
 size_t stream_demux_struct_size(void);
 
+/* Zeroes *demux and installs the crypto seam + callback sink. */
 void stream_demux_init(stream_demux *demux, stream_demux_crypto crypto, stream_demux_sink sink);
 
 /* Supplies the SPS/PPS parameter sets parsed from the console's STREAM_INFO, prepended ahead of every
@@ -167,8 +162,8 @@ void stream_demux_ingest(stream_demux *demux, const uint8_t *packet, size_t pack
 
 /* Reads and resets the accumulated wire unit stats (received, lost) since the last call - the input to the
  * periodic loss report that lets the console's rate controller adapt. Not thread-safe (no
- * Interlocked here, unlike the .NET reference): callers on this single-threaded target must call this from
- * the same thread that calls stream_demux_ingest, or add their own locking. */
+ * Interlocked here, unlike the .NET reference): callers must call this from the same thread that calls
+ * stream_demux_ingest, or add their own locking. */
 void stream_demux_take_packet_stats(stream_demux *demux, long *out_received, long *out_lost);
 
 /*

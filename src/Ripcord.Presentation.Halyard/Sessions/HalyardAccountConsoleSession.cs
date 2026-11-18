@@ -108,10 +108,10 @@ public sealed class HalyardAccountConsoleSession
         // is the whole reason this trace exists.
         _options.Log?.Invoke("account route entered");
 
-        // Restores the session if it is only on disk, rather than reading "not loaded yet" as "not signed in".
-        // This asked IsSignedIn, which is an in-memory question, and refused a user whose stored token was
-        // perfectly good but whom nothing had got round to restoring - which nothing did except the settings
-        // page, so this route worked only for somebody who had happened to open it.
+        // Restores the session if it is only on disk, rather than reading "not loaded" as "not signed in".
+        // IsSignedIn is an in-memory question: asking it here would refuse a user whose stored token is
+        // perfectly good but whom nothing has restored, and this route would work only for somebody who had
+        // happened to open a surface that restores it.
         if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return HalyardAccountSessionResult.Failed(
@@ -263,7 +263,7 @@ public sealed class HalyardAccountConsoleSession
             }
 
             // The endpoints are informational on this path: the control plane rides the association, and the
-            // stream endpoint is the second negotiated connection, which this does not open yet.
+            // stream endpoint is the second negotiated connection, which this does not open.
             var parameters = new HalyardConnectionParameters(
                 ConsoleId: consoleHost,
                 ControlEndpoint: new IPEndPoint(
@@ -410,17 +410,15 @@ public sealed class HalyardAccountConsoleSession
     ///
     /// <para>
     /// The console offers a <c>LOCAL</c> address and a <c>STATIC</c> (reflexive) one for every connection, and
-    /// which is usable depends on where <em>we</em> are — so this asks the interface table rather than
-    /// assuming. On the same network the local address wins, and traffic stays on the LAN instead of going out
-    /// to the reflexive address and back. Anywhere else the local address is somebody else's private range and
-    /// the reflexive one is the only way in.
+    /// which is usable depends on where <em>we</em> are, so this asks the interface table. On the same
+    /// network the local address wins, and traffic stays on the LAN. Anywhere else the local address is
+    /// somebody else's private range and the reflexive one is the only way in.
     /// </para>
     ///
     /// <para>
-    /// This used to require the local candidate to equal the host the caller passed in, and to fall back to
-    /// that host otherwise — which quietly made the whole route LAN-only: off-network the caller has no
-    /// reachable address to pass, and the one it does have (the address the console was paired on) routes
-    /// nowhere.
+    /// Do not require the local candidate to equal the host the caller passed in: off-network the caller has
+    /// no reachable address to pass (the address the console was paired on routes nowhere), so that would
+    /// make the whole route LAN-only.
     /// </para>
     /// </summary>
     private static IPEndPoint ConsoleEndpoint(HalyardAccountTransportContext context)

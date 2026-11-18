@@ -30,10 +30,10 @@ public interface ICredentialProtector
 
 /// <summary>
 /// Selects the protector for the current platform. Windows gets DPAPI, and when DPAPI fails its probe it gets
-/// <see cref="UnavailableCredentialProtector"/>, which stores nothing rather than plaintext: the shipped client
+/// <see cref="UnavailableCredentialProtector"/>, which stores nothing rather than plaintext: the client
 /// promises encryption at rest (<c>PRIVACY.md</c>), so the only honest fallback is not saving. Other platforms
-/// fall back to <see cref="PlaintextCredentialProtector"/> until a keystore backend (libsecret / kwallet) is
-/// wired up, and say so via <see cref="ICredentialProtector.Description"/>.
+/// get <see cref="PlaintextCredentialProtector"/>, having no keystore backend (libsecret / kwallet) here, and
+/// say so via <see cref="ICredentialProtector.Description"/>.
 /// </summary>
 public static class CredentialProtection
 {
@@ -71,7 +71,7 @@ public sealed class UnavailableCredentialProtector : ICredentialProtector
 }
 
 /// <summary>
-/// No-op protector for platforms without a keystore backend yet. Deliberately named so nobody mistakes it for
+/// No-op protector for platforms without a keystore backend. Deliberately named so nobody mistakes it for
 /// encryption, and reports <see cref="IsRealProtection"/> = false so the UI can warn.
 /// </summary>
 public sealed class PlaintextCredentialProtector : ICredentialProtector

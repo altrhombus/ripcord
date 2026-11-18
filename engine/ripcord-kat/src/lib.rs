@@ -7,8 +7,8 @@
 //! `libripcord/README.md`), so a clean checkout has none and the tests that read them skip.
 //!
 //! Unlike the C runners, a line kind this runner does not know is a failure rather than a skip: a new kind
-//! from the generator should not pass here unchecked. A kind whose layer has not been ported yet is listed
-//! in [`DEFERRED`] with the reason, counted, and reported, so the gap is visible in every run.
+//! from the generator should not pass here unchecked. A kind this engine has no layer for is listed in
+//! [`DEFERRED`] with the reason, counted, and reported, so the gap is visible in every run.
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
@@ -36,8 +36,8 @@ pub const FILES: &[&str] = &[
     "dgram-transport.kat",
 ];
 
-/// Line kinds that belong to a layer not yet ported, and which layer. Remove an entry in the change that
-/// ports its layer.
+/// Line kinds that belong to a layer this engine does not have, and which layer. A line of a listed kind
+/// is counted and reported instead of checked.
 pub const DEFERRED: &[(&str, &str)] = &[];
 
 #[derive(Default)]

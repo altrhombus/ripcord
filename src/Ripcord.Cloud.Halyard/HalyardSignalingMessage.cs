@@ -20,8 +20,7 @@ public sealed record HalyardSignalingCandidate(string Type, string Address, int 
 /// <para>
 /// The console does not answer an OFFER with an ANSWER; the exchange is symmetric — <b>each side sends its own
 /// OFFER carrying its own candidates</b>, then acknowledges with RESULT and ACCEPT. So the message we care about
-/// most is the console's <c>OFFER</c>: it is where the console's reachable addresses arrive, and until the push
-/// channel was decoded it was the one piece of the connect flow we could not read.
+/// most is the console's <c>OFFER</c>: it is where the console's reachable addresses arrive.
 /// </para>
 /// </summary>
 /// <param name="Action">The state-machine step: <c>OFFER</c>, <c>ACCEPT</c>, <c>RESULT</c>.</param>
@@ -34,7 +33,7 @@ public sealed record HalyardSignalingCandidate(string Type, string Address, int 
 /// <param name="Candidates">The peer's advertised candidates. Empty for RESULT/ACCEPT acknowledgements.</param>
 /// <param name="SessionKey">
 /// The <c>skey</c> — 16 bytes when the peer has filled it in (the console's OFFER carries a real one; an
-/// all-zero <c>skey</c> is the not-yet-populated placeholder our own OFFER sends). Null when absent.
+/// all-zero <c>skey</c> is what our own OFFER sends). Null when absent.
 /// </param>
 /// <param name="LocalHashedId">The <c>localHashedId</c> — 20 bytes in the console's OFFER. Null when absent.</param>
 /// <param name="Sid">
@@ -71,9 +70,8 @@ public sealed record HalyardSignalingMessage(
     /// <para>
     /// Both an <c>OFFER</c> and an <c>ACCEPT</c> qualify, and the <c>ACCEPT</c> matters: five separate
     /// mitmproxy captures of the vendor client (<c>ps-rendezvous/cap71, cap72, cap96, cap99, cap107</c>) show
-    /// it acknowledging the console's <c>ACCEPT</c> every time, and Ripcord acknowledged only the
-    /// <c>OFFER</c> — after which the console sent its <c>ACCEPT</c>, waited, and gave up with a
-    /// <c>TERMINATE</c> in every live run.
+    /// it acknowledging the console's <c>ACCEPT</c> every time. With only the <c>OFFER</c> acknowledged, the
+    /// console sent its <c>ACCEPT</c>, waited, and gave up with a <c>TERMINATE</c> in every live run.
     /// </para>
     ///
     /// <para>
@@ -93,8 +91,7 @@ public sealed record HalyardSignalingMessage(
     /// <para>
     /// Uses <see cref="JsonDocument"/> rather than typed deserialization on purpose: the frame nests a JSON
     /// document inside a string field (<c>payload = "ver=1.0, type=text, body={…}"</c>), the shape varies by
-    /// action, and unknown fields must be tolerated. A forgiving reader over a semi-structured envelope is the
-    /// right tool, and it stays trim-safe without source-gen contexts for a shape this irregular.
+    /// action, and unknown fields must be tolerated. It also stays trim-safe without source-gen contexts.
     /// </para>
     /// </summary>
     public static HalyardSignalingMessage? TryParse(string pushFrame)
@@ -144,8 +141,7 @@ public sealed record HalyardSignalingMessage(
         catch (InvalidOperationException)
         {
             // A well-formed document with an element of the wrong kind: GetString on a number, TryGetProperty on
-            // an array. Malformed all the same, and it used to escape this method and lose the frame (found by the
-            // Mac port, 2026-09-26).
+            // an array. Malformed all the same.
             return null;
         }
         catch (FormatException)
@@ -174,17 +170,14 @@ public sealed record HalyardSignalingMessage(
     /// valid JSON. Repaired to <c>null</c> before parsing.
     ///
     /// <para>
-    /// <b>This was a real bug for the whole life of the account route, and a nasty one</b> because it was
-    /// silent: <see cref="JsonDocument"/> threw, <see cref="TryParse"/> caught <see cref="JsonException"/> and
-    /// returned null, and the console's ACCEPT was dropped as "not a signaling frame". So we never saw it and
-    /// never acknowledged it, the console waited for a <c>RESULT</c> that never came, and every live pairing
-    /// ended in the console's <c>TERMINATE</c>.
+    /// Unrepaired it fails silently: <see cref="JsonDocument"/> throws, <see cref="TryParse"/> catches
+    /// <see cref="JsonException"/> and returns null, and the console's ACCEPT is dropped as "not a signaling
+    /// frame", never acknowledged, and answered by the console's <c>TERMINATE</c>.
     /// </para>
     ///
     /// <para>
-    /// Ripcord already reproduces this exact malformation when it <em>sends</em> an ACCEPT, deliberately,
-    /// because that is what the vendor puts on the wire. Writing bytes we could not read back is the kind of
-    /// asymmetry worth looking for elsewhere.
+    /// Ripcord reproduces this exact malformation when it <em>sends</em> an ACCEPT, deliberately, because
+    /// that is what the vendor puts on the wire.
     /// </para>
     /// </summary>
     private static string RepairVendorJson(string body)

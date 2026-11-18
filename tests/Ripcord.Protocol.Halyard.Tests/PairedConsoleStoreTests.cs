@@ -10,7 +10,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// stores are structural twins — same temp-file write, same fall-back-rather-than-throw read.
 ///
 /// <para>
-/// These tests exist because this store had none until it moved into Ripcord.Core, and every behaviour covered
+/// These tests exist because every behaviour covered
 /// here fails <em>silently and destructively</em>: the visible symptom of any of them regressing is "all my
 /// consoles are gone, please pair again", with nothing in a log to say why.
 /// </para>
@@ -190,8 +190,8 @@ public class PairedConsoleStoreTests : IDisposable
     [Fact]
     public void Upsert_AConsoleMovingOntoAnotherConsolesOldAddress_KeepsTheOther()
     {
-        // Two consoles at home, and a DHCP lease handed from one to the other: matching on the address deleted
-        // the second console's record and its credential (review, 2026-10-05).
+        // Two consoles at home, and a DHCP lease handed from one to the other: matching on the address alone
+        // would delete the second console's record and its credential.
         var store = NewStore();
         store.Upsert(Console("host-id-abc", "10.0.0.7", "dpapi:AAA"));
         store.Upsert(Console("host-id-def", "10.0.0.8", "dpapi:DEF"));
@@ -219,7 +219,7 @@ public class PairedConsoleStoreTests : IDisposable
     public void Upsert_WhileTheFileCantBeRead_ThrowsRatherThanSavingOverEveryPairing()
     {
         // Load reads an unreadable file as empty, which is right for showing a list and wrong for updating one:
-        // the save after it wrote a one-console list over the rest (review, 2026-10-05).
+        // a save after it would write a one-console list over the rest.
         var store = NewStore();
         store.Upsert(Console("host-id-abc", "10.0.0.7"));
         store.Upsert(Console("host-id-def", "10.0.0.8"));

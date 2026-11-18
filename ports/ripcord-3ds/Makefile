@@ -6,18 +6,16 @@
 #
 #     make                build every .3dsx
 #     make constants      regenerate the interop constants only
-#     make crosscheck     compile the modules that have no .3dsx of their own yet (see CROSSCHECK_SOURCES)
+#     make crosscheck     compile the stream-plane core modules to objects, linking nothing (see CROSSCHECK_SOURCES)
 #     make clean
-#     make test           run the HOST-side known-answer tests (no 3DS involved) - see tests/Makefile
+#     make test           run the HOST-side known-answer tests (no 3DS involved) - see libripcord/tests/Makefile
 #
 # NOT IN THE SOLUTION FILE, AND NOT BUILDABLE BY dotnet. Ripcord.slnx is MSBuild driving .NET and
 # C++/WinRT; this is a Makefile driving a cross-compiler for a different CPU and a different OS entirely.
 # Sharing a repository with Ripcord buys shared specs, shared constants and shared test vectors - it does
 # not and should not mean sharing a build system.
 #
-# STATUS: these flags are known-good, not provisional - all seven .3dsx targets build against a real
-# devkitPro installation, and two of them (ripcord-3ds, ripcord-3ds-linktest) have booted on real New 3DS
-# hardware. What each program has and has not been RUN against is tracked in BRINGUP.md, not here.
+# What each program has and has not been RUN against is recorded in BRINGUP.md, not here.
 
 ifeq ($(strip $(DEVKITPRO)),)
 $(error DEVKITPRO is not set. Install devkitPro and run this from its shell - see the URL above)
@@ -62,12 +60,10 @@ ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 # protocol state does not fit in that: takion_reliable_channel is 49.6 KB (32 unacked 1500-byte packets)
 # and stream_demux is 513 KB. Declaring either as an ordinary local overflows the stack in the function
 # PROLOGUE, before a single line of the function body runs - which on 2026-08-12 presented as a data
-# abort writing 12 bytes below SP, with a log file that stopped after the banner and gave no hint which
-# function was even entered. Diagnosing that from the dump took considerably longer than this flag.
+# abort writing 12 bytes below SP, with a log file that stopped after the banner.
 #
 # 8 KB per frame leaves room for a reasonable call depth inside 32 KB. Anything bigger belongs in .bss
-# (file-scope or `static`) or on the heap; with -Werror below, exceeding it fails the build instead of
-# the handheld.
+# (file-scope or `static`) or on the heap; with -Werror below, exceeding it fails the build.
 CFLAGS  := $(ARCH) -std=c99 -O2 -g \
            -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion \
            -Wframe-larger-than=8192 \
@@ -78,8 +74,8 @@ CFLAGS  := $(ARCH) -std=c99 -O2 -g \
 LDFLAGS := $(ARCH) -specs=3dsx.specs -Wl,--gc-sections -L$(CTRULIB)/lib
 LIBS    := -lctru -lm
 
-# Phase 6a: the ECDH backend. The only third-party library this port links, and the only primitive it
-# does not implement itself - see source/crypto/rc_ecdh.h for that argument. Install with:
+# mbedtls, the ECDH backend: the only cryptographic primitive this port does not implement itself - see
+# libripcord/crypto/rc_ecdh.h for that argument. Install with:
 #
 #     dkp-pacman -S 3ds-mbedtls
 #
@@ -114,9 +110,9 @@ SOURCES := \
 	$(CORE)/util/rc_program_dir.c \
 	source/app/main.c
 
-# Phase 2 (SETUP.md): the UDP link test. Deliberately has no dependency on source/crypto or
-# source/halyard - it answers a network question, not a protocol one, and building it standalone keeps
-# that true rather than assumed. source/util is shared with the crypto smoke test above.
+# The UDP link test. Links no crypto or protocol code from the core - it answers a network question, not
+# a protocol one, and building it standalone keeps that true rather than assumed. rc_log, rc_stack and
+# rc_program_dir are shared with the crypto smoke test above.
 LINKTEST_SOURCES := \
 	source/net/rc_soc.c \
 	$(CORE)/util/rc_log.c \
@@ -124,10 +120,10 @@ LINKTEST_SOURCES := \
 	$(CORE)/util/rc_program_dir.c \
 	source/linktest/main.c
 
-# Phase 3 (SETUP.md): LAN discovery. source/discovery has no dependency on source/crypto or
-# source/halyard either - see halyard_discovery.h for why the parser itself has no socket dependency in
-# turn, and source/discovery/main.c for where sockets and parsing meet. $(CORE)/util/rc_text.c is the
-# trim/case-insensitive-match helper shared with source/session's HTTP-like parsing below.
+# LAN discovery. Links no crypto either - see libripcord/discovery/halyard_discovery.h for why the parser
+# itself has no socket dependency, and source/discovery/main.c for where sockets and parsing meet.
+# $(CORE)/util/rc_text.c is the trim/case-insensitive-match helper shared with the session probe's
+# HTTP-like parsing below.
 DISCOVERY_SOURCES := \
 	source/net/rc_soc.c \
 	$(CORE)/util/rc_log.c \
@@ -137,9 +133,8 @@ DISCOVERY_SOURCES := \
 	$(CORE)/discovery/halyard_discovery.c \
 	source/discovery/main.c
 
-# Phase 4 (SETUP.md): the /sess/init -> /sess/ctrl exchange. Unlike discovery/linktest, this genuinely
-# needs source/halyard (the control-field cipher, established from /sess/init's RP-Nonce) and therefore
-# source/crypto beneath it - this is that layer's first real end-to-end use outside a test harness.
+# The /sess/init -> /sess/ctrl exchange. Unlike discovery and linktest, this needs $(CORE)/halyard (the
+# control-field cipher, established from /sess/init's RP-Nonce) and therefore $(CORE)/crypto beneath it.
 SESSION_SOURCES := \
 	$(CORE)/crypto/rc_aes.c \
 	$(CORE)/crypto/rc_sha256.c \
@@ -161,9 +156,8 @@ SESSION_SOURCES := \
 	$(CORE)/session/halyard_sess_request.c \
 	source/session/main.c
 
-# Phase 5 (SETUP.md): the Takion transport (handshake, DATA/SACK, reassembly). Deliberately has no
-# dependency on source/crypto or source/halyard - GMAC sealing needs the stream cipher, a separate,
-# later phase; this is pure transport.
+# The Takion transport probe (handshake, DATA/SACK, reassembly). Links no crypto: this program does not
+# seal its packets.
 TAKION_SOURCES := \
 	source/net/rc_soc.c \
 	$(CORE)/util/rc_log.c \
@@ -178,10 +172,10 @@ TAKION_SOURCES := \
 	source/platform/rc_platform_3ds.c \
 	source/takion/main.c
 
-# Phase 6b: the combined connect flow - the only program that carries a real control session all the way
-# to derived stream keys, and therefore the only way to test Takion or the ECDH agreement against a
-# console at all (see source/connect/main.c on why the standalone Takion probe cannot work). This is the
-# first target to link BOTH the control plane and the stream plane, and the only one needing mbedtls.
+# The connect flow - the only program that carries a real control session all the way to derived stream
+# keys and on into A/V, and therefore the only way to test Takion or the ECDH agreement against a console
+# at all (see source/connect/main.c on why the standalone Takion probe cannot work). It links BOTH the
+# control plane and the stream plane, and is the only target needing mbedtls and Opus.
 CONNECT_SOURCES := \
 	$(CORE)/crypto/rc_aes.c \
 	$(CORE)/crypto/rc_sha256.c \
@@ -227,11 +221,9 @@ CONNECT_SOURCES := \
 	source/media/rc_audio.c \
 	source/connect/main.c
 
-# Modules that have no on-device app of their own yet: Phase 5.5's stream framing/FEC/demux (nothing real
-# to decrypt until a stream key exists) and Phase 6a's ECDH seam + control-plane protobuf (no connect
-# flow wired through them yet). Both phases are documented as "cross-compiles clean for ARM11", and this
-# target is what makes that claim checkable rather than remembered - it compiles each to an object and
-# links nothing, which is exactly as far as the claim goes.
+# Stream-plane core modules, each compiled to an object with nothing linked: a check that they
+# cross-compile clean for ARM11, which is exactly as far as the check goes. The connect target links all
+# of them as well. Some files are listed more than once and are compiled once per listing.
 CROSSCHECK_SOURCES := \
 	$(CORE)/stream/stream_demux.c \
 	$(CORE)/stream/fec_galois.c \
@@ -269,14 +261,15 @@ connect: $(CONNECT).3dsx
 mvdreplay: $(MVDREPLAY).3dsx
 
 # The interop constants are generated from the single committed JSON bundle rather than duplicated into
-# this port. tools/gen_constants.py explains why that is a deliberate constraint and not just tidiness.
+# this port. libripcord/tools/gen_constants.py explains why that is a deliberate constraint and not just
+# tidiness.
 constants: $(GENERATED)
 
 # Each recipe creates its own output directory directly rather than depending on a separate directory
-# target: with three build products under build/, an order-only prerequisite on a shared "build" target
-# makes GNU Make's dependency graph see a cycle - confirmed the hard way in tests/Makefile once it grew a
-# second target - and it silently drops the mkdir side effect instead of erroring, so the link step fails
-# for a directory that was never created. `@mkdir -p $(@D)` has no such graph to get confused about.
+# target: with several build products under build/, an order-only prerequisite on a shared "build" target
+# makes GNU Make's dependency graph see a cycle - libripcord/tests/Makefile carries the same note -
+# and it silently drops the mkdir side effect instead of erroring, so the link step fails for a directory
+# that was never created. `@mkdir -p $(@D)` has no such graph to get confused about.
 
 $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)

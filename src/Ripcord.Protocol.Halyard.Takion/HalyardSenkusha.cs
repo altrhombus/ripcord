@@ -10,9 +10,8 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// What the senkusha bring-up learned about the link.
 ///
 /// <para>
-/// <see cref="RoundTripTimeMs"/> is null when nothing could be measured, which is deliberately distinct from 0 —
-/// the launchSpec previously declared <c>rtt: 0</c> unconditionally, asserting a measurement that had never been
-/// taken.
+/// <see cref="RoundTripTimeMs"/> is null when nothing could be measured, which is deliberately distinct from 0:
+/// a declared <c>rtt: 0</c> would assert a measurement that was never taken.
 /// </para>
 /// </summary>
 public sealed record SenkushaResult(bool Succeeded, double? RoundTripTimeMs, int? ConfirmedMtu = null)
@@ -26,19 +25,19 @@ public sealed record SenkushaResult(bool Succeeded, double? RoundTripTimeMs, int
 /// before opening the stream on 9296; skipping it leaves the stream's SESSION exchange unanswered.
 ///
 /// <para>
-/// This implements the minimal bring-up wire-confirmed against a full vendor session (cap22): Takion
+/// The bring-up, wire-confirmed against a full vendor session (cap22): Takion
 /// connection handshake → <c>PROTOCOL_VERSION_REQUEST{[9]}</c> (channel 0x15) → keyless
 /// <c>SESSION_REQUEST</c> (empty sessionKey/launchSpec/encryptedKey, clientVersion 9; channel 0x01) →
-/// <c>SESSION_REPLY</c> → <c>DISCONNECT</c>. The full senkusha additionally runs RTT (echo) and MTU probes
-/// on channel 0x08 to measure the link; those feed only tuning defaults and are added later if the console
-/// turns out to require them.
+/// <c>SESSION_REPLY</c> → <c>DISCONNECT</c>. Between the reply and the disconnect this also runs the RTT
+/// (echo) and MTU probes, commanded on channel 0x08, to measure the link; those feed only tuning defaults
+/// (see <see cref="RunAsync"/>).
 /// </para>
 ///
 /// <para>
 /// <b>Provenance.</b> The probe sequence, packet layout and field meanings are <b>[W]</b> — decoded from our own
 /// capture <c>session8-wireshark.pcapng</c>, frames 154-189, with frame numbers cited at each step. The decision to
-/// treat probe failure as NON-FATAL is a design choice of ours (fall back to MTU 1454). It is supported by the
-/// capture — the
+/// treat probe failure as NON-FATAL is a design choice of ours (the result then carries no confirmed MTU, and
+/// the caller keeps its own estimate). It is supported by the capture — the
 /// vendor's own bring-up proceeds regardless — and by the plain engineering argument that a tuning probe must never
 /// be the reason a stream fails to start.
 /// </para>
@@ -89,18 +88,15 @@ public sealed class HalyardSenkusha : IAsyncDisposable
     /// <para>
     /// A handshake-derived RTT is the floor this returns when the echo probe declines to produce one: it costs no
     /// extra wire traffic and cannot disturb a handshake the console is known to accept.
-    ///
-    /// <para><b>Superseded in part.</b> This paragraph used to say the ECHO and MTU probes "would have to be written
-    /// blind" and were therefore outstanding. Both are implemented below (<see cref="RunEchoProbeAsync"/>,
-    /// <see cref="RunMtuProbeAsync"/>) and byte-verified against two of our own captures. Only the <b>BANDWIDTH</b>
-    /// leg remains outstanding, and for a different reason — it has never been observed on any capture we hold, so
-    /// there is nothing to write it against.</para>
-    ///
-    /// <para>Note the consequence for callers, which is easy to misread: because the handshake RTT is used as a
-    /// fallback, a non-null round-trip time does <b>not</b> mean the echo probe succeeded. Distinguishing the two
-    /// needs a separate signal; <see cref="SenkushaResult.ConfirmedMtu"/> has no such ambiguity, being null exactly
-    /// when the MTU probe did not confirm.</para>
     /// </para>
+    ///
+    /// <para>The ECHO and MTU probes (<see cref="RunEchoProbeAsync"/>, <see cref="RunMtuProbeAsync"/>) are
+    /// byte-verified against two of our own captures. There is no <b>BANDWIDTH</b> leg: it has never been
+    /// observed on any capture we hold, so there is nothing to write it against.</para>
+    ///
+    /// <para>Because the handshake RTT is used as a fallback, a non-null round-trip time does <b>not</b> mean the
+    /// echo probe succeeded. <see cref="SenkushaResult.ConfirmedMtu"/> has no such ambiguity, being null exactly
+    /// when the MTU probe did not confirm.</para>
     /// </summary>
     /// <param name="candidateMtu">
     /// The MTU to verify, normally the interface-derived estimate. The probe confirms or refutes it rather than
@@ -155,7 +151,7 @@ public sealed class HalyardSenkusha : IAsyncDisposable
         // MINIMUM, so a slow sample can only be ignored, never inflate the result.
         samples.Add(Stopwatch.GetElapsedTime(requestSentAt).TotalMilliseconds);
 
-        // Echo probe: a real RTT measurement, replacing the estimate derived from handshake round trips. Ordered
+        // Echo probe: a real RTT measurement; when it yields one, the handshake round trips are discarded. Ordered
         // exactly as the capture shows — after SESSION_REPLY, before DISCONNECT.
         double? echoRtt = await RunEchoProbeAsync(cancellationToken).ConfigureAwait(false);
         if (echoRtt is double measured)
@@ -191,9 +187,8 @@ public sealed class HalyardSenkusha : IAsyncDisposable
     ///
     /// <para>
     /// Strictly best-effort and bounded. Returns null on any failure or timeout, in which case the caller keeps the
-    /// RTT it derived from the handshake exchanges — a worse measurement, but never worse than no session. The whole
-    /// point of senkusha is to be tolerated when it goes wrong: the vendor client tolerates failures here, and this
-    /// probe must not be the reason a stream fails to start.
+    /// RTT it derived from the handshake exchanges. The vendor client tolerates failures here, and this probe must
+    /// not be the reason a stream fails to start.
     /// </para>
     /// </summary>
     private async Task<double?> RunEchoProbeAsync(CancellationToken cancellationToken)
@@ -297,8 +292,7 @@ public sealed class HalyardSenkusha : IAsyncDisposable
     ///
     /// <para>
     /// Returns the confirmed MTU, or null if either direction could not be verified — in which case the caller keeps
-    /// the interface-derived estimate. Declaring an unverified figure is the status quo; declaring one the probe just
-    /// showed to be too large would be worse than not probing at all.
+    /// the interface-derived estimate.
     /// </para>
     /// </summary>
     private async Task<int?> RunMtuProbeAsync(int candidateMtu, CancellationToken cancellationToken)
@@ -363,10 +357,9 @@ public sealed class HalyardSenkusha : IAsyncDisposable
         await SendProbeAsync(ClientMtu(id: 1, mtu, state: true), cancellationToken).ConfigureAwait(false);
 
         // Past this point the console IS in client-MTU mode and must be taken back out of it on every exit
-        // path — hence the finally. This used to be a plain sequential send after the echo wait, with a
-        // comment claiming it closed "either way"; it did not. `RunMtuProbeAsync` wraps this call in a
-        // catch-all, so a timeout anywhere below unwound past the close and was then silently swallowed,
-        // leaving the console in a state we have no way to clear.
+        // path — hence the finally. `RunMtuProbeAsync` wraps this call in a catch-all, so without it a timeout
+        // anywhere below would unwind past the close and be silently swallowed, leaving the console in a
+        // state we have no way to clear.
         try
         {
             await ReceiveProbeReplyAsync(
@@ -503,8 +496,7 @@ public sealed class HalyardSenkusha : IAsyncDisposable
                 }
                 else if (SenkushaEchoProbe.TryReadEcho(result.Buffer, out byte sequence))
                 {
-                    // Echoed ping. This loop used to discard every non-control packet, which is exactly the traffic
-                    // the RTT probe depends on.
+                    // Echoed ping: non-control traffic the RTT probe depends on, so it must not be discarded here.
                     _echoes.Writer.TryWrite(sequence);
                 }
                 else if (baseType == TakionMessageHeader.BaseTypeSenkushaMtu)

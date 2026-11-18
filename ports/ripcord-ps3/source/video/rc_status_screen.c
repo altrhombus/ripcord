@@ -36,9 +36,8 @@ void rc_status_screen_draw(const rc_session_state *state)
 
     if (!rc_overlay_begin_now()) {
         /*
-         * SAID, RATHER THAN RETURNED SILENTLY. This declining quietly is what made three pairing
-         * attempts look like a blank screen with no explanation anywhere: the card was asked for every
-         * time and never drawn, and nothing recorded that.
+         * SAID, RATHER THAN RETURNED SILENTLY. Declining quietly looks like a blank screen with no
+         * explanation anywhere: the card is asked for and never drawn, and nothing records that.
          */
         rc_log("ui:    cannot draw - the overlay is not prepared\n");
         return;

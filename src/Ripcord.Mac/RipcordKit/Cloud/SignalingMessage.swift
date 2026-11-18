@@ -82,9 +82,9 @@ public struct SignalingMessage: Sendable, Equatable {
     /// The vendor writes `"localPeerAddr":,` (a key with no value) in an ACCEPT, which is not JSON. Repaired
     /// to `null` before parsing.
     ///
-    /// This was a real, silent bug for the whole life of the .NET account route: the parse threw, the frame
-    /// was dropped as "not signaling", the console's ACCEPT was never acknowledged, and every live pairing
-    /// ended in its TERMINATE. Ripcord sends this exact malformation itself, so it must read it back.
+    /// Unrepaired, the failure is silent: the parse throws, the frame is dropped as "not signaling", the
+    /// console's ACCEPT is never acknowledged, and a live pairing ends in its TERMINATE. Ripcord sends this
+    /// exact malformation itself, so it must read it back.
     static func repairVendorJSON(_ body: String) -> String {
         body.replacing(#/"localPeerAddr"\s*:\s*,/#) { _ in "\"localPeerAddr\":null," }
     }

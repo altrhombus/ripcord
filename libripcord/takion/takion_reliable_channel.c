@@ -56,8 +56,8 @@ static void send_sack(takion_reliable_channel *ch)
 }
 
 /*
- * One read from the channel's socket. Unfiltered it is exactly the recvfrom every caller made before
- * filtering existed. Filtered, a datagram from anyone but the peer is consumed and dropped - taken for
+ * One read from the channel's socket. Unfiltered it is a plain recvfrom that accepts any source.
+ * Filtered, a datagram from anyone but the peer is consumed and dropped - taken for
  * real even when the caller only peeked, or it would sit at the head of the queue and be peeked forever -
  * and the read reports "nothing yet" (-1 with EAGAIN) once a bounded number of strays have gone, so a
  * flood from elsewhere cannot hold the caller here.
@@ -334,8 +334,8 @@ static int accept_data_chunk(takion_reliable_channel *ch, int is_first, unsigned
         /* takion_reassembler_first does not fill out_channel - it already knows the channel, because we
          * just passed it in. Setting it here is not tidiness: without it a single-chunk message (the
          * common case - anything under 1000 bytes) leaves the caller's channel variable uninitialised,
-         * which on hardware printed a control message as arriving on "channel 0x11bdc4". Only the
-         * continuation path was ever filling it in. */
+         * which on hardware printed a control message as arriving on "channel 0x11bdc4". The
+         * continuation path gets it from takion_reassembler_continue. */
         *out_channel = channel;
         complete = takion_reassembler_first(&ch->reassembler, channel, payload, payload_length, ending,
             out_message, out_length);
@@ -435,18 +435,13 @@ int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
     /*
      * PEEK BEFORE TAKING, because this socket is not ours alone.
      *
-     * One UDP socket carries both the control association and the A/V stream. This used to recvfrom
-     * unconditionally and return 0 for anything whose verification tag did not match - which does not
-     * ignore a foreign packet, it CONSUMES AND DESTROYS it.
+     * One UDP socket carries both the control association and the A/V stream. A recvfrom here on a
+     * packet whose verification tag does not match CONSUMES AND DESTROYS it: the PS3 port measured 9% of
+     * A/V units missing on a wired link that way.
      *
-     * A caller that peeks before calling here cannot close the gap: between its peek finding nothing and
-     * this call's recvfrom, a datagram can arrive, and at three hundred packets a second that race fires
-     * constantly. On a wired link showing no business losing anything, the PS3 port measured 9% of A/V
-     * units missing and the demuxer correctly reported them as lost - they were never on the wire twice,
-     * they were read here and thrown away.
-     *
-     * Peeking costs one syscall on a packet this function is about to read anyway, and it makes a reader
-     * that shares a socket leave alone what it does not own.
+     * A caller that peeks before calling here cannot close the gap: a datagram can arrive between its
+     * peek and this call's recvfrom, and at three hundred packets a second that race fires constantly.
+     * So the peek is here, at the cost of one syscall per packet.
      */
     n = channel_recv(ch, ch->sock, recv_buf, sizeof(recv_buf), MSG_PEEK);
     if (n < 0)

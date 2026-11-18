@@ -1,10 +1,10 @@
 /*
  * Getting a picture onto the television.
  *
- * Deliberately the smallest display path that can work: the CPU writes straight into a display buffer
- * and the RSX is asked to flip it. No shaders, no textures, no render target. A scaler or a YUV->RGB
- * shader would be additions on top of this, and the reason for doing it this way first is that when
- * nothing appears there is almost nothing between the pixels and the screen to be wrong.
+ * A small display path: two display buffers in RSX memory, and the RSX is asked to flip between them.
+ * No shaders, no textures, no render target. A picture reaches the back buffer one of three ways - the
+ * RSX's 2D engine scales it there, the SPEs scale it there, or the PPE converts it there - so when
+ * nothing appears there is little between the pixels and the screen to be wrong.
  *
  * The sequence is rsx.h's own, followed rather than improvised: create a context, configure video from
  * the state the console reports, set the flip mode to vsync, allocate 64-byte-aligned buffers in RSX
@@ -31,8 +31,8 @@ typedef struct {
 
     /*
      * The negotiated mode, as the television asked for it. VIDEO_ASPECT_*, VIDEO_SCANMODE_* and the
-     * VIDEO_REFRESH_* bitfield. Recorded because three of this file's assumptions - square pixels,
-     * progressive scan-out and a 60 Hz display - are invisible until one of them is false.
+     * VIDEO_REFRESH_* bitfield. Recorded because the fit into the display depends on the aspect, and
+     * because progressive scan-out and a 60 Hz display are assumed and invisible until one is false.
      */
     int aspect;
     int scan_mode;
@@ -64,41 +64,36 @@ uint32_t *rc_video_back_buffer(void);
 int rc_video_info_get(rc_video_info *out);
 
 /*
- * Is the previous flip finished, so the back buffer is safe to write?
- *
- * The caller asks BEFORE converting a picture, not after. b87 blitted and flipped for every decoded
- * frame and waited for vsync each time, on the receive thread - so the display's pace became the
- * network's pace, the socket buffer overflowed, and 90 units were lost where the run before had lost
- * none. The loss looked like a network fault and was self-inflicted.
- *
- * Dropping a picture is the right answer when the display is behind: a frame not shown costs a frame,
- * while a frame waited on costs every packet that arrives during the wait.
- */
-/*
  * Clears EVERY buffer, not just the back one, and presents.
  *
- * Both matter. The test pattern is drawn into both buffers alternately, so clearing one leaves the
- * other still holding it - and with the video window occupying only the centre, the result is a stream
- * framed by a test pattern that flickers between two stale frames. That is what b87 and b89 actually
- * looked like on a television, and it reads as "a glimpse in the middle" rather than as a stream.
+ * The test pattern is drawn into both buffers alternately, so clearing one leaves the other still
+ * holding it - and with the video window occupying only the centre, the result is a stream framed by a
+ * test pattern that flickers between two stale frames (b87, b89).
  */
 void rc_video_clear_all(uint32_t colour);
 
 /* Just the buffer about to be drawn into. Clearing both would blank whatever is currently on screen. */
 void rc_video_clear_back(uint32_t colour);
 
+/*
+ * Is the previous flip finished, so the back buffer is safe to write?
+ *
+ * The caller asks BEFORE converting a picture, not after. Waiting for vsync per decoded frame on the
+ * receive thread (b87) made the display's pace the network's pace: the socket buffer overflowed and 90
+ * units were lost where the run before had lost none.
+ *
+ * Dropping a picture is the right answer when the display is behind: a frame not shown costs a frame,
+ * while a frame waited on costs every packet that arrives during the wait.
+ */
 int rc_video_present_ready(void);
 
 /* Presents the back buffer. Does NOT wait for the flip - see rc_video_present_ready. */
 void rc_video_flip(void);
 
 /*
- * Converts one YUV 4:2:0 picture into the back buffer, centred, one pixel per pixel.
- *
- * NO SCALING, deliberately, for the first light-up. The stream is 960x540 and the display is 1920x1080,
- * which is an exact doubling and therefore tempting - but doubling is four times the pixels, and the
- * open question here is what this conversion COSTS on the PPE while it is also decoding. Answer that at
- * the cheap size first; a 2x blit that drops frames would say nothing about whether the colour is right.
+ * Converts one YUV 4:2:0 picture into the back buffer, scaled to fit the display with its aspect ratio
+ * kept, and centred. The SPEs do it when they are up and finish inside their deadline; otherwise the
+ * PPE does, with the same nearest-neighbour mapping.
  *
  * The colour matrix is BT.709 limited range. **[X]** - this is what HD content normally uses and the
  * console has not been asked. A wrong matrix gives a picture that is visibly present and visibly
@@ -109,15 +104,6 @@ void rc_video_flip(void);
 unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                               int y_stride, int uv_stride, int width, int height);
 
-/*
- * The one-shot agreement check between the SPE and PPE conversions. `checked` is 0 until a frame has
- * been converted both ways. See rc_video_blit_yuv420 for why this exists at all.
- */
-/*
- * Converts a synthetic picture both ways and compares. Returns 1 if the comparison was actually made,
- * 0 if the SPEs were unavailable - which is not a mismatch and the caller is told apart. Run this BEFORE
- * streaming: it used to run on the first live frame and cost the Takion channel at 1080p.
- */
 /* A picture the decoder already packed as 32-bit RGB: scaled and placed, never converted. Returns
  * microseconds, or 0 if the SPEs could not do it - there is no PPE scaler to fall back to. */
 unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, int height);
@@ -146,14 +132,13 @@ void *rc_video_alloc_rsx(size_t bytes, uint32_t *offset);
 unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height);
 
 /*
- * Queue an unscaled copy of an RSX-memory bitmap over whatever is in the back buffer. Must be called
+ * Queues an unscaled copy of an overlay bitmap over whatever is in the back buffer. Must be called
  * AFTER the picture has been queued: it is a command, so it lands behind the picture in the same
  * buffer, which is the only ordering that holds when the RSX is doing the drawing.
- */
-/*
- * Queues a copy of an overlay bitmap over the picture. `from_main` says the source is main memory that
- * rc_video_map_main has given the RSX a window onto, rather than the RSX's own memory - which lets a
- * caller that must draw in main memory skip copying its surface across every frame. See the .c.
+ *
+ * `from_main` says the source is main memory that rc_video_map_main has given the RSX a window onto,
+ * rather than the RSX's own memory - which lets a caller that must draw in main memory skip copying
+ * its surface across every frame. See the .c.
  */
 void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y,
                            int from_main);
@@ -168,11 +153,21 @@ int rc_video_map_main(const void *addr, size_t bytes, uint32_t *offset);
 /* available is 0 when the staging buffer could not be allocated, in which case nothing else is useful. */
 void rc_video_rsx_scale_stats(int *available, unsigned *blits, unsigned *refused);
 
+/*
+ * Converts a synthetic picture on the SPEs and on the PPE, at several scale factors, and compares.
+ * Returns 1 if the comparison was actually made, 0 if the SPEs were unavailable - which is not a
+ * mismatch and the caller is told apart. Run this BEFORE streaming: on the first live frame it stalls
+ * the receive loop for long enough to cost the Takion channel (b112).
+ */
 int rc_video_self_test(void);
 
 /* Which scale factor disagreed, or NULL if none did. */
 const char *rc_video_self_test_failure(void);
 
+/*
+ * The result of rc_video_self_test, the agreement check between the SPE and PPE conversions. `checked`
+ * is 0 until the comparison has been made.
+ */
 void rc_video_verify_get(int *checked, int *match, uint64_t *spu_hash, uint64_t *ppe_hash);
 
 /* How the flip-readiness check has been answering - see rc_video_present_ready. */

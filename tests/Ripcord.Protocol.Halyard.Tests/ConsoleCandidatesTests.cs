@@ -6,10 +6,9 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// One decision about which console candidate to talk to, shared by the transport and the ACCEPT. They used to
-/// have separate rules, and a third on the pairing route, which parted company when no candidate parsed: the
-/// transport fell back to the known host while the ACCEPT named an unparseable candidate, and the media leg
-/// threw on it (engine comparisons, 2026-09-26).
+/// One decision about which console candidate to talk to, shared by the transport and the ACCEPT. Separate
+/// rules part company when no candidate parses: the transport falls back to the known host while the ACCEPT
+/// names an unparseable candidate, and the media leg throws on it.
 /// </summary>
 public class ConsoleCandidatesTests
 {
@@ -48,7 +47,7 @@ public class ConsoleCandidatesTests
         Assert.Same(offered[1], resolved.Named);
     }
 
-    /// <summary>The case that used to diverge: nothing parses, so both fall back to the known host.</summary>
+    /// <summary>The case where separate rules would diverge: nothing parses, so both fall back to the known host.</summary>
     [Fact]
     public void Resolve_WithNothingParseable_FallsBackToTheKnownHostForBoth()
     {

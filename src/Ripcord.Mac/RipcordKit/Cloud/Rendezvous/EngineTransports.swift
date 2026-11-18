@@ -78,7 +78,7 @@ enum AccountRegistration {
 
 // MARK: - Where the 9303 association is aimed
 
-/// An IPv4 endpoint as the C side takes one: address bytes in network order, port in host order.
+/// An IPv4 endpoint as the engine takes one: address bytes in network order, port in host order.
 struct ConsolePath: Sendable, Equatable {
     var address: [UInt8]
     var port: UInt16

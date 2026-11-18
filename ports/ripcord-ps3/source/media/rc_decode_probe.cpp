@@ -100,8 +100,7 @@ extern "C" int rc_decode_probe(const char *path, int max_frames, rc_decode_probe
 
     /*
      * Our splitter, not openh264's. rc_h264_annexb yields NAL units as pointers into this buffer with no
-     * copying - the same zero-copy shape the real client needs, because the decoder will eventually DMA
-     * slice bytes straight from these pointers into an SPE's local store.
+     * copying, so each one is handed to the decoder where it lies.
      */
     rc_h264_annexb_init(&it, buf, len);
 

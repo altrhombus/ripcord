@@ -18,18 +18,15 @@ public sealed record StunResult(IPEndPoint? ReflexiveEndpoint, IPEndPoint? Serve
 /// A minimal STUN client: send a Binding Request, read back this host's reflexive address (RFC 5389).
 ///
 /// <para>
-/// The point of it is one value — the public <c>ip:port</c> a NAT assigns to us — which becomes the reflexive
-/// candidate in a signaling OFFER. Ripcord can produce its LAN candidate on its own; it cannot see its own
-/// reflexive address without asking something outside the NAT, and this is that ask. Off the LAN path it is
-/// the difference between an OFFER a remote console can act on and one it cannot.
+/// The result is the public <c>ip:port</c> a NAT assigns to us, which becomes the reflexive candidate in a
+/// signaling OFFER; only something outside the NAT can observe it.
 /// </para>
 ///
 /// <para>
-/// <b>The socket is the caller's to reuse.</b> A reflexive binding is only meaningful for the specific local
-/// port it was gathered on — NAT maps per source port — so the candidate is worthless unless the media
-/// transport later sends from that same socket. <see cref="GatherAsync(UdpClient, IReadOnlyList{IPEndPoint},
-/// TimeSpan, CancellationToken)"/> takes the socket to bind on for exactly that reason; the convenience
-/// overload that makes its own socket is for discovery and tests, where the mapping is not carried forward.
+/// <b>The socket is the caller's to reuse.</b> NAT maps per source port, so the candidate is only valid if the
+/// media transport later sends from that same socket. <see cref="GatherAsync(UdpClient, IReadOnlyList{IPEndPoint},
+/// TimeSpan, CancellationToken)"/> takes the socket to bind on for that reason; the convenience overload that
+/// makes its own socket is for discovery and tests, where the mapping is not carried forward.
 /// </para>
 /// </summary>
 public sealed class StunClient

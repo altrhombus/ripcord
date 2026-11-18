@@ -11,10 +11,8 @@ namespace Ripcord.Protocol.Halyard.Discovery;
 /// capability but no address); the app merges the two by display name.
 ///
 /// <para>
-/// The <paramref name="profile"/> decides which family is searched for. It defaults to PS5, which is what
-/// this did unconditionally before the parameter existed — and that was a real bug rather than a limitation:
-/// the pairing UI offered PS4 as a choice while the scan behind it could only ever have found a PS5, because
-/// the two families answer SRCH on different ports with different version tokens (9302/00030010 vs
+/// The <paramref name="profile"/> decides which family is searched for, defaulting to PS5. One scan finds one
+/// family only: the two answer SRCH on different ports with different version tokens (9302/00030010 vs
 /// 987/00020020). To find both, run one service per <see cref="HalyardDiscoveryProfile.All"/> entry.
 /// </para>
 /// </summary>

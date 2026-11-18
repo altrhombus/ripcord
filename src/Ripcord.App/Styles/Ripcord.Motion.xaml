@@ -12,13 +12,13 @@
 
     WHAT ANIMATES is a closed list — page transitions, the card/stage handoff, items arriving over time, the
     pairing flow's single content swap, a card's hover wash fading in, and exactly two celebrations: the mark
-    assembling on Welcome and on "Paired." (docs/showcase-plan.md, part 5). Plus one indicator: the connect
-    trail's current dash breathing while a wait runs, which is a progress indicator doing the job a ProgressRing
-    does, not ambient decoration. Each is in docs/showcase-plan.md's motion table.
+    assembling on Welcome and on "Paired.". Plus one indicator: the connect trail's current dash breathing
+    while a wait runs, which is a progress indicator doing the job a ProgressRing does, not ambient
+    decoration. Each is in the motion table in docs/design.md ("Motion").
 
-    WHAT NEVER ANIMATES, because each has bitten something:
-      · Numbers. A diagnostic must never appear to interpolate — the headroom bar already learned this, where
-        tweening made a 22→10 Mbps drop read as a slide rather than a drop.
+    WHAT NEVER ANIMATES, each for a cost seen in this app:
+      · Numbers. A diagnostic must never appear to interpolate — tweening the headroom bar makes a 22→10 Mbps
+        drop read as a slide rather than a drop.
       · Anything on the path to play. Every animation is fire-and-forget and the mechanism completes whether
         or not it ran.
       · Focus. At the 120 ms gamepad repeat interval a follow-the-focus animation is permanently behind the

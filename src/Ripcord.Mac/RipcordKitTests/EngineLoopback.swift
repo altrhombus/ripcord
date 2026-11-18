@@ -1,6 +1,6 @@
-// A whole LAN session through the Rust engine's client ABI, hosted the way the Mac will host it once it
-// relinks (docs/engine-plan.md, Phase 3): @convention(c) callbacks with an Unmanaged box as the user
-// pointer, CryptoKit as the key agreement, the system CSPRNG, connect, then pump until the session ends.
+// A whole LAN session through the Rust engine's client ABI, hosted the way ConsoleSession hosts it:
+// @convention(c) callbacks with an Unmanaged box as the user pointer, CryptoKit as the key agreement, the
+// system CSPRNG, connect, then pump until the session ends.
 // The console is the engine's loopback one (test-support), so nothing leaves the machine.
 
 import CRipcordEngine

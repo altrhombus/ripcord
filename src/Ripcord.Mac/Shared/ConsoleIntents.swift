@@ -5,7 +5,7 @@
 // runs in the app (RIPCORD_APP is the app target's compilation condition), because the pairing records and
 // the network live there. The extension's copy exists so a widget button and a Control can name the intent;
 // that the system then runs it in the app, as openAppWhenRun and the intent's presence in both asks, is
-// [X] until a signed build has been seen to do it.
+// [X].
 
 import AppIntents
 import Foundation

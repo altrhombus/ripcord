@@ -3,22 +3,18 @@
 # Produces ripcord-ps3.self, runnable from a homebrew-enabled console. Requires PSL1GHT and the ps3dev
 # PPU toolchain: https://github.com/ps3dev/PSL1GHT - set $PS3DEV and $PSL1GHT.
 #
-#     make            build the bring-up program
+#     make            build ripcord-ps3.self
 #     make clean
 #     make test       run the HOST-side tests (no PS3 involved) - tests/Makefile, and libripcord/tests
 #
-# STATUS: this builds AND the result runs on a real PS3. Built against ps3dev nightly-2026-07-26
-# (GCC 7.2.0, PSL1GHT f649a08) on Ubuntu 26.04; the bring-up program ran on hardware on 2026-09-11 with
-# every check passing, measuring the PPE time base at 79,800,986 Hz against an expected 79,800,000.
+# Written against ps3dev nightly-2026-07-26 (GCC 7.2.0, PSL1GHT f649a08) on Ubuntu 26.04. Measured on
+# hardware 2026-09-11: the PPE time base at 79,800,986 Hz against an expected 79,800,000.
 #
-# Getting there took five hardware runs, four of which produced no output at all, and BOTH causes were in
-# this file rather than in the program: a missing sprxlinker step and a stack size given in the wrong
-# units. SETUP.md section 6 is the post-mortem. If you are editing the packaging rules below, read it
-# first - the failure mode is a console that launches the program and returns to the XMB in silence.
+# Before editing the packaging rules below, read SETUP.md section 6: a missing sprxlinker step or a stack
+# size in the wrong units gives a console that launches the program and returns to the XMB in silence.
 #
-# NOT IN THE SOLUTION FILE, AND NOT BUILDABLE BY dotnet, for the same reason neither of the other ports
-# is: Ripcord.slnx is MSBuild driving .NET and C++/WinRT, and this is a Makefile driving a cross-compiler
-# for a different CPU and a different OS.
+# Not in Ripcord.slnx and not buildable by dotnet: this is a Makefile driving a cross-compiler for a
+# different CPU and a different OS.
 
 ifeq ($(strip $(PS3DEV)),)
 $(error PS3DEV is not set. Install the ps3dev toolchain and export PS3DEV - see the URL above)
@@ -27,10 +23,8 @@ ifeq ($(strip $(PSL1GHT)),)
 $(error PSL1GHT is not set. Install PSL1GHT and export PSL1GHT - see the URL above)
 endif
 
-# make takes the FIRST EXPLICIT TARGET as its default goal, and the rules below are no longer in an
-# order where that is $(APP).self - the generated-constants rule comes earlier. libripcord/tests
-# pinned its own goal for exactly this reason and said so; the trap is that nothing fails, `make`
-# simply builds one file and stops, and it looks like the tree is up to date.
+# make takes the FIRST EXPLICIT TARGET as its default goal. Pinned so that the order of the rules below
+# cannot change it: with a generated-file rule first nothing fails, `make` builds one file and stops.
 .DEFAULT_GOAL := all
 
 PREFIX := $(PS3DEV)/ppu/bin/powerpc64-ps3-elf-
@@ -47,8 +41,9 @@ SPU_PREFIX := $(PS3DEV)/spu/bin/spu-
 SPU_CC     := $(SPU_PREFIX)gcc
 BIN2S      := $(PS3DEV)/bin/bin2s
 
-# Packaging tools, all from $(PS3DEV)/bin. Only `make pkg` uses these; a plain `make` needs fself alone.
-# sprxlinker. Not optional - see the .ready.elf rule below for what leaving it out does.
+# Packaging tools, all from $(PS3DEV)/bin. A plain `make` needs sprxlinker, make_self and fself; `make
+# pkg` uses the rest. sprxlinker is not optional - see the .ready.elf rule below for what leaving it out
+# does.
 SPRX           := $(PS3DEV)/bin/sprxlinker
 SELF           := $(PS3DEV)/bin/make_self
 FSELF          := $(PS3DEV)/bin/fself
@@ -58,93 +53,65 @@ PKG            := $(PS3DEV)/bin/pkg
 PKG_FINALIZE   := $(PS3DEV)/bin/package_finalize
 SFOXML         := $(PS3DEV)/bin/sfo.xml
 
-# THE ICON THE XMB SHOWS. Drawn from brand/ripcord-ground.svg and brand/ripcord-mark-ondark.svg by
-# tools/make-icon.py rather than copied
-# from $(PS3DEV)/bin/ICON0.PNG, which is PSL1GHT's placeholder and says PSL1GHT - so every screenshot of
-# this port on a television advertised the wrong project. The generator needs python3 and nothing else;
-# see its header for why it does not use brand/generate-assets.ps1.
-# Deferred rather than immediate: $(BUILD) is defined further down, and := here expanded it
-# to nothing, which made the target /ICON0.PNG and the failure a permission error at the
-# root of the filesystem.
+# The icon the XMB shows, drawn from brand/ripcord-ground.svg and brand/ripcord-mark-ondark.svg by
+# tools/make-icon.py (python3 and nothing else; its header says why not brand/generate-assets.ps1).
+# $(PS3DEV)/bin/ICON0.PNG is PSL1GHT's placeholder and says PSL1GHT.
+# Deferred (=) rather than immediate: $(BUILD) is defined further down, and := here expands it to
+# nothing, which makes the target /ICON0.PNG.
 ICON0           = $(BUILD)/ICON0.PNG
 
 # The identity the console files this under. APPID is what creates /dev_hdd0/game/RIPC00003/ on install;
 # CONTENTID follows the UP0001-<appid>_00-<16 chars> shape that $(PSL1GHT)/ppu_rules uses for its own
 # default, and make_self_npdrm warns that the OUTPUT FILENAME matters to NPDRM - hence EBOOT.BIN exactly.
-# THE BUILD NUMBER, AND WHY A BRING-UP PROGRAM HAS ONE.
 #
-# Five hardware runs were needed to get this program to start, and for all five the only evidence of
-# WHICH binary had actually executed was the byte size of the installed EBOOT - inferred from the far
-# end of an FTP listing. That is a coincidence away from being wrong, and a wrong answer there sends you
-# debugging code that never ran. A stale install and a broken program look identical.
-#
-# So every build gets a number, and it appears in three places that have to agree: the XMB title, the
-# beacon file, and the first line of both logs. If they do not match what `make` last printed, stop -
-# the console is running something else and nothing else you are looking at means anything.
+# The build number. A stale install and a broken program look identical, so every build gets a number,
+# and it appears in three places that have to agree: the version the XMB shows, the beacon file, and the
+# first line of both logs. If they do not match what `make` last printed, the console is running
+# something else.
 #
 # The counter lives in .buildno at the port root, NOT under build/, so that `make clean` does not reset
-# it and start handing out numbers that have already been used. It is gitignored: it is per-machine
-# state about how many times somebody pressed make, which is not a fact about the project.
+# it and hand out numbers that have already been used. It is gitignored: per-machine state.
 BUILDNO_FILE := .buildno
 BUILD_NO      = $(shell cat $(BUILDNO_FILE) 2>/dev/null || echo 0)
 
-# WHERE THIS BUILD CAME FROM, appended to the build id. Empty for a developer build; CI passes
+# Where this build came from, appended to the build id. Empty for a developer build; CI passes
 # BUILD_ORIGIN=ci.
 #
-# THE TWO COUNTERS ARE INDEPENDENT AND WERE ABOUT TO COLLIDE. $(BUILDNO_FILE) is per-machine state and
-# counts one developer's iterations; CI stamps github.run_number, which counts CI runs and climbs far
-# faster. Both were printing the same "bNNN" shape, and this repository's docs and journal cite 94 such
-# numbers between b87 and b428 - every one of them a local build. CI reaching run 87 would have produced
-# an artifact calling itself b87, which docs/journal.md already uses to mean a different binary. Days
-# away, not months.
+# The two counters are independent: $(BUILDNO_FILE) counts one developer's iterations, and CI stamps
+# github.run_number, which climbs far faster. Both print the same "bNNN" shape, and the bNNN numbers
+# this repository's docs and journal cite are local builds. The suffix keeps "b35ci" and "b35" distinct;
+# the id is a string and unbounded, so no partition of the NN.NN field is needed.
 #
-# A SUFFIX RATHER THAN A SEPARATE NUMBER SPACE, because any fixed partition of an NN.NN field eventually
-# runs out and this one would have run out fast. The id is a string and unbounded, so "b35ci" and "b35"
-# can coexist forever and neither has to know about the other.
-#
-# WHAT THIS DOES NOT FIX: the XMB shows APP_VER, which is digits and a dot and cannot carry a letter, so
-# a CI b35 and a local b35 still both read 00.35 there. The log's first line is the authoritative answer
-# and always has been - the Makefile's own advice is to check it against what `make` printed. Versioning
-# released packages from a tag rather than from either counter is the real fix, and belongs with whatever
-# a PS3 release turns out to be.
-# A RELEASE BUILD DOES NOT TOUCH THIS COUNTER AT ALL - see RELEASE_TAG below. It is identified by its
-# tag, so consuming one of a developer's numbers would hand out an id nothing will ever refer to.
+# The suffix does not reach the XMB: it shows APP_VER, which is digits and a dot and cannot carry a
+# letter, so a CI b35 and a local b35 both read 00.35 there. The log's first line is the authoritative
+# answer.
+# A release build does not touch this counter at all - see RELEASE_TAG below. It is identified by its
+# tag.
 BUILD_ORIGIN ?=
 
 # Recursively expanded (=, not :=) on purpose: the number is read when the packaging recipe RUNS, which
-# is after the compile step has bumped it. A := here would bake in the previous build's number and
-# produce exactly the mismatch this exists to detect.
-# THE NAME ON THE XMB IS THE NAME OF THE PROGRAM, and the build number is its VERSION - which is the
-# field the console already has for exactly this and shows in the same panel.
+# is after the compile step has bumped it. A := here would bake in the previous build's number.
 #
-# It used to be "Ripcord bring-up b362", which put a developer's counter in the place a person reads the
-# name of the thing they are about to launch.
-#
-# APP_VER is an NN.NN string, so the number goes in losslessly: take the dot out of the version and you
-# have the build. b432 is 04.32. That is the whole encoding, it is monotonic, and it holds to b9999.
+# The name on the XMB is the name of the program, and the build number is its version, which the console
+# shows in the same panel. APP_VER is an NN.NN string: take the dot out of the version and you have the
+# build, so b432 is 04.32. It is monotonic, and it holds to b9999.
 TITLE     = Ripcord
 
-# A RELEASE IS VERSIONED BY ITS TAG, NOT BY EITHER COUNTER. Pass RELEASE_TAG=ps3-v1.0 and the package
-# carries 01.00; leave it unset and everything below behaves exactly as before.
+# A release is versioned by its tag, not by either counter. Pass RELEASE_TAG=ps3-v1.0 and the package
+# carries 01.00; leave it unset and APP_VER comes from the build counter.
 #
-# WHY THE COUNTERS ARE THE WRONG THING TO PUBLISH. Both of them - a developer's .buildno and CI's
-# github.run_number - answer "which iteration is this", which is a question about the machine that built
-# it. A person installing a release is asking "which version is this", and the two answers have no
-# relationship. APP_VER is the console's field for the second question; using it for the first was fine
-# while nothing was published and stops being fine now.
+# Both counters - a developer's .buildno and CI's github.run_number - say which iteration a machine
+# built, not which version a person is installing. APP_VER is the console's field for the second.
 #
-# It also takes released packages out of the NN.NN ceiling permanently. A counter climbs to 9999 and then
-# produces a package that installs, refuses to launch, and blocks every later install until the title is
-# deleted by hand - established on hardware, see the ceiling note on BUILD_NO. A release sits at 01.00
-# and gets nowhere near it.
+# It also takes released packages out of the NN.NN ceiling. A counter climbs to 9999 and then produces a
+# package that installs, refuses to launch, and blocks every later install until the title is deleted by
+# hand - established on hardware.
 #
-# THE PS3 PORT VERSIONS INDEPENDENTLY of the dotnet client, which is why the tag has its own namespace.
-# ps3-v1.0 is a claim about this port and says nothing about ROADMAP.md's 1.0, whose criteria are written
-# about the app and are not met.
+# The PS3 port versions independently of the dotnet client, which is why the tag has its own namespace.
+# ps3-v1.0 says nothing about ROADMAP.md's 1.0, whose criteria are written about the app.
 #
-# Two digits each, because that is what the field is: ps3-v1.0 -> 01.00, ps3-v1.1 -> 01.01,
-# ps3-v2.0 -> 02.00. A tag that does not parse is an error rather than a silent 00.00 - a release
-# mislabelled is the failure this whole mechanism exists to prevent.
+# Two digits each: ps3-v1.0 -> 01.00, ps3-v1.1 -> 01.01, ps3-v2.0 -> 02.00. A tag that does not parse is
+# an error rather than a silent 00.00.
 RELEASE_TAG ?=
 ifneq ($(strip $(RELEASE_TAG)),)
 RELEASE_MAJOR := $(shell printf '%s' '$(RELEASE_TAG)' | sed -n 's/^ps3-v\([0-9][0-9]*\)\.\([0-9][0-9]*\)$$/\1/p')
@@ -168,48 +135,30 @@ BUILD := build
 APP   := ripcord-ps3
 NOTICES := $(BUILD)/THIRD-PARTY-NOTICES.txt
 
-# ARCHITECTURE FLAGS - AND THE RULE MATTERS MORE THAN THE VALUE, because the two ports that came before
-# were bitten by this in OPPOSITE directions.
+# Architecture flags. Get them from the SDK, not from the hardware, and from what the SDK's projects
+# actually compile with, not just the variable it defines. (The 3DS has to spell out -march=armv6k
+# -mtune=mpcore -mfloat-abi=hard -mtp=soft to match libctru; the Vita needs none, and passing
+# -mfloat-abi=softfp there failed the link on every translation unit.)
 #
-# The 3DS needs -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft spelled out, because libctru is
-# built with them and a mismatched float ABI links cleanly and then misbehaves at runtime. The Vita needs
-# NONE, because vitasdk's defaults are already correct and an earlier revision that passed a faithful-
-# looking description of the hardware (-mfloat-abi=softfp) failed the link on every translation unit -
-# the hardware description was right and the calling convention was wrong.
-#
-# The lesson both taught is the same: GET THIS FROM THE SDK, NOT FROM THE HARDWARE - and getting it from
-# the SDK means reading what the SDK's projects actually compile with, not just the variable it defines.
-#
-# An earlier revision guessed -mcpu=cell from the hardware, and a later one replaced it with MACHDEP from
-# $(PSL1GHT)/ppu_rules on the grounds that the SDK should decide. Both were half right. Twenty-five of
-# PSL1GHT's sample Makefiles, and bucanero's apollo-ps3, all write:
+# Twenty-five of PSL1GHT's sample Makefiles, and bucanero's apollo-ps3, all write:
 #
 #     CFLAGS = -O2 -Wall -mcpu=cell $(MACHDEP) $(INCLUDE)
 #
-# MACHDEP AND -mcpu=cell TOGETHER. MACHDEP is the float ABI and scheduling flags every PSL1GHT library is
-# built with, which is the part that has to agree; -mcpu=cell is tuning for the processor the code will
-# actually run on, which the SDK leaves to the project and every project sets. The -f*-sections half of
-# MACHDEP is omitted here only because CFLAGS below already carries it.
+# MACHDEP and -mcpu=cell together. MACHDEP is the float ABI and scheduling flags every PSL1GHT library is
+# built with, which is the part that has to agree; -mcpu=cell is tuning, which the SDK leaves to the
+# project. The -f*-sections half of MACHDEP is omitted here only because CFLAGS below already carries it.
 ARCH := -mcpu=cell -mhard-float -fmodulo-sched
 
-# WHERE THE LOG GOES, and it is /dev_hdd0/ rather than this program's own install directory on purpose.
+# The log directory of last resort: /dev_hdd0/ rather than this program's own install directory, on
+# purpose.
 #
-# main.c calls rc_log_open(NULL, ...) - it is `int main(void)`, so there is no argv[0] to derive a
-# directory from and rc_program_dir falls back to this string every time. The first version of that
-# string was /dev_hdd0/game/RIPC00003/USRDIR/, which is where `make pkg` installs and is therefore right
-# for a packaged build and WRONG for every other way of starting this program. A .self run through
-# ps3load, or copied somewhere by hand, would find no such directory, fail to open the log, and report
-# it to a TTY nobody is reading. The only symptom is a program that appears to do nothing.
-#
-# /dev_hdd0/ exists and is writable on every PS3 regardless of how the program was started, and the log
-# is one FTP fetch away. The bring-up program's entire output is this file; a path that works only under
-# one launch method is not a reasonable thing to bet the run on.
-#
-# The real client, when it has settings to store, should use its own install directory and derive it
-# from argv[0] - that is what the seam is for. This is a bring-up program with one job.
+# main.c tries a list of directories (RC_PS3_LOG_DIRS) and uses the first that accepts a file. Only when
+# none does, it calls rc_log_open(NULL, ...) - it is `int main(void)`, so there is no argv[0] to derive
+# a directory from - and rc_program_dir falls back to this string. /dev_hdd0/game/RIPC00003/USRDIR/
+# exists only for a `make pkg` install; /dev_hdd0/ exists on every PS3 however the program was started.
 LOG_DIR := /dev_hdd0/
 
-# THE NETWORK LOG. Every line the bring-up program prints is also sent as a UDP datagram here, which is
+# THE NETWORK LOG. Every line the program logs is also sent as a UDP datagram here, which is
 # the only channel that needs no write permission on the console - see source/net/rc_netlog.h. Override
 # on the command line: make RC_NETLOG_HOST=192.168.1.10
 #
@@ -217,25 +166,20 @@ LOG_DIR := /dev_hdd0/
 RC_NETLOG_HOST ?= 192.168.1.10
 RC_NETLOG_PORT ?= 9000
 
-# -Wframe-larger-than is inherited from both prior ports, where it was not a style preference but a crash
-# the hardware had already found. The deepest live path either port measured was the audio loss-
-# concealment chain at ~12.4 KB across five frames, every individual frame under the limit - cumulative
-# call depth rather than one oversized local. That chain is libripcord code and Opus, so it will exist
-# here too. See "the main thread's stack" in BRINGUP.md for the part of this that is still an open
-# question on PS3.
+# -Wframe-larger-than is inherited from both prior ports, where the hardware had already found the crash.
+# The deepest live path either port measured was the audio loss-concealment chain at ~12.4 KB across
+# five frames, every individual frame under the limit - cumulative call depth rather than one oversized
+# local. That chain is libripcord code and Opus, so it exists here too. See "The main thread's stack" in
+# BRINGUP.md for what this console's stack measured.
 
-# -std=gnu99, NOT -std=c99, and this is not a style preference. PSL1GHT's syscall wrappers are built on
-# `register u64 p1 asm("3")` in ppu-lv2.h, and in strict ISO mode `asm` is not a keyword - so the first
-# thing to include <sys/systime.h> under -std=c99 gets "expected '=', ',', ';', 'asm' or '__attribute__'
-# before 'asm'" pointing into the SDK's own header, which reads like a broken installation and is not
-# one. Anything that includes a PSL1GHT header needs GNU mode. tests/Makefile stays on -std=c99 on
-# purpose: nothing it builds touches the SDK, so it keeps the stricter setting.
-# HEADER DEPENDENCIES, and this Makefile had none until a hardware run went looking for a bug that was
-# not there. Editing a header rebuilt nothing that included it, so a struct that gained a field left every
-# object compiled before the edit reading the OLD layout while the ones after it read the new. What that
-# looked like from the console was one core suite failing for four days, on big-endian, in the crypto -
-# and it was two objects disagreeing about where a field lived.
+# -std=gnu99, NOT -std=c99. PSL1GHT's syscall wrappers are built on `register u64 p1 asm("3")` in
+# ppu-lv2.h, and in strict ISO mode `asm` is not a keyword - so the first thing to include
+# <sys/systime.h> under -std=c99 gets "expected '=', ',', ';', 'asm' or '__attribute__' before 'asm'"
+# pointing into the SDK's own header. Anything that includes a PSL1GHT header needs GNU mode.
+# tests/Makefile stays on -std=c99 on purpose: nothing it builds touches the SDK.
 #
+# Header dependencies. Without them, editing a header rebuilds nothing that includes it, so objects
+# compiled before and after a struct gains a field disagree about its layout.
 # -MMD writes a .d beside each .o listing the headers it used; -MP adds a phony target for each of those,
 # so deleting or renaming a header does not wedge make with "no rule to make target". The .d files are
 # included at the bottom, after the goals they might otherwise become.
@@ -260,20 +204,18 @@ PORTLIBS := $(PS3DEV)/portlibs/ppu
 
 LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib -L$(PORTLIBS)/lib
 
-# [X] The minimum PSL1GHT libraries for a program that does nothing but keep time and write a file.
-# Sockets, video and the SPU job manager are added when the phase that needs them arrives, deliberately
-# rather than pre-emptively - an unnecessary library here is a link error nobody can explain later.
-# -lnet joined this list when the UDP log channel did. netInitialize() and the BSD socket names both
-# come from it, and it is the first PS3 code in this port to open a socket at all.
+# What the program links from PSL1GHT and the portlibs: FreeType and zlib for the console's typefaces,
+# the pad, the RSX, sysutil, the console's video decoder, audio, the network, pthreads for openh264, and
+# lv2.
+# -lnet: netInitialize() and the BSD socket names both come from it.
 # -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
-# fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
-# the two - `LIBS := -lnetctl -lnet -lsysmodule` - which is the fastest place to have learned it.
+# fails on that symbol. PSL1GHT's network samples all pair the two: `LIBS := -lnetctl -lnet -lsysmodule`.
 LIBS := -lfreetype -lz -lio -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnetctl -lnet -lsysmodule -lpthread -lrt -llv2
 
-# The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
-# list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
-# was the point, so that anything asking for key material failed to link rather than got a stub. The
-# file itself records what is confirmed and what is still [X].
+# Everything the application compiles as C: this port's own sources and the libripcord sources they
+# call. rc_random_ps3.c is the only implementation of the CSPRNG seam here, so without it anything asking
+# for key material fails to link rather than gets a stub. The file itself records what is confirmed and
+# what is still [X].
 SOURCES := \
 	$(CORE)/util/rc_log.c \
 	$(CORE)/util/rc_program_dir.c \
@@ -340,12 +282,11 @@ SOURCES := \
 	$(CORE)/util/rc_text.c \
 	source/app/main.c
 
-# THE DECODER, and the one C++ translation unit in this port. openh264's ISVCDecoder is an abstract class
+# OPENH264, and the one C++ translation unit in this port. openh264's ISVCDecoder is an abstract class
 # rather than a C handle, so the file that drives it has to be C++; everything it exposes is extern "C"
 # and the rest of the port stays C99. tools/build-openh264.sh produces the library - run it once.
-# NOT UNDER $(BUILD). `make clean` wiped it once, and rebuilding costs a 57 MB fetch and 35 compiles -
-# a clean of this port's own objects has no business destroying a verified third-party dependency. It
-# lives beside them instead, gitignored, and `make distclean` is what removes it deliberately.
+# Not under $(BUILD): rebuilding costs a 57 MB fetch and 35 compiles, so `make clean` leaves it alone. It
+# lives beside them, gitignored, and `make distclean` is what removes it deliberately.
 # OPUS, the audio decoder, on the same terms: fetched and built by tools/build-opus.sh into a gitignored
 # directory, never vendored. BSD-3-Clause, which keeps the permissive-only line DECODE.md section 1 sets
 # out. ps3dev's portlibs carry libogg, FLAC and two SDL mixers and no Opus, so it has to be built.
@@ -363,32 +304,24 @@ CXXSOURCES := source/media/rc_decode_probe.cpp
 # ---------------------------------------------------------------------------------------------------
 # libripcord's OWN TEST SUITES, cross-compiled and run on the console. See source/coretest/ for why.
 #
-# Seven of the eleven runners - the ones needing no external .kat file - plus the core sources they
-# exercise. Each runner keeps its own main(), renamed at compile time so seven of them can share one
-# binary; that is the only modification, and it is a -D rather than an edit.
+# Eleven runners, plus the core sources they exercise. Each runner keeps its own main(), renamed at
+# compile time so they can share one binary; that is the only modification, and it is a -D rather than
+# an edit.
 CORE_TEST_DIR := $(CORE)/tests
 # The seven that carry their own expectations, and the four that check against .kat vectors emitted by
-# the .NET side. vector_runner is named for its file rather than its subject - it is the control crypto.
+# the .NET side: three in the list, and vector_runner, which is named for its file rather than its
+# subject - it is the control crypto.
 CORE_TEST_RUNNERS := discovery session takion fec stream_header stream_demux input \
                      stream_crypto ecdh control_proto
 CORE_TEST_EXTRA_OBJS := $(BUILD)/ct_vector_runner.o
 
-# Taken from libripcord/tests' own variables rather than assembled by hand - an earlier revision
-# guessed from a grep, missed halyard_sess_request.c and stream_demux.c, and got a page of undefined
-# references for its trouble.
-# NOTE what is NOT here: halyard_discovery.c and rc_text.c. The application links those itself now that
-# source/discovery/ uses them, and compiling a translation unit twice into one binary is a duplicate
-# symbol rather than a convenience. The test objects use the application's copies.
-# WHAT IS *NOT* HERE: the five Takion sources the application itself now links - data_chunk, handshake,
-# message, reassembler and sack_chunk. They moved to SOURCES when the connect probe grew a real Takion
-# stage, and a source cannot be in both lists: each list compiles it into its own object, and two objects
-# defining the same symbols do not link.
+# The core sources the runners need, following libripcord/tests' own source lists, minus every one that
+# SOURCES already compiles. The application links those itself, and a source cannot be in both lists:
+# each list compiles it into its own object, and two objects defining the same symbols do not link.
 #
-# The application's copy wins rather than this one, and that direction matters. These objects are built
-# with CORE_TEST_CFLAGS, which is deliberately relaxed - it exists so the core's test harness need not
-# satisfy a warning set written for this port. Shipping the relaxed build inside the application would
-# quietly exempt real application code from the port's own flags. The test runners link against the strict
-# objects instead, which is the same code either way.
+# The application's copy wins, and that direction matters. These objects are built with CORE_TEST_CFLAGS,
+# which is deliberately relaxed; shipping the relaxed build inside the application would exempt real
+# application code from the port's own flags. The test runners link against the strict objects instead.
 CORE_TEST_SUPPORT := \
 	$(CORE)/crypto/rc_aes.c $(CORE)/crypto/rc_gcm.c $(CORE)/crypto/rc_modes.c \
 	$(CORE)/crypto/rc_sha256.c \
@@ -408,10 +341,9 @@ MBEDTLS_LIB    := $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
 ECDH_CFLAGS    := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
                   -DMBEDTLS_CONFIG_FILE='<ripcord-mbedtls-config.h>'
 
-# APPENDED HERE, not written into CFLAGS above, and the order is the whole point: CFLAGS is a `:=`
-# assignment several hundred lines earlier, so a reference to ECDH_CFLAGS up there expands to nothing at
-# all - silently, since an empty expansion is not an error. The application links rc_ecdh.c now, so it
-# needs these, and the only safe place to say so is after ECDH_CFLAGS exists.
+# Appended here, not written into CFLAGS above: CFLAGS is a `:=` assignment made before ECDH_CFLAGS
+# exists, so a reference to it up there expands to nothing, silently. The application links rc_ecdh.c,
+# so it needs these.
 #
 # CFLAGS_SDK_SOCKETS derives from CFLAGS and is defined below this line, so it inherits them too.
 CFLAGS += $(ECDH_CFLAGS) $(OPUS_INC) -isystem $(PORTLIBS)/include -isystem $(PORTLIBS)/include/freetype2
@@ -422,10 +354,10 @@ CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
                   $(CORE_TEST_EXTRA_OBJS) \
                   $(BUILD)/rc_core_tests.o
 
-# The runners are -Wno-conversion because they are the CORE's tests built for a target they were not
-# written for, and this port's flag set is stricter than the one libripcord/tests uses. Relaxing it
-# for the test sources only is honest: what is under examination is whether the CORE is byte-order
-# clean on this hardware, not whether its test harness satisfies a warning set from another Makefile.
+# The runners are built with -Wall alone because they are the CORE's tests, and this port's flag set is
+# stricter than the one libripcord/tests uses. What is under examination is whether the CORE is
+# byte-order clean on this hardware, not whether its test harness satisfies a warning set from another
+# Makefile.
 # The per-directory includes mirror libripcord/tests' own INCLUDES: the core's sources include each
 # other by bare filename rather than by path, so the directories have to be on the search path.
 CORE_TEST_CFLAGS := $(ARCH) -std=gnu99 -O2 -g -Wall -I$(CORE) -I$(CORE_TEST_DIR) \
@@ -435,14 +367,12 @@ CORE_TEST_CFLAGS := $(ARCH) -std=gnu99 -O2 -g -Wall -I$(CORE) -I$(CORE_TEST_DIR)
 # ---------------------------------------------------------------------------------------------------
 # The SPE program. Step 6 of BRINGUP.md's order of work.
 #
-# spu_rules' MACHDEP for the SPU is -mdual-nops -fmodulo-sched -ffunction-sections -fdata-sections, and
-# it is taken from there rather than described from the hardware - the same rule the PPU's ARCH follows
-# and for the same reason. -lsputhread is what provides spu_thread_exit.
+# SPU_ARCH is spu_rules' MACHDEP for the SPU, taken from the SDK rather than described from the hardware,
+# the same rule the PPU's ARCH follows. -lsputhread is what provides spu_thread_exit.
 #
-# Warnings are the port's usual set MINUS -Wconversion and -Wsign-conversion. That is not a double
-# standard: spu_mfcio.h's intrinsics mix widths by design - a DMA size is a u32, an effective address a
-# u64, and a tag a u32 packed into a channel write - and the conversions are the SDK's, in inline code,
-# exactly as on the PPU side where main.c has to pragma them away. The PPU half keeps the strict set.
+# Warnings are the port's usual set MINUS -Wconversion and -Wsign-conversion: spu_mfcio.h's inline
+# intrinsics mix widths by design - a DMA size is a u32, an effective address a u64, and a tag a u32
+# packed into a channel write. The PPU half keeps the strict set.
 SPU_ARCH   := -mdual-nops -fmodulo-sched -ffunction-sections -fdata-sections
 SPU_CFLAGS := $(SPU_ARCH) -std=gnu99 -O2 -Wall -Wextra -Werror -Wshadow \
               -Ispu -I$(PSL1GHT)/spu/include
@@ -507,9 +437,8 @@ $(BUILD)/$(SPU_NAME)_bin.o: $(BUILD)/$(SPU_NAME).bin
 
 # Regenerated, and the counter bumped, whenever a source file changes - so an unchanged tree rebuilt
 # twice keeps its number rather than inflating it.
-# THE SPU SOURCES COUNT TOO. They were missing, so a change to an SPE kernel produced a new binary under
-# an OLD build id - and the XMB title is how a stale install is spotted, which makes an id that does not
-# move the one thing that must not happen. b185 was uploaded labelled b184 for exactly this reason.
+# The SPU sources count too: without them a change to an SPE kernel produces a new binary under an OLD
+# build id (b185 was uploaded labelled b184).
 $(BUILD)/rc_build_id.h: $(SOURCES) $(SPU_SOURCES) $(SPU2_SOURCES) $(CXXSOURCES)
 	@mkdir -p $(@D)
 	@if [ -n '$(RELEASE_ID)' ]; then \
@@ -530,14 +459,11 @@ $(BUILD)/rc_build_id.h: $(SOURCES) $(SPU_SOURCES) $(SPU2_SOURCES) $(CXXSOURCES)
 # that into a translation unit at build time rather than carrying a second copy.
 # halyard_control_crypto.c needs them; the control-session and discovery suites link it.
 #
-# DEFINED ABOVE THE RULE THAT USES THEM, and that is not a stylistic preference. Make expands a
-# prerequisite list when it reads the file, so a variable defined further down yields an EMPTY
-# prerequisite - the rule then runs with $< unset and gcc reports "no input files", naming neither the
-# variable nor the rule. libripcord/tests/Makefile documents the same trap for its own MBEDTLS_PREFIX.
-#
-# It bit here because an earlier edit deleted these two lines while rewriting the block below them, and
-# nothing failed: build/halyard_v1_constants.g.c already existed, so every incremental build stayed
-# green and only `make clean` exposed it.
+# Defined above the rule that uses them, and that is required. Make expands a prerequisite list when it
+# reads the file, so a variable defined further down yields an EMPTY prerequisite - the rule then runs
+# with $< unset and gcc reports "no input files", naming neither the variable nor the rule. Incremental
+# builds stay green while build/halyard_v1_constants.g.c exists; only `make clean` exposes it.
+# libripcord/tests/Makefile documents the same trap for its own MBEDTLS_PREFIX.
 BUNDLE    := ../../src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json
 GENERATED := $(BUILD)/halyard_v1_constants.g.c
 PYTHON    ?= python3
@@ -599,18 +525,15 @@ $(BUILD)/rc_decode_probe.o: $(CXXSOURCES) $(OPENH264_LIB)
 $(OPENH264_LIB):
 	@echo "ERROR: $(OPENH264_LIB) missing - run tools/build-openh264.sh first"; exit 1
 
-# PER-FILE OBJECTS, because the link is now a C++ link over C objects and the two need different flags.
-# The C sources must be compiled by $(CC) with -std=gnu99 - g++ rejects that option outright - while the
-# LINK has to be $(CXX), so libstdc++ and its static initialisers come in. Passing $(CFLAGS) to a g++
-# link, which an earlier revision did, fails on the standard option alone.
+# Per-file objects, because the link is a C++ link over C objects and the two need different flags. The
+# C sources must be compiled by $(CC) with -std=gnu99 - g++ rejects that option outright - while the
+# LINK has to be $(CXX), so libstdc++ and its static initialisers come in.
 #
-# vpath rather than per-directory rules: the basenames across these five directories are unique, and one
-# pattern rule is easier to be right about than five.
+# vpath rather than per-directory rules: the basenames across these directories are unique.
 #
-# EVERY source directory has to appear here. A new one that is added to SOURCES and forgotten here does
-# not produce a compile error - make reports "No rule to make target", stops, and leaves the PREVIOUS
-# package sitting in place, which then uploads and installs perfectly and runs the old build. Adding
-# source/input cost exactly that: three builds that reported a new number and shipped the old binary.
+# EVERY source directory has to appear here. One that is added to SOURCES and forgotten here does not
+# produce a compile error - make reports "No rule to make target", stops, and leaves the PREVIOUS
+# package sitting in place, which then uploads and installs perfectly and runs the old build.
 vpath %.c source/video $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
           $(CORE)/crypto $(CORE)/stream $(CORE)/halyard \
           source/platform source/spu source/net source/media source/discovery source/connect \
@@ -619,40 +542,32 @@ vpath %.c source/video $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/ne
 COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 
 # The generated headers are order-only prerequisites: rc_build_id.h, rc_spu_symbols.h and the
-# rc_spu_probe_bin.h that bin2s writes alongside its object. Order-only (after the |) because their
-# CONTENT does not decide whether a C file needs recompiling - the build id changes on every source
-# change by design, and making every object depend on its content would rebuild the world each time.
-# TWO CORE FILES OPEN SOCKETS, and PSL1GHT's headers make that expensive under this port's flag set.
-# halyard_control_session.c and rc_tcp.c include <net/socket.h>, which pulls in ppu-lv2.h, whose inline
-# syscall wrappers convert int to u64 all over - exactly what source/app/main.c has to pragma away for
-# its own includes.
+# rc_spu_probe_bin.h that bin2s writes alongside its object. Order-only (after the |) because the build
+# id changes on every source change by design, and making every object depend on its content would
+# rebuild the world each time.
 #
-# The pragma trick is not available here: these are libripcord files, shared by every port, and a
-# PSL1GHT-specific pragma has no business in a platform-neutral layer. So the relaxation lives in the
-# Makefile of the port whose SDK causes it, scoped to the two files that need it, and nothing about the
-# core's own code is excused - only the SDK headers it is compiled against.
-# APPENDED, not filtered. Removing -Wsign-conversion from the list is not enough: -Wconversion implies
-# it for C, so it comes straight back. A trailing -Wno- wins because later options override earlier ones.
-# And -include sys/time.h, because PSL1GHT's <sys/socket.h> declares sysNetSelect taking a
+# Core files that open sockets - halyard_control_session.c and rc_tcp.c among them - include
+# <net/socket.h>, which pulls in ppu-lv2.h, whose inline syscall wrappers convert int to u64 all over.
+# source/app/main.c pragmas that away for its own includes, but libripcord files are shared by every
+# port and a PSL1GHT-specific pragma has no business in a platform-neutral layer. So the relaxation
+# lives here, scoped to the files that need it, and only the SDK headers are excused.
+# Appended, not filtered: -Wconversion implies -Wsign-conversion for C, so removing it from the list is
+# not enough. A trailing -Wno- wins because later options override earlier ones.
+# -include sys/time.h, because PSL1GHT's <sys/socket.h> declares sysNetSelect taking a
 # `struct timeval *` without having pulled that struct in - so the first thing to include it gets
-# "declared inside parameter list will not be visible outside of this definition", which under -Werror
-# is fatal and reads like the core's mistake rather than a header ordering one. Same shape as the
-# -include stdio.h that tools/build-openh264.sh needs, and the same reason: fix it from outside rather
-# than edit code that is not ours.
+# "declared inside parameter list will not be visible outside of this definition", which is fatal under
+# -Werror. Same shape as the -include stdio.h that tools/build-openh264.sh needs, and the same reason:
+# fix it from outside rather than edit code that is not ours.
 CFLAGS_SDK_SOCKETS := $(CFLAGS) -Wno-sign-conversion -include sys/time.h
 
-# EVERY OBJECT THAT REACHES A SOCKET HEADER, as a list with one target-specific override rather than one
-# hand-written rule apiece. It started as two explicit rules; adding Takion would have made it six, each a
-# copy of the last, and the copy that eventually differs is the bug. A target-specific CFLAGS assignment
-# overrides the value the pattern rule below expands, so the list is the only thing to maintain.
+# Every object that reaches a socket header, as a list with one target-specific override. A
+# target-specific CFLAGS assignment overrides the value the pattern rule below expands, so the list is
+# the only thing to maintain.
 #
 # It is a LIST and not a wildcard on purpose: the relaxation drops a real warning class, so a file joins
-# it deliberately or not at all. rc_stack_ps3.o is here for a different header than the others - it calls
-# a thread syscall rather than a socket one, and rc_audio_ps3.o for the audio ones - but the cause is
-# identical in each case: PSL1GHT's inline lv2 wrappers
-# convert int to u64, and that is the SDK's code, not this port's. Note rc_connect.o is here now - it always included <net/socket.h>, but it
-# included <sys/time.h> first and so happened not to need this, which is a fact about the order of its
-# own include block rather than anything durable.
+# it deliberately or not at all. rc_stack_ps3.o is here for a thread syscall rather than a socket one,
+# and rc_audio_ps3.o for the audio ones, but the cause is identical in each case: PSL1GHT's inline lv2
+# wrappers convert int to u64, and that is the SDK's code, not this port's.
 SDK_SOCKET_OBJS := \
 	$(BUILD)/halyard_control_session.o \
 	$(BUILD)/halyard_control_probe.o \
@@ -677,19 +592,16 @@ $(BUILD)/$(APP).elf: $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/$(SPU2_NAME)_b
 	$(CXX) $(LDFLAGS) -o $@ $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/$(SPU2_NAME)_bin.o \
 	       $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS) $(OPENH264_LIB) $(OPUS_LIB) $(MBEDTLS_LIB) $(LIBS)
 
-# THE PREPARED ELF - strip, then sprxlinker. BOTH STEPS, IN THAT ORDER, AND THE SECOND ONE IS NOT
-# OPTIONAL: leaving it out is what made the first three hardware runs produce no output at all.
+# The prepared ELF - strip, then sprxlinker. BOTH STEPS, IN THAT ORDER, AND THE SECOND ONE IS NOT
+# OPTIONAL.
 #
-# $(PSL1GHT)/ppu_rules' own %.self rule runs $(STRIP), then $(SPRX), then the self tool. This Makefile
-# was written from that rule and dropped the middle line - it looked like an optional post-processing
-# pass. It is not. sprxlinker patches the PRX import stubs in .sceStub.text, and until it has run every
-# call through a stub - sysGetRandomNumber here, and whatever lv2-crt0 touches on the way to main - is
-# unresolved. The program died before its first instruction, which is why no amount of logging machinery
-# downstream ever produced a byte, including a beacon that was one syscall with no stack cost.
+# $(PSL1GHT)/ppu_rules' own %.self rule runs $(STRIP), then $(SPRX), then the self tool. sprxlinker
+# patches the PRX import stubs in .sceStub.text, and until it has run every call through a stub -
+# sysGetRandomNumber here, and whatever lv2-crt0 touches on the way to main - is unresolved. The program
+# dies before its first instruction and produces no output at all.
 #
-# A SEPARATE OUTPUT FILE RATHER THAN IN-PLACE, which the SDK's rule does by stripping to $(BUILDDIR).
-# sprxlinker rewrites its argument in place, and running it twice on one file is not something to find
-# out about the hard way - so the raw link output is never touched and this is what the packagers read.
+# A separate output file rather than in-place: sprxlinker rewrites its argument, so the raw link output
+# is never touched and this is what the packagers read.
 $(BUILD)/$(APP).ready.elf: $(BUILD)/$(APP).elf
 	@test -x "$(SPRX)" || { echo "ERROR: sprxlinker not found at $(SPRX) - the build would silently produce an unrunnable binary. See this rule's comment."; exit 1; }
 	cp $< $@
@@ -699,42 +611,34 @@ $(BUILD)/$(APP).ready.elf: $(BUILD)/$(APP).elf
 # elf -> self, following $(PSL1GHT)/ppu_rules' %.self rule: make_self produces the primary artifact and
 # fself a secondary .fake.self beside it.
 #
-# AN EARLIER REVISION USED fself FOR THE PRIMARY, on the reasoning that an unsigned SELF is what a
-# homebrew-enabled console runs and a signed one was neither available nor wanted. That sounds right and
-# it is not what the SDK does: ppu_rules labels the make_self output "CEX self", makes it the .self, and
-# every run: target in PSL1GHT - ten of them - hands ps3load that file. A fake SELF transferred to the
-# listener perfectly well and then did not launch.
-#
-# Third time in this file that a plausible-sounding assertion about the SDK has been wrong where the
-# SDK's own rule was sitting there to be read. The rule is the specification; reasoning about what it
-# must have meant is not.
+# Do not use fself for the primary. ppu_rules labels the make_self output "CEX self", makes it the
+# .self, and every run: target in PSL1GHT - ten of them - hands ps3load that file. A fake SELF
+# transferred to the listener perfectly well and then did not launch.
 $(APP).self: $(BUILD)/$(APP).ready.elf
 	$(SELF) $< $@
 	$(FSELF) $< $(APP).fake.self
 
-# THE PACKAGE, for launching from the XMB rather than through a loader.
+# The package, for launching from the XMB rather than through a loader.
 #
 # `make` alone gives you ripcord-ps3.self, which is what ps3load sends over the network and what most
 # file-manager homebrew will run in place. `make pkg` gives you ripcord-ps3.pkg, which installs through
 # the console's own package installer, appears on the XMB, and creates /dev_hdd0/game/$(APPID)/. Which
-# one you want depends on how the console is set up, not on which is better - see SETUP.md section 6.
+# one you want depends on how the console is set up - see SETUP.md section 6.
 #
-# The steps are PSL1GHT's own, from the %.pkg rule in $(PSL1GHT)/ppu_rules, spelled out here rather than
-# inherited because this Makefile deliberately does not include ppu_rules - it sets its own warning and
-# architecture flags and including that file would quietly replace them.
+# The steps are the %.pkg rule in $(PSL1GHT)/ppu_rules, spelled out here because this Makefile
+# deliberately does not include ppu_rules: including it would quietly replace the warning and
+# architecture flags set above.
 $(ICON0): tools/make-icon.py ../../brand/ripcord-ground.svg ../../brand/ripcord-mark-ondark.svg
 	@mkdir -p $(BUILD)
 	python3 tools/make-icon.py $@
 
-# THE MAKEFILE IS A PREREQUISITE, because the packaging rules are as much a part of the package as the
-# binary is. Changing how PARAM.SFO is written and then having make decide the package was up to date is
-# how a build ships with the previous build's metadata - which ship.sh caught the first time this rule
-# changed, and should not have had to.
-# THE NOTICES ARE A PREREQUISITE OF THE PACKAGE, not a step somebody remembers. openh264, Opus and
-# Mbed TLS each require their licence to travel with a BINARY distribution - the BSDs' "in the
-# documentation and/or other materials provided with the distribution", Apache-2.0 section 4's "give any
-# other recipients a copy of this License". A .pkg that ships without them is a licence breach, so the
-# generator exits non-zero rather than emitting a partial file and this rule fails with it.
+# The Makefile is a prerequisite: otherwise a change to how PARAM.SFO is written leaves make deciding
+# the package is up to date, and it ships with the previous build's metadata.
+# The notices are a prerequisite of the package too. openh264, Opus and Mbed TLS each require their
+# licence to travel with a BINARY distribution - the BSDs' "in the documentation and/or other materials
+# provided with the distribution", Apache-2.0 section 4's "give any other recipients a copy of this
+# License". A .pkg that ships without them is a licence breach, so the generator exits non-zero rather
+# than emitting a partial file and this rule fails with it.
 $(NOTICES): tools/gen-third-party-notices.sh
 	@mkdir -p $(@D)
 	sh tools/gen-third-party-notices.sh $@
@@ -757,37 +661,29 @@ pkg: $(APP).pkg
 
 .PHONY: notices
 
-# THE FAST LOOP. Sends the ELF straight to a listener on the console over TCP 4299 and relays the
-# program's stdout back, so an iteration is one command with no install step and no XMB round trip.
+# The fast loop. Sends the program straight to a listener on the console over TCP 4299 and relays its
+# stdout back, so an iteration is one command with no install step and no XMB round trip.
 #
 # It needs a ps3load server running on the PS3 - either multiMAN, or PSL1GHT's own
-# samples/network/ps3load built and installed. Step 6 took five install-and-run cycles to find a single
-# wrong argument, and any one of them would have been diagnosed in seconds against live output; that is
-# the whole argument for this target existing.
+# samples/network/ps3load built and installed.
 #
-# SENDS THE .self, NOT THE ELF. The first version of this rule sent build/$(APP).ready.elf on the
-# assertion that "ps3load wants an ELF rather than a SELF". That is backwards. Every run: target in
-# PSL1GHT - ten of them - is `ps3load $(OUTPUT).self`, and the listener writes whatever it receives to
-# /dev_hdd0/tmp/ps3load.self and launches that, so a raw ELF arrives intact and then does not start.
+# Sends the .self, NOT the ELF. Every run: target in PSL1GHT - ten of them - is
+# `ps3load $(OUTPUT).self`, and the listener writes whatever it receives to /dev_hdd0/tmp/ps3load.self
+# and launches that, so a raw ELF arrives intact and then does not start. ps3load reports the transfer
+# and exits "done." either way; the build id in the console's log is what shows a stale binary.
 #
-# The failure is quiet from this end: ps3load reports the transfer and exits "done." either way. It was
-# caught by the build id - the console's log still said b11 while the tree was at b13 - which is exactly
-# the stale-binary case that stamp was added for, arriving one commit after it was added.
-#
-# THE LISTENER IS ONE-SHOT. It ends with sysProcessExitSpawn2, which replaces the listener process with
-# the program it just received - so it has to be launched again on the console before each run. That is
-# still far cheaper than build, FTP, package manager, install, navigate, launch; it is just not zero
-# touch, and a "connection refused" here usually means the last run consumed it rather than anything
-# being wrong.
+# The listener is one-shot. It ends with sysProcessExitSpawn2, which replaces the listener process with
+# the program it just received - so it has to be launched again on the console before each run. A
+# "connection refused" here usually means the last run consumed it rather than anything being wrong.
 #
 #     make run PS3LOAD=tcp:192.168.1.42
 run: $(APP).self
 	@test -n "$(PS3LOAD)" || { echo "ERROR: set PS3LOAD, e.g. make run PS3LOAD=tcp:<console-ip>"; exit 1; }
 	PS3LOAD=$(PS3LOAD) $(PS3DEV)/bin/ps3load $<
 
-# Convenience passthrough. These are the tests that actually verify anything today - the H.264 front end
-# from steps 2 and 3, the CSPRNG seam's host-testable half, and the core's known-answer vectors. All run
-# on the host with no console.
+# Convenience passthrough: this port's host tests - the H.264 front end, the CSPRNG seam's host-testable
+# half, the shell background's colours and the pad chord - and then libripcord's own suites. All run on
+# the host with no console.
 test:
 	$(MAKE) -C tests
 	$(MAKE) -C $(CORE)/tests
@@ -798,13 +694,13 @@ clean:
 	rm -f $(APP).self $(APP).fake.self $(APP).pkg $(APP).gnpdrm.pkg
 	rm -rf $(BUILD)
 
-# Everything clean removes, plus the fetched third-party tree. Separate because re-fetching and
+# Everything clean removes, plus the fetched openh264 tree. Separate because re-fetching and
 # rebuilding openh264 is minutes, and wanting fresh objects is not wanting that.
 distclean: clean
 	rm -rf $(OPENH264_DIR)
 
-# The dependency files the DEPFLAGS above produce. Wildcard rather than a derived list: an object that is
-# no longer built leaves a stale .d behind, and naming them from the object list would demand it exist.
+# The dependency files the DEPFLAGS above produce. Wildcard rather than a derived list: naming them from
+# the object list would demand that each one exist.
 # Not included for `clean`, which would otherwise rebuild them only to delete them.
 ifeq (,$(filter clean distclean,$(MAKECMDGOALS)))
 -include $(wildcard $(BUILD)/*.d)

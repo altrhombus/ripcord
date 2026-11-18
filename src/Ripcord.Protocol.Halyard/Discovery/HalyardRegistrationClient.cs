@@ -14,9 +14,9 @@ namespace Ripcord.Protocol.Halyard.Discovery;
 /// both directions — see the cipher's remarks).
 ///
 /// <para>
-/// Both directions are complete: the client transmits its per-pairing material inside the request context in
-/// wrapped form (so the console recovers it and derives the same field IV), then decrypts the
-/// console's reply into the pairing record (registkey + companion). See <see cref="IHalyardRegistrationCipher"/>.
+/// The client transmits its per-pairing material inside the request context in wrapped form (so the
+/// console recovers it and derives the same field IV), then decrypts the console's reply into the pairing
+/// record (registkey + companion). See <see cref="IHalyardRegistrationCipher"/>.
 /// </para>
 ///
 /// <para>
@@ -105,8 +105,7 @@ public sealed class HalyardRegistrationClient(
                 response, out int status, out byte[] respBody, out string? reason))
         {
             // The console's own application reason when it gives one — see TrySplitResponse. Without it every
-            // rejection reads identically, which is how a wrong-transport 403 spent a session looking like a
-            // wrong-key failure.
+            // rejection reads identically, and a wrong-transport 403 looks like a wrong-key failure.
             return Fail(reason is null
                 ? $"Registration was rejected by the console (HTTP {status})."
                 : $"Registration was rejected by the console (HTTP {status}, RP-Application-Reason {reason}).");

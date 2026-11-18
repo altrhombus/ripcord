@@ -7,8 +7,8 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto;
 /// input serialization - run end to end against captures and synthetic (already-plaintext) data without
 /// the real key derivation.
 ///
-/// Against a real console this is rejected (the console's MAC/decrypt won't agree); that rejection is the
-/// exact boundary the real implementation removes. Against replayed plaintext fixtures the pipeline works.
+/// Against a real console this is rejected (the console's MAC/decrypt won't agree). Against replayed
+/// plaintext fixtures the pipeline works.
 /// </summary>
 public sealed class PassthroughHalyardSessionCrypto : IHalyardSessionCrypto
 {
@@ -53,7 +53,7 @@ public sealed class PassthroughHalyardSessionCrypto : IHalyardSessionCrypto
     public void SealInputPacket(Span<byte> packet, int payloadOffset) { }
 }
 
-/// <summary>Stub registration: fails clearly until the real flow is derived.</summary>
+/// <summary>A registration that never contacts a console: every attempt returns a failed result with a reason.</summary>
 public sealed class UnavailableHalyardRegistration : IHalyardRegistration
 {
     public Task<HalyardRegistrationResult> RegisterAsync(HalyardRegistrationRequest request, CancellationToken cancellationToken)

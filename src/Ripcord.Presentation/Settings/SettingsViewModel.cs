@@ -12,18 +12,12 @@ namespace Ripcord.Presentation.Settings;
 /// The settings page's state and its save policy.
 ///
 /// <para>
-/// <b>The <c>_loading</c> flag is gone, and this is why.</b> The page used to carry a bool that every one of its
-/// fourteen change handlers checked, because XAML parsing raises change events on its own — setting
-/// <c>Slider.Minimum="2"</c> during <c>InitializeComponent</c> moves <c>Value</c> from 0 to 2 and fires
-/// <c>ValueChanged</c> before the controls declared later in the file exist. That produced two distinct faults:
-/// a save that dereferenced nulls, and a save that misrepresented what the user wanted.
-/// </para>
-///
-/// <para>
-/// The first disappears here because saving no longer reads controls — the draft record is the truth, and it is
-/// complete from the moment it is loaded. The second is answered by <b>saving on change rather than on event</b>:
-/// every setter below compares against what is already held and does nothing when they agree. A duplicate event
-/// is then structurally a no-op, rather than something a flag has to be remembered for.
+/// <b>There is no <c>_loading</c> flag, and none is needed.</b> XAML parsing raises change events on its own:
+/// setting <c>Slider.Minimum="2"</c> during <c>InitializeComponent</c> moves <c>Value</c> from 0 to 2 and fires
+/// <c>ValueChanged</c> before the controls declared later in the file exist. Saving does not read controls — the
+/// draft record is the truth, complete from the moment it is loaded — and it is <b>on change rather than on
+/// event</b>: every setter below compares against what is already held and does nothing when they agree, so a
+/// duplicate event is a no-op.
 /// </para>
 ///
 /// <para>
@@ -420,7 +414,7 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
                 ? Strings.Settings_HdrToneMapped
                 // Say so when the machine is ready. Three ticks plus a sentence about what happens if something
                 // is missing leaves the reader to work out that nothing is; an affirmative line is shorter and
-                // is the answer they came for. An SDR display is ready too since 2026-10-02: Ripcord tone-maps.
+                // is the answer they came for. An SDR display is ready too: Ripcord tone-maps.
                 : _displayHdr ? Strings.Settings_HdrReady : Strings.Settings_HdrReadySdrDisplay,
             HdrDescription: HdrSelectable ? Strings.Settings_HdrDescription
                 : _hevcAvailable ? Strings.Settings_HdrNeedsHevc
@@ -438,8 +432,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             ExitGestureIndex: (int)_draft.ExitGesture,
             ExitGestureDescription: ComposeExitGestureDescription(),
             UiStickDeadzone: _draft.UiStickDeadzone,
-            // As a share of the stick's travel ("50%"), which is what the row's question is about. It printed the
-            // raw fraction, "0.50", which reads as a measurement nobody can picture (visual audit, 2026-10-08).
+            // As a share of the stick's travel ("50%"), which is what the row's question is about. The raw
+            // fraction, "0.50", reads as a measurement nobody can picture.
             DeadzoneLabel: _draft.UiStickDeadzone.ToString("P0", System.Globalization.CultureInfo.CurrentCulture),
 
             FullScreenOnConnect: _draft.FullScreenOnConnect,

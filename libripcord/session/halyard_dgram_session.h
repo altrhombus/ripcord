@@ -2,12 +2,11 @@
  * libripcord - what the session layers need from the UDP 9303 transport: the control session's byte pipe,
  * the account registration's exchange, and a "leg" (one socket, its STUN mapping and its association).
  *
- * WHY THESE THREE, TOGETHER. halyard_dgram_channel.h is the transport and deliberately knows nothing above
- * it. The code above it was written against other contracts before the transport existed in C: the
- * control session against a byte pipe (halyard_control_session.h, halyard_control_pipe), and account
- * pairing against "send this request, give me the whole reply" (halyard_account_regist_flow.h,
- * halyard_account_regist_exchange_fn). Each needs a few lines of adapter, and those adapters are the whole
- * of this file's protocol content; the leg is the socket bookkeeping every rendezvous caller repeats.
+ * halyard_dgram_channel.h is the transport and knows nothing above it. The code above it is written
+ * against other contracts: the control session against a byte pipe (halyard_control_session.h,
+ * halyard_control_pipe), and account pairing against "send this request, give me the whole reply"
+ * (halyard_account_regist_flow.h, halyard_account_regist_exchange_fn). The adapters for those two are
+ * this file's protocol content; the leg is the socket bookkeeping every rendezvous caller repeats.
  *
  * Ported from src/Ripcord.Protocol.Halyard/Transport/:
  *
@@ -70,8 +69,8 @@ void halyard_dgram_control_pipe_init(halyard_dgram_control_pipe *p, halyard_dgra
 /*
  * .NET's HostHeader(): the address right-aligned in three columns, then the port - "Host: 192.  0.  2.104:9303",
  * shown with a documentation address - the "%3d.%3d.%3d.%3d" form every captured vendor request writes.
- * A LAN console accepts the plain form; the account route once refused /sess/init while this was one of
- * two remaining differences from the capture, so the datagram route sends the byte-faithful one. A host
+ * A LAN console accepts the plain form; the account route refused /sess/init on a request that differed
+ * from the capture in this and one other place, so the datagram route sends the byte-faithful one. A host
  * that is not a dotted quad is written as is. Returns the length, or 0 if it does not fit.
  */
 size_t halyard_dgram_host_header(const char *host, unsigned port, char *out, size_t out_size);

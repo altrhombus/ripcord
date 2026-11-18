@@ -1,7 +1,7 @@
 // What survives between runs after sign-in: the refresh token, and a cached identity beside it. Ported from
 // Ripcord.Core/Accounts (IAccountTokenStore, AccountTokenStore, InMemoryAccountTokenStore).
 //
-// On Windows it is a JSON file with the token DPAPI-encrypted. On the Mac it is one Keychain item, a generic
+// In the dotnet client it is a JSON file with the token DPAPI-encrypted. On the Mac it is one Keychain item, a generic
 // password under this app's service name, and never a file: the Keychain is the Mac's DPAPI and where a Mac
 // user expects secrets to be (docs/macos-plan.md, "The split").
 //
@@ -41,12 +41,11 @@ public protocol AccountTokenStore: Sendable {
 
 /// The Keychain store: one generic-password item holding the session as JSON.
 ///
-/// **The login keychain, not the data-protection keychain, for now.** The data-protection keychain needs a
-/// keychain-access-group entitlement, which needs a signing team, and every build here is ad hoc signed until
-/// distribution is set up (docs/macos-plan.md, step 9). Pass `useDataProtectionKeychain: true` once it is; the
-/// item's shape does not change.
+/// **The login keychain by default, not the data-protection keychain.** The data-protection keychain needs a
+/// keychain-access-group entitlement, which needs a signing team, and an ad hoc signed build has neither.
+/// Pass `useDataProtectionKeychain: true` in a build that has them; the item's shape does not change.
 public struct KeychainAccountTokenStore: AccountTokenStore {
-    /// The app's service name: its bundle identifier, which the app target will carry.
+    /// The app's service name: its bundle identifier.
     public static let defaultService = "io.github.altrhombus.Ripcord"
     public static let defaultAccount = "account-session"
 

@@ -1,29 +1,24 @@
 /*
  * libripcord - the connect sequence: from a pairing record and an address to a stream, and back.
  *
- * WHY THIS EXISTS. Every stage of a session already lived in the core (discovery, wake, the /sess control
- * session, Takion, key agreement, senkusha, the demuxer, input), but the sequence that strings them
- * together did not. Each port wrote its own, interleaved with its own UI: the PS3's rc_connect.c (4,330
- * lines) and the 3DS's connect/main.c. This is that sequence, once, ported from both authorities:
+ * The stages (discovery, wake, the /sess control session, Takion, key agreement, senkusha, the demuxer,
+ * input) live elsewhere in the core; this strings them together once, ported from both authorities:
  *
- *   ports/ripcord-ps3/source/connect/rc_connect.c   the most complete C one, hardware-verified, and
- *                                                   where most of the timing and retry lessons were
- *                                                   learned (the b-numbers in comments are its builds)
+ *   ports/ripcord-ps3/source/connect/rc_connect.c   the most complete C one, hardware-verified (the
+ *                                                   b-numbers in comments are its builds)
  *   src/Ripcord.Protocol.Halyard/Session/HalyardStreamingSession.cs, and
  *   src/Ripcord.Protocol.Halyard.Takion/HalyardTakionStream.cs      the .NET reference
  *
  * Where the two disagree, each default below follows whichever side has the better hardware evidence,
- * and says which. The first consumer is the macOS client (src/Ripcord.Mac); the ports move onto it later,
- * each on its own hardware.
+ * and says which.
  *
  * THREADING: ONE HOST-OWNED THREAD, AND NOTHING ELSE. The core creates no threads, takes no locks and
  * allocates nothing. The host calls halyard_client_connect() on a thread of its choosing, and then
  * halyard_client_pump() on the same thread until it returns 0. Everything the host wants to tell the
  * session (input, a passcode, a command, cancellation) is PULLED through a callback on that thread, so
- * each host does its own synchronisation in its own terms, and C99, which has no atomics, never has to.
- * The PS3's three shutdown lockups (b129-b142) were about which work shares the receive thread; the
- * answer here is that a callback copies what it is given and returns, and decoding happens on the
- * host's own thread.
+ * each host does its own synchronisation (C99 has no atomics). A callback copies what it is given and
+ * returns; decoding happens on the host's own thread (the PS3's shutdown lockups, b129-b142, came from
+ * work sharing the receive thread).
  *
  * THE HOT PATH DOES NOT ALLOCATE. The instance is placed in storage the caller provides, sized by
  * halyard_client_struct_size(). It is large (the demuxer's frame slots are most of it), so a host
@@ -67,9 +62,8 @@ typedef enum {
     HALYARD_CLIENT_STAGE_ENDED
 } halyard_client_stage;
 
-/* Why a session ended, separately from where it got to: several endings share a stage, which is the
- * distinction rc_connect.h's own comments (the menu_disconnect / xmb_quit / login_blocked fields) kept
- * having to add after the fact. */
+/* Why a session ended, separately from where it got to: several endings share a stage, a distinction
+ * rc_connect.h carries as separate result fields (menu_disconnect / xmb_quit / login_blocked). */
 typedef enum {
     HALYARD_CLIENT_END_NONE = 0,          /* still running */
     HALYARD_CLIENT_END_USER_DISCONNECT,   /* halyard_client_disconnect() */
@@ -94,7 +88,7 @@ typedef struct {
     const halyard_pairing_record *record; /* keys and host; copied at init */
     halyard_route route;                  /* HALYARD_ROUTE_LOCAL */
 
-    /* What the host can show, not what the core imposes: the PS3's 720p cap was a cellVdec limit and
+    /* What the host can show, not what the core imposes: the PS3's 720p cap is a cellVdec limit and
      * belongs to that port, not to the protocol. 0 means "the console's default". */
     int width, height, fps, bitrate_kbps;
     int allow_hevc;                       /* the host can decode HEVC */
@@ -337,7 +331,7 @@ void halyard_client_destroy(halyard_client *client);
  * HalyardAccountPairing.ConnectAsync/RunAsync and HalyardStreamingSession.ConnectAsync/StartStreamingAsync.
  *
  * THE SPLIT. The cloud tier (sign-in, the session, the push WebSocket, OFFER/ACCEPT/RESULT signaling) is
- * the host's, in Swift on the Mac; everything on UDP is here. The two interleave at exact points - the
+ * the host's; everything on UDP is here. The two interleave at exact points - the
  * console discards an Init it cannot tie to an OFFER, and races one sent too late - so the core exposes
  * those points as calls and one pull callback, and the host drives the signaling around them:
  *

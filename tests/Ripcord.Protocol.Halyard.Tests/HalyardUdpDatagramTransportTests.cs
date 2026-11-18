@@ -6,8 +6,8 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The account route's datagram transport takes only the console's datagrams. On a hole-punched public port,
-/// one from anyone was taken as the console's, so an injected close ended the session (review, 2026-10-05).
+/// The account route's datagram transport takes only the console's datagrams. On a hole-punched public port
+/// anyone can send one, and an injected close taken as the console's would end the session.
 /// </summary>
 public class HalyardUdpDatagramTransportTests
 {

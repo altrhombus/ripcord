@@ -15,34 +15,30 @@ namespace Ripcord.ProtocolLab;
 /// can be checked against this one without a console, a capture, or a .NET runtime.
 ///
 /// <para>
-/// This exists for <c>ports/ripcord-3ds</c>, the C client for modded 3DS hardware. That port re-derives the
+/// This exists for <c>libripcord</c>, the C core the console ports build on. The core re-derives the
 /// same primitives from the same spec in a different language, which is only a meaningful check on the spec
-/// if both sides are provably computing the same numbers. These vectors are that check: this command writes
-/// them, the port's host-side <c>vector_runner</c> reads them, and a disagreement is a spec defect rather
-/// than a porting detail.
+/// if both sides are provably computing the same numbers. This command writes the vectors, the core's
+/// host-side <c>vector_runner</c> (<c>libripcord/tests</c>) reads them, and a disagreement is a spec defect
+/// rather than a porting detail.
 /// </para>
 ///
 /// <para>
 /// <b>The constants come from the bundle, deliberately</b> — <see cref="HalyardInteropConstants"/> directly,
-/// not <see cref="HalyardControlSecretsLoader"/>. The port generates its constants from the same committed
+/// not <see cref="HalyardControlSecretsLoader"/>. The C core generates its constants from the same committed
 /// <c>halyard-v1-constants.json</c>, so both sides must key off that one file or the comparison proves
-/// nothing. A developer with a local captures-folder fixture is intentionally NOT allowed to influence this
-/// output; if the fixture ever disagreed with the bundle, that is a finding about the bundle, and it should
-/// not be discovered as a mystery failure in a C test on a handheld.
+/// nothing. A local captures-folder fixture is intentionally NOT allowed to influence this output.
 /// </para>
 ///
 /// <para>
 /// <b>Inputs are derived, not random.</b> Every nonce, companion, key and plaintext comes from
-/// SHA-256("ripcord-3ds-vectors/v1" || counter), so the file is byte-identical across runs and machines. That
-/// keeps it diffable: a change in this file means a change in the crypto, which is exactly the signal
-/// wanted. Do not switch this to <see cref="RandomNumberGenerator"/>.
+/// SHA-256("ripcord-3ds-vectors/v1" || counter), so the file is byte-identical across runs and machines and a
+/// change in it means a change in the crypto. Do not switch this to <see cref="RandomNumberGenerator"/>.
 /// </para>
 ///
 /// <para>
 /// The output carries no live material. Its inputs are synthetic and its constants are the ones already
 /// committed under the <c>NOTICE</c> interoperability-constants exception, so the file is strictly less
-/// sensitive than the bundle it derives from. It is still gitignored as a build artifact — regenerating it
-/// is one command, and a committed copy would only invite the question of whether it is a second bundle.
+/// sensitive than the bundle it derives from. It is still gitignored as a build artifact.
 /// </para>
 /// </summary>
 internal static class LabVectors
@@ -59,13 +55,10 @@ internal static class LabVectors
     /// <summary>vectors [outPath] — write the control-crypto known-answer vectors.</summary>
     public static int Emit(string[] args)
     {
-        // The default follows the suite, which moved to ports/common/tests when the portable core was
-        // extracted, and to libripcord/tests on 2026-09-24 - libripcord/tests/Makefile reads
-        // `vectors/*.kat` relative to itself. It pointed at
-        // ports/ripcord-3ds/tests/vectors until 2026-09-11, which stopped existing in that same
-        // extraction: the emitter went on succeeding, wrote four files into a directory nothing reads,
-        // and the C suite then reported missing vectors while telling you to run the command you had
-        // just run. Nothing failed, so nothing said so.
+        // The default follows the suite that reads it: libripcord/tests/Makefile reads `vectors/*.kat`
+        // relative to itself. A default pointing anywhere else fails silently: the emitter succeeds,
+        // writes its files into a directory nothing reads, and the C suite reports missing vectors while
+        // telling you to run the command you have just run.
         string outPath = args.Length > 1
             ? args[1]
             : Path.Combine("libripcord", "tests", "vectors", "control-crypto.kat");
@@ -477,7 +470,7 @@ internal static class LabVectors
         sb.AppendLine("# sessionreq <clientVersion> <sessionKeyHex> <launchSpecHex> <encryptedKeyHex> <pubHex|-> <sigHex|-> <encodedHex>");
         int count = 0;
 
-        // The shipped shape first (client version 17, the observed "InvalidSessionId" session key, the
+        // The shape the client sends first (client version 17, the observed "InvalidSessionId" session key, the
         // four zero bytes the vendor sends for the unused encryptedKey, and a P-521 public key), then
         // variations that move each independent axis: the other curve, the optional fields absent, and a
         // launch spec long enough to push the payload's length prefix to two varint bytes.
@@ -606,11 +599,10 @@ internal static class LabVectors
     /// wrap in both directions, for both console families.
     ///
     /// <para>
-    /// These exist because the registration key exchange is the one part of pairing where a C port and this
-    /// implementation can disagree SILENTLY. A wrong transport key does not fail loudly - the console
-    /// answers 403 with a generic application reason, which reads identically to a mistyped PIN, a wrong
-    /// transport and a stale search probe. Checking the arithmetic on a host, against numbers this side
-    /// computed, is how that stops being a hardware mystery.
+    /// The registration key exchange is the one part of pairing where a C port and this implementation can
+    /// disagree SILENTLY. With a wrong transport key the console answers 403 with a generic application
+    /// reason, which reads identically to a mistyped PIN, a wrong transport and a stale search probe, so the
+    /// arithmetic is checked on a host against numbers this side computed.
     /// </para>
     ///
     /// <para>
@@ -640,7 +632,7 @@ internal static class LabVectors
         var kdf4 = ps4 is null ? null : new HalyardRegistrationKdf(ps4.Value.Secrets, versionSelector: 0);
 
         // The context has to be long enough for the selector offset AND the scatter offsets, so it is
-        // sized from the constants rather than from a number that happens to be big enough today.
+        // sized from the constants rather than from a literal that happens to be big enough.
         int contextLength = Math.Max(
             ps5.Value.Secrets.SelectorOffset + 1,
             HalyardRegistrationKdf.WrappedOffsetLow + 8);

@@ -29,9 +29,9 @@
 
                 <!--
                     None in high contrast. The accent there is the contrast theme's highlight colour, and the
-                    tint turned the card a vivid gradient that washed the wordmark out to near-invisible and put
-                    a system backplate behind the tagline (visual audit, 2026-10-08). A contrast theme gets the
-                    plain card: its own background, its own text, its own border.
+                    tint would turn the card a vivid gradient that washes the wordmark out to near-invisible and
+                    puts a system backplate behind the tagline. A contrast theme gets the plain card: its own
+                    background, its own text, its own border.
                 -->
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="AboutHeroWashBrush" Color="Transparent" />
@@ -41,7 +41,7 @@
     </Page.Resources>
 
     <ScrollViewer Padding="24,16,24,32">
-        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column shifted right of the others (Keyboard controls sat 40 px off Settings).  -->
+        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column would sit right of the others.  -->
         <Grid>
             <StackPanel MaxWidth="{StaticResource RipcordPageColumnWidth}" Spacing="8">
 
@@ -150,22 +150,18 @@
                             <StackPanel Grid.Column="1" Spacing="6">
                                 <!--
                                     The wordmark, not the name set in the UI font. With the tile beside it this is
-                                    the lockup brand/README.md defines - mark plus word - and the About page is the
-                                    one surface in the app that is about Ripcord rather than about a console, which
-                                    is where a lockup belongs.
+                                    the lockup brand/README.md defines - mark plus word - and the About page is a
+                                    surface about Ripcord rather than about a console, which is where a lockup
+                                    belongs.
 
                                     Height only. The width follows the word, and constraining both would either
                                     stretch the type or letterbox it.
-
-                                    It replaces a TitleLarge TextBlock reading "Ripcord". The accessible name did
-                                    not move with it: the tile above already carries "Ripcord logo", and a hero
-                                    that announced itself twice was the thing RipcordMark's own comment warns
-                                    about.
                                 -->
                                 <!--
-                                    The page's top heading, for a screen reader. About had none: its first heading was
-                                    "This device", a level 2 (visual audit, 2026-10-08). The wordmark is the page's title
-                                    in all but markup, so it says so.
+                                    The page's top heading, for a screen reader. The control is decorative by default,
+                                    so here it is put back in the content view with a name ("Ripcord") and heading
+                                    level 1: it is the page's title in all but markup, and without it the page's first
+                                    heading would be "This device", a level 2.
                                 -->
                                 <controls:RipcordWordmark
                                     x:Uid="AboutPage_Wordmark"

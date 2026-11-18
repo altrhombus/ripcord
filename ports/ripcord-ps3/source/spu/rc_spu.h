@@ -4,16 +4,12 @@
  * Step 6 of BRINGUP.md's order of work. This is the PPU half; spu/rc_spu_probe.c is the program that
  * actually runs on the SPE, and it explains why the job is a memory copy rather than anything useful.
  *
- * WHAT THIS IS FOR. The PS3's decoder has to live on the SPEs - the PPE alone will not decode 720p
- * H.264 and there is no fixed-function block to fall back on. Before any of that is designed, one
- * number is needed: the cost of handing an SPE a unit of work. A large per-job overhead forces the
- * decoder to batch coarsely, whole slices at a time; a small one allows a pipeline at macroblock-row
- * granularity, which is what makes the entropy and reconstruction stages overlap. DECODE.md's staging
- * cannot be settled without it, and it cannot be reasoned out - it has to be measured on a console.
+ * WHAT THIS IS FOR. The number wanted is the cost of handing an SPE a unit of work: a large per-job
+ * overhead forces work to be batched coarsely; a small one allows a fine-grained pipeline. It has to be
+ * measured on a console, and DECODE.md section 3 records the result.
  *
- * NOT A JOB MODEL, AND NOT TRYING TO BE. One thread group, one SPE, one job, synchronous. The real
- * decoder will want several SPEs and a queue; this exists so that the first version of that has a
- * baseline to be compared against rather than being the first thing ever run.
+ * NOT A JOB MODEL. One thread group, one SPE, one job, synchronous. rc_spu_yuv.c is the code that keeps
+ * several SPEs running and hands them work by mailbox; this is the baseline it is compared against.
  */
 #ifndef RC_SPU_H
 #define RC_SPU_H
@@ -23,8 +19,7 @@
 
 /*
  * Brings up the SPU subsystem and imports the embedded probe image. Returns 1 on success, 0 on failure -
- * the same convention as rc_random_init, and deliberately NOT the 0-on-success lv2 convention, because
- * libripcord/platform/rc_platform.h having documented that backwards once is enough.
+ * the same convention as rc_random_init, and deliberately NOT the 0-on-success lv2 convention.
  *
  * Call once. Safe to call again; the second call is a no-op that reports the first call's result.
  */
@@ -53,13 +48,18 @@ int rc_spu_init(void);
  *
  * All three are also filled in on success, where they are less interesting but cost nothing.
  *
- * THIS CALL CANNOT HANG. An earlier version waited on the SPE indefinitely, on the argument that a hang
- * pinpoints the line. It does not: what it produces is a blank screen and a power cycle, and it destroys
- * the log that would have said something. It now gives up after a fixed deadline and reports.
+ * THIS CALL CANNOT HANG. It gives up after a fixed deadline and reports; an indefinite wait produces a
+ * blank screen and a power cycle, and destroys the log that would have said something.
  */
 int rc_spu_run(const void *src, void *dst, size_t size, uint64_t *ticks,
                uint32_t *phase, uint32_t *heartbeat, uint64_t *spu_args,
                uint32_t *join_cause, uint32_t *join_status);
+
+/* The effective address the SPE is told to signal completion at. For the caller's own report. */
+uint64_t rc_spu_done_ea(void);
+
+/* The address of the job block handed to the SPE as its single argument. Also for the report. */
+uint64_t rc_spu_job_ea(void);
 
 /*
  * What lv2 made of the embedded image, and what the linker actually built. Valid after rc_spu_init.
@@ -67,12 +67,6 @@ int rc_spu_run(const void *src, void *dst, size_t size, uint64_t *ticks,
  * writes on a 64-bit process, so these values are fragments of the real structure and must not be used
  * to conclude anything. They are logged because raw numbers are worth keeping.
  */
-/* The effective address the SPE is told to signal completion at. For the caller's own report. */
-uint64_t rc_spu_done_ea(void);
-
-/* The address of the job block handed to the SPE as its single argument. Also for the report. */
-uint64_t rc_spu_job_ea(void);
-
 void rc_spu_image_info(uint32_t *entry, uint32_t *segments, uint32_t *expected_entry);
 
 /* Releases the imported image. Safe whether or not init succeeded. */

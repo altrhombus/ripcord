@@ -52,10 +52,9 @@ def parse(ground_text, mark_text):
         fail("expected two gradient stops in ripcord-ground.svg, found %d" % len(stops))
     out["grad"] = [tuple(int(s[i:i + 2], 16) for i in (0, 2, 4)) for s in stops]
 
-    # No group transform to read any more, and none to want: the mark file is the mark at full size in
-    # its own 64-unit box. The old tile nested it under a translate/scale/translate, which this script
-    # parsed, validated and then deliberately ignored - the mark is placed by its own bounding box,
-    # below, because the square is mostly padding for a crop the XMB has already done.
+    # No group transform to read, and none to want: the mark file is the mark at full size in its own
+    # 64-unit box. The mark is placed by its own bounding box, below, because the square is mostly
+    # padding for a crop the XMB has already done.
     m = re.search(r'<path d="M([\d.]+) ([\d.]+)L([\d.]+) ([\d.]+)L([\d.]+) ([\d.]+)Z"'
                   r'[^>]*fill="#([0-9A-Fa-f]{6})"[^>]*stroke-width="([\d.]+)"', mark_text)
     if m is None:

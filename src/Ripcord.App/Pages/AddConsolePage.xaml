@@ -2,20 +2,13 @@
 <!--
     Adding a console, as a page rather than a dialog.
 
-    It used to be a flat six-field ContentDialog: an IP box, a Scan button, a hidden combo box of formatted
-    strings, a bare "PSN account ID" field with no explanation, a link code, and a platform dropdown. It read
-    as a settings form rather than as setting something up — the first thing a new user meets, asking for an
-    IP address. A page hosted in the nav frame gives the room to fix that.
+    The flow is five steps in one page: which console, find it, link, pairing, paired. As a flat dialog of
+    fields (an address, an account id, a link code, a platform) it would read as a settings form rather than
+    as setting something up, and it is the first thing a new user meets. A page in the chrome frame has the
+    room for one question at a time.
 
-    CORRECTED 2026-08-05: this comment used to give a second reason — "directional gamepad focus cannot get
-    inside a ContentDialog (it activates, it does not move)". The symptom was real; the attribution was not,
-    and it was ours. MainWindow passed FindNextElementOptions.SearchRoot = Window.Content, and a ContentDialog
-    (like a MenuFlyout, like a ComboBox dropdown) renders in the XamlRoot's popup root, which is not a
-    descendant of Window.Content — so focus could not move into it. Activation kept working because
-    FocusManager.GetFocusedElement is XamlRoot-wide, which is precisely what made it look like a platform
-    limitation of the control. MainWindow.DirectionalRoot() now prefers the topmost open popup, so dialogs and
-    flyouts are directionally navigable. Being a page is still right for the reason above — a six-field form
-    is not a dialog — but it is not a workaround for a gamepad limitation, because there wasn't one.
+    Being a page is not a workaround for the gamepad: directional focus does reach into a ContentDialog,
+    because FocusPilot searches an open popup that holds something focusable.
 -->
 <Page
     x:Class="Ripcord_App.Pages.AddConsolePage"
@@ -87,11 +80,11 @@
     </Page.Resources>
 
     <!--
-        Same XY focus strategy as the settings page, for the same measured reason. The controls on this page
-        are different widths and alignments — a full-width results list, a pair of small left-aligned buttons,
+        Same XY focus strategy as the settings page, for the same reason. The controls on this page are
+        different widths and alignments — a full-width results list, a pair of small left-aligned buttons,
         a text box and its confirm button — and the default rule only considers candidates that OVERLAP the
         focused element on the perpendicular axis. Where they do not overlap, focus skips them and lands
-        somewhere that looks arbitrary, which is how this page was reported: "a pretty random tab index".
+        somewhere that looks arbitrary, "a pretty random tab index".
         RectilinearDistance ranks by distance instead, which is what "the next thing down" means to a person.
     -->
     <Grid
@@ -106,7 +99,7 @@
         </Grid.RowDefinitions>
 
         <!--
-            The page frame every chrome page shares (docs/showcase-plan.md, part 1): a centred 820 column inside
+            The page frame every chrome page shares (RipcordPageColumnWidth): a centred 820 column inside
             24 of padding, the title at its top-left. Header, steps and footer each take the column, so the
             scroll bar stays at the window's edge as it does on Settings.
         -->
@@ -116,7 +109,7 @@
             <Grid ColumnSpacing="6" Width="220" HorizontalAlignment="Left">
                 <!--
                     Three, uneven, in the mark's own proportions - 9 : 16 : 12, from brand/ripcord-mark.svg.
-                    Four equal dashes were a progress bar wearing the mark's clothes. These are the trail,
+                    Equal dashes would be a progress bar wearing the mark's clothes. These are the trail,
                     which is the same shape the connect sequence fills in and the celebration assembles, so
                     the three moments that matter all speak the same language.
                 -->
@@ -138,7 +131,7 @@
         </StackPanel>
 
         <!--  ============ Steps ============  -->
-        <!--  The scroller gets a full-width child and the column centres inside it. Handed the 820 column directly, it drew it against the right edge (its own placement for content narrower than itself), and the steps sat off to the right of the title.  -->
+        <!--  The scroller gets a full-width child and the column centres inside it. Handed the 820 column directly, it draws it against the right edge (its own placement for content narrower than itself), and the steps sit off to the right of the title.  -->
         <ScrollViewer
             Grid.Row="1"
             HorizontalScrollBarVisibility="Disabled"
@@ -161,11 +154,11 @@
                             TextWrapping="Wrap" />
 
                         <!--
-                            The families that are actually implemented, and only those. The Xbox button used to be
-                            here disabled, which is a promise the app cannot keep offered to somebody deciding
-                            whether this app is for them - it says "we support Xbox" in the same breath as "not
-                            for you". Gated on IsSelectable rather than deleted, so it appears the moment
-                            ConsolePlatform.Lanyard works and nothing in this page changes when it does.
+                            Only the families that can be selected are shown. A disabled button for a family
+                            is a promise the app cannot keep, offered to somebody deciding whether this app is
+                            for them: "we support it" in the same breath as "not for you". Each button's
+                            visibility follows ConsoleFamily.IsSelectable, set in code, and the Xbox button's
+                            column is sized with it, so the row holds only the buttons that show.
                         -->
                         <Grid ColumnSpacing="12">
                             <Grid.ColumnDefinitions>
@@ -240,8 +233,8 @@
 
                         <!--
                             Not a tab stop itself: a plain ItemsControl is one by default, draws no focus visual, and
-                            sits exactly where its results are, so Up from "Search again" focused the list instead of
-                            the console in it and the console could never be reached with a pad (2026-10-08).
+                            sits exactly where its results are, so Up from "Search again" would focus the list instead
+                            of the console in it, and the console could never be reached with a pad.
                         -->
                         <ItemsControl
                             x:Name="DiscoveredList"
@@ -306,8 +299,7 @@
                         <!--
                             The route, stated rather than asked.
 
-                            It was a pair of radio buttons with their labels hard-coded in this file, past the
-                            string catalogue. But the route is a MECHANISM and the player has no stake in it: a
+                            Not a pair of radio buttons. The route is a MECHANISM and the player has no stake in it: a
                             casual player does not know what a pairing code is, and asking them to choose between
                             two ways of confirming a thing is the kind of question the app should answer for
                             itself. Signed in with the console on the account, it pairs; otherwise the code route
@@ -328,8 +320,8 @@
                             Visibility="Collapsed" />
 
                         <!--
-                            SIGN-IN LEADS, because it is genuinely the lazier path and the code route only looks
-                            like it.
+                            SignInLeadPanel, below the error bar. SIGN-IN LEADS, because it is genuinely the lazier
+                            path and the code route only looks like it.
 
                             The code route wants somebody at the console, through its menus, reading an 8-digit
                             code, AND holding a numeric account id almost nobody knows - this app's own caption
@@ -395,8 +387,8 @@
                             TextChanged="OnLinkInputChanged"
                             Visibility="Collapsed" />
 
-                        <!--  Shown only when signed out. Signed in, the account ID is known and asking for it
-                              again would be busywork — see AccountKnownNote below.  -->
+                        <!--  Part of the code form, and only while the account ID is not already known. Signed in, it
+                              is known and asking for it again would be busywork — see AccountKnownNote below.  -->
                         <StackPanel x:Name="AccountEntryPanel" Spacing="4">
                             <TextBox
                                 x:Name="AccountBox"
@@ -413,15 +405,13 @@
                             The sign-in invitation, on the code route only, and DIRECTLY UNDER THE FIELD IT IS
                             ABOUT rather than above the whole step.
 
-                            It was above the heading, which made it the loudest thing on a step whose leading
-                            route is the code - and it was telling the same story as the account-id caption two
-                            controls further down, in a different voice. Here it sits beside the friction it
+                            Above the heading it would be the loudest thing on the step, telling the same story as
+                            the account-id caption in a different voice. Here it sits beside the friction it
                             removes: the box somebody is staring at, wondering where to find the number.
 
-                            It also no longer promises "you won't need the code". That sat directly above a box
-                            asking for a code, which is precisely the contradiction docs/design.md says this step
-                            used to open with - and it was not even reliable, since the code is only skipped when
-                            the account already knows the console, which nothing here can know yet.
+                            Its message, from the view-model, does not promise "you won't need the code": the
+                            code is only skipped when the account already knows the console, which nothing here
+                            can know at this point, and the promise would sit beside a box asking for a code.
                         -->
                         <InfoBar
                             x:Name="SignInInvitation"
@@ -534,8 +524,8 @@
         <!--  ============ Footer ============  -->
         <!--
             Back at the leading edge, and only when there is a step to go back to: leaving the flow is the title
-            bar's back, and a second Back beside it on the first step was the same action twice (visual audit,
-            2026-10-08). The way on sits at the trailing end, primary last, as Windows 11's own setup has it.
+            bar's back, and a second Back beside it on the first step would be the same action twice. The way
+            on sits at the trailing end, primary last, as Windows 11's own setup has it.
             Declared in that order too, so Tab reads it the way the eye does.
         -->
         <Grid

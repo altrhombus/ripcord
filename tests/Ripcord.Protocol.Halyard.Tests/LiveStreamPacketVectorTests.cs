@@ -9,9 +9,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// Pins the <b>control-plane GMAC AAD rule</b> (spec §5.5b) against real captured packets: control zeroes the
 /// 4-byte keystream_offset field <i>in addition to</i> the 4-byte tag, unlike A/V and input which zero only the tag.
 ///
-/// <para>Settled 2026-08-02 by recomputing the MAC over <c>cap3</c> with that session's dumped stream keys —
+/// <para>Measured 2026-08-02 by recomputing the MAC over <c>cap3</c> with that session's dumped stream keys —
 /// 727/727 authenticated type-0 packets reproduce with tag+keystream_offset zeroed, and the tag-only rule matches none
-/// of the discriminating ones. That result previously lived only in prose; this is what makes it executable.
+/// of the discriminating ones. These tests run that measurement on the fixture's packets.
 /// Complements <see cref="LiveStreamKeyVectorTests"/>, which pins the key <i>schedule</i> that produces the
 /// keys used here — together they cover the chain from ECDH shared secret through to an authenticated packet.
 /// </para>

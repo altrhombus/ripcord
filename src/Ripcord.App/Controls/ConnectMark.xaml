@@ -2,24 +2,22 @@
 <!--
     The connect progress indicator: the Ripcord mark, assembling.
 
-    It replaced three horizontal dashes laid out left to right and lit in turn. That was a progress bar
-    wearing the mark's dashes, and it threw away the only thing that made the shape mean anything - the
-    dashes are uneven and right-aligned BECAUSE OF their relationship to the wedge. brand/README.md is
-    explicit: a tidy trio reads as a fast-forward button, and the raggedness belongs on the outside edge.
-    Laid out in a row with no wedge, both reasons are gone and the middle segment is 70% wider than the first
-    for a reason nobody can recover.
+    The wedge is lit from the first moment and each dash lights as its phase is reached: progress is the
+    trail filling in behind something that has already launched. An unreached dash is dim, not absent, so
+    the shape is whole from the first frame.
 
-    So this is the mark itself, with the wedge lit from the first moment and each dash lighting as its phase
-    is reached. Progress is the trail filling in behind something that has already launched, which is what
-    the mark has always meant.
+    The dashes keep the mark's arrangement and are not laid out in a row. They are uneven and right-aligned
+    BECAUSE OF their relationship to the wedge: brand/README.md is explicit that a tidy trio reads as a
+    fast-forward button and that the raggedness belongs on the outside edge. In a row with no wedge both
+    reasons are gone, and the middle dash is 78% wider than the first for no visible reason.
 
     Geometry is brand/ripcord-mark-ondark.svg exactly, placed with the tile transform generate-assets.ps1
     applies (72%, centred). The dashes are in the CONSOLE's accent
-    rather than the three family colours, because this is one console's connect and not the app's logo -
-    resolved through AccentResources, so high contrast drops it to a system brush rather than painting
-    decorative colour where the palette forbids it.
+    rather than the three family colours, because this is one console's connect and not the app's logo. The
+    caller supplies the brush already resolved (SessionPage uses AccentResources), so high contrast gets a
+    system brush rather than decorative colour where the palette forbids it.
 
-    Still deliberately NOT a percentage. Where you are is knowable; how long it will take is not, and a bar
+    Deliberately NOT a percentage. Where you are is knowable; how long it will take is not, and a bar
     that implied otherwise would be inventing a number to look reassuring.
 -->
 <UserControl
@@ -48,11 +46,10 @@
 
             <!--  Lit from the first moment: something has launched, and the trail is what follows.  -->
             <!--
-                Filled, not filled-and-stroked. The rounded corners used to come from a 6px round-joined
-                stroke in the same brush as the fill. In light theme that brush is translucent, so the band
-                where stroke and fill overlap was drawn twice and the mark wore a dark outline (visual audit,
-                2026-10-08). This outline is the same shape - the triangle grown by the stroke's radius,
-                corners rounded at 3 - drawn once.
+                Filled, with no stroke. The outline is the mark's triangle grown by 3 with its corners
+                rounded at 3, which is the shape a 6px round-joined stroke gives, drawn once. A stroke in
+                the fill's brush would paint the band where the two overlap twice, and where that brush is
+                translucent (the light theme) the mark would wear a dark outline.
             -->
             <Path
                 x:Name="Wedge"

@@ -2,24 +2,6 @@ using Ripcord.Core.Consoles;
 
 namespace Ripcord.Presentation;
 
-/// <summary>
-/// The window-level operations a surface cannot perform on its own: showing and tearing down the stream layer,
-/// and the fullscreen presenter.
-///
-/// <para>
-/// This replaces three <c>App.MainWindow as MainWindow</c> casts. Each was a page reaching up through a static
-/// for a concrete window type, which had three costs: a page could not be exercised without a window; the cast
-/// silently produced null in any host that was not exactly that class, so the failure mode was a click that did
-/// nothing; and it pinned "the shell" to one WinUI type, which is precisely the coupling Stage A exists to
-/// remove. A front end implements this on whatever its shell happens to be.
-/// </para>
-///
-/// <para>
-/// Deliberately small. The stream is a layer above the navigation chrome rather than a page inside it, so this
-/// covers that layer and nothing else — page-to-page navigation stays with the front end's own frame, which is
-/// the thing front ends differ on most and agree on least.
-/// </para>
-/// </summary>
 /// <summary>Where in settings a caller wants somebody to land.</summary>
 public enum SettingsDestination
 {
@@ -30,15 +12,30 @@ public enum SettingsDestination
     /// The account section.
     ///
     /// <para>
-    /// Worth naming, because "open settings" is not the same offer as "sign in". The pairing step's sign-in
-    /// button opened settings at the top, where the account section is the last thing on a long page — so a
-    /// button that said "Sign in to PlayStation Network" delivered somebody to a resolution dropdown and
-    /// left them to go hunting. An offer that does not land where it promised is worse than no offer.
+    /// Worth naming, because "open settings" is not the same offer as "sign in". Settings opened at the top
+    /// puts the account section last on a long page — so a button that says "Sign in to PlayStation Network"
+    /// would deliver somebody to a resolution dropdown and leave them to go hunting. An offer that does not
+    /// land where it promised is worse than no offer.
     /// </para>
     /// </summary>
     Account,
 }
 
+/// <summary>
+/// The window-level operations a surface cannot perform on its own: showing and tearing down the stream layer,
+/// the fullscreen presenter, and opening settings.
+///
+/// <para>
+/// A seam so that no page casts to a concrete window type: a page can be exercised without a window, a host
+/// with a different shell does not get a silent null and a click that does nothing, and the shell is not
+/// pinned to one WinUI type. A front end implements this on whatever its shell happens to be.
+/// </para>
+///
+/// <para>
+/// Deliberately small. The stream is a layer above the navigation chrome rather than a page inside it, so this
+/// covers that layer and little else — page-to-page navigation stays with the front end's own frame.
+/// </para>
+/// </summary>
 public interface IShellNavigator
 {
     /// <summary>True while the stream layer is showing.</summary>

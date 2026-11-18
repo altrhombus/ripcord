@@ -9,17 +9,14 @@ namespace Ripcord_App.Services;
 /// The one place that decides whether the app animates.
 ///
 /// <para>
-/// Ripcord had no motion layer at all until the console grid grew one, so there was never anywhere to ask
-/// this question. Now there is, and the answer has to be honoured: a user who has turned animation effects
-/// off system-wide (Settings → Accessibility → Visual effects) is telling us motion makes the app harder to
-/// use, and for some people it is the difference between usable and nauseating.
+/// A user who has turned animation effects off system-wide (Settings → Accessibility → Visual effects) is
+/// telling us motion makes the app harder to use, and that has to be honoured.
 /// </para>
 ///
 /// <para>
 /// XAML's own theme transitions already consult this setting themselves, so they need no gating here. What
 /// does need it is anything driven from code — <see cref="Microsoft.UI.Xaml.Media.Animation.ConnectedAnimation"/>
-/// above all, which runs regardless. Every such path must also work when it is skipped: motion is the
-/// garnish, never the mechanism.
+/// above all, which runs regardless. Every such path must also work when it is skipped.
 /// </para>
 /// </summary>
 internal static class AppMotion

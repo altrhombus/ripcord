@@ -18,16 +18,15 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
     rec->os_minor = 0;
     rec->start_bitrate = 10000;
     /*
-     * 10,000 matches RipcordSettings.BitrateKbps, which is the .NET client's own default and the number
-     * this project has actually settled on. 8,000 was a guess made when the core (then ports/common) targeted smaller
-     * consoles. It goes into the launch spec as bwKbpsSent - a claim the console sizes the stream
+     * 10,000 matches RipcordSettings.BitrateKbps, which is the .NET client's own default.
+     * It goes into the launch spec as bwKbpsSent - a claim the console sizes the stream
      * against - and on the PS3 that claim also decides how finely the console slices each picture, which
      * its decoder has a limit on. 15,000 is measured good there and 30,000 is not; 10,000 is inside both.
      */
     rec->stream_bitrate_kbps = 10000;
     rec->connection_quality = 0;
     /*
-     * ON by default now that it has run. The decoder's own colour conversion removes a third of the
+     * ON by default. On the PS3 the decoder's own colour conversion removes a third of the
      * SPE's arithmetic - 16,444 us a frame to 10,876 - for no measured cost, and the picture was checked
      * on hardware. `decoderrgb=0` turns it off, which is the escape hatch for a decoder that will not
      * produce ARGB32; a port whose decoder cannot is unaffected, since only the vdec backend reads it.
@@ -51,11 +50,10 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
 /*
  * THE SHARED FIELDS, COPIED FROM ONE ENTRY TO ANOTHER.
  *
- * Written out by name rather than by memcpy-with-holes, because the alternative was a struct copy
- * followed by restoring the per-console fields - and a field added later would then be shared or
- * per-console by accident of where it sat in the struct rather than by anybody deciding. The two lists
- * below ARE the decision, and a new field that appears in neither is a compile-clean mistake, so keep
- * them together with the header's note on what is shared.
+ * Written out by name rather than as a struct copy followed by restoring the per-console fields, so
+ * that a field added later is shared or per-console by decision, not by where it sits in the struct. A
+ * new field that appears in neither list below compiles cleanly and is a mistake; keep the lists
+ * together with the header's note on what is shared.
  */
 static void copy_shared_settings(halyard_pairing_record *dst, const halyard_pairing_record *src)
 {
@@ -141,7 +139,7 @@ int halyard_pairing_file_load_set(const char *argv0, halyard_pairing_set *set)
         /*
          * A NEW CONSOLE STARTS HERE. Anything after this line belongs to it until the next one; keys
          * before the FIRST one are the shared settings - except for console keys, which is what makes a
-         * file written by the single-console version load unchanged.
+         * file in the single-console layout (no [console] line) load.
          */
         if (strcmp(line, "[console]") == 0) {
             if (parsed < HALYARD_PAIRING_MAX_CONSOLES) {
@@ -487,9 +485,8 @@ int halyard_pairing_file_save_set(const char *argv0, const halyard_pairing_set *
                "# console and cannot be recovered without pairing again.\n");
 
     /*
-     * The shared settings ONCE, at the top, before any [console] line. A reader that predates sections
-     * treats every one of these as it always did, and stops at the first [console] having found the
-     * settings it wanted - which is the other half of not needing a migration.
+     * The shared settings ONCE, at the top, before any [console] line. A reader that knows nothing of
+     * sections still finds every setting there - which is the other half of not needing a migration.
      */
     if (set->selected >= 0)
         fprintf(f, "selected=%d\n", set->selected);
@@ -547,9 +544,9 @@ int halyard_pairing_file_save(const char *argv0, const halyard_pairing_record *r
         return 0;
 
     /*
-     * READ FIRST, so the consoles already in the file survive. The version of this that wrote the record
-     * straight out destroyed every other console's keys, silently, and getting them back means standing
-     * in front of each one reading a PIN off it again.
+     * READ FIRST, so the consoles already in the file survive. Writing the record straight out would
+     * destroy every other console's keys, silently, and getting them back means standing in front of
+     * each one reading a PIN off it again.
      *
      * A failed load is the ordinary first-pairing case and not a reason to stop - it leaves an empty set
      * that the upsert below fills.

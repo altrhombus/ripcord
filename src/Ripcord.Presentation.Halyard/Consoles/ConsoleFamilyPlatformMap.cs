@@ -9,9 +9,8 @@ namespace Ripcord.Presentation.Halyard.Consoles;
 /// <para>
 /// Lives here rather than on <see cref="ConsoleFamily"/> because that type is deliberately free of protocol
 /// references — it is the boundary between product names and codenames, and a <c>HalyardConsolePlatform</c>
-/// property on it would erode the boundary by convenience. It also lives here rather than inline at the call
-/// site: the same two-line ternary was written out in <c>AddConsolePage.PairAsync</c> and again in the protocol
-/// lab, which is how a third copy gets a different default.
+/// property on it would erode the boundary by convenience. It also lives here rather than inline at each call
+/// site: a two-line ternary written out once per caller is how one copy gets a different default.
 /// </para>
 /// </summary>
 public static class ConsoleFamilyPlatformMap

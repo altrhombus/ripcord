@@ -1,27 +1,24 @@
 /*
  * ripcord-ps3 - can this console tell us its own PSN account id?
  *
- * WHY THE QUESTION MATTERS. Registration is the one exchange that needs the account id, and nothing in
- * this port knows it: rc_pair_run asks for it on an on-screen keyboard, which is a nineteen-digit number
- * entered with a controller. It is remembered afterwards, so it is typed once - but "once" is still the
- * worst step in the only flow a new user has to get through, and this PS3 is signed in to the very
- * account the number belongs to.
+ * Why it matters: registration is the one exchange that needs the account id, and without this
+ * rc_pair_run asks for it on an on-screen keyboard - a nineteen-digit number entered with a
+ * controller - while this PS3 is signed in to the very account the number belongs to.
  *
- * WHY THIS IS A SEARCH RATHER THAN A READ. PSL1GHT has no NP bindings at all - `SYSMODULE_SYSUTIL_NP`
- * exists as a module id and there is no header and no stub library to call into it - so
- * sceNpManagerGetAccountId is not reachable from here without resolving a PRX export by hand. The other
- * route is the filesystem, and there the honest position is that this port does not know which file or
- * which offset, and guessing at one would produce a value that cannot be told apart from a wrong one.
+ * Why the probe is a search rather than a read: PSL1GHT has no NP bindings at all -
+ * `SYSMODULE_SYSUTIL_NP` exists as a module id and there is no header and no stub library to call into
+ * it - so sceNpManagerGetAccountId is not reachable from here without resolving a PRX export by hand.
+ * The other route is the filesystem, where a guessed file or offset would produce a value that cannot
+ * be told apart from a wrong one.
  *
- * SO IT LOOKS FOR A NUMBER IT ALREADY HAS. A paired console has the account id in its pairing record,
- * typed by the person who owns it. Given that, finding where the console keeps its own copy is a
- * substring search over a few small files - which needs no hypothesis about any file format, confirms
- * itself by construction, and reports an offset that the next build can read directly.
+ * So the probe looks for a number it already has. A paired console has the account id in its pairing
+ * record, typed by the person who owns it; finding where the console keeps its own copy is then a
+ * substring search over a few small files, which needs no hypothesis about any file format and
+ * reports an offset a reader can use directly.
  *
  * NOTHING HERE LOGS THE VALUE, IN ANY FORM. Not the account id, not the bytes around it, not the
  * filenames - an exdata filename carries a content id, which names something somebody bought. What is
- * reported is a directory, an index, an offset and a byte order. That is everything needed to write the
- * reader and nothing that identifies anyone.
+ * reported is a directory, an index, an offset and a byte order.
  */
 #ifndef RC_ACCOUNT_PS3_H
 #define RC_ACCOUNT_PS3_H
@@ -29,7 +26,7 @@
 #include <stddef.h>
 
 /*
- * ANSWERED, b335: /dev_hdd0/home/<user>/np_cache.dat, 248 bytes, the account id as a BIG-endian
+ * WHERE IT IS (b335): /dev_hdd0/home/<user>/np_cache.dat, 248 bytes, the account id as a BIG-endian
  * uint64 at offset 0. The search below found it by looking for a number the pairing record already
  * had, which is why there is no hypothesis here to be wrong about.
  *

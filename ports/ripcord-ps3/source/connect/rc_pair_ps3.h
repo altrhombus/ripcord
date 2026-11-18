@@ -1,18 +1,16 @@
 /*
  * ripcord-ps3 - pairing with a console, driven from the console itself.
  *
- * Until now a pairing record was produced by ProtocolLab on a PC and copied over by hand, which is
- * fine for bring-up and means the port cannot be used by anyone who is not already running the desktop
- * client. This asks the three questions on the television and writes the answer.
+ * A pairing record can also be produced by ProtocolLab on a PC and copied over by hand; this asks the
+ * three questions on the television and writes the answer.
  *
- * WHAT IT ASKS AND WHY EACH ONE. The console's ADDRESS, because discovery may not have run or may have
- * found several. The PSN ACCOUNT ID, because the console checks it and nothing on this machine knows
- * it - that is the piece worth removing later if the PS3's own account can be read, and it is asked
- * for plainly rather than guessed at. And the PIN, which the console shows on its own screen for a
- * few minutes.
+ * What it asks: the console's ADDRESS, because discovery may not have run or may have found several.
+ * The PSN ACCOUNT ID, because the console checks it; the prompt is pre-filled from the record or from
+ * this PS3's own account (rc_account_ps3.h) and is still shown, so the number is confirmed rather than
+ * guessed at. And the PIN, which the console shows on its own screen for a few minutes.
  *
- * EVERY STEP REPORTS THROUGH rc_session_state, so a refusal reaches the person standing in front of it
- * instead of a log file on another machine - see that header on why the hint is the part that matters.
+ * Every step reports through rc_session_state, so a refusal reaches the person standing in front of it
+ * instead of a log file on another machine - see that header.
  */
 #ifndef RC_PAIR_PS3_H
 #define RC_PAIR_PS3_H
@@ -42,22 +40,18 @@ void rc_pair_apply_port_defaults(halyard_pairing_record *record);
  * and leaves the address to stand in for it. The session state carries what happened either way, and is
  * left on the screen.
  *
- * `console_id` is the id discovery reported, and it is the one field here that is not a convenience:
- * `host` is a DHCP lease and this is not, so a record carrying it can be found again after the console
- * moves instead of having to be re-paired. NULL when pairing from a typed address, which is a normal
- * state - the id is learned the next time that console answers a broadcast.
+ * `console_id` is the id discovery reported. `host` is a DHCP lease and this is not, so a record
+ * carrying it can be found again after the console moves instead of having to be re-paired. NULL when
+ * pairing from a typed address, which is a normal state - the id is learned the next time that console
+ * answers a broadcast.
  *
- * THE CONSOLES ALREADY PAIRED ARE KEPT. This adds one or replaces the entry at the same address; it no
- * longer overwrites the file, which is what used to destroy the previous console's keys silently.
- */
-/*
+ * The consoles already paired are kept: this adds one or replaces the entry at the same address, and
+ * does not overwrite the file.
+ *
  * `host_type` is the family, "PS5" or "PS4", as discovery reported it. NULL means nobody knows yet -
- * the address was typed - and the flow finds out for itself rather than assuming.
- *
- * IT IS NOT A DETAIL. The two families take different registration paths, different key tables and
- * different wrap tables, and a console sent the wrong family's registration refuses it. This port
- * hard-coded PS5 at every one of those decisions, so a PS4 could be typed in, prompted for, and
- * refused, with a log line that said only "the console refused the registration".
+ * the address was typed - and the flow finds out for itself rather than assuming. The two families
+ * take different registration paths, different key tables and different wrap tables, and a console
+ * sent the wrong family's registration refuses it.
  */
 int rc_pair_run(const char *host, const char *name, const char *console_id, const char *host_type);
 

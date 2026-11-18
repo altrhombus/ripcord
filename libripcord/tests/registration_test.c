@@ -8,13 +8,9 @@
  * and checks halyard_registration.c against it line by line. Every answer in that file was computed by
  * the .NET implementation; every answer here is computed by the C one.
  *
- * WHY THIS MATTERS MORE THAN MOST OF THE SUITE. The registration key exchange is the one part of pairing
- * that fails SILENTLY. A wrong transport key does not produce a wrong answer - it produces a console
- * that responds 403 with a generic application reason, which reads exactly like a mistyped PIN, a stale
- * search probe, or the wrong transport. Every one of those is a plausible thing to chase, and none of
- * them is checkable from the console's side of the wire. Checking the arithmetic here, on a host,
- * against numbers the reference computed, is what stops that from being a hardware mystery in front of a
- * television with a PIN on it.
+ * The registration key exchange fails SILENTLY: a wrong transport key produces a console that responds
+ * 403 with a generic application reason, which reads exactly like a mistyped PIN, a stale search probe,
+ * or the wrong transport. Hence the arithmetic is checked here, on a host.
  *
  * Runs on the host. No console, no toolchain, no devkit.
  */
@@ -77,8 +73,8 @@ static void test_message(void)
     check(strstr(field, "Np-AccountId: wLqKPNViBAA=\r\n") != NULL,
           "numeric id is a base64 LITTLE-endian u64", __LINE__);
 
-    /* The largest u64 is still one; one past it is text, not a wrapped number (it wrapped to 0 until
-     * 2026-09-26, which is a different account's id). */
+    /* The largest u64 is still one; one past it is text, not a wrapped number (wrapping it would give
+     * 0, which is a different account's id). */
     n = halyard_regist_field_plaintext("18446744073709551615", field, sizeof(field));
     check(n > 0 && strstr(field, "Np-AccountId: //////////8=\r\n") != NULL,
           "UINT64_MAX is still a numeric id", __LINE__);
@@ -164,7 +160,7 @@ static void test_message(void)
         check(rec.companion[0] == 0x00 && rec.companion[15] == 0x0f, "companion decoded", __LINE__);
     }
 
-    /* The reason as the LAST header, which the header walk used to stop short of. */
+    /* The reason as the LAST header: the header walk must reach the final line before the blank one. */
     {
         static const char last[] = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nRP-Application-Reason: 80108b09\r\n\r\n";
         int status = 0;

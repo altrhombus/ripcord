@@ -7,9 +7,8 @@ namespace Ripcord.Presentation.Accounts;
 ///
 /// <para>
 /// Two callers need this and must agree: pairing, which learns the cloud id at the moment it saves a console,
-/// and the backfill that repairs consoles paired before sign-in existed. They agreed by coincidence when the
-/// rule lived inside the pairing flow, which is the kind of agreement that stops being true the first time one
-/// of them is edited.
+/// and the backfill that fills the id in on stored consoles that lack one. One rule in one place, so the two
+/// cannot drift apart when one of them is edited.
 /// </para>
 /// </summary>
 public static class CloudConsoleMatch
@@ -29,9 +28,8 @@ public static class CloudConsoleMatch
     /// </para>
     /// </summary>
     /// <param name="reportedName">
-    /// What the console calls <em>itself</em>, never the user's nickname. Passing a display name would fail to
-    /// match every console the user has renamed — which is most of the ones they care about, since renaming is
-    /// what people do to tell two consoles apart.
+    /// What the console calls <em>itself</em>, never the user's nickname: a display name would fail to match
+    /// every console the user has renamed.
     /// </param>
     public static string? ResolveId(IReadOnlyList<CloudConsole> cloudConsoles, string? reportedName)
         => Resolve(cloudConsoles, reportedName)?.Id;
@@ -78,10 +76,8 @@ public static class CloudConsoleMatch
     /// Fill in the cloud id on stored consoles that do not have one, and report how many were repaired.
     ///
     /// <para>
-    /// This exists because the field was added after people had already paired their consoles. Without it,
-    /// remote wake would work only for consoles paired from the day the account tier shipped, and there would
-    /// be nothing on screen to explain why an older console behaved differently — the wake would simply never
-    /// be attempted.
+    /// A stored console can lack a cloud id (the account's list was not available when it was paired, or its
+    /// record was written without the field), and without one remote wake is never attempted for it.
     /// </para>
     ///
     /// <para>

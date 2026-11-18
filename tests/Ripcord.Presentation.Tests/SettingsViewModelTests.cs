@@ -84,9 +84,9 @@ public class SettingsViewModelTests
     [Fact]
     public async Task Setting_AValueThatIsAlreadyHeld_DoesNotSave()
     {
-        // THE point of this class. The page's fourteen handlers used to each check a _loading bool because an
-        // event firing did not imply anything had changed — during XAML parse, or when the page projected its
-        // own state back onto its controls. Comparing values makes a duplicate event structurally a no-op.
+        // THE point of this class. An event firing does not imply anything has changed — it fires during XAML
+        // parse, and when the page projects its own state back onto its controls. Comparing values makes a
+        // duplicate event structurally a no-op, so no handler needs a loading flag.
         (SettingsViewModel vm, RecordingSettingsStore store, _) = await BuildAsync();
 
         vm.SetAdaptiveQuality(vm.State.AdaptiveQuality);
@@ -101,7 +101,7 @@ public class SettingsViewModelTests
     [InlineData(ExitGesture.BothSticksClicked, "L3 + R3", "LS + RS")]
     public async Task TheExitGesture_IsDescribedForBothPads(ExitGesture gesture, string vendor, string generic)
     {
-        // This page does not know which pad is in hand, so it names the gesture on both (2026-10-02).
+        // This page does not know which pad is in hand, so it names the gesture on both.
         (SettingsViewModel vm, _, _) = await BuildAsync();
 
         vm.SetExitGesture((int)gesture);
