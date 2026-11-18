@@ -22,7 +22,7 @@ namespace Ripcord.Input.Common;
 ///
 /// <para>Stick Y is inverted so the neutral frame uses stick-up = +1 (the shared convention across every
 /// controller source); the protocol layer re-inverts for the console wire. Motion (gyro/accel) is present in
-/// the full reports but left unmapped until calibrated, so <see cref="ControllerStateFrame.Gyro"/>/
+/// the full reports but is not mapped (it is uncalibrated), so <see cref="ControllerStateFrame.Gyro"/>/
 /// <see cref="ControllerStateFrame.Accel"/> are null.</para>
 /// </summary>
 public static class DualSenseReportParser

@@ -9,7 +9,7 @@ namespace Ripcord.Client;
 /// </summary>
 public enum SessionLifecycle
 {
-    /// <summary>Nothing running; nothing has been attempted yet.</summary>
+    /// <summary>Nothing running, and nothing attempted.</summary>
     Idle,
 
     /// <summary>First connection attempt in progress.</summary>
@@ -33,7 +33,7 @@ public enum SessionLifecycle
     /// <summary>
     /// The console ended the stream itself: it said goodbye, or closed its control connection. Terminal, and never
     /// retried, because a reconnect wakes the console first, and a console rested from its own power menu or by its
-    /// auto-rest timer was woken straight back up (2026-10-05). A network fault is not this; it reconnects.
+    /// auto-rest timer would be woken straight back up. A network fault is not this; it reconnects.
     /// </summary>
     Ended,
 }
@@ -49,9 +49,8 @@ public enum SessionLifecycle
 /// <param name="NextRetryIn">How long until the next attempt, when reconnecting and waiting.</param>
 /// <param name="Reason">
 /// The raw reason behind a retry, kept apart from <paramref name="Detail"/> so a screen can lead with the sentence and
-/// show the reason small, for a bug report. It used to be appended to the detail, so a dropped Wi-Fi read "Connection
-/// failed. Retrying in 2s… (opening the control connection: A socket operation was attempted to an unreachable
-/// host.)" (visual audit, 2026-10-08). Null when there is none.
+/// show the reason small, for a bug report, rather than appending a socket error to the sentence. Null when
+/// there is none.
 /// </param>
 public sealed record SessionStatus(
     SessionLifecycle Lifecycle,
@@ -101,8 +100,8 @@ public sealed record SessionControllerOptions
     /// <summary>
     /// Retries of a connect that has never streamed, before giving up. Smaller than
     /// <see cref="MaxReconnectAttempts"/>: a first connect that fails twice more is very likely to keep failing,
-    /// and six tries with backoff and a wake before each kept a person watching "Reconnecting…" for minutes for
-    /// a stream they had never had (review, 2026-10-05). [X]: chosen.
+    /// and six tries with backoff and a wake before each would keep a person watching "Reconnecting…" for minutes
+    /// for a stream they have never had. [X]: chosen.
     /// </summary>
     public int MaxFirstConnectAttempts { get; init; } = 2;
 
@@ -110,11 +109,10 @@ public sealed record SessionControllerOptions
     /// The longest a single connect attempt may take before it counts as failed.
     ///
     /// <para>
-    /// <b>A backstop against never finishing, not a performance target.</b> The retry budget above only bounds
-    /// the number of attempts; it does nothing about an attempt that never returns, and an attempt that never
-    /// returns is a window reading "Connecting…" for as long as the user is willing to watch it. Reported that
-    /// way from hardware, where an HTTP call with a hundred-second default sat inside a loop that could not
-    /// advance past it.
+    /// A backstop against never finishing, not a performance target. The retry budget above only bounds the
+    /// number of attempts; an attempt that never returns is a window reading "Connecting…" indefinitely. Seen
+    /// on hardware, where an HTTP call with a hundred-second default sat inside a loop that could not advance
+    /// past it.
     /// </para>
     ///
     /// <para>
@@ -130,10 +128,9 @@ public sealed record SessionControllerOptions
     ///
     /// <para>
     /// Without this, <see cref="MaxReconnectAttempts"/> can never be reached in the case that needs it most.
-    /// A console on its way into rest mode still completes a handshake and then drops it immediately — so
-    /// every attempt "succeeds", the budget resets every time, and the client reconnects forever. Observed on
-    /// hardware: a console asked to stream while going to sleep left the app looping with no way out but
-    /// killing it.
+    /// A console on its way into rest mode still completes a handshake and then drops it immediately, so
+    /// every attempt "succeeds", the budget resets every time, and the client reconnects forever (observed on
+    /// hardware).
     /// </para>
     ///
     /// <para>
@@ -148,13 +145,12 @@ public sealed record SessionControllerOptions
     /// again until one arrives.
     ///
     /// <para>
-    /// A decoder cannot start without a keyframe. If the first one is lost, every frame after it is a
-    /// predicted one the decoder can do nothing with: nothing decodes, so no queue backs up and the decoder's
-    /// own backlog trigger never fires, and the console is still talking, so the stall watchdog does not fire
-    /// either. The session would sit on a black picture for good. The C core and the Rust engine arm a latch
-    /// at the start for the same reason and re-ask every 200 ms. Here the first ask waits a second, so the
-    /// keyframe a console sends at the start of every stream is not pre-empted, and the session's own rate
-    /// limit bounds the rest.
+    /// A decoder cannot start without a keyframe. If the first one is lost, nothing decodes, so no queue backs
+    /// up and the decoder's own backlog trigger never fires, and the console is still talking, so the stall
+    /// watchdog does not fire either: the session would sit on a black picture for good. The C core and the
+    /// Rust engine arm a latch at the start for the same reason and re-ask every 200 ms. Here the first ask
+    /// waits a second, so the keyframe a console sends at the start of every stream is not pre-empted, and the
+    /// session's own rate limit bounds the rest.
     /// </para>
     /// </summary>
     public TimeSpan FirstKeyFrameGrace { get; init; } = TimeSpan.FromSeconds(1);

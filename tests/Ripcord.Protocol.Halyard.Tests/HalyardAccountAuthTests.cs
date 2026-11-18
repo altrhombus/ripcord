@@ -12,9 +12,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// the device id both carry, and what survives a restart.
 ///
 /// <para>
-/// None of this talks to the network. What is being pinned is the part that was wrong or missing rather than the
-/// part that is hard: the authorize call previously omitted the device identity the token exchange requires, and
-/// nothing anywhere read a code out of a redirect at all.
+/// None of this talks to the network. What is being pinned is the part that is easy to leave out rather than the
+/// part that is hard: the authorize call carries the device identity the token exchange requires, and the code
+/// is read out of the redirect.
 /// </para>
 /// </summary>
 public class HalyardAccountAuthTests

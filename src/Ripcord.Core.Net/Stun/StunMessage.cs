@@ -16,10 +16,8 @@ public enum StunMessageType : ushort
 /// A single STUN message: the 20-byte header plus its attributes, encoded and decoded per RFC 5389.
 ///
 /// <para>
-/// Only what a client needs to discover its own reflexive address is implemented: build a Binding Request,
-/// read a Binding Response's mapped address. That is deliberately narrow — this is not a general STUN/TURN
-/// stack. It is the piece that lets Ripcord fill in the reflexive candidate its signaling OFFER advertises,
-/// which is otherwise the one candidate it cannot produce.
+/// Deliberately narrow, not a general STUN/TURN stack: build a Binding Request, read a Binding Response's
+/// mapped address. That fills in the reflexive candidate Ripcord's signaling OFFER advertises.
 /// </para>
 ///
 /// <para>
@@ -27,8 +25,8 @@ public enum StunMessageType : ushort
 /// property of the NAT, not of which server observes it, so any reachable STUN server answers the question.
 /// The vendor's own STUN endpoints are authenticated (they carry <c>USERNAME</c> + <c>MESSAGE-INTEGRITY</c>,
 /// per our captures) and belong to its relay tier; this client targets ordinary public servers and does not
-/// attempt that auth. Reading a server's response is lenient about it, though — an unknown or
-/// integrity-bearing attribute is skipped, not rejected.
+/// attempt that auth. Decoding is lenient: an unknown or integrity-bearing attribute is skipped, not
+/// rejected.
 /// </para>
 /// </summary>
 public sealed class StunMessage

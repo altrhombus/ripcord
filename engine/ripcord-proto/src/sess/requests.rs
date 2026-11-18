@@ -60,7 +60,7 @@ pub enum InitError {
         reason: Option<String>,
     },
     /// No RP-Nonce, or not 16 bytes of strict base64. A hard failure, as in C: .NET carries on to an
-    /// unauthenticated /sess/ctrl (on the roadmap).
+    /// unauthenticated /sess/ctrl.
     NoNonce,
     /// This family's interop constants are not in this engine (built without `interop-constants`, or a
     /// bundle without the PS4 tables).

@@ -12,10 +12,9 @@ namespace Ripcord.Presentation.Tests;
 /// Reachability probing and the rest-settle watch.
 ///
 /// <para>
-/// None of this was testable while it lived in a page's code-behind: exercising it meant launching the app
-/// against real consoles, and the rest watch in particular meant waiting a real minute to see what happens when
-/// its budget runs out. Both the concurrency claim ("one offline console must not delay the others") and the
-/// budget were therefore assertions nobody had ever checked.
+/// Run against a fake probe, so no real console is needed and the rest watch does not wait a real minute for
+/// its budget to run out. Both the concurrency claim ("one offline console must not delay the others") and the
+/// budget are asserted here.
 /// </para>
 /// </summary>
 public class ConsoleReachabilityMonitorTests

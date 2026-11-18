@@ -1,8 +1,8 @@
 /*
  * ripcord-ps3 - the two-button chord state machine. See rc_chord.h for what it is and why it is separate.
  *
- * This is the exact logic that lived inside rc_pad_read, moved out unchanged so it can be driven from a
- * host test. Nothing here touches PSL1GHT: a mask in, a mask out, the clock passed as an argument.
+ * Kept out of rc_pad_read so it can be driven from a host test. Nothing here touches PSL1GHT: a mask
+ * in, a mask out, the clock passed as an argument.
  */
 #include "rc_chord.h"
 

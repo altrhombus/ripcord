@@ -27,18 +27,16 @@ public sealed class ConsoleReachabilityMonitor
     /// How many times to ask before believing silence.
     ///
     /// <para>
-    /// One datagram was the defect. The probe sends a single SRCH and waits a second, and on hardware a
-    /// console that was powered on for an entire session was reported unreachable because that one packet
-    /// crossed a VLAN boundary onto a 2.4 GHz link and did not come back. UDP does not retransmit and the
-    /// radio's own retry can outlast the window, so a single loss - unremarkable on that path - became a
-    /// verdict.
+    /// The probe sends a single SRCH and waits a second. UDP does not retransmit and the radio's own retry can
+    /// outlast the window, so one lost packet became a verdict: on hardware, a console that was powered on
+    /// was reported unreachable across a VLAN boundary on a 2.4 GHz link.
     /// </para>
     ///
     /// <para>
     /// Retries rather than a longer wait, because the failure is a lost packet and not a slow console: three
-    /// chances at a second each beats one chance at three. It costs nothing in the common case - a console
-    /// that is there answers the first ask - and this is a snapshot taken when the list is built, not a poll,
-    /// so even the worst case is a few seconds once per visit.
+    /// chances at a second each beats one chance at three. A console that is there answers the first ask, and
+    /// this is a snapshot taken when the list is built, not a poll, so the worst case is a few seconds once
+    /// per visit.
     /// </para>
     /// </summary>
     public const int DefaultSilenceRetries = 2; // 3 asks in total
@@ -59,7 +57,7 @@ public sealed class ConsoleReachabilityMonitor
     /// <param name="remotelyAvailable">
     /// The cloud ids of consoles the account service says are available for remote play, asked at most once
     /// per refresh and only when some console failed to answer locally. Null when this build has no account
-    /// tier, in which case a console that does not answer is simply offline, exactly as before.
+    /// tier, in which case a console that does not answer is simply offline.
     ///
     /// <para>
     /// A function rather than the account seam itself, because what this needs is one set of ids: taking the
@@ -157,7 +155,7 @@ public sealed class ConsoleReachabilityMonitor
     ///
     /// <para>
     /// Only silence is retried. An answer of either kind is ground truth and is taken immediately, so a
-    /// console that is awake, or resting, costs exactly one datagram as before.
+    /// console that is awake, or resting, costs exactly one datagram.
     /// </para>
     /// </summary>
     private async Task<bool?> AskUntilAnsweredAsync(ConsoleCardViewModel card, CancellationToken cancellationToken)

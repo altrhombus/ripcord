@@ -1,13 +1,10 @@
 /*
  * A UDP socket opened the way every port needs it opened.
  *
- * This exists because the 3DS port grew its own `open_udp` and the PS3 port was about to grow a second
- * one, and the two would have differed in a way that matters: the 3DS version sets non-blocking mode with
- * fcntl(F_SETFL, O_NONBLOCK), which is correct there and returns -1 on the PS3, whose sockets are lv2
- * descriptors rather than newlib file descriptors. A port that copied it would have got a BLOCKING socket
- * and no error, and a blocking socket inside Takion's poll loops is not a failure - it is a hang.
- *
- * So the knowledge lives once, in rc_socket_set_nonblocking (rc_tcp.h), and every port gets it.
+ * Shared so no port opens its own: fcntl(F_SETFL, O_NONBLOCK) is correct on the 3DS and returns -1 on
+ * the PS3, whose sockets are lv2 descriptors rather than newlib file descriptors, and a blocking socket
+ * inside Takion's poll loops is a hang. Non-blocking mode goes through rc_socket_set_nonblocking
+ * (rc_tcp.h).
  */
 #ifndef RC_UDP_H
 #define RC_UDP_H
@@ -22,24 +19,18 @@
  *
  * `rcvbuf_bytes` asks for a receive buffer; 0 leaves the platform default. A keyframe arrives as a burst
  * of back-to-back datagrams - ~24 KB across roughly twenty of them at 960x540 - and if the socket's
- * buffer is smaller than the burst, the stack drops the tail before any amount of draining can reach it.
- * That loss does not respond to CPU, which is how the 3DS port eventually identified it.
+ * buffer is smaller than the burst, the stack drops the tail before any draining can reach it.
  *
  * The host must be a dotted quad; no name resolution happens here.
  */
 int rc_udp_open(const char *host, unsigned port, struct sockaddr_in *out_peer, int rcvbuf_bytes);
 
 /*
- * WHAT THE RECEIVE BUFFER ACTUALLY IS, which is not necessarily what was asked for.
+ * WHAT THE RECEIVE BUFFER ACTUALLY IS. SO_RCVBUF is a hint: a platform may round it, cap it, double it
+ * for bookkeeping, or ignore it, and the setsockopt return says only that the request was accepted.
  *
- * SO_RCVBUF is a hint. A platform may round it, cap it, double it for bookkeeping, or ignore it, and the
- * setsockopt return says only that the request was accepted - not that the size was. This port has
- * already been caught once believing an SDK call did what it said: fcntl(F_SETFL) returns -1 on these
- * sockets with nothing useful behind it.
- *
- * Returns the size the platform reports, or 0 if it will not say. The answer matters because a buffer
- * smaller than a burst loses the tail of that burst before any amount of draining can reach it, and the
- * symptom is loss that looks exactly like the network.
+ * Returns the size the platform reports, or 0 if it will not say. A buffer smaller than a burst loses
+ * the tail of that burst, and the symptom is loss that looks exactly like the network.
  */
 int rc_udp_rcvbuf_actual(int sock);
 

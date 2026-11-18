@@ -4,7 +4,7 @@ using Xunit;
 namespace Ripcord.Presentation.Tests;
 
 /// <summary>
-/// Exercises the non-WinUI dispatcher. The point is not that anything ships on it yet — it is that
+/// Exercises the non-WinUI dispatcher. The point is not which front end runs on it — it is that
 /// <see cref="IUiDispatcher"/> can be satisfied by something other than WinUI's DispatcherQueue. If it could
 /// not, the seam would be a rename of one platform's API rather than an abstraction, and the whole extraction
 /// would have bought nothing.

@@ -4,32 +4,25 @@ namespace Ripcord.Presentation.Sessions;
 /// Decides when a connect stage has earned the screen.
 ///
 /// <para>
-/// <b>The problem this exists for.</b> <see cref="ConnectFlow"/> announces every phase <em>before</em> it runs,
-/// which is right and must not change: when something hangs, the last line on screen names it, and a video
-/// device stalling on unfamiliar hardware used to be indistinguishable from a network problem because the
-/// overlay said "Connecting…" throughout. But on a LAN connect to an awake console the whole sequence is over
-/// in under two seconds, so the player reads three headlines at title size in the time it takes to sit down.
-/// That is a strobe, and it is the <em>common</em> case — the one the composition exists to keep calm.
+/// <see cref="ConnectFlow"/> announces every phase <em>before</em> it runs, which must not change: when
+/// something hangs, the last line on screen names it. But a LAN connect to an awake console is over in under
+/// two seconds, and three headlines at title size in that time is a strobe, in the <em>common</em> case.
 /// </para>
 ///
 /// <para>
-/// <b>So the fix is not to say less, it is to refuse to promote a line that has not earned the screen.</b> A
-/// stage's text appears once that stage has been running for <see cref="Dwell"/>; before that the headline
+/// So a stage's text appears once that stage has been running for <see cref="Dwell"/>; before that the headline
 /// holds whatever was already there, which at the start of a connect is the console's own name. A fast connect
-/// shows one calm line and cuts to the game. A hang shows exactly what it shows today.
+/// shows one calm line and cuts to the game. A hang shows every stage, as it would without the gate.
 /// </para>
 ///
 /// <para>
-/// <b>Two things bypass the dwell entirely</b>, and both are the same rule seen twice: a line the user has to
-/// act on is never withheld. A terminal stage is the end of the sequence and carries the reason it stopped, and
-/// a stage that <em>escalates</em> the phase is the only evidence the player has that a long wait has begun —
-/// withholding "Waking your PS5…" for half a second would be withholding it at the exact moment it starts
-/// mattering.
+/// <b>Two things bypass the dwell entirely</b>, because a line the user has to act on is never withheld: a
+/// terminal stage, which carries the reason the sequence stopped, and a stage that <em>escalates</em> the
+/// phase, such as "Waking your PS5…", the only evidence the player has that a long wait has begun.
 /// </para>
 ///
 /// <para>
-/// Pure and clock-driven, like <see cref="HealthAlertGate"/>, which is the same idea applied to the other end
-/// of the session: both answer "has this message earned an interruption?" and neither owns a timer.
+/// Pure and clock-driven, like <see cref="HealthAlertGate"/>: neither owns a timer.
 /// </para>
 /// </summary>
 public sealed class ConnectGate

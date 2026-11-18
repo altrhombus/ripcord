@@ -1,18 +1,8 @@
 namespace Ripcord.Core.Sessions;
 
 /// <summary>
-/// How much of the stream HUD is on screen.
-///
-/// <para>
-/// The project's disclosure ladder, finally implemented as a ladder. The diagnostics panel was the stated
-/// thesis for it — three rungs, each entered deliberately — while being, in fact, one drawer holding
-/// everything: eight groups at uniform caption weight in a single scrolling column, all of it rung 3, with no
-/// rung 1 and no rung 2 at all.
-/// </para>
-///
-/// <para>
-/// Each rung answers one question, and a rung only carries facts that question needs:
-/// </para>
+/// How much of the stream HUD is on screen: the disclosure ladder. Each rung answers one question, and
+/// carries only the facts that question needs:
 /// <list type="bullet">
 ///   <item><b>Hidden</b> — <i>is anything wrong?</i> Answered without the HUD at all, by the rung-1 notice,
 ///   which appears on its own when the answer is yes and says nothing when it is no.</item>
@@ -24,8 +14,7 @@ namespace Ripcord.Core.Sessions;
 ///
 /// <para>
 /// Rung 1 is deliberately not a member here. It is not a state anyone selects: it appears and clears on its
-/// own (see the health alert gate), and making it a rung would imply it could be chosen, or worse,
-/// dismissed — which would mean dismissing the only unprompted thing the app says while a game is running.
+/// own (see the health alert gate), and making it a rung would imply it could be chosen or dismissed.
 /// </para>
 ///
 /// <para>

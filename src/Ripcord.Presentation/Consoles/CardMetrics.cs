@@ -79,24 +79,20 @@ public readonly record struct CardGeometry(
 /// Decides how the console grid is laid out, from the viewport and the number of consoles.
 ///
 /// <para>
-/// <b>Why this is one function and not two layouts.</b> The one-console hero used to be a separate panel with
-/// its own markup and its own <c>RenderHero()</c>, and the two drifted: the hero could not show the "checking"
-/// spinner the grid card shows, its overflow button was under the touch minimum, and a change made to one was
-/// routinely not made to the other. Every fact the hero rendered was already on <see cref="ConsoleCardState"/>
-/// — the only reason it needed code at all was that it was not inside an items control. So it is now the same
-/// card at a third density, and divergence is unrepresentable rather than discouraged.
+/// <b>One function, not two layouts.</b> The one-console hero is the same card at a third density, not a
+/// separate panel: as its own markup it would drift from the grid card (no "checking" spinner, an overflow
+/// button under the touch minimum). Every fact it renders is on <see cref="ConsoleCardState"/>.
 /// </para>
 ///
 /// <para>
-/// <b>Windows owns text size; Ripcord owns the size of Ripcord's own cards.</b> That distinction is what makes
-/// <see cref="WideViewportWidth"/> legitimate where the deleted <c>AppScale</c> was not. The type ramp is the
-/// platform's and never moves here; what responds is this app's own furniture, and it responds to the viewport
-/// rather than to a preference, so there is nothing for anyone to find, choose or get wrong.
+/// <b>Windows owns text size; Ripcord owns the size of Ripcord's own cards.</b> The type ramp is the
+/// platform's and never moves here; the cards respond to the viewport (<see cref="WideViewportWidth"/>), not
+/// to a preference.
 /// </para>
 ///
 /// <para>
-/// Pure and unit-tested, for the same reason <see cref="Sessions.HudPlacement"/> is: the alternative is
-/// discovering on someone else's display that the rule was written for one window size.
+/// Pure and unit-tested, like <see cref="Sessions.HudPlacement"/>, so the rule is not written for one window
+/// size.
 /// </para>
 /// </summary>
 public static class CardMetrics
@@ -118,9 +114,9 @@ public static class CardMetrics
     ///
     /// <para>
     /// The dense card leaves about 164 px of text column once the 92 px wedge and the padding are taken out,
-    /// and that budget has now failed three separate times — a truncated "Played 11 Sep 2", a status row that
-    /// lost its bottom third, and a two-line console name overflowing the card on the first screen anyone
-    /// sees. 348 px of card leaves about 204, which fits all three.
+    /// and that budget fails three ways — a truncated "Played 11 Sep 2", a status row that loses its bottom
+    /// third, and a two-line console name overflowing the card on the first screen anyone sees. 348 px of
+    /// card leaves about 204, which fits all three.
     /// </para>
     /// </summary>
     public const double RoomyCellWidth = 360;
@@ -133,14 +129,14 @@ public static class CardMetrics
     /// <see cref="HeroMaxCardWidth"/>.
     ///
     /// <para>
-    /// It was a fixed 520 × 176 at every window size: a small strip under a lot of nothing in a big window, and
-    /// clipped through its play mark in a small one (visual audit, 2026-10-08). One console is the whole page,
-    /// so the card is sized like a page's subject rather than like one tile of many.
+    /// A fixed 520 × 176 at every window size is a small strip under a lot of nothing in a big window, and
+    /// clips through its play mark in a small one. One console is the whole page, so the card is sized like a
+    /// page's subject rather than like one tile of many.
     /// </para>
     /// </summary>
     public const double HeroShare = 0.5;
 
-    /// <summary>The smallest hero, which is the old fixed one less a little, and fits the 640 px window.</summary>
+    /// <summary>The smallest hero, which fits the 640 px window.</summary>
     public const double HeroMinCardWidth = 440;
 
     /// <summary>
@@ -158,7 +154,7 @@ public static class CardMetrics
     /// <summary>
     /// Where the hero's text steps up the platform's type ramp: its name from Title to Title Large and its status
     /// from Caption to Body. A card twice as wide with the same small text reads as empty; stepping the ramp at a
-    /// breakpoint is how Fluent pages answer more room (showcase plan, decision A, 2026-10-09).
+    /// breakpoint is how Fluent pages answer more room.
     /// </summary>
     public const double HeroLargeTypeWidth = 720;
 
@@ -202,8 +198,8 @@ public static class CardMetrics
     /// <param name="viewportWidth">Width available to the page, in effective pixels.</param>
     /// <param name="textScale">
     /// Windows' text size, 1.0 to 2.25. The card's text grows with it and its frame does not, so the cell grows by
-    /// the share of its height that is text: at 225% a fixed cell cut "Played 2 days ago" off at the wedge and
-    /// pushed the status line out of the card (visual audit, 2026-10-08).
+    /// the share of its height that is text: at 225% a fixed cell cuts "Played 2 days ago" off at the wedge and
+    /// pushes the status line out of the card.
     /// </param>
     /// <param name="consoleCount">
     /// Paired consoles, NOT counting the ghost add tile. One means the hero; zero means the first-run surface
@@ -212,8 +208,8 @@ public static class CardMetrics
     /// </param>
     /// <param name="columnWidth">
     /// The page column's width, inside its padding: the hero grows with the window but never past it. Home sits in
-    /// the same column as every other page, so its title stays put when you move between them (showcase review,
-    /// decision E, 2026-10-09). Unbounded by default.
+    /// the same column as every other page, so its title stays put when you move between them. Unbounded by
+    /// default.
     /// </param>
     public static CardLayout For(
         double viewportWidth, int consoleCount, double textScale = 1.0, double columnWidth = double.PositiveInfinity)

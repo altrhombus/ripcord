@@ -11,8 +11,8 @@ public enum SessionState
 
 /// <summary>
 /// What a failed handshake means for trying again, said as a value rather than in the reason's words. A backend
-/// that says nothing leaves it <see cref="Unknown"/>, and the controller judges the reason's text as it always
-/// has; the text was matched in English and a reworded message changed the behaviour (review, 2026-10-05).
+/// that says nothing leaves it <see cref="Unknown"/>, and the controller judges the reason's text instead; that
+/// text is matched in English, so a reworded message changes the behaviour.
 /// </summary>
 public enum SessionFailureKind
 {

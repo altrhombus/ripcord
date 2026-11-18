@@ -3,12 +3,11 @@
 // Both rendezvous interleave cloud signaling with steps on the client's own UDP sockets, and the order is
 // unforgiving: on the account route, our datagram Init must go out after our OFFER POST and before our
 // ACCEPT POST, and both neighbouring orderings were falsified against hardware (HalyardAccountPairing.cs,
-// RunAsync). The cloud half is Swift, here. The UDP half is libripcord's, and its API is not settled yet, so
-// the Swift side calls it through these two protocols and the timelines are tested against fakes of them.
+// RunAsync). The cloud half is Swift, here. The UDP half is the engine's (EngineTransports.swift), and
+// the Swift side calls it through these two protocols so the timelines are tested against fakes of them.
 //
-// WHAT THE C SIDE MUST PROVIDE is exactly the requirements below; each says which libripcord function (or
-// .NET type, where the C one is still being written) it stands for. Nothing else in the rendezvous touches
-// a socket or a key.
+// WHAT A TRANSPORT MUST PROVIDE is exactly the requirements below; each names the .NET type, libripcord
+// function or engine export it corresponds to. Nothing else in the rendezvous touches a socket or a key.
 
 import Darwin
 import Foundation
@@ -91,7 +90,7 @@ public struct AccountTransportContext: Sendable, Equatable {
 
 /// The control association's side of `AccountRendezvous`.
 public protocol AccountRouteTransport: Sendable {
-    /// What a successful `/sess/rgst` produces (a pairing record, on the C side).
+    /// What a successful `/sess/rgst` produces (a `PairedConsole`, from the engine's transports).
     associatedtype Registration: Sendable
 
     /// Fresh data1 and data2 for one connect command.
@@ -113,7 +112,7 @@ public protocol AccountRouteTransport: Sendable {
     /// serviced (the .NET PrepareAsync), not wait for the whole handshake: the ACCEPT is due within about a
     /// second, and the console gives up on us after that. A throw is logged and the rendezvous carries on
     /// (as .NET's does); the finish step then reports that no association was opened.
-    /// .NET: HalyardDatagramRegistrationTransport.PrepareAsync. C: being written.
+    /// .NET: HalyardDatagramRegistrationTransport.PrepareAsync. Engine: `ripcord_client_rendezvous_begin`.
     func openAssociation(_ context: AccountTransportContext) async throws
 
     /// `/sess/rgst` over the association `openAssociation` opened, with the seed.

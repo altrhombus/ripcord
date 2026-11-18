@@ -5,23 +5,20 @@
  * tests/stub-sdk/lv2/system.h stands in for the SDK header - so rc_random_ps3.c compiles unmodified and
  * every path through it can be driven on demand.
  *
- * WHAT THIS CAN AND CANNOT ESTABLISH, because the distinction is the entire reason the file is worth
- * having and is easy to overstate.
+ * WHAT THIS CAN AND CANNOT ESTABLISH.
  *
  * It CANNOT tell you that the PS3's generator works. The two things rc_random_ps3.c marks [X] - whether
  * zero means success, and whether an unaligned destination is accepted - are facts about lv2, and a fake
  * that answers them however this file says so proves nothing at all about a console. Those are settled by
  * the bring-up program on hardware, and nowhere else.
  *
- * It CAN establish everything around them, and that half is the part with the bugs in it: the chunking
- * loop the 4096-byte cap forces, the refusal to hand back a partially-filled buffer, the gate that stops
- * anything being drawn before the probe has passed, and the inversion in rc_random_rng_callback. Every
- * one of those is ordinary C with an invisible failure mode - a short fill or a stale tail looks exactly
- * like a good key - so they are precisely what should not first be exercised on a console.
+ * It CAN establish everything around them: the chunking loop the 4096-byte cap forces, the refusal to
+ * hand back a partially-filled buffer, the gate that stops anything being drawn before the probe has
+ * passed, and the inversion in rc_random_rng_callback. Each has an invisible failure mode - a short
+ * fill or a stale tail looks exactly like a good key.
  *
- * The probe's unaligned draw is checked in the one way a host can check it: by recording the address the
- * fake was handed and asserting it was odd. That tests that rc_random_init still ASKS the awkward
- * question, which is the property that would quietly rot if someone tidied the buffer arithmetic.
+ * The probe's unaligned draw is checked by recording the address the fake was handed and asserting it
+ * was odd, which tests that rc_random_init still ASKS the awkward question.
  */
 #include "../../../libripcord/util/rc_random.h"
 
@@ -60,9 +57,9 @@ static int g_saw_odd_addr;
 /*
  * A running byte that NEVER TAKES THE VALUE ZERO, which is load-bearing rather than decorative: the
  * chunking test proves the whole buffer was filled by looking for a remaining zero, and a plain
- * uint8_t counter wraps through 0 every 256 bytes. The first version of this file did exactly that and
- * the oversized-draw test failed against a correct implementation - a fake that is wrong in a way that
- * accuses the code is the worst kind, so this is written out rather than left as an increment.
+ * uint8_t counter wraps through 0 every 256 bytes. With a plain counter the oversized-draw test fails
+ * against a correct implementation - a fake that is wrong in a way that accuses the code is the worst
+ * kind, so this is written out rather than left as an increment.
  */
 static uint8_t g_counter;
 

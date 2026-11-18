@@ -78,10 +78,10 @@ public class HalyardControlChunkTests
     [Fact]
     public void Chunk_PortWordsAreReadThrough_NotRequiredToBeTheControlPort()
     {
-        // This codec used to reject any chunk whose port words were not 0x244F, on the reading that they were
-        // a fixed magic. They are ports: the receiver demultiplexes on the second one and does not constrain
-        // it to a constant, so refusing another value would drop traffic the peer believes it sent. Every
-        // capture we hold carries the control port at both.
+        // The port words are not a fixed magic, so the codec does not require 0x244F. They are ports: the
+        // receiver demultiplexes on the second one and does not constrain it to a constant, so refusing
+        // another value would drop traffic the peer believes it sent. Every capture we hold carries the
+        // control port at both.
         byte[] wire = [0xC0, 0x08, 0x11, 0x22, 0x33, 0x44, 0x02, 0x30];
 
         Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out _));

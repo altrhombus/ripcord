@@ -22,7 +22,7 @@ public readonly record struct PanelRect(double Left, double Top, double Width, d
 }
 
 /// <summary>
-/// The arithmetic of a panel the player can move and resize: the full diagnostics panel (owner, 2026-10-09).
+/// The arithmetic of a panel the player can move and resize: the full diagnostics panel.
 ///
 /// <para>
 /// It goes where <see cref="HudPlacement"/> puts it until it is moved; after that it sits where it was put, at the

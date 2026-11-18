@@ -24,8 +24,9 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 /// The <em>structure</em> here is our own reverse-engineering finding (validated end-to-end against live
 /// captures — see LiveRegistrationVectorTests); the table <em>contents</em> and the selector offset are
 /// protocol-variant-specific extracted interop constants supplied via <see cref="HalyardRegistrationSecrets"/>
-/// (never committed — captures folder). The console negotiates the variant (by protocol id / RP-KeyType); this
-/// carries one variant's <see cref="HalyardRegistrationSecrets"/> and others slot in behind the same seam.
+/// (none are written into this assembly — that type's remarks say where they are loaded from). The console
+/// negotiates the variant (by protocol id / RP-KeyType); an instance carries one
+/// <see cref="HalyardRegistrationSecrets"/> and serves the PS5 or the PS4 variant of it.
 /// </para>
 /// </summary>
 public sealed class HalyardRegistrationKdf
@@ -123,7 +124,7 @@ public sealed class HalyardRegistrationKdf
     /// <c>0x2b</c> rather than <c>0x2d</c>. Those are not interchangeable — applying the PIN transform here
     /// produces a material the console will not agree with, which corrupts the field IV, which corrupts
     /// exactly the first 16 bytes of the encrypted field, which is where <c>Client-Type: </c> sits. The
-    /// console then answers <c>403 / 80108b09</c>. That was the account route's last blocker.
+    /// console then answers <c>403 / 80108b09</c>.
     /// </para>
     ///
     /// <para>

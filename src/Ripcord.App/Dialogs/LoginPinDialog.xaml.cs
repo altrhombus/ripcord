@@ -64,7 +64,7 @@ public sealed partial class LoginPinDialog : ContentDialog
     }
 
     // Raised off the UI thread, as the hint bar's are. The legend follows the pad in hand, as the hint bar does:
-    // read once at open, it went on naming a DualSense's buttons after an Xbox pad took over (2026-10-02).
+    // read once at open, it would go on naming a DualSense's buttons after an Xbox pad took over.
     private void OnPadChanged<T>(T _) => _dispatcher.TryEnqueue(RenderPad);
 
     /// <summary>The pad section for the pad in hand, or none without one.</summary>

@@ -2,7 +2,7 @@ namespace Ripcord.Media.Interop
 {
     // Shared-mode WASAPI audio output. The session's audio path decodes to interleaved float PCM at
     // the device mix format and pushes it via SubmitFloatPcm; a render thread drains it to the
-    // endpoint. Verified first with a synthetic tone (the audio analog of the video test pattern).
+    // endpoint.
     [default_interface]
     runtimeclass AudioRenderer
     {

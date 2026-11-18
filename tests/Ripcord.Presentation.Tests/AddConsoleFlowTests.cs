@@ -14,9 +14,8 @@ namespace Ripcord.Presentation.Tests;
 /// The add-a-console state machine.
 ///
 /// <para>
-/// None of this could be tested while it lived in a page: exercising a single transition meant launching the app
-/// and having a real console on the LAN, so the whole flow — including every failure path — was verified by hand
-/// or not at all. These tests are the reason the extraction was worth doing.
+/// Driven through fakes, with no app launched and no console on the LAN, so the whole flow — including every
+/// failure path — is exercised one transition at a time.
 /// </para>
 /// </summary>
 public class AddConsoleFlowTests
@@ -279,8 +278,8 @@ public class AddConsoleFlowTests
     /// <para>
     /// <see cref="ImmediateUiDispatcher"/> applies every mutation inline, which is what makes the other tests
     /// synchronous — but it also means those tests cannot see a class of bug that only exists when a mutation is
-    /// POSTED: a closure that reads a field later than the code which changed it. One such bug shipped and kept
-    /// the discovery progress bar on screen, so the ordering deserves a test of its own.
+    /// POSTED: a closure that reads a field later than the code which changed it. Such a bug keeps the
+    /// discovery progress bar on screen, so the ordering has a test of its own.
     /// </para>
     /// </summary>
     private sealed class DeferringDispatcher : IUiDispatcher
@@ -308,9 +307,9 @@ public class AddConsoleFlowTests
     [Fact]
     public async Task StartsByLooking_NotByAsking()
     {
-        // DISCOVERY LEADS. The flow used to open on "which console are you connecting to?" - a question the
-        // scan answers by itself, since every console found reports its own platform and SelectDiscovered has
-        // always taken the family from the console rather than the guess. The step existed to display a shape.
+        // DISCOVERY LEADS. The flow does not open on "which console are you connecting to?" - a question the
+        // scan answers by itself, since every console found reports its own platform and SelectDiscovered
+        // takes the family from the console rather than the guess.
         var h = new Harness().WithConsole();
 
         await h.Flow.StartAsync();
@@ -417,8 +416,8 @@ public class AddConsoleFlowTests
         Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
 
         // Still the first dash. Family and Find share one: discovery leads, and the family question is the
-        // exception rather than a stage - counting it separately made the common journey look like it had
-        // skipped a step.
+        // exception rather than a stage - counting it separately would make the common journey look like it
+        // had skipped a step.
         Assert.Equal(1, h.Flow.State.ReachedDash);
         Assert.Equal(1, h.Scanner.ScanCount);
         Assert.Contains("PS5", h.Flow.State.FindHeading);
@@ -570,7 +569,7 @@ public class AddConsoleFlowTests
     [Fact]
     public async Task Scan_EndingOnADeferringDispatcher_StillLowersTheSpinner()
     {
-        // The bug this pins shipped twice, and neither of the other ~50 tests could see it: with mutations applied
+        // The tests on the immediate dispatcher cannot see the bug this pins: with mutations applied
         // inline, "is this scan still current?" is evaluated before ownership is released, so the guard passes. On
         // the real dispatcher the check is POSTED and runs afterwards, the guard fails, and _isScanning is never
         // lowered — a progress bar that stays up forever while the user watches the list.
@@ -654,7 +653,7 @@ public class AddConsoleFlowTests
     [Fact]
     public async Task Back_FromLink_LeavesTheFindStepUsable()
     {
-        // Back no longer rescans, so whatever IsScanning was left as is what the user sees. It must be false, or
+        // Back does not rescan, so whatever IsScanning was left as is what the user sees. It must be false, or
         // Find comes back with a spinner that never stops and a disabled Search-again button.
         var h = new Harness();
         h.Scanner.HoldOpen = true;
@@ -833,10 +832,9 @@ public class AddConsoleFlowTests
 
     // ---- signing in without leaving the flow -----------------------------------------------------
     //
-    // The invitation used to navigate to the settings page, because that is where the sign-in sequence was
-    // written. Reported from hardware: sign-in completes and you are standing on a settings page with the
-    // pairing flow abandoned behind you, and the way back is to start pairing over. Sign-in is now a modal over
-    // this step, so what is tested is that the step re-aims itself when told the account arrived.
+    // Sign-in is a modal over this step. Navigating to the settings page for it would complete the sign-in
+    // with the pairing flow abandoned behind the user, and the way back would be to start pairing over. What
+    // is tested is that the step re-aims itself when told the account arrived.
 
     [Fact]
     public async Task SigningInMidFlow_TurnsTheStepOverWithoutLeavingIt()
@@ -928,8 +926,8 @@ public class AddConsoleFlowTests
     [Fact]
     public async Task WhenSignedIn_TheAccountIdIsSuppliedRatherThanTyped()
     {
-        // The point of the whole account tier for a LAN-only user: the account id was previously something you
-        // had to go and look up somewhere else before you could pair at all.
+        // The point of the whole account tier for a LAN-only user: signed out, the account id is something you
+        // have to go and look up somewhere else before you can pair at all.
         var account = new FakeAccountSession { Current = new AccountIdentity("4200000000000000042", "somebody", "GB") };
         var h = new Harness(account: account);
         await h.ToLinkViaScanAsync();
@@ -1103,8 +1101,8 @@ public class AddConsoleFlowTests
 
     // ---- the account's own flags on the console ---------------------------------------------------
     //
-    // The record carries two, and the step used to ignore both: it offered the account route because the
-    // console appeared in the list, which says only that the account has seen it. Getting this wrong is
+    // The record carries two, and the step reads both before it offers the account route: the console
+    // appearing in the list says only that the account has seen it. Getting this wrong is
     // expensive and silent - sixty seconds of waiting, then a message about a registration seed for a console
     // that was never going to answer. The two are not the same KIND of fact, which is the thing these pin.
 
@@ -1212,8 +1210,9 @@ public class AddConsoleFlowTests
 
     // ---- the route choice -------------------------------------------------------------------------
     //
-    // The link step used to show both routes at once: "no code needed", then how to find a code on the
-    // console, then a box asking for one, with two commit buttons and nothing to say which belonged to what.
+    // The link step shows one route at a time. Both at once would read: "no code needed", then how to find a
+    // code on the console, then a box asking for one, with two commit buttons and nothing to say which
+    // belongs to what.
 
     [Fact]
     public async Task WhenBothRoutesWork_TheChoiceIsOfferedAndDefaultsToTheAccount()
@@ -1376,10 +1375,9 @@ public class AddConsoleFlowTests
         var h = new Harness(account: SignedInKnowing());
         await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
 
-        // Nothing typed, and committable anyway: CanPair is route-aware now, and the account route never asks
-        // for a code. It used to mean "the code route is ready", which is why this asserted the opposite --
-        // gating the account button on eight digits nobody was asked for is how a working action arrives
-        // disabled. What says no code is wanted is that the code half of the step is not shown.
+        // Nothing typed, and committable anyway: CanPair is route-aware, and the account route never asks
+        // for a code. Gating the account button on eight digits nobody was asked for is how a working action
+        // arrives disabled. What says no code is wanted is that the code half of the step is not shown.
         Assert.True(h.Flow.State.CanPair);
         Assert.False(h.Flow.State.CodeEntryShown);
 
@@ -1674,10 +1672,10 @@ public class AddConsoleFlowTests
     [Fact]
     public async Task Pair_Success_SurvivesWalkingAwayFromTheCelebration()
     {
-        // The step says the console is linked to this PC. It used to be saying that about something only in
-        // memory - Finish did the storing - so closing the app at the celebration lost it. And the loss is not
-        // symmetric: the console HAS registered, so it believes the pairing exists while we no longer hold the
-        // credential, and recovering means fetching a fresh code off its screen.
+        // The step says the console is linked to this PC, so the record is stored by then and not by Finish:
+        // closing the app at the celebration must not lose it. The loss would not be symmetric: the console
+        // HAS registered, so it believes the pairing exists while we hold no credential, and recovering means
+        // fetching a fresh code off its screen.
         var h = new Harness();
         await h.ToLinkViaScanAsync();
         h.EnterValidLinkInput();

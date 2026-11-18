@@ -1,7 +1,7 @@
 //! A console on the LAN, scripted end to end: the arm probe, /sess/init and /sess/ctrl over TCP, the
 //! binary control channel (SESSION_ID, the sign-in gate), senkusha, and the stream's Takion through key
-//! agreement, STREAM_INFO and sealed A/V. New in this engine: the C core's connect sequence was never
-//! testable without a console, because it owned its sockets.
+//! agreement, STREAM_INFO and sealed A/V. The C core has no counterpart: its connect sequence owns its
+//! sockets, so it cannot be tested without a console.
 //!
 //! It answers; it originates only through [`ScriptedLanConsole::video_keyframe`] and
 //! [`ScriptedLanConsole::disconnect`]. The crypto is the real crypto, with the console's side of every

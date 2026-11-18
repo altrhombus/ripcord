@@ -706,8 +706,8 @@ mod tests {
         assert_eq!(c.loss, [(1, 1)], "the dropped frame shows up as a gap");
     }
 
-    /// Until cargo-fuzz runs (it needs a nightly toolchain), a deterministic sweep of hostile packets on
-    /// stable: valid-looking headers with arbitrary geometry, lengths and bodies, through both seams.
+    /// A deterministic sweep of hostile packets that runs on the stable toolchain, which cargo-fuzz does
+    /// not: valid-looking headers with arbitrary geometry, lengths and bodies, through both seams.
     /// The demuxer must drop what it cannot use and never panic.
     #[test]
     fn random_packets_never_panic() {

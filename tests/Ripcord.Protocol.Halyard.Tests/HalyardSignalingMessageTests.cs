@@ -173,8 +173,8 @@ public class HalyardSignalingMessageTests
     [InlineData("not json")]
     [InlineData("{}")]
     [InlineData("{\"dataType\":\"psn:sessionManager:sys:rps:sessionMessage:created\"}")]
-    // Well-formed JSON with an element of the wrong kind. These threw InvalidOperationException out of TryParse
-    // until 2026-09-26, losing the frame silently (found by the Mac port).
+    // Well-formed JSON with an element of the wrong kind. TryParse returns null for these; an
+    // InvalidOperationException escaping it would lose the frame silently.
     [InlineData("[1,2,3]")]
     [InlineData("{\"dataType\":\"psn:sessionManager:sys:rps:sessionMessage:created\",\"body\":[]}")]
     [InlineData("{\"dataType\":\"psn:sessionManager:sys:rps:sessionMessage:created\",\"body\":{\"data\":{\"sessionMessage\":{\"channel\":\"remote_play:1\",\"payload\":42}}}}")]

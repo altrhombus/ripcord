@@ -5,11 +5,12 @@ using Ripcord.Protocol.Halyard.Common.Crypto;
 namespace Ripcord.Protocol.Halyard.Takion;
 
 /// <summary>Inputs to the SESSION_REQUEST (spec §4.2, §5). The launchSpec is already built + encrypted by the caller.</summary>
-/// <param name="ClientVersion">Protocol/client version reported in the request.</param>
+/// <param name="ClientVersion">The version sent in the request when the console's PROTOCOL_VERSION_ACK names
+/// none; otherwise the version the console acked is sent.</param>
 /// <param name="SessionKey">The session key string carried in the request.</param>
 /// <param name="LaunchSpecJson">The streaminfo/launchSpec field value (out1-encrypted + base64 by the caller).</param>
-/// <param name="HandshakeKey">The 16 random bytes that authenticate the ECDH exchange (v1 also places them in
-/// the launchSpec as handshakeKey; v2 mints them as X, used only for the signature and the stream KDF).</param>
+/// <param name="HandshakeKey">The 16 random bytes that authenticate the ECDH exchange and key the stream KDF.
+/// The caller also places them in the launchSpec as handshakeKey, on v1 and on the v2 control plane alike.</param>
 /// <param name="SessionId">v2 only: the SESSION_REQUEST field-7 sessionId sentinel (<c>"InvalidSessionId"</c>);
 /// null for v1, which omits the field.</param>
 /// <param name="OfferedVersions">The versions to offer before the request; null offers
@@ -52,11 +53,10 @@ public sealed class TakionSessionNegotiator
     /// uses — 12 really is absent (cap64/cap65, [W]). The console answers with the single one it picked.
     ///
     /// <para>
-    /// Sending this at all is the point. The stream association used to skip straight to SESSION_REQUEST, and
-    /// a console that has agreed no version defaults to the lowest it knows: it answered ours at version 9 and
-    /// returned a SESSION_REPLY with the ECDH fields simply absent, which arrives downstream as
-    /// "ecdhSignature verification failed" and reads like a crypto bug. The senkusha association is the
-    /// exception and offers only 9, because a probe needs no key agreement.
+    /// The offer must be sent before SESSION_REQUEST. A console that has agreed no version defaults to the
+    /// lowest it knows: it answers at version 9 and returns a SESSION_REPLY with the ECDH fields absent, which
+    /// arrives downstream as "ecdhSignature verification failed" and reads like a crypto bug. The senkusha
+    /// association is the exception and offers only 9, because a probe needs no key agreement.
     /// </para>
     /// </summary>
     public static readonly IReadOnlyList<uint> V1OfferedVersions = [9, 10, 11, 13, 14, 15, 16, 17];
@@ -111,7 +111,7 @@ public sealed class TakionSessionNegotiator
                 // encryptedKey is a required proto field; the console drops the whole SESSION_REQUEST without it.
                 // Four zero bytes, which the console accepts on hardware (the key rides in the launchSpec, not
                 // here). The vendor sends it present and EMPTY (`22 00`, cap53 frame 10086), so the four bytes
-                // are ours, not the wire's; whether to match the vendor is open in ROADMAP.
+                // are ours, not the wire's.
                 EncryptedKey = ByteString.CopyFrom(new byte[4]),
                 EcdhPublicKey = ByteString.CopyFrom(publicKey),
                 EcdhSignature = ByteString.CopyFrom(signature),
@@ -158,12 +158,12 @@ public sealed class TakionSessionNegotiator
     /// <summary>
     /// What is wrong with a SESSION_REPLY before its signature is worth checking, or null when nothing is.
     ///
-    /// <para>Checked in the order that gives the truest reason (engine comparisons, 2026-09-26). A console
-    /// that refuses the version says so in <c>versionAccepted</c>; unchecked, that surfaced as a signature or
-    /// derivation failure and read like a crypto bug. The five fields the schema marks required must be
-    /// present. The ECDH material must be present, which the old null checks never established: an unset
-    /// proto2 bytes field reads as empty, not null. And the signature must be the 32 bytes an HMAC-SHA256
-    /// is. The C core and the Rust engine check the same.</para>
+    /// <para>Checked in the order that gives the truest reason. The five fields the schema marks required
+    /// must be present. A console that refuses the version says so in <c>versionAccepted</c>; unchecked,
+    /// that would surface as a signature or derivation failure and read like a crypto bug. The ECDH material
+    /// must be present, which a null check does not establish: an unset proto2 bytes field reads as empty,
+    /// not null. And the signature must be the 32 bytes an HMAC-SHA256 is. The C core and the Rust engine
+    /// check the same.</para>
     /// </summary>
     internal static string? ReplyProblem(SessionReplyPayload? payload)
     {

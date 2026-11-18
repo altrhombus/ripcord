@@ -5,10 +5,10 @@
  * two implementations behind one interface, chosen once, with the rest of the pipeline unaware of which
  * answered. cellVdec on the SPEs is the decoder; openh264 on the PPE is what happens if it will not open.
  *
- * WHY A FALLBACK AT ALL, given cellVdec was validated against two other decoders before it was wired in:
- * the validation says its OUTPUT is correct, not that it will open on every machine, every firmware and
- * every stream size. Opening reserves 33 MB at level 31 and needs an SPE free. openh264 is already built
- * and already worked; keeping it costs a branch.
+ * WHY A FALLBACK AT ALL, given cellVdec's output was validated against two other decoders: the
+ * validation says its OUTPUT is correct, not that it will open on every machine, every firmware and
+ * every stream size. Opening reserves tens of megabytes (57 MB was measured at level 40) and asks for
+ * three SPEs. openh264 is linked for the file probe anyway; keeping it as the fallback costs a branch.
  *
  * The choice is reported rather than silent, because a quiet fall back to the decoder that manages 4 fps
  * at 720p would look exactly like the hardware one being slow, and that is a bad afternoon.

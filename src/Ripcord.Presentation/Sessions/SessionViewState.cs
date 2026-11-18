@@ -18,8 +18,8 @@ public enum ControllerLink
 /// What route, if any, the rung-1 notice may offer for going a rung deeper.
 ///
 /// <para>
-/// Portable and semantic, never a key name: the notice used to end in a literal "F3" pill whatever the player
-/// had in their hands, which on a handheld names a key that is not on the device. Which glyph or word each of
+/// Portable and semantic, never a key name: a literal "F3" pill whatever the player has in their hands
+/// would, on a handheld, name a key that is not on the device. Which glyph or word each of
 /// these becomes is the front end's business, and the front end already tracks the input mode for its hint
 /// bar — this only says whether a route exists.
 /// </para>
@@ -75,7 +75,7 @@ public sealed record SessionViewState(
     /// <summary>
     /// Whether "Back to consoles" is the action that leads, rather than trying again. True when the console
     /// ended the stream itself — most often because the player just put it into rest mode — where trying again
-    /// would wake the console they had just put to sleep (visual audit, 2026-10-08).
+    /// would wake the console they had just put to sleep.
     /// </summary>
     bool StatusLeadsBack,
 
@@ -85,15 +85,15 @@ public sealed record SessionViewState(
     /// <summary>
     /// The status is up over a picture rather than over black: this stream has shown video, and its last frame
     /// stays on screen while it reconnects. The cue for the front end to put something behind the words. Over the
-    /// black of a first connect they need nothing, and a card there is the ceremony the screen was rebuilt
-    /// without; over a frozen game the white text was hard to read (owner, 2026-10-09).
+    /// black of a first connect they need nothing, and a card there would be ceremony; over a frozen game
+    /// white text is hard to read.
     /// </summary>
     bool StatusOverPicture,
 
     /// <summary>
     /// What the quiet way out says: "Stop trying" while reconnecting, "Back to consoles" while connecting. During
-    /// a reconnect the countdown is what is being abandoned, and a plain "Back" read as leaving something that
-    /// was still working (design.md; owner, 2026-10-09).
+    /// a reconnect the countdown is what is being abandoned, and a plain "Back" reads as leaving something that
+    /// is still working (design.md).
     /// </summary>
     string ConnectEscapeLabel,
 
@@ -101,8 +101,8 @@ public sealed record SessionViewState(
     /// A quiet way out of a connect that has run long enough to feel stuck.
     ///
     /// <para>
-    /// Not offered on entry. A Cancel shown the instant you press Play is the ceremony this screen was
-    /// rebuilt to avoid, and it invites abandoning a connect that was about to succeed.
+    /// Not offered on entry. A Cancel shown the instant you press Play is ceremony, and it invites abandoning
+    /// a connect that was about to succeed.
     /// </para>
     /// </summary>
     bool ConnectEscapeVisible,
@@ -169,9 +169,8 @@ public sealed record SessionViewState(
 /// The diagnostics overlay's readout.
 ///
 /// <para>
-/// Every field is a finished string, because every one of them was a finished string built inline in the page's
-/// stats tick — roughly 150 lines of formatting, arithmetic and threshold judgement that could only be exercised
-/// by connecting to a real console with a real GPU. None of it needs either.
+/// Every field is a finished string. The formatting, arithmetic and threshold judgement behind them live in
+/// <see cref="SessionViewModel"/>, where they are exercised without a console or a GPU; none of it needs either.
 /// </para>
 /// </summary>
 public sealed record SessionDiagnosticsState(

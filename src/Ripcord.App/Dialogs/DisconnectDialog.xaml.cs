@@ -16,8 +16,8 @@ public sealed partial class DisconnectDialog : ContentDialog
         RestCheckBox.IsChecked = defaultRest;
 
         // Focus on Disconnect, not the checkbox. DefaultButton makes it the Enter target but does not move focus,
-        // and WinUI focuses the first control in the content - the checkbox - so a pad user's reflexive A ticked
-        // "put the console into rest mode" instead of disconnecting (visual audit, 2026-10-08).
+        // and WinUI focuses the first control in the content - the checkbox - so a pad user's reflexive A would
+        // tick "put the console into rest mode" instead of disconnecting.
         Opened += (_, _) => (GetTemplateChild("PrimaryButton") as Control)?.Focus(FocusState.Keyboard);
     }
 

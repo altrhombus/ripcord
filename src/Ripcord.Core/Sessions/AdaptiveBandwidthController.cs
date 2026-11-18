@@ -10,9 +10,8 @@ public readonly record struct QualityRung(int Width, int Height, int Fps, int Bi
 }
 
 /// <summary>
-/// Adaptive bitrate/resolution with power and thermal awareness — the real implementation of
-/// <see cref="IBandwidthController"/>, replacing a stub that ignored every sample and echoed the initial
-/// config back forever.
+/// Adaptive bitrate/resolution with power and thermal awareness: the real implementation of
+/// <see cref="IBandwidthController"/>.
 ///
 /// <para>
 /// The design goals, in priority order:

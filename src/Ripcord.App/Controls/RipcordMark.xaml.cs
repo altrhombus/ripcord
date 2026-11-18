@@ -31,8 +31,8 @@ public sealed partial class RipcordMark : UserControl
 
     /// <summary>
     /// In a contrast theme the dashes take the wedge's colour, so the mark is shape alone, as the app icon is
-    /// there. The accents are brand colours with no contrast variant, and the mark kept its green, blue and red
-    /// under High Contrast (showcase review, H1).
+    /// there. The accents are brand colours with no contrast variant, so without this the mark keeps its green,
+    /// blue and red under High Contrast.
     /// </summary>
     private void ApplyContrast()
     {
@@ -65,21 +65,8 @@ public sealed partial class RipcordMark : UserControl
         new PropertyMetadata(null));
 
     /// <summary>
-    /// Build the mark in front of the player: the wedge first, then the trail streaming out behind it, one dash
-    /// at a time. The full mark assembling is design.md's celebration ("the wedge, then the trail"), and Welcome
-    /// does it too, so the first time someone sees the mark it arrives the way it means: something launched,
-    /// and the trail follows.
-    ///
-    /// <para>
-    /// About 0.6 s from the motion tokens: each part enters in RipcordDurationStateChange on RipcordEaseEnter,
-    /// the dashes staggered by half that. With Windows' animation effects off it does nothing, and the mark
-    /// is simply there.
-    /// </para>
-    /// </summary>
-    /// <summary>
-    /// Hides the parts ahead of an <see cref="Assemble"/> that cannot start yet, because the page is not loaded.
-    /// Otherwise the finished mark paints first, vanishes when the assembly starts, and comes back: a flicker
-    /// (owner, 2026-10-09).
+    /// Hides the parts ahead of an <see cref="Assemble"/> that has to wait for the page to load. Otherwise the
+    /// finished mark paints first, vanishes when the assembly starts, and comes back: a flicker.
     /// </summary>
     public void HideUntilAssembled()
     {
@@ -94,6 +81,17 @@ public sealed partial class RipcordMark : UserControl
         TrailThree.Opacity = 0;
     }
 
+    /// <summary>
+    /// Build the mark in front of the player: the wedge first, then the trail streaming out behind it, one dash
+    /// at a time. The full mark assembling is design.md's celebration ("the wedge, then the trail"), and Welcome
+    /// does it too.
+    ///
+    /// <para>
+    /// About 0.6 s from the motion tokens: each part enters in RipcordDurationStateChange on RipcordEaseEnter,
+    /// the dashes staggered by half that. With Windows' animation effects off it does nothing, and the mark
+    /// is simply there.
+    /// </para>
+    /// </summary>
     public void Assemble()
     {
         if (!AppMotion.Enabled)

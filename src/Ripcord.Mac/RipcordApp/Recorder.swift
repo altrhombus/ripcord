@@ -9,8 +9,8 @@
 // samples are displayed on arrival and carry no timeline a file can use. Audio is timed by its sample count
 // from its first buffer, so it stays gapless.
 //
-// [X] until a recording has been played back: that passthrough accepts the stream's samples, and what a
-// resolution change mid-recording does (the format description changes under a passthrough input).
+// [X]: that passthrough accepts the stream's samples, and what a resolution change mid-recording does (the
+// format description changes under a passthrough input).
 
 @preconcurrency import AVFoundation
 import CoreMedia

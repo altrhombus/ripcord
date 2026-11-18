@@ -5,7 +5,7 @@ namespace Ripcord.Media;
 /// <summary>
 /// Managed façade over the native WASAPI <see cref="AudioRenderer"/>. Open <see cref="Start"/> first,
 /// then read <see cref="SampleRate"/>/<see cref="Channels"/> and push interleaved float PCM at that
-/// format. Later, the session's audio decoder feeds it; for now a synthetic tone verifies output.
+/// format. The decode pipeline's audio path feeds it.
 /// </summary>
 public sealed class AudioOutput : IDisposable
 {

@@ -12,9 +12,8 @@ namespace Ripcord.Core.Input;
 /// </para>
 ///
 /// <para>
-/// The gamepad remap exists for hardware nobody anticipated: third-party pads and handhelds routinely report a
-/// physically-South button as East, or swap shoulders, and without a remap the only fix is a code change. It is
-/// identity by default, so an ordinary pad is unaffected.
+/// The gamepad remap covers third-party pads and handhelds that report a physically-South button as East, or
+/// swap shoulders. It is identity by default, so an ordinary pad is unaffected.
 /// </para>
 /// </summary>
 public sealed record InputBindings
@@ -38,7 +37,7 @@ public sealed record InputBindings
 
     /// <summary>
     /// Whether a stream reads the keyboard: when the setting is on, or when no pad is attached as it starts. Without
-    /// a pad, nothing else can drive the console, and a stream that ignored every key read as broken (2026-10-05).
+    /// a pad, nothing else can drive the console, and a stream that ignored every key would read as broken.
     /// Decided once per stream, so a pad connected mid-stream doesn't take the keys away.
     /// </summary>
     public bool KeyboardActiveFor(bool padAttached) => KeyboardEnabled || !padAttached;

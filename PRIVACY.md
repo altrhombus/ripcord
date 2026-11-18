@@ -24,21 +24,20 @@ Apart from those, Ripcord makes no network connections of its own.
 
 **An identifier for this PC.** Signing in sends Sony an ID that contains this PC's Windows machine ID (the
 `MachineGuid` in the registry, which any app on the PC can read) behind a fixed prefix, so Sony can tell your
-devices apart.
-Pairing through your account and playing over the internet send a value hashed from that ID, to Sony's servers
-and to your console. Pairing by code uses random bytes instead. Sign-in also
-tells Sony your Windows display language, and an internet session tells Sony and your console this PC's
-address on your own network, so the console can try the shortest path. Nothing else about your PC is sent.
+devices apart. Pairing through your account and playing over the internet send a value hashed from that ID,
+to Sony's servers and to your console. Pairing by code uses random bytes instead. Sign-in also tells Sony
+your Windows display language, and an internet session tells Sony and your console this PC's address on your
+own network, so the console can try the shortest path. Nothing else about your PC is sent.
 
-**One thing to know about signing in.** Ripcord asks PlayStation Network for the same set of permissions the
+**One thing to know about signing in.** Ripcord asks PlayStation Network for the same permissions the
 official client asks for, and one of them, `sbahn:pc.telemetry.publish`, would allow sending usage data to
 Sony. Ripcord never uses it: nothing in the code sends anything to that service. Whether sign-in works without
-asking for it has not been tested yet, and dropping it is on the roadmap.
+asking for it hasn't been tested yet, and dropping it is on the roadmap.
 
 ## What it keeps on your machine
 
-Everything lives in `%LocalAppData%\Ripcord` (or, if you set the `RIPCORD_DATA_DIR` environment variable to a
-folder, in that folder instead), apart from two things listed after the table:
+Everything lives in `%LocalAppData%\Ripcord` (or in the folder the `RIPCORD_DATA_DIR` environment variable
+names, if you set it), apart from two things listed after the table:
 
 | File | What it holds |
 |---|---|
@@ -52,10 +51,10 @@ folder, in that folder instead), apart from two things listed after the table:
 | `state\*-trace.log` | Diagnostic logs some features write while you use them |
 | `state\video-dump-*.bin` | Only with the `RIPCORD_DUMP_VIDEO` developer switch set: the first seconds of the stream's video, which can show your PSN online ID in the console's own notifications |
 
-Outside that folder: a desktop shortcut, if you make one from a console's menu, is a file on your desktop named for
-the console, and stays until you delete it. And the entries in Ripcord's taskbar jump list, which name your paired
-consoles, are kept by Windows; Ripcord rebuilds the list from the consoles you have paired, so removing a console
-removes its entry.
+Outside that folder: a desktop shortcut, if you make one from a console's menu, is a file on your desktop
+named for the console, and stays until you delete it. And the entries in Ripcord's taskbar jump list, which
+name your paired consoles, are kept by Windows; Ripcord rebuilds the list from the consoles you have paired,
+so removing a console removes its entry.
 
 If Windows can't provide DPAPI, Ripcord doesn't fall back to saving them unencrypted: it saves neither, and
 Settings says so.

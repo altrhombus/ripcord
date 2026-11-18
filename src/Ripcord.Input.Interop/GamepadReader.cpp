@@ -119,8 +119,8 @@ namespace winrt::Ripcord::Input::Interop::implementation
                 continue;
             }
 
-            // Each device named explicitly. Passing nullptr here was the bug: it means "whichever gamepad
-            // reported last", which a Bluetooth DualSense wins essentially every time.
+            // Each device named explicitly. Passing nullptr here means "whichever gamepad reported last",
+            // which a Bluetooth DualSense wins essentially every time.
             ComPtr<IGameInputReading> reading;
             if (FAILED(m_gameInput->GetCurrentReading(
                     GameInputKindGamepad, tracked.Device.Get(), reading.GetAddressOf())))

@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - Phase 5 Takion transport: the common 13-byte message header.
+ * libripcord - Takion transport: the common 13-byte message header.
  *
  * Ported from Ripcord.Protocol.Halyard.Takion.TakionMessageHeader. Takion is "essentially SCTP over
  * UDP" (docs/protocol/ps5-remoteplay-v1-spec.md sec8) - the handshake chunk types, cookie mechanism and
@@ -8,13 +8,15 @@
  *
  * WIRE FORMAT (all big-endian), wire-validated against captures/rudp_control_setup.pcapng:
  *   offset  0, 1 byte : base type - which of control/video/audio/input/loss report this is.
- *                       Phase 5 only builds/parses TAKION_BASE_TYPE_CONTROL: the SCTP handshake and
- *                       DATA/SACK chunks all ride base type 0, confirmed by every vector below.
+ *                       The build and parse here copy the byte as given. The SCTP handshake and
+ *                       DATA/SACK chunks all ride base type 0 (TAKION_BASE_TYPE_CONTROL), confirmed by
+ *                       every vector below.
  *   offset  1, 4 bytes: verification tag - the PEER's tag (the one THEY generated during the handshake
  *                       and told you to echo), not your own. Zero before a tag has been negotiated (as
  *                       in the client's own INIT).
  *   offset  5, 4 bytes: GMAC tag - authenticates the packet once stream keys exist; zero before that
- *                       (which is everything Phase 5 handles - GMAC sealing is a later phase).
+ *                       (the handshake and the SESSION exchange). Written by the caller: this module
+ *                       stores the field and computes nothing.
  *   offset  9, 4 bytes: keystream offset - a running byte counter tied to the stream cipher; zero before
  *                       stream keys exist, same as the GMAC tag.
  *   offset 13          : one or more SCTP-shaped chunks (see takion_handshake.h / takion_data_chunk.h /

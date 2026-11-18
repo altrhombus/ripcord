@@ -1,18 +1,14 @@
 /*
- * ripcord-3ds - on-device smoke test.
+ * ripcord-3ds - on-device smoke test of the control-plane crypto.
  *
- * The first milestone for this port is not a video stream, it is proving the control-plane crypto runs
- * correctly and fast enough on an ARM11. This is that: boot the .3dsx, watch it exercise the KDF, the
- * per-field IV and both cipher modes on real hardware, and read how long a field encryption actually
- * takes on a 268/804 MHz core with no crypto extensions.
+ * Boot the .3dsx and it runs the KDF, the per-field IV derivation and both cipher modes on the handheld,
+ * then times 1000 field encryptions on a 268/804 MHz ARM11 core with no crypto extensions and logs the
+ * cost of one.
  *
  * It deliberately checks SELF-CONSISTENCY (round trips, determinism) rather than known answers. The
- * known-answer check against the .NET implementation lives in tests/vector_runner.c and runs on a host,
- * where a failure is cheap to diagnose; baking expected values in here would mean committing derived
- * vectors to the tree for no gain, since anything wrong here is wrong on the host first.
- *
- * The timing number is the interesting output. If a field encryption costs microseconds, the control
- * plane is free and the open question is the A/V path; if it costs milliseconds, that is a finding.
+ * known-answer check against the .NET implementation lives in libripcord/tests/vector_runner.c and runs
+ * on a host, where a failure is cheap to diagnose; baking expected values in here would mean committing
+ * derived vectors to the tree for no gain, since anything wrong here is wrong on the host first.
  */
 #include "halyard/halyard_v1.h"
 #include "crypto/rc_crypto.h"

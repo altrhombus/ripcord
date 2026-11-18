@@ -4,8 +4,8 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The 2026-09-30 review: a DualSense pulled mid-press stayed pressed, because the merge kept every engine's last
-/// frame for good. These hold the merge to forgetting an engine once its last device goes.
+/// A DualSense pulled mid-press must not stay pressed, which is what a merge that keeps every engine's last
+/// frame for good does. These hold the merge to forgetting an engine once its last device goes.
 /// </summary>
 public class EngineFramesTests
 {

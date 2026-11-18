@@ -222,12 +222,12 @@ namespace winrt::Ripcord::Media::Interop::implementation
             return nullptr;
         }
 
-        // Auto starts with the GPU that scans out the window's display, which is the adapter the passes below
-        // were written to find: "drives a display" stood in for "drives this display", and the two differ on a
-        // laptop with an external monitor on the discrete GPU's port. The iGPU drives the internal panel, so it
-        // won, and every frame for the external monitor went through a cross-adapter copy, which can't carry HDR
-        // (VideoRenderer::ProbeDisplayHdr). A desktop with one GPU, or a laptop on its own panel, gets the
-        // adapter it got before.
+        // Auto starts with the GPU that scans out the window's display. The passes below ask only "drives a
+        // display", which is not "drives this display": the two differ on a laptop with an external monitor on
+        // the discrete GPU's port. The iGPU drives the internal panel, so by those passes alone it wins, and every
+        // frame for the external monitor goes through a cross-adapter copy, which can't carry HDR
+        // (VideoRenderer::ProbeDisplayHdr). A desktop with one GPU, or a laptop on its own panel, gets the same
+        // adapter either way.
         if (selection == Ripcord::Media::Interop::GpuSelection::Auto && window)
         {
             const RipcordDisplay::PresentingDisplay display = RipcordDisplay::DescribeDisplayForWindow(factory, window);

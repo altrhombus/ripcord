@@ -34,7 +34,7 @@ a vendor application version, and they are **not** the `RP-Version` header:
 
 - **`RP-Version` is a console-family value, not a scheme.** It is `1.0` on PS5 and `10.0` on PS4, and `1.0`
   appears under both schemes (it also rides the cloud `commands` payload as `protocolVer`). `RP-Version: 1.0`
-  and our label `v1` are unrelated; the collision is unfortunate and is the reason this section exists.
+  and our label `v1` are unrelated; the collision is why this section exists.
 - **`v1`** — `RP-Registkey` + the console's `RP-Nonce` → a table-driven KDF → AES-128-CFB over a handful of
   small headers. **No public-key exchange in the HTTP handshake at all.** ECDH exists only later, inside the
   Takion *stream* handshake (`ecdhPublicKey`/`ecdhSignature`). Every PS4 and every PS5 speaks it; Ripcord's
@@ -46,10 +46,9 @@ a vendor application version, and they are **not** the `RP-Version` header:
 
 Two corrections to earlier framing, recorded because they were wrong for a while:
 
-- **Cloud/PSN authentication is not a `v2` feature.** Early notes treated the account/OAuth tier as
-  belonging to the newer generation. It does not — it is the account path, orthogonal to which control
-  plane the console speaks. `ps5-cloud-session-api.md` is accurate about the API shape; only its
-  generation framing was wrong.
+- **Cloud/PSN authentication is not a `v2` feature.** Early notes put the account/OAuth tier in the newer
+  generation. It is the account path, orthogonal to which control plane the console speaks.
+  `ps5-cloud-session-api.md` is accurate about the API shape; only its generation framing was wrong.
 - **Cloud *play* — streaming from a datacentre rather than from your own console — is a candidate for a
   genuinely different protocol, but we have no data on it.** It is not implemented, not captured, and
   not specified anywhere here. Listed only so the gap is explicit. **[X]**

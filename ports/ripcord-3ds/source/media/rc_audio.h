@@ -20,11 +20,10 @@
  * after it is written. A ring of buffers is needed because a wave buffer cannot be refilled while the
  * hardware is playing it; the count is a latency-versus-underrun trade, not a magic number.
  *
- * ON THE CORE THIS RUNS ON: the receive thread, deliberately. Putting Opus on core 3 was the plan, and
- * 3dbrew says core 3 is BASE-memregion only while core 2 needs exheader flag 0x2000 - flags that belong
- * to the Homebrew Launcher host, not to us. Threading the frame scale onto core 2 hard-locked the console
- * three times (see halyard_pairing_file.h). Audio is ~1% of a frame's work; it does not need a core, and
- * this port has already paid for finding out what happens when that assumption is made casually.
+ * ON THE CORE THIS RUNS ON: the receive thread, deliberately. 3dbrew says core 3 is BASE-memregion only
+ * while core 2 needs exheader flag 0x2000 - flags that belong to the Homebrew Launcher host, not to us -
+ * and threading the frame scale onto core 2 hard-locked the console three times (see
+ * halyard_pairing_file.h). Audio is ~1% of a frame's work; it does not need a core.
  */
 #ifndef RC_AUDIO_H
 #define RC_AUDIO_H
@@ -38,18 +37,17 @@
 #define RC_AUDIO_FRAME_SAMPLES 480
 
 /*
- * Ring capacity in samples per channel, and the depth the rate loop steers towards. The ring decouples
- * Opus's 10 ms frames from NDSP's wave buffers - see rc_audio.c for why tying them together did not work.
+ * Ring capacity in samples per channel. The ring decouples Opus's 10 ms frames from NDSP's wave
+ * buffers - see rc_audio.c for why one wave buffer per Opus frame clicks.
  */
 #define RC_AUDIO_RING_SAMPLES 8192
 
 /*
  * How much audio one NDSP buffer holds, and the ring level the rate loop steers towards.
  *
- * THE TARGET IS DERIVED FROM THE BUFFER SIZE, NOT PICKED. The first version set a 30 ms target against
- * 33 ms buffers, so every refill left the ring 160 samples short and the next buffer arrived starved -
- * 1,448 times in a 60-second run, which is what the residual clicking was. A ring that cannot cover one
- * refill cannot sustain playback, whatever else is tuned.
+ * THE TARGET IS DERIVED FROM THE BUFFER SIZE, NOT PICKED: a ring that cannot cover one refill cannot
+ * sustain playback. A 30 ms target against 33 ms buffers left every refill 160 samples short and the
+ * next buffer starved - 1,448 times in a 60-second run, heard as clicking.
  *
  * Two buffers' worth: one to hand over immediately, one still in reserve when it is taken.
  */
@@ -69,9 +67,8 @@ typedef struct {
     /*
      * depth_sum is 64-bit BECAUSE 32 BITS OVERFLOWED ON REAL HARDWARE. `long` is 32-bit on this ABI, and
      * an 80-minute session accumulated 474,497 samples of a ring sitting around 5,500 - about 2.6e9,
-     * past INT32_MAX. The reported average came out NEGATIVE ("-2808 samples, -58 ms behind the
-     * picture"), which is not a value the ring can hold; the statistic was wrong, not the audio. Any
-     * counter multiplied by a session's frame count needs this width.
+     * past INT32_MAX - so the reported average came out NEGATIVE. Any counter multiplied by a session's
+     * frame count needs this width.
      */
     long long depth_sum;
     long depth_samples;

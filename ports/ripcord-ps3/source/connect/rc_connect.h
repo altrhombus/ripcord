@@ -2,22 +2,21 @@
  * ripcord-ps3 - wake a console and open the control session.
  *
  * The next thing after discovery, and the first that needs a PAIRING RECORD: a registration key and a
- * companion key tied to one console and one account. Registration itself is not here and is not coming -
- * ports/ripcord-3ds/README.md settles that ("Pairing happens on a PC, not here"), and the record is
- * transcribed from `ProtocolLab -- register` into a key=value file. That is why halyard_wake lives in
- * libripcord while registration does not: wake is purely local, and cap49 proved it by working with
- * the console's internet blocked at the router.
+ * companion key tied to one console and one account. Registration is not in this file: rc_pair_ps3.c
+ * pairs from the console and writes the record, a key=value file, and a record produced by
+ * `ProtocolLab -- register` on a PC can be copied over instead. Wake is purely local, and cap49 proved
+ * it by working with the console's internet blocked at the router.
  *
  * THE RECORD IS CAPTURES-FOLDER MATERIAL. registkey and companion are tied to a specific console and account,
- * which is the wrong side of CONTRIBUTING.md's generic-versus-personal test. The file is copied to the console
- * by hand, is not embedded in any binary, and NOTHING HERE LOGS ITS CONTENTS - not the keys, not the
+ * which is the wrong side of CONTRIBUTING.md's generic-versus-personal test. The file lives on the console,
+ * is not embedded in any binary, and NOTHING HERE LOGS ITS CONTENTS - not the keys, not the
  * derived wake credential, not the host address. The report says whether a field was present and what
  * happened, never what it was.
  *
- * WAKE FIRST, BECAUSE STANDBY IS THE ORDINARY STATE. halyard_wake.h describes the exchange and the two
- * traps in it: nothing ever acknowledges the WAKEUP, so readiness is observed by polling SRCH until
- * is_awake flips; and the datagram may have to originate from a specific SOURCE port, which is a socket
- * concern and therefore this file's job rather than the core's.
+ * Wake first, because standby is the ordinary state. halyard_wake.h describes the exchange: nothing
+ * ever acknowledges the WAKEUP, so readiness is observed by polling SRCH until is_awake flips; and the
+ * datagram may have to originate from a specific SOURCE port, which is a socket concern and therefore
+ * this file's job rather than the core's.
  */
 #ifndef RC_CONNECT_H
 #define RC_CONNECT_H
@@ -53,11 +52,11 @@ typedef enum {
     RC_CONNECT_STREAM_READY     /* sealing on, STREAM_INFO received and acked              */
 } rc_connect_stage;
 
-/* The drain bound, here rather than only in the .c so the report cannot drift from the code. */
 /*
- * Raised from 64 after real content. The bound existed to stop one burst starving the heartbeat, and the
- * timers are now checked inside the drain itself - so it can be sized for the burst alone. A keyframe
- * under motion is ~50 KB, which is forty-odd packets, and IDR requests make those frequent.
+ * The drain bound, here rather than only in the .c so the report cannot drift from the code. The timers
+ * are checked inside the drain itself, so the bound is sized for the burst alone and not to protect a
+ * heartbeat. A keyframe under motion is ~50 KB, which is forty-odd packets, and IDR requests make
+ * those frequent.
  */
 #define RC_AV_DRAIN_BURST 256
 
@@ -85,11 +84,10 @@ typedef struct {
     int  tcp_preflight_ok;   /* the control port accepted a bounded TCP connect            */
 
     /*
-     * DOES inet_aton WORK ON THIS PLATFORM? The port has only ever used inet_pton; libripcord uses
-     * inet_aton and nothing else - in rc_tcp_connect and in the ARM step. So the core's address parsing
-     * has never been exercised here, and rc_tcp_connect's connect() is BLOCKING WITH NO TIMEOUT: an
-     * address that parses to the wrong value there is not a failed connect, it is a hang, which is what
-     * b31 and b34 did.
+     * DOES inet_aton AGREE WITH inet_pton ON THIS PLATFORM? This file parses addresses with inet_pton;
+     * libripcord uses inet_aton and nothing else - in rc_tcp_connect, rc_udp_open and the arming probe.
+     * An address that parses to a different value there sends the core's connect somewhere this file
+     * never probed, so rc_connect refuses to open the session when the two disagree.
      *
      * Both are given the same string and the results compared as 32-bit values. Neither address is
      * logged; only whether they agree.
@@ -165,14 +163,8 @@ typedef struct {
      * per-direction key/IV values exist. The byte counts are recorded because a reply that arrives
      * and fails to verify is a different problem from one that never arrives.
      */
-    /*
-     * HOW FAR THE REQUEST GOT BEFORE IT DID NOT GET BUILT.
-     *
-     * b48 reported "the request was never built - launch spec, base64 or the ECDH backend", which named
-     * three possibilities and distinguished none of them, and the same sequence with the same parameters
-     * and the same buffer sizes succeeds on the host. A message that lists the suspects is not a
-     * diagnosis; this records which step actually returned 0.
-     */
+    /* How far the request got: which build step actually returned 0 (launch spec, base64 or the ECDH
+     * backend), so the report names one step rather than the candidates, as b48's did. */
     int  stream_build_step;      /* see RC_STREAM_STEP_* below - the last step that SUCCEEDED */
     unsigned launch_spec_bytes;  /* plaintext JSON length, before encryption and base64       */
     unsigned launch_spec_b64_bytes;
@@ -382,7 +374,7 @@ typedef struct {
     int  heartbeats;         /* HEARTBEAT_REQ answered - proof the channel is live           */
 
     /*
-     * Cell and RSX temperature over the session, sampled once a second. Here rather than alongside the
+     * Cell and RSX temperature, sampled once before the hold and once after it. Here rather than with the
      * SPE statistics because the question it answers is about the whole machine: one fan serves both
      * chips, so what matters is the pair, not either reading on its own. See rc_thermal.h.
      */
@@ -414,7 +406,7 @@ typedef struct {
      * ever felt on the console. */
     int      disconnect_sent;
     /* Quit was chosen from the PS menu while the stream was up. The third of the three deliberate
-     * endings, and the only one that was previously indistinguishable from a fault in the summary. */
+     * endings, recorded so the summary can tell it from a fault. */
     int      xmb_quit;
     /* The console was asked to go to rest on the way out, which only happens when somebody chose it
      * from the disconnect question. Reported because the console acts on it after we are gone. */
@@ -430,8 +422,8 @@ typedef struct {
      * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
      * reason with "the console refused the session", which is both wrong and unactionable. */
     int      login_blocked;
-    /* The cipher counter the console ACCEPTED the passcode at, or -1 if none did. 5 for a PS5 and
-     * settled; on a PS4 it is the thing being measured - see the sweep in the sign-in gate. */
+    /* The cipher counter the passcode was submitted at, or -1 if none was. 5 for a PS5 and 4 for a
+     * PS4 - see the sign-in gate in rc_connect.c. */
     int      login_counter;
     int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
     char     overlay_font_status[96];
@@ -444,14 +436,8 @@ typedef struct {
 } rc_connect_result;
 
 /*
- * PROGRESS, REPORTED AS IT HAPPENS RATHER THAN AT THE END.
- *
- * The first version of this returned a result and let the caller log it afterwards, which is worthless
- * the moment something blocks: b31 hung on hardware and the log simply stopped after discovery, with
- * nothing at all from this module. That is the same failure the SPU probe had - a program that reports
- * only on completion has nothing to say about not completing - and the fix is the same shape. The
- * callback is invoked before each step that can block, so the last line in the log names the call that
- * did not return.
+ * Progress, reported as it happens. The callback is invoked before each step that can block, so if
+ * one hangs (b31 did, on hardware) the last line in the log names the call that did not return.
  */
 typedef void (*rc_connect_log_fn)(const char *stage_text);
 
@@ -459,8 +445,7 @@ typedef void (*rc_connect_log_fn)(const char *stage_text);
  * Runs as far as it can and stops. `wake_timeout_ms` bounds the poll for is_awake. `log` may be NULL.
  * Returns the stage reached; `out` is filled either way, because how far it got is the finding when it
  * does not finish.
- */
-/*
+ *
  * `dirs` is an ordered list of directories to look for "pairing.txt" in - pass the same list the log
  * probes, so the two cannot disagree about where this program keeps its files. NULL uses the
  * compile-time RC_CONNECT_PAIRING_DIR instead.
@@ -475,17 +460,12 @@ const char *rc_connect_stage_name(rc_connect_stage stage);
 const rc_session_state *rc_connect_session_state(void);
 
 /*
- * Turns the stage rc_connect returned into something a viewer can read, and puts it on the screen.
- * `stalled` suppresses it, because a stream that stopped mid-session has already said something more
- * specific than any stage name could.
- */
-/*
- * Puts the outcome on the television. Takes the whole result rather than the stage alone, because
- * several of the ways a session can end are indistinguishable by stage and are the opposite of each
- * other to a viewer: a person choosing Disconnect and a console refusing to start both leave from
- * RC_CONNECT_STREAM_READY, and a cancelled sign-in leaves from RC_CONNECT_SESSION_OPEN looking exactly
- * like a console that would not talk. Anything that has already said something more specific is left
- * alone - see the flags it reads.
+ * Turns the stage rc_connect returned into something a viewer can read, and puts it on the television.
+ * Takes the whole result rather than the stage alone, because several of the ways a session can end
+ * are indistinguishable by stage: a person choosing Disconnect and a console refusing to start both
+ * leave from RC_CONNECT_STREAM_READY, and a cancelled sign-in leaves from RC_CONNECT_SESSION_OPEN
+ * looking like a console that would not talk. Anything that has already said something more specific
+ * (a stream that stalled mid-session, a blocked sign-in) is left alone - see the flags it reads.
  */
 void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *result);
 

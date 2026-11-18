@@ -18,11 +18,11 @@ namespace Ripcord.Presentation.Halyard.Pairing;
 /// delivers the registration seed itself, encrypted, over the account service.
 ///
 /// <para>
-/// Almost all of this is <see cref="HalyardAccountPairing"/>'s job — generate the ephemeral key material, listen
-/// on the push channel before triggering the console, recover the seed from <c>customData1</c>, register. What is
-/// left here is what a presentation seam owes: resolving the crypto from the same chain the code route uses,
-/// gathering the three cloud values the coordinator needs (a token, the push server, a socket), and turning both
-/// halves' failures into a result rather than an exception.
+/// <see cref="HalyardAccountPairing"/> does the exchange: generate the ephemeral key material, listen on the
+/// push channel before triggering the console, recover the seed from <c>customData1</c>, register. This seam
+/// resolves the crypto from the same chain the code route uses, gathers the three cloud values the coordinator
+/// needs (a token, the push server, a socket), and turns both halves' failures into a result rather than an
+/// exception.
 /// </para>
 ///
 /// <para>
@@ -46,12 +46,10 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     /// Called with the push channel for each attempt, immediately after it is built and before it runs.
     ///
     /// <para>
-    /// This exists for diagnosis, and it earned its place the hard way: the first live run reported only that
-    /// the seed never arrived, which is the least informative thing it could have said. The console publishes
-    /// <c>customData1</c> only after it <em>joins</em> the session, and the join is announced on this same
-    /// channel — so "did the console join?" and "did it join and then not publish?" are different failures with
-    /// the same symptom unless somebody is watching the raw frames. The channel raises every one via
-    /// <see cref="HalyardPushChannel.FrameReceived"/>; nothing in the app subscribes, and the harness does.
+    /// For diagnosis. The console publishes <c>customData1</c> only after it <em>joins</em> the session, and
+    /// the join is announced on this same channel, so "did the console join?" and "did it join and then not
+    /// publish?" have the same symptom unless something watches the raw frames. The channel raises every one
+    /// via <see cref="HalyardPushChannel.FrameReceived"/>; nothing in the app subscribes, and the harness does.
     /// </para>
     /// </param>
     public HalyardAccountConsolePairing(
@@ -72,16 +70,15 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     /// Write down which console we are about to command, and what the account says about it.
     ///
     /// <para>
-    /// <b>Because the duid is matched by NAME.</b> The flow resolves it with
-    /// <c>CloudConsoleMatch.ResolveId</c> against the console's display name, so a console whose account
-    /// record is named differently — or an account holding more than one console with similar names —
-    /// produces a command the cloud accepts, addressed to something that is not there. The symptom is
-    /// identical to a console that will not wake: nothing joins, and nothing says why.
+    /// <b>Because the duid is matched by NAME.</b> The request arrives with it already resolved: the
+    /// add-console flow matches the name the console reports for itself against the account's list
+    /// (<c>CloudConsoleMatch.Resolve</c>). A duid the account does not list produces a command the cloud
+    /// accepts, addressed to something that is not there. The symptom is identical to a console that will
+    /// not wake: nothing joins, and nothing says why.
     /// </para>
     ///
     /// <para>
-    /// Only runs when a trace is on, because it costs a cloud round trip to answer a question nobody is
-    /// asking the rest of the time. Never fails the pairing.
+    /// Only runs when a trace is on, because it costs a cloud round trip. Never fails the pairing.
     /// </para>
     /// </summary>
     private async Task LogTargetAsync(AccountPairingRequest request, CancellationToken cancellationToken)
@@ -138,16 +135,6 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     }
 
     /// <summary>
-    /// Where to open the control transport.
-    ///
-    /// <para>
-    /// The console's <c>LOCAL</c> candidate when it names the address we already reached it on, which is the
-    /// same-network case and the one that needs no hole-punch. Otherwise the address the caller gave us, on
-    /// the control port — a console we found by LAN discovery is reachable there whatever it advertises, and
-    /// preferring its reflexive candidate would send LAN traffic out to the internet and back.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// A UDP port nothing is currently using. Bound and released rather than held, because the socket that
     /// will use it is created later, behind the registration factory.
     /// </summary>
@@ -160,8 +147,8 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
 
     /// <summary>
     /// Where the pairing association is aimed: the same decision the ACCEPT names (HalyardConsoleCandidates).
-    /// This used to take a LOCAL candidate only when it equalled the known host, a third rule beside the
-    /// session's and the ACCEPT's, so the association and the ACCEPT could name different candidates.
+    /// One rule shared with the session and the ACCEPT, so the association and the ACCEPT cannot name
+    /// different candidates.
     /// </summary>
     private static IPEndPoint ConsoleEndpoint(HalyardAccountTransportContext context)
         => HalyardConsoleCandidates.Resolve(
@@ -208,8 +195,8 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
         }
 
         // Same reasoning as the connect path: a stored session that nothing has restored is a signed-in user,
-        // not a signed-out one. Pairing happened to work because it is reached from surfaces that had already
-        // restored, which is luck rather than design.
+        // not a signed-out one. Pairing must not depend on being reached from a surface that has already
+        // restored it.
         if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return new ConsoleRegistrationResult(false,

@@ -288,7 +288,7 @@ void rc_account_probe_run(const char *known_account_id, rc_account_probe *out)
 }
 
 /* ------------------------------------------------------------------------------------------------
- * The reader, now that the search has answered where to look.
+ * The reader. The search above established where to look.
  */
 
 /*
@@ -296,13 +296,11 @@ void rc_account_probe_run(const char *known_account_id, rc_account_probe *out)
  *
  * [X] Every account id this project has seen is nineteen decimal digits, but that is an observation over
  * a handful of accounts and is documented nowhere - so the bound here is set far below it rather than at
- * it. What it has to catch is the file being absent in all but name: zeroed after a sign-out, or some
- * other 248 bytes entirely. What it must NOT do is reject a real id that happens to be shorter than the
- * ones seen so far, because a wrong rejection sends somebody back to typing nineteen digits with no
- * explanation. Sixteen digits is comfortably under any observed id and comfortably over any counter.
+ * it. It has to catch the file being absent in all but name: zeroed after a sign-out, or some other
+ * 248 bytes entirely. It must NOT reject a real id that happens to be shorter than the ones seen so
+ * far. Sixteen digits is comfortably under any observed id and comfortably over any counter.
  *
- * A rejection is reported, not swallowed - rc_account_status_text names this case - so if the bound is
- * ever wrong it says so on the screen instead of looking like the console has no account.
+ * A rejection is reported, not swallowed - rc_account_status_text names this case.
  */
 #define RC_ACC_MIN_PLAUSIBLE 1000000000000000ull
 
@@ -322,11 +320,9 @@ const char *rc_account_status_text(rc_account_status status)
 /*
  * Reads up to `size` bytes from the FRONT of a file, and returns how many arrived.
  *
- * b337 had this as "reads a whole small file", which refused anything larger than the buffer - and the
- * one thing it is here to read is eight bytes out of a 248-byte file. It returned zero, which the caller
- * reported as "this PS3 has no cached account id" about a file that was sitting right there. Two callers
- * want two different things (a whole name, the head of a record) and the shared helper quietly served
- * only one of them.
+ * A file larger than the buffer is not refused. The two callers want different things - a whole name,
+ * and the first eight bytes of a 248-byte record - and refusing the larger file reports a record that
+ * is sitting right there as absent (b337).
  */
 static size_t read_head(const char *path, unsigned char *buf, size_t size)
 {
@@ -369,10 +365,9 @@ static rc_account_status read_np_cache(const char *user_dir, char *out, size_t s
     if (sysLv2FsStat(path, &st) != 0)
         return RC_ACCOUNT_NO_FILE;
     /*
-     * ABSENT AND UNREADABLE ARE REPORTED APART, because b337 could not tell them apart and said the
-     * wrong one. A console that has never signed in has no file; a file that is there and will not give
-     * up eight bytes is a different problem with a different next step, and one message for both sent
-     * the search after a question that was already answered.
+     * ABSENT AND UNREADABLE ARE REPORTED APART (b337 had one message for both and said the wrong
+     * one). A console that has never signed in has no file; a file that is there and will not give up
+     * eight bytes is a different problem with a different next step.
      */
     if (read_head(path, raw, sizeof(raw)) < sizeof(raw))
         return RC_ACCOUNT_UNREADABLE;
@@ -451,8 +446,8 @@ rc_account_status rc_account_read(char *out, size_t size)
         trim((char *)stored);
 
         if (strcmp((const char *)stored, current_user) == 0) {
-            /* WHICH ROUTE GOT THERE, because only the fallback said so and a name match therefore
-             * looked identical to never having looked at all. */
+            /* WHICH ROUTE GOT THERE. Logged for the name match as well as for the fallback, so a name
+             * match does not look identical to never having looked at all. */
             rc_log("acct:  matched the signed-in user by name\n");
             status = read_np_cache(user_dir, out, size);
             candidates = -1;   /* matched by name - the fallback below must not second-guess it */

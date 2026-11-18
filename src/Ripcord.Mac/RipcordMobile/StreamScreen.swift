@@ -1,5 +1,5 @@
 // A stream: the picture, sound, a controller, and the console's passcode prompt when it asks. The Mac's
-// StreamController, reduced to what the scaffolding needs. No touch controls yet: a controller is required,
+// StreamController, reduced. There are no touch controls: a controller is required,
 // which on iPhone and iPad means a paired Bluetooth one and on Apple TV the one it already has (docs/ios-plan.md).
 
 import AVFoundation

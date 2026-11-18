@@ -41,8 +41,8 @@ same one (below).
 ## The security design
 
 **The record is the secret.** `registkey` and `companion` are credentials for one console and one account. They
-sit on the wrong side of `CONTRIBUTING.md`'s generic-versus-personal line, so they must never cross the LAN in the
-clear. They must also never reach whoever answers an announce first.
+sit on the wrong side of `CONTRIBUTING.md`'s generic-versus-personal line, so they must never cross the LAN in
+the clear, and never reach whoever answers an announce first.
 
 **The hand-off code authenticates both ends and keys the transfer, through SPAKE2** (RFC 9382). A plain
 code-derived key is not enough:

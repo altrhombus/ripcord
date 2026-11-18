@@ -8,41 +8,39 @@
     scale factor can rewrite.
 
     So: no FontSize setter in this file. A role that needs a different size needs a different stock style to
-    sit on, not a literal. (The app currently has no FontSize literal outside a FontIcon, and there is a test
-    to be written that keeps it that way.)
+    sit on, not a literal. (No TextBlock in the app sets a FontSize either; the only sizes are the icon
+    tokens in Ripcord.Tokens.xaml, on FontIcons.)
 
-    No Margin setters either. See the vertical-rhythm rule in Ripcord.Tokens.xaml — a margin on a text style
-    is invisible at the call site and is how this app grew two section-header styles differing only in their
-    bottom margin.
+    No Margin setters either, bar the table-cell inset on the detail pair below. See the vertical-rhythm rule
+    in Ripcord.Tokens.xaml — a margin on a text style is invisible at the call site, and callers cannot
+    override it without redeclaring the style.
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-        A group heading above a run of cards. From AboutPage.SectionHeaderStyle / SettingsPage.GroupHeaderStyle.
+        A group heading above a run of cards, on the About and Settings pages.
 
         BasedOn, not a Setter for Style: setting the Style property from inside a Style is invalid XAML and
-        throws when the page is parsed. SettingsPage records having learned that the hard way — it took the
-        whole app down on navigation rather than failing visibly on one page.
+        throws when the page is parsed, which takes the whole app down on navigation rather than failing
+        visibly on one page.
 
-        The "0,16,0,4" margin this used to carry is gone. It was the entire difference between the two page
-        copies this style exists to replace (About wanted 0,16,0,0), so with it removed they are the same
-        style and the merge becomes a deletion rather than a negotiation. Callers space their own children.
+        No margin: callers space their own children.
     -->
     <Style
         x:Key="RipcordSectionHeaderStyle"
         BasedOn="{StaticResource BodyStrongTextBlockStyle}"
         TargetType="TextBlock">
         <Setter Property="VerticalAlignment" Value="Center" />
-        <!--  A heading to a screen reader too, so Narrator can jump between sections (review, 2026-10-05).  -->
+        <!--  A heading to a screen reader too, so Narrator can jump between sections.  -->
         <Setter Property="AutomationProperties.HeadingLevel" Value="Level2" />
     </Style>
 
     <!--
         A step's heading inside a page, such as Add a console's "Looking for your console". The subtitle ramp, and a
-        level 2 heading to a screen reader: the steps used SubtitleTextBlockStyle directly, so Narrator could not
-        jump to them (visual audit, 2026-10-08).
+        level 2 heading to a screen reader: SubtitleTextBlockStyle on its own carries no heading level, and
+        Narrator cannot jump to a step without one.
     -->
     <Style
         x:Key="RipcordStepHeadingStyle"
@@ -118,10 +116,8 @@
         page's device table. The INSTRUMENT pair is caption-sized, for a dense readout scanned at a
         glance while something else has the attention: the diagnostics overlay.
 
-        They were previously two page-local pairs sharing the names RowLabelStyle and RowValueStyle, in
-        AboutPage and SessionPage, with entirely different definitions. That is worse than duplication —
-        identical names for different things means neither page can be read without checking which one
-        you are in, and moving markup between them silently restyles it.
+        The two pairs have different names on purpose. One name for two definitions means neither page can
+        be read without checking which one you are in, and moving markup between them silently restyles it.
         ================================================================================================
     -->
     <!--

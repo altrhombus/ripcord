@@ -19,8 +19,8 @@ internal readonly record struct V2ControlHandshakeResult(
 /// Drives the v2 control-plane handshake over a control channel (spec §4): <c>/sess/init</c> (RP-Pubkey/RP-Hmac)
 /// → establish the GCM control plane + the launchSpec M → <c>/sess/init2</c> (RP-VerifyKey) → GCM
 /// <c>/sess/ctrl</c> → decrypt the response. Each message is a fresh connection (the console closes between
-/// them), so the per-connection GCM counter is 0 throughout. Extracted from the session so it is testable
-/// against a mock console without the stream (Phase 2) plane.
+/// them), so the per-connection GCM counter is 0 throughout. Separate from the session so it is testable
+/// against a mock console without the stream plane.
 /// </summary>
 internal static class HalyardV2ControlHandshake
 {

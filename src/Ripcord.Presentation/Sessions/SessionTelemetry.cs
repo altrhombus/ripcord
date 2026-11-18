@@ -6,11 +6,10 @@ namespace Ripcord.Presentation.Sessions;
 /// One tick's worth of facts from the session controller and the power monitor.
 ///
 /// <para>
-/// Passed in rather than reached for through a seam, and the distinction is deliberate: a decode pipeline is a
-/// <em>device</em>, which is why <see cref="IVideoPipelineStats"/> exists, whereas all of this is already plain
-/// data that the portable layer could read directly from <c>SessionController</c>. Taking it as a parameter
-/// instead of holding a controller reference means the view-model has no lifecycle to manage and a test needs no
-/// substitute controller — it writes down the numbers it wants to reason about.
+/// Passed in rather than reached for through a seam: a decode pipeline is a <em>device</em>, which is why
+/// <see cref="IVideoPipelineStats"/> exists, whereas this is plain data. Taking it as a parameter instead of
+/// holding a <c>SessionController</c> reference means the view-model has no lifecycle to manage and a test
+/// needs no substitute controller.
 /// </para>
 /// </summary>
 /// <param name="HasSession">

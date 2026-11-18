@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
-    Values, not appearances. Nothing in this file styles anything — it is the vocabulary the other three
+    Values, not appearances. Nothing in this file styles anything — it is the vocabulary the other
     dictionaries and the pages spend.
 
     Why tokens rather than literals: one name, one value, spent from many places - so a size can be reviewed
-    once rather than found by grep. Ripcord no longer scales its own text (Windows does that, and the app's
-    job is to honour it rather than compete with it), so the indirection is about consistency now rather
-    than about being reachable by a scale factor.
+    once rather than found by grep. Ripcord does not scale its own text (Windows does that, and the app's
+    job is to honour it rather than compete with it), so the indirection is for consistency and not for
+    being reachable by a scale factor.
 
     Consumers should use ThemeResource for anything that can change at runtime and StaticResource only for
     values that genuinely cannot.
@@ -26,14 +26,13 @@
 
         THE RULE: vertical rhythm comes from a container's Spacing, never from a Margin on a text style.
         A margin baked into a style is invisible at the call site and cannot be overridden without
-        redeclaring the style, which is exactly how this app ended up with two section-header styles
-        differing only in their bottom margin — a difference nobody chose. Space between siblings belongs to
-        whatever is arranging them.
+        redeclaring the style, which is how an app ends up with two section-header styles differing only
+        in their bottom margin — a difference nobody chose. Space between siblings belongs to whatever is
+        arranging them.
 
-        Deliberately absent: 6, 10 and 14, which the pages currently use ~30 times between them. They are
-        off-grid, and blessing them as tokens would make the scale decorative. Migration snaps each to a
-        real step as its page is touched, which is a visible change and therefore one to make deliberately
-        rather than in a rename.
+        Deliberately absent: 6, 10 and 14. They are off-grid, and blessing them as tokens would make the
+        scale decorative. A page that spends one writes it as a literal, and moving it to a real step is a
+        visible change, not a rename.
         ================================================================================================
     -->
     <x:Double x:Key="RipcordSpacingXXS">2</x:Double>
@@ -46,9 +45,8 @@
 
     <!--
         The page frame: every chrome page's content sits in one centred column this wide, inside 24 of page
-        padding, with its title at the column's top-left. Add a console and Setup used to hug the left edge at
-        720 while Settings, About and Keyboard controls sat in a centred 820, so the title jumped between pages
-        (visual audit, 2026-10-08). One number, so the pages cannot drift apart again.
+        padding, with its title at the column's top-left. One number, because a page with its own width or
+        alignment makes the title jump on navigation.
     -->
     <x:Double x:Key="RipcordPageColumnWidth">820</x:Double>
 
@@ -67,21 +65,18 @@
         ================================================================================================
         Icon sizes
 
-        Every FontSize literal in this app is on a FontIcon — there is not one on a TextBlock, because text
-        goes through the type ramp in Ripcord.Text.xaml. So this is the complete set of size literals the
-        app had, five tokens covering six values.
+        A FontIcon's FontSize is one of these five. No TextBlock sets a FontSize at all, because text goes
+        through the type ramp in Ripcord.Text.xaml, so these are the app's only font-size values.
 
         Sized by RELATIONSHIP, which is what makes the set closed: an icon is either sitting in a line of
         text (and takes that text's size) or standing alone (and takes a size of its own).
 
-          Caption  12 — inline with caption text: the decode pill, the play chevron on a card
-          Body     14 — inline with body text: the About rows, a menu glyph
+          Caption  12 — inline with caption text: the About page's pills, the HDR checklist
+          Body     14 — inline with body text: the About rows, a card's overflow glyph
           Action   16 — beside a button's own label, which is body-sized; slightly larger on purpose, and
                         the one place a two-pixel difference is deliberate rather than drift
           Standing 18 — alone beside a paragraph: the About info mark, the touch controls
-          Hero     24 — the empty state and the pair confirmation, where the glyph IS the content
-
-        The single collapse: the pair check-mark was 22 and is now 24. Nothing else moves.
+          Hero     24 — the add tile and first run's controller step, where the glyph IS the content
         ================================================================================================
     -->
     <x:Double x:Key="RipcordIconSizeCaption">12</x:Double>
@@ -94,8 +89,8 @@
         ================================================================================================
         Corner radii
 
-        The vocabulary already in use across the app, named so the next surface picks from the set rather
-        than inventing a seventh value.
+        The radii of Ripcord's own surfaces, named so the next surface picks from the set rather than
+        inventing another value.
 
         Three rules that go with them:
 
@@ -109,7 +104,7 @@
            it is a shape, not a pick from this vocabulary, and it stays a literal at the site that needs it.
            The set above is graded specifically so a nested corner cannot cross its parent's; a value chosen
            from an element's own height has nothing to do with nesting, and filing it here would make the
-           grading meaningless. This is why one CornerRadius="2" survives the migration to these keys.
+           grading meaningless. This is why the headroom bar's CornerRadius="2" is a literal.
         ================================================================================================
     -->
     <CornerRadius x:Key="RipcordTagCornerRadius">4</CornerRadius>
@@ -130,8 +125,8 @@
         so a 48 button fills it edge to edge with no breathing room. Stated as its own token rather than
         written as a bare 40 somewhere, so the deviation is visible and countable.
 
-        Over video the touch bar already proved 56×52, which is larger because there is no chrome around it to
-        aim by and a mis-hit interrupts a game.
+        Over video the touch bar's buttons are at least 56×52, larger because there is no chrome around them
+        to aim by and a mis-hit interrupts a game.
         ================================================================================================
     -->
     <x:Double x:Key="RipcordTouchTarget">48</x:Double>

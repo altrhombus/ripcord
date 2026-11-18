@@ -8,7 +8,7 @@
  * drops that show up first during the busiest bursts, which makes them look like a Wi-Fi ceiling instead
  * of the bug they are.
  *
- * This has no PlayStation knowledge and never will - it is the 3DS-side counterpart of the transport
+ * This has no PlayStation knowledge - it is the 3DS-side counterpart of the transport
  * primitives in Ripcord.Core.Net, not of anything Halyard-specific.
  */
 #ifndef RC_SOC_H

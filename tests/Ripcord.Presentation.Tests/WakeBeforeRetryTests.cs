@@ -6,8 +6,8 @@ using Xunit;
 namespace Ripcord.Presentation.Tests;
 
 /// <summary>
-/// The reconnect that never asked: a console going into rest refused every retry, while a fresh connect found it
-/// resting and woke it (2026-10-02).
+/// The wake check wrapped around a reconnect's opener: the first open does not ask, each retry does. A console
+/// going into rest refuses every retry that does not, while a fresh connect finds it resting and wakes it.
 /// </summary>
 public class WakeBeforeRetryTests
 {

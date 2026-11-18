@@ -130,10 +130,10 @@ namespace
     )";
 
     // NV12 -> RGB in the pixel shader: sample the luma (Y, R8) at full res and the interleaved chroma
-    // (UV, R8G8) at half res (the linear sampler upscales chroma for free), then BT.601 limited-range
-    // YUV->RGB — the same coefficients the old CPU path used (298/409/100/208/516), yuvCoefficient "bt601"
-    // in the launchSpec. Returning float4(r,g,b,1) is correct for either RGBA or BGRA render targets; the
-    // format handles the channel order, so (unlike the CPU path) we do not swap R/B by hand.
+    // (UV, R8G8) at half res (the linear sampler upscales chroma for free), then limited-range YUV->RGB
+    // with the BT.601 or BT.709 matrix (uMatrix; x256, BT.601 is 298/409/100/208/516).
+    // Returning float4(r,g,b,1) is correct for either RGBA or BGRA render targets; the
+    // format handles the channel order, so R/B are not swapped by hand.
     constexpr char kNv12ShaderSource[] = R"(
         struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
         VSOut VSMain(uint id : SV_VertexID)
@@ -615,7 +615,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // and dragged to an SDR one kept its 10-bit swap chain, labelled G22, and on hardware (2026-10-01) its
         // picture came out squeezed at both ends: blacks lifted, highlights cut, colour down, against the same
         // frame from a session started on the SDR display. That one has an 8-bit swap chain, so a dragged session
-        // now gets the same. ResizeBuffers changes the format in place, so the panel keeps its swap chain; the three
+        // gets the same. ResizeBuffers changes the format in place, so the panel keeps its swap chain; the three
         // pipeline states bake the format in and are rebuilt. And a session dragged onto an HDR display gets the
         // 10-bit chain it needs to present HDR at all.
         const DXGI_FORMAT wanted = m_displayHdrCapable ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -641,7 +641,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 m_reformatFailure = e.code();
             }
 
-            // The render targets and pipeline states match whatever format the swap chain now has, switched
+            // The render targets and pipeline states match whatever format the swap chain has, switched
             // or not.
             CreateRenderTargets();
             CreatePipeline();
@@ -755,7 +755,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
             return;
         }
 
-        // This is the Layer-2 test-pattern path, not the live video path, and it keeps a single (unringed)
+        // This is the test-pattern path, not the live video path, and it keeps a single (unringed)
         // upload buffer. Drain before rewriting it so the CPU can't overwrite bytes a previous frame's copy is
         // still reading. The cost is irrelevant here (a 30 Hz diagnostic tick); the live paths are pipelined.
         WaitForGpu();
@@ -825,8 +825,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         transition(m_renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 
-        // Was Present(1, 0) — a full vsync wait, which on top of the drain above made this path cost two
-        // stalls per frame. EndFrame presents with sync interval 0 like every other path.
+        // EndFrame presents with sync interval 0 like every other path: a vsync wait on top of the drain
+        // above would cost two stalls per frame.
         EndFrame(frameIndex);
     }
 
@@ -905,9 +905,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             }
         }
 
-        // Last resort for H.264 only: the in-box decoder by CLSID. This is the transform the pipeline used
-        // exclusively before codec selection existed, so falling back to it cannot be worse than the previous
-        // behaviour if enumeration is unavailable for some reason.
+        // Last resort for H.264 only: the in-box decoder by CLSID, for when enumeration finds nothing or is
+        // unavailable.
         if (codec == VideoCodecKind::H264
             && SUCCEEDED(CoCreateInstance(
                 CLSID_CMSH264DecoderMFT, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_decoder))))
@@ -951,8 +950,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
     hstring VideoRenderer::DecoderDiagnostic()
     {
-        // What the decode loop is actually seeing. Added because a black screen with healthy-looking decode and
-        // present counters has several distinct causes — no sample ever produced, a sample in a pixel format the
+        // What the decode loop is actually seeing. A black screen with healthy-looking decode and present
+        // counters has several distinct causes — no sample ever produced, a sample in a pixel format the
         // present path does not handle, or a sample whose dimensions were never reported — and guessing between
         // them from the outside costs a test cycle each time.
         // From what the worker published, never from the decoder, which only the worker may touch.
@@ -987,14 +986,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // Decoder identity only: which MFT, hardware or software, and anything actively wrong. Format, colour and
     // HDR state each get their own accessor below.
     //
-    // This used to be one string carrying all four, which made the diagnostics overlay's "video" row a
-    // paragraph and pushed the app into substring-matching it for capability pills. One row per fact reads
-    // better and, more importantly, lets the UI ask for a value instead of parsing prose.
+    // One string carrying all four would make the diagnostics overlay's "video" row a paragraph and push
+    // the app into substring-matching it for capability pills. One row per fact reads better and, more
+    // importantly, lets the UI ask for a value instead of parsing prose.
     hstring VideoRenderer::DecoderDescription()
     {
         // Non-ASCII in these literals MUST use universal character names (·, —), not raw UTF-8 bytes:
         // MSVC decodes narrow and wide literals with the system codepage unless /utf-8 is on the command line, so
-        // a literal middle dot rendered on screen as "Ã‚Â·". Escapes are codepage-independent.
+        // a literal middle dot renders on screen as "Ã‚Â·". Escapes are codepage-independent.
         const std::shared_ptr<const std::wstring> name = std::atomic_load(&m_decoderName);
         if (!name)
         {
@@ -1020,8 +1019,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         return hstring{ desc };
     }
 
-    // Pixel format. Reported for SDR too: an 8-bit session used to say nothing here, so the row could not
-    // distinguish a working stream from a format probe that had not run.
+    // Pixel format. Reported for SDR too, so the row distinguishes a working 8-bit stream from a format
+    // probe that has not run.
     hstring VideoRenderer::VideoFormatDescription()
     {
         if (!std::atomic_load(&m_decoderName))
@@ -1113,7 +1112,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // reorder/throughput window. The MS H.264 decoder otherwise buffers several frames internally before
         // it will output ANY of them, which for a live stream is pure added latency (~150-250 ms at 30 fps)
         // on top of the console's own encode buffering. Set on the transform's attribute store before
-        // streaming begins; best-effort (a decoder that ignores it just behaves as before).
+        // streaming begins; best-effort (a decoder that ignores it keeps its buffering).
         ComPtr<IMFAttributes> decoderAttributes;
         if (SUCCEEDED(m_decoder->GetAttributes(&decoderAttributes)) && decoderAttributes)
         {
@@ -1161,10 +1160,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
         const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
 
         // On the render device's own adapter. With no adapter, D3D11 takes the system default, so on a machine
-        // with two GPUs and the other one chosen in Settings, decode ran on one GPU and render on the other:
-        // textures cannot be shared across adapters, zero-copy failed, and the CPU readback path, which cannot
-        // carry 10-bit frames, turned every HDR stream white. Found on hardware with an NVIDIA GPU chosen on an
-        // Intel-default laptop (2026-10-01). The GPU setting had only ever moved rendering, never decoding.
+        // with two GPUs and the other one chosen in Settings, decode runs on one GPU and render on the other:
+        // textures cannot be shared across adapters, zero-copy fails, and the CPU readback path, which cannot
+        // carry 10-bit frames, turns every HDR stream white. Seen on hardware with an NVIDIA GPU chosen on an
+        // Intel-default laptop (2026-10-01).
         ComPtr<IDXGIAdapter1> renderAdapter;
         {
             ComPtr<IDXGIFactory4> factory;
@@ -1174,7 +1173,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
             }
         }
 
-        // An explicit adapter requires D3D_DRIVER_TYPE_UNKNOWN; without one, the default as before.
+        // An explicit adapter requires D3D_DRIVER_TYPE_UNKNOWN; without one, the default hardware adapter.
         HRESULT hr = D3D11CreateDevice(
             renderAdapter.Get(), renderAdapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr,
             creationFlags, levels, ARRAYSIZE(levels), D3D11_SDK_VERSION,
@@ -1280,26 +1279,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
         return true;
     }
 
-    /// Adopt frame size, display aperture, colour matrix, stride and output-buffer sizing from a decoder output
-    /// media type.
-    ///
-    /// Split out of ConfigureDecoderOutput so it can also be applied to the decoder's CURRENT output type after
-    /// a frame has been produced. That matters because not every decoder announces its real geometry the same
-    /// way: the in-box H.264 MFT raises MF_E_TRANSFORM_STREAM_CHANGE once it reads the SPS, which drives a
-    /// re-negotiation, whereas the HEVC Video Extension was observed to publish no usable MF_MT_FRAME_SIZE up
-    /// front and never raise a stream change — leaving the cached size at zero, so every decoded frame was
-    /// discarded by the "do we know the geometry" gate and the screen stayed black while the decode and present
-    /// counters both ticked at full rate.
     /// Last-resort geometry: measure the decoded frame itself.
     ///
     /// Used when a decoder produces frames without ever publishing a usable MF_MT_FRAME_SIZE (observed with the
-    /// HEVC Video Extension). A DXVA sample is backed by a D3D11 texture whose descriptor is the real coded size,
-    /// which cannot be wrong; a system-memory NV12 buffer can be measured from its pitch and length instead,
-    /// since NV12 occupies exactly stride * height * 3/2 bytes.
+    /// HEVC Video Extension). A DXVA sample is backed by a D3D11 texture whose descriptor is the real coded size;
+    /// a system-memory NV12 buffer is measured from its pitch and length instead, since NV12 occupies exactly
+    /// stride * height * 3/2 bytes.
     ///
-    /// Sets the display extent equal to the coded extent because no aperture is available here. That is the same
-    /// assumption the pipeline made before aperture handling existed, so at worst it shows a few padding rows —
-    /// visibly imperfect, but a picture rather than a black screen.
+    /// Sets the display extent equal to the coded extent because no aperture is available here, so at worst it
+    /// shows a few padding rows.
     bool VideoRenderer::TryGeometryFromSample(IMFSample* produced)
     {
         m_geomStage = 3;
@@ -1393,6 +1381,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
         return true;
     }
 
+    /// Adopt frame size, display aperture, colour matrix, stride and output-buffer sizing from a decoder output
+    /// media type.
+    ///
+    /// Split out of ConfigureDecoderOutput so it can also be applied to the decoder's CURRENT output type after
+    /// a frame has been produced. Decoders announce their real geometry differently: the in-box H.264 MFT raises
+    /// MF_E_TRANSFORM_STREAM_CHANGE once it reads the SPS, which drives a re-negotiation, whereas the HEVC Video
+    /// Extension was observed to publish no usable MF_MT_FRAME_SIZE up front and never raise a stream change,
+    /// leaving the cached size at zero, every decoded frame discarded by the geometry gate and a black screen.
     void VideoRenderer::AdoptOutputGeometry(IMFMediaType* type)
     {
         UINT32 width = 0, height = 0;
@@ -1408,8 +1404,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // them shows as a band of smeared/repeated pixels along the bottom edge plus a slight vertical stretch,
         // because the whole 1088 gets aspect-fitted as if it were the real frame.
         //
-        // MF exposes that rectangle as MF_MT_MINIMUM_DISPLAY_APERTURE. Default to the coded size so a stream
-        // without an aperture (or an older decoder) behaves exactly as before.
+        // MF exposes that rectangle as MF_MT_MINIMUM_DISPLAY_APERTURE. Default to the coded size, which is what
+        // a stream without an aperture (or an older decoder) shows.
         m_displayWidth = m_decodeWidth;
         m_displayHeight = m_decodeHeight;
         m_displayOffsetX = 0;
@@ -1445,7 +1441,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Which YCbCr matrix the stream actually signals (H.264 SPS VUI matrix_coefficients, surfaced by MF as
         // MF_MT_YUV_MATRIX). Reading it beats assuming: BT.601 is correct for SD but BT.709 is standard for HD,
         // and decoding 709 content with 601 coefficients shifts every colour (visibly oversaturated reds).
-        // Absent signalling keeps today's known-good BT.601 behaviour rather than guessing by resolution.
+        // Absent signalling, the matrix is defaulted by resolution (below).
         UINT32 signalledMatrix = 0;
         if (SUCCEEDED(type->GetUINT32(MF_MT_YUV_MATRIX, &signalledMatrix)))
         {
@@ -1457,18 +1453,16 @@ namespace winrt::Ripcord::Media::Interop::implementation
         {
             // Nothing signalled. Default by resolution rather than always BT.601, because this console
             // demonstrably encodes BT.709 — its H.264 stream says so explicitly at 1080p — while its HEVC stream
-            // signals no matrix at all. Defaulting HD to 601 therefore mis-converted the HEVC path in exactly the
-            // way that was just fixed for H.264: same encoder, same colours, no signalling. SD keeps BT.601,
-            // which is the correct default there.
+            // signals no matrix at all. Defaulting HD to 601 would therefore mis-convert the HEVC path: same
+            // encoder, same colours, no signalling. SD keeps BT.601, which is the correct default there.
             m_yuvMatrix = m_displayHeight >= 720 ? 1 : 0;
             m_yuvMatrixSignalled = false;
         }
 
-        // Transfer function and primaries, read for the same reason and from the same place. The renderer used
-        // to infer "PQ" from 10-bit output alone, which is not sound - HEVC Main10 is a bit depth, not a
-        // transfer function, and a 10-bit BT.709 stream declared as PQ gets tone-mapped when it should be left
-        // alone. Reading also settles what the console actually does with a dynamicRange:"HDR" request, which
-        // until now was only ever inferred.
+        // Transfer function and primaries, read for the same reason and from the same place. Inferring "PQ"
+        // from 10-bit output alone is not sound - HEVC Main10 is a bit depth, not a transfer function, and a
+        // 10-bit BT.709 stream declared as PQ gets tone-mapped when it should be left alone. Reading also
+        // shows what the console actually does with a dynamicRange:"HDR" request.
         UINT32 signalledTransfer = 0;
         if (SUCCEEDED(type->GetUINT32(MF_MT_TRANSFER_FUNCTION, &signalledTransfer))
             && signalledTransfer != MFVideoTransFunc_Unknown)
@@ -1543,24 +1537,11 @@ namespace winrt::Ripcord::Media::Interop::implementation
         PresentLatestFrame();
     }
 
-    /// Identify the codec of an Annex B access unit from its NAL headers.
-    ///
-    /// Ground truth beats configuration here. The console has already been observed to ignore a launchSpec field
-    /// it does not care for (yuvCoefficient), so "we asked for HEVC" is not evidence that HEVC is arriving — and
-    /// feeding H.264 to an HEVC decoder produces exactly the failure seen in the wild: every packet accepted,
-    /// MF_E_TRANSFORM_NEED_MORE_INPUT forever, no frame, no error.
-    ///
-    /// The two codecs differ in their NAL header, which makes a parameter set unambiguous:
-    ///   H.264 — 1 byte,  nal_unit_type = b0 & 0x1F        -> 7 = SPS, 8 = PPS
-    ///   HEVC  — 2 bytes, nal_unit_type = (b0 >> 1) & 0x3F -> 32 = VPS, 33 = SPS, 34 = PPS
-    /// Types 32-34 cannot occur in H.264 (its field is 5 bits, max 31), so finding one settles it. Frames alone
-    /// are ambiguous, so an access unit with no parameter set yields no verdict rather than a guess.
     // Is HDR static metadata present in the BITSTREAM, as opposed to on the decoder's output media type?
     //
     // Media Foundation decoders do not reliably surface ST 2086 / CTA-861.3 metadata as media-type
-    // attributes, so "the output type carries none" cannot distinguish a stream that genuinely has none from
-    // a decoder that simply did not forward it. Reading the SEI ourselves separates those two, and the
-    // demuxer already hands us the decrypted Annex-B before it reaches the decoder.
+    // attributes, so "the output type carries none" cannot distinguish a stream that has none from a decoder
+    // that did not forward it. The demuxer already hands us the decrypted Annex-B, so the SEI is read here.
     //
     // HEVC NAL header is 2 bytes; type = (byte0 >> 1) & 0x3F. 39 = PREFIX_SEI, 40 = SUFFIX_SEI. Within an SEI
     // RBSP the messages are (type, size, payload) triplets, each of type and size being a run of 0xFF bytes
@@ -1637,24 +1618,22 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
     /// Whether a two-byte NAL header is an HEVC VPS, SPS or PPS.
     ///
-    /// The type alone is NOT sufficient, and assuming it was is what put an H.264 stream through an HEVC
-    /// decoder and produced a black screen with healthy audio. HEVC's header is two bytes —
+    /// The type alone is NOT sufficient: testing only the type puts an H.264 stream through an HEVC decoder (a
+    /// black screen with healthy audio). HEVC's header is two bytes —
     ///
     ///     b0 = forbidden_zero(1) | nal_unit_type(6) | nuh_layer_id high bit(1)
     ///     b1 = nuh_layer_id low bits(5) | nuh_temporal_id_plus1(3)
     ///
-    /// — and an H.264 slice header is ONE byte, forbidden_zero(1) | nal_ref_idc(2) | nal_unit_type(5). A
-    /// perfectly ordinary H.264 slice with nal_ref_idc = 2 is 0x41 for a non-IDR slice and 0x45 for an IDR, and
-    /// (0x41 >> 1) & 0x3F is 32 — exactly VPS_NUT. Every H.264 stream is full of those bytes, so the type test
-    /// on its own does not distinguish the codecs at all; it merely happened to be reached first.
+    /// — and an H.264 slice header is ONE byte, forbidden_zero(1) | nal_ref_idc(2) | nal_unit_type(5). An
+    /// ordinary H.264 slice with nal_ref_idc = 2 is 0x41 for a non-IDR slice and 0x45 for an IDR, and
+    /// (0x41 >> 1) & 0x3F is 32 — exactly VPS_NUT.
     ///
-    /// What does distinguish them is the rest of the header, which H.264 was never writing. Parameter sets are
-    /// base layer and TemporalId 0, so nuh_layer_id must be 0 and nuh_temporal_id_plus1 must be 1 — and
-    /// nuh_temporal_id_plus1 = 0 is forbidden outright by the spec. The 0x41,0x00 from the report decodes as
-    /// layer_id 32 and temporal_id_plus1 0: two independent violations, and now two independent rejections.
+    /// What distinguishes them is the rest of the header. Parameter sets are base layer and TemporalId 0, so
+    /// nuh_layer_id must be 0 and nuh_temporal_id_plus1 must be 1 (0 is forbidden outright by the spec). The
+    /// H.264 pair 0x41,0x00 decodes as layer_id 32 and temporal_id_plus1 0, and is rejected on both counts.
     ///
-    /// (H.264 and HEVC parameter-set encodings are disjoint, so order no longer matters either: no HEVC
-    /// VPS/SPS/PPS first byte — 0x40, 0x42, 0x44 — reads as an H.264 SPS or PPS, whose types are 7 and 8.)
+    /// (H.264 and HEVC parameter-set encodings are disjoint, so order does not matter: no HEVC VPS/SPS/PPS first
+    /// byte — 0x40, 0x42, 0x44 — reads as an H.264 SPS or PPS, whose types are 7 and 8.)
     static bool IsHevcParameterSet(uint8_t b0, uint8_t b1)
     {
         if ((b0 & 0x80) != 0)
@@ -1686,6 +1665,18 @@ namespace winrt::Ripcord::Media::Interop::implementation
         return type == 7 || type == 8;
     }
 
+    /// Identify the codec of an Annex B access unit from its NAL headers.
+    ///
+    /// The bitstream decides, not the configuration: the console has been observed to ignore a launchSpec field
+    /// it does not care for (yuvCoefficient), so "we asked for HEVC" is not evidence that HEVC is arriving, and
+    /// H.264 fed to an HEVC decoder fails silently: every packet accepted, MF_E_TRANSFORM_NEED_MORE_INPUT
+    /// forever, no frame, no error.
+    ///
+    /// The two codecs differ in their NAL header, which makes a parameter set unambiguous:
+    ///   H.264 — 1 byte,  nal_unit_type = b0 & 0x1F        -> 7 = SPS, 8 = PPS
+    ///   HEVC  — 2 bytes, nal_unit_type = (b0 >> 1) & 0x3F -> 32 = VPS, 33 = SPS, 34 = PPS
+    /// A type alone does not settle it (see IsHevcParameterSet), so both header checks are applied. Frames alone
+    /// are ambiguous, so an access unit with no parameter set yields no verdict rather than a guess.
     static bool DetectAnnexBCodec(
         const uint8_t* data, size_t length, VideoCodecKind& detected, uint8_t& firstNal0, uint8_t& firstNal1)
     {
@@ -1728,9 +1719,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             }
 
             // Only a parameter set is allowed to decide this. A slice cannot: its header carries nothing that
-            // separates the two codecs, which is precisely how an H.264 P-slice came to be read as an HEVC VPS.
-            // An access unit with no parameter sets is simply unclassifiable, and the caller retries — which it
-            // already did, having been written for exactly that case.
+            // separates the two codecs (by type alone an H.264 P-slice reads as an HEVC VPS).
+            // An access unit with no parameter sets is simply unclassifiable, and the caller retries.
             if (IsHevcParameterSet(b0, b1))
             {
                 detected = VideoCodecKind::Hevc;
@@ -1760,8 +1750,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             return;
         }
 
-        // Record the head of the first payload unconditionally. Previously this was only captured when a start
-        // code was found, so "nothing recognised" and "detector never ran" both reported 00,00 — indistinguishable.
+        // Record the head of the first payload unconditionally, start code or not, so "nothing recognised" and
+        // "detector never ran" do not both report 00,00.
         if (!m_sawFirstPayload)
         {
             m_sawFirstPayload = true;
@@ -1773,8 +1763,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         // Choose the decoder from what is actually arriving. Retried on every submit until a verdict is reached,
         // NOT only on the first: an access unit carries no parameter sets unless it is a keyframe, so the first
-        // one to arrive is frequently unclassifiable. Getting one attempt meant a single inconclusive frame
-        // locked in whatever codec was configured.
+        // one to arrive is frequently unclassifiable. With one attempt, a single inconclusive frame would
+        // lock in whatever codec was configured.
         // Bounded: SEI accompanies IRAP frames, so a few hundred access units either finds it or establishes
         // that the encoder does not send it. Unbounded scanning would walk every byte of every frame forever.
         if (m_codec == VideoCodecKind::Hevc
@@ -2014,10 +2004,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
     hstring VideoRenderer::ColorMatrixDescription()
     {
-        // Distinguish "the stream told us" from "we picked a default", and name the rule behind the default —
-        // an unsignalled HEVC stream now reports BT.709 because HD content from this console is BT.709, which is
-        // not something the earlier "matches vendor request" wording could express (the console ignores that
-        // request outright).
+        // Distinguish "the stream told us" from "we picked a default". An unsignalled HD stream reports BT.709
+        // because HD content from this console is BT.709 (the console ignores the launchSpec's request).
         std::wstring desc = m_yuvMatrix == 1 ? L"BT.709" : L"BT.601";
         if (!m_yuvMatrixSignalled)
         {
@@ -2027,16 +2015,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
             desc += L" (assumed)";
         }
 
-        // Transfer and primaries belong on the colour row too. They used to be appended to the decoder
-        // string, so the overlay reported colour in two places at once - matrix here, transfer over there -
-        // and neither line was the whole answer.
+        // Transfer and primaries belong on the colour row too, so the overlay reports colour in one place.
         desc += L" \u00B7 ";
         if (m_transferFunctionSignalled)
         {
             switch (m_transferFunction)
             {
-            // The full SDR set, not just the HDR ones. A real session signalled MFVideoTransFunc_22 and the
-            // row read "transfer 4", which is a number the reader then has to go and look up.
+            // The full SDR set, not just the HDR ones. A real session signals MFVideoTransFunc_22, and unnamed
+            // the row reads "transfer 4", which is a number the reader then has to go and look up.
             case MFVideoTransFunc_2084: desc += L"PQ"; break;
             case MFVideoTransFunc_HLG:  desc += L"HLG"; break;
             case MFVideoTransFunc_709:  desc += L"BT.709 gamma"; break;
@@ -2057,7 +2043,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
             desc += m_tenBitOutput ? L"transfer assumed PQ" : L"transfer unsignalled";
         }
 
-        // Primaries only when they are the notable ones. BT.709 primaries alongside a BT.709 matrix rendered
+        // Primaries only when they are the notable ones. BT.709 primaries alongside a BT.709 matrix would render
         // as "BT.709 ... BT.709", which reads like a repetition rather than two facts; wide gamut is the case
         // worth calling out, and it is the one that accompanies HDR.
         if (m_videoPrimariesSignalled && m_videoPrimaries == MFVideoPrimaries_BT2020)
@@ -2187,7 +2173,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         }
 
         // Reverse: D3D12 signals when the render path has finished sampling the shared texture, so the next
-        // conversion can safely overwrite it. This replaces the per-frame GPU drain as the write/read barrier.
+        // conversion can safely overwrite it. This is the write/read barrier; there is no per-frame GPU drain.
         return share(m_readFence, m_readFence11, 19, 20, 21);
     }
 
@@ -2230,13 +2216,12 @@ namespace winrt::Ripcord::Media::Interop::implementation
         td.Height = targetHeight;
         td.DepthOrArraySize = 1;
         td.MipLevels = 1;
-        // The video processor's output format follows the display the window is on NOW, not the swap chain,
-        // whose format was fixed at connect. A session started on an HDR display has a 10-bit swap chain, and
-        // after a drag to an SDR display the processor was still asked to tone-map PQ into a 10-bit target.
-        // On hardware (2026-09-30) that came out washed out, while a session started on the SDR display, whose
-        // target is 8-bit, looked right - consistent with the driver skipping the tone-map for a 10-bit
-        // output [X]. So an SDR display always gets the 8-bit target a session started there would have. The
-        // present pass samples this texture into the swap chain, so the two formats need not match.
+        // The video processor's output format follows the display the window is on NOW. Asked to tone-map PQ
+        // into a 10-bit target for an SDR display (a session started on an HDR display and dragged to an SDR
+        // one), the picture came out washed out on hardware (2026-09-30), while a session started on the SDR
+        // display, whose target is 8-bit, looked right - consistent with the driver skipping the tone-map for
+        // a 10-bit output [X]. So an SDR display always gets the 8-bit target a session started there would
+        // have. The present pass samples this texture into the swap chain, so the two formats need not match.
         //
         // An HDR10 stream on an SDR display is the exception: the processor writes it as PQ into a 10-bit texture,
         // untouched, and the present shader tone-maps it (HdrToneMap). The swap chain stays 8-bit SDR.
@@ -2312,8 +2297,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 // depth; PQ is a transfer function; they are independent. Declaring PQ over a 10-bit BT.709
                 // stream would tone-map a picture that needs none, flattening it.
                 //
-                // Absent signalling we keep the previous behaviour (assume PQ for 10-bit), so this cannot
-                // regress a working picture - same conservative rule the YUV-matrix read above uses.
+                // Absent signalling, a 10-bit stream is assumed to be PQ and BT.2020.
                 const bool wideGamut = !m_videoPrimariesSignalled || m_videoPrimaries == MFVideoPrimaries_BT2020;
                 DXGI_COLOR_SPACE_TYPE inputSpace;
                 if (m_transferFunctionSignalled && m_transferFunction == MFVideoTransFunc_HLG)
@@ -2334,7 +2318,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 }
 
                 // Present HDR natively only when both halves hold. Otherwise ask the driver to tone-map into
-                // SDR sRGB, which is the right answer on an SDR panel and the reason this path existed.
+                // SDR sRGB, which is the right answer on an SDR panel.
                 m_presentingHdr = m_hdrTransfer && m_displayHdrCapable;
 
                 const DXGI_COLOR_SPACE_TYPE outputSpace =
@@ -2394,9 +2378,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
             m_toneMapInShader = false;   // no PQ output was set up, so there is nothing for the shader to undo
         }
 
-        // The legacy output description only where the DXGI one was not set. Called after it unconditionally, as
-        // this was, it overrode the output primaries: a BT.2020 output came back as BT.709, and the shader's
-        // BT.2020-to-BT.709 step then converted it a second time, turning orange marigolds red. Measured against an
+        // The legacy output description only where the DXGI one was not set. Called after it unconditionally, it
+        // overrides the output primaries: a BT.2020 output comes back as BT.709, and the shader's
+        // BT.2020-to-BT.709 step then converts it a second time, turning orange marigolds red. Measured against an
         // FFmpeg decode of the same HDR stream (2026-10-03): green-to-red in the blooms 0.33 here, 0.60 offline,
         // 0.29 offline with the conversion applied twice.
         if (!colorSpaceSet)
@@ -2481,8 +2465,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             if (FAILED(hr)) { RecordZeroCopyFailure(10, hr); return false; }
 
             // The conversion below overwrites the shared texture, so it must not begin until the render path
-            // has finished sampling the PREVIOUS frame out of it. Previously the full GPU drain after Present
-            // guaranteed that implicitly; now the render path signals m_readFence and we wait on it here.
+            // has finished sampling the PREVIOUS frame out of it. The render path signals m_readFence when it
+            // has, and we wait on it here.
             // A GPU-side wait, so it costs no CPU stall. (m_readFenceValue is only touched from the decode
             // worker, which is also the thread that presents — see D3D12VideoDecodePipeline's WorkerLoop.)
             if (m_readFenceValue != 0)
@@ -2603,7 +2587,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
             // Reverse-direction sync: tell the D3D11 side that this frame's read of the shared texture is
             // retired, so the next VideoProcessorBlt may overwrite it. This is what makes it safe for
-            // EndFrame to return without draining the GPU (the drain used to serve this purpose).
+            // EndFrame to return without draining the GPU.
             const UINT64 readComplete = ++m_readFenceValue;
             ThrowIfFailed(m_commandQueue->Signal(m_readFence.Get(), readComplete));
         }
@@ -2798,7 +2782,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
     void VideoRenderer::CreatePeakPipeline()
     {
-        // Best-effort: without it the tone-map keeps the fixed HDR source peak, which is what it used before.
+        // Best-effort: without it the tone-map keeps the fixed HDR source peak.
         try
         {
             D3D12_DESCRIPTOR_RANGE ranges[2] = {};
@@ -3253,7 +3237,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         const uint32_t frameIndex = m_swapChain->GetCurrentBackBufferIndex();
 
         // 2. Wait only for the work previously submitted for THIS slot. The other FrameCount-1 frames remain
-        //    in flight, which is exactly the overlap the old per-present WaitForGpu() destroyed.
+        //    in flight, which is exactly the overlap a per-present WaitForGpu() would destroy.
         const uint64_t slotFence = m_frameFenceValues[frameIndex];
         if (slotFence != 0 && m_fence->GetCompletedValue() < slotFence)
         {
@@ -3279,7 +3263,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         //
         // Present is where device loss actually surfaces (driver update, TDR, eGPU unplug). Record it and
         // return quietly instead of throwing: the managed side polls IsDeviceLost and rebuilds, whereas
-        // throwing here just produced "frame skipped" in a loop behind a frozen picture.
+        // throwing here would just produce "frame skipped" in a loop behind a frozen picture.
         HRESULT presentHr = m_swapChain->Present(0, 0);
         if (NoteDeviceLoss(presentHr))
         {
@@ -3318,9 +3302,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
         CreateRenderTargets();
     }
 
-    // Once only, and never throwing. It ran twice (the pipeline's dispose, then the destructor), and after the
-    // display driver reset (device removed) WaitForGpu's Signal failed and threw: out of the pipeline's dispose,
-    // skipping the audio's release behind it, and then out of the destructor (review, 2026-10-05). On a removed
+    // Once only, and never throwing. It is called twice (the pipeline's dispose, then the destructor), and after
+    // a display driver reset (device removed) WaitForGpu's Signal fails: thrown, that would leave the pipeline's
+    // dispose, skipping the audio's release behind it, and then the destructor. On a removed
     // device there is no GPU work left to wait for, so the wait is skipped.
     void VideoRenderer::Shutdown()
     {

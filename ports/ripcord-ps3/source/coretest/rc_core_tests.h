@@ -1,22 +1,17 @@
 /*
  * ripcord-ps3 - run libripcord's own test suites on the console.
  *
- * WHY. Every assertion in libripcord has only ever been checked on little-endian x86. The PPE is
- * big-endian. openh264 was in exactly that position two days ago and the answer turned out to be fine -
- * but it was established by decoding 400 MB and comparing hashes, not by reading the source and
- * concluding it looked careful. The core deserves the same standard, and it is the code every port
- * shares: a latent byte-order assumption in the Takion reassembler or the FEC tables would surface as a
- * session that connects and then drops, on one platform, with nothing in the log.
+ * The host suites check libripcord on little-endian x86, and the PPE is big-endian.
+ * The core is the code every port shares: a latent byte-order assumption in the Takion reassembler or
+ * the FEC tables would surface as a session that connects and then drops, on one platform, with nothing
+ * in the log. Reading says it should be clean - 28 sites assemble multi-byte values with explicit shifts
+ * and there is not one multi-byte pointer cast in the transport, stream, session or util layers - and
+ * 2,912 assertions passing on the hardware is the result.
  *
- * Reading says it should be clean - 28 sites assemble multi-byte values with explicit shifts and there
- * is not one multi-byte pointer cast in the transport, stream, session or util layers. That is an
- * argument. 2,912 assertions passing on the hardware is a result.
- *
- * SEVEN OF THE ELEVEN RUNNERS, and the split is not arbitrary: these are the ones that need no external
- * vector file. The other four read .kat files emitted by the .NET side, which means getting those onto
- * the console and is a second step rather than a harder one. What is covered here is FEC, the Takion
- * transport and reassembler, stream framing and demux, discovery, the control session and input
- * encoding - all of it pure logic over bytes, which is precisely where byte order hides.
+ * SEVEN OF THE ELEVEN RUNNERS BUILT HERE need no external vector file. The other four read .kat files
+ * emitted by the .NET side, which have to be copied onto the console. Covered by the seven: FEC, the
+ * Takion transport and reassembler, stream framing and demux, discovery, the control session and input
+ * encoding.
  */
 #ifndef RC_CORE_TESTS_H
 #define RC_CORE_TESTS_H
@@ -48,8 +43,9 @@ typedef struct {
 } rc_core_test_result;
 
 /*
- * Runs all seven. Returns the number that FAILED, so zero is success. `results` is filled in order and
- * must hold RC_CORE_TEST_COUNT entries.
+ * Runs all eleven; a vector-backed runner whose file is absent is marked skipped and does not count as
+ * a failure. Returns the number that FAILED, so zero is success. `results` is filled in order and must
+ * hold RC_CORE_TEST_COUNT entries.
  *
  * The runners print their own detail with printf, which on this platform goes to a TTY nobody is
  * reading, so the caller redirects stdout to a file first and replays it afterwards - see main.c. That

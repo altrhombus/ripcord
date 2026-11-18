@@ -7,16 +7,14 @@ namespace Ripcord.Presentation.Threading;
 /// THE RULE, stated here and nowhere else: a view-model in this layer never marshals at its call sites. It
 /// mutates through one central helper, which is the only place a post happens. Consequently every field a
 /// view-model owns is read and written on the dispatcher thread alone, and <em>nothing in this layer takes a
-/// lock</em>. That is a deliberate difference from <c>SessionController</c>, which genuinely is multi-threaded
-/// and pays for it with a gate and volatile reads throughout.
+/// lock</em>. <c>SessionController</c>, by contrast, is multi-threaded, with a gate and volatile reads.
 /// </para>
 ///
 /// <para>
-/// This is the counterpart to <c>SessionController</c>'s threading contract, not a contradiction of it. That
-/// class documents that its observers are notified from whichever thread caused the change and that "a UI
-/// consumer must marshal to its own dispatcher". A view-model here <em>is</em> that consumer, and it discharges
-/// the obligation once, on behalf of the whole layer. Every other arbitrary-thread source — discovery
-/// callbacks, reachability probes, settings-changed events — arrives the same way.
+/// <c>SessionController</c> notifies its observers from whichever thread caused the change and documents that
+/// "a UI consumer must marshal to its own dispatcher". A view-model here <em>is</em> that consumer, and it
+/// discharges the obligation once, on behalf of the whole layer. Every other arbitrary-thread source —
+/// discovery callbacks, reachability probes, settings-changed events — arrives the same way.
 /// </para>
 /// </summary>
 public interface IUiDispatcher

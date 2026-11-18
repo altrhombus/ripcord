@@ -54,7 +54,7 @@ public class HdrToneMapTests
     [Fact]
     public void Highlights_KeepTheirDetail()
     {
-        // The point of the exercise: 500 and 800 nits used to arrive as the same clipped white. They stay apart.
+        // The point of the exercise: 500 and 800 nits must not arrive as the same clipped white. They stay apart.
         double at500 = HdrToneMap.ToSdr(HdrToneMap.NitsToPq(500), HdrToneMap.NitsToPq(500), HdrToneMap.NitsToPq(500)).R;
         double at800 = HdrToneMap.ToSdr(HdrToneMap.NitsToPq(800), HdrToneMap.NitsToPq(800), HdrToneMap.NitsToPq(800)).R;
 
@@ -151,7 +151,7 @@ public class HdrToneMapTests
     [InlineData(120)]
     public void Tracker_FollowsTime_NotFrames(int fps)
     {
-        // It counted frames, so at 30 fps it was twice as slow as at 60 (2026-10-05).
+        // A tracker that counts frames is twice as slow at 30 fps as at 60.
         var tracker = new HdrToneMap.PeakTracker();
         tracker.Update(300, 0);
         for (int i = 0; i < fps; i++) tracker.Update(900, 1.0 / fps);   // one second, at any frame rate

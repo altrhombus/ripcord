@@ -3,8 +3,8 @@
  *
  * WHAT THIS HOLDS IN PLACE.
  *
- *   1. THE TCP PATH DID NOT MOVE. halyard_control_session.c is hardware-validated on the 3DS and the PS3,
- *      and the seam put its four socket calls behind a pointer. So a loopback console (a thread, 127.0.0.1
+ *   1. THE TCP PATH, THROUGH THE SEAM. halyard_control_session.c is hardware-validated on the 3DS and the
+ *      PS3, and its four socket calls sit behind a pointer. So a loopback console (a thread, 127.0.0.1
  *      only) takes /sess/init and /sess/ctrl from it and the bytes are compared, whole, with the request
  *      this file assembles independently from the primitives - the header set, its order, the five fields
  *      at counters 0-4. Then the binary channel: a heartbeat answered, a passcode at counter 5, a field

@@ -204,8 +204,8 @@ public class HalyardDatagramSessionControlChannelTests
     }
 
     /// <summary>
-    /// A running control channel may be quiet for longer than a stage, and that is not a failure. It used to
-    /// carry the 30 s stage deadline, and the keep-alive loop swallowed the timeout and stopped answering
+    /// A running control channel may be quiet for longer than a stage, and that is not a failure. A read
+    /// that carried the stage deadline would time out in the keep-alive loop, which would stop answering
     /// heartbeats while the session went on. Here the stage is 150 ms and the read outlives it by far, ending
     /// only when the caller cancels.
     /// </summary>

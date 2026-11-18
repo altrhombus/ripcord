@@ -13,13 +13,8 @@ void rc_program_dir(const char *argv0, char *out, size_t out_size)
         memcpy(out, argv0, dirlen);
         out[dirlen] = '\0';
     } else {
-        /* No argv[0] to derive from - fall back to the platform's writable root.
-         *
-         * This default used to be "sdmc:/" unconditionally, which was correct and invisible for as long
-         * as the 3DS was the only port: nothing on that platform ever reaches it with a path that
-         * matters. On the Vita it is simply a nonexistent device, and the only symptom would have been
-         * a log file that silently never appeared. Each port defines its own; the 3DS keeps the value
-         * it always had. */
+        /* No directory in argv[0] to derive from - fall back to the platform's writable root, which a
+         * port sets through RC_PROGRAM_DIR_FALLBACK (see the header). */
         strncpy(out, RC_PROGRAM_DIR_FALLBACK, out_size - 1);
         out[out_size - 1] = '\0';
     }

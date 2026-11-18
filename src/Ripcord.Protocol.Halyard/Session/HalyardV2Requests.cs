@@ -7,10 +7,9 @@ namespace Ripcord.Protocol.Halyard.Session;
 
 /// <summary>
 /// The v2 (GCM) control-plane HTTP requests (v2 spec §3–§4). Pure builders so the header
-/// sets are testable without a live console. This covers the v2 <c>/sess/init</c> (the vendor's "type 1"), which
-/// adds <c>RP-Pubkey</c> + <c>RP-Hmac</c> to the v1 header set; init2 and the GCM-enveloped <c>/sess/ctrl</c>
-/// land with the <c>ConnectAsync</c> flow (their exact HTTP shape has open <c>[X]</c>s pinned by the hardware
-/// capture).
+/// sets are testable without a live console. Covers the v2 <c>/sess/init</c> (the vendor's "type 1"), which
+/// adds <c>RP-Pubkey</c> + <c>RP-Hmac</c> to the v1 header set, <c>/sess/init2</c>, and the GCM-enveloped
+/// <c>/sess/ctrl</c>. The <c>[X]</c>s in their HTTP shape are marked where they sit.
 /// </summary>
 internal static class HalyardV2Requests
 {

@@ -9,16 +9,16 @@ using Ripcord.Protocol.Halyard.Transport;
 namespace Ripcord.Protocol.Halyard.Session;
 
 /// <summary>
-/// Constructs direct-console <see cref="HalyardStreamingSession"/> instances — the integration seam the
-/// connect path was missing (nothing previously built a session). Each <see cref="Create"/> gets a fresh
-/// control channel and a fresh session crypto (the crypto is stateful: it holds the control key after
-/// <c>EstablishControl</c> and the per-direction stream keys after key agreement), sharing the injected
-/// credential store.
+/// Constructs direct-console <see cref="HalyardStreamingSession"/> instances. Each <c>Create</c> gets a
+/// fresh session crypto (the crypto is stateful: it holds the control key after <c>EstablishControl</c> and
+/// the per-direction stream keys after key agreement) and, unless the caller supplies one, a fresh TCP
+/// control channel, sharing the injected credential store.
 ///
 /// <para>
-/// When the captures-folder control secrets are present the real <see cref="HalyardV1SessionCrypto"/> is used;
-/// otherwise it falls back to <see cref="PassthroughHalyardSessionCrypto"/> so the handshake is still
-/// well-formed for replay/testing but a real console rejects it at the MAC check.
+/// When control secrets were supplied the real <see cref="HalyardV1SessionCrypto"/> is used; otherwise it
+/// falls back to <see cref="PassthroughHalyardSessionCrypto"/> so the handshake is still well-formed for
+/// replay/testing but a real console rejects it. <see cref="CreateDefault"/> takes the secrets from
+/// <see cref="HalyardControlSecretsLoader"/>, which ends at the constants bundled with the build.
 /// </para>
 /// </summary>
 public sealed class HalyardSessionFactory
@@ -38,11 +38,11 @@ public sealed class HalyardSessionFactory
         _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
     }
 
-    /// <summary>True when the real control crypto is available (captures-folder secrets injected).</summary>
+    /// <summary>True when the real control crypto is available (control secrets were injected).</summary>
     public bool HasRealCrypto => _controlSecrets is not null;
 
-    /// <summary>Build the default factory: load the control secrets from the fixture and use the per-user
-    /// file credential store. <paramref name="cryptoSource"/> reports where the secrets came from (or why not).</summary>
+    /// <summary>Build the default factory: load the control secrets (a local fixture when one is found,
+    /// otherwise the constants bundled with the build) and use the per-user file credential store. <paramref name="cryptoSource"/> reports where the secrets came from (or why not).</summary>
     public static HalyardSessionFactory CreateDefault(out string cryptoSource)
     {
         HalyardControlSecrets? secrets = HalyardControlSecretsLoader.Load(out cryptoSource);
@@ -79,12 +79,11 @@ public sealed class HalyardSessionFactory
             ? new PassthroughHalyardSessionCrypto()
             : new HalyardV1SessionCrypto(_controlSecrets);
 
-        // Opt-in v2 diagnostic (RIPCORD_V2_HANDSHAKE): with real control secrets present, also build the v2
-        // session crypto and hand it to the session. The session runs the v2 control handshake only when the
-        // console's pairing actually selects v2 (HalyardInitSelection: RP-SupportGcm or a held rolled token);
-        // otherwise it uses the v1 crypto above, byte-for-byte as before. The v2 handshake path stops at the
-        // persistent v2 control channel, which is not yet implemented, so this changes nothing for a normal
-        // connect unless the flag is deliberately set against a v2-capable console.
+        // The v2 control plane is opt-in (RIPCORD_V2_HANDSHAKE): with real control secrets present, also build
+        // the v2 session crypto and hand it to the session. The session runs the v2 control handshake, and the
+        // RPCS channel and stream after it, only when the console's pairing selects v2 (HalyardInitSelection:
+        // RP-SupportGcm or a held rolled token); otherwise it uses the v1 crypto above. Without the flag a
+        // connect is v1 whatever the console supports.
         HalyardV2SessionCrypto? v2Crypto =
             _controlSecrets is not null && V2HandshakeOptIn
                 ? new HalyardV2SessionCrypto(_controlSecrets)
@@ -96,9 +95,8 @@ public sealed class HalyardSessionFactory
     }
 
     /// <summary>
-    /// The opt-in for the v2 control-handshake diagnostic path (<c>RIPCORD_V2_HANDSHAKE</c>). Off by default:
-    /// the live v2 path stops at the persistent control channel (not yet implemented), so it is gated behind this
-    /// flag and never changes a normal (v1) connect.
+    /// The opt-in for the v2 control plane (<c>RIPCORD_V2_HANDSHAKE</c>, any non-empty value). Off by default,
+    /// and without it every connect uses the v1 control plane.
     /// </summary>
     internal static bool V2HandshakeOptIn =>
         Environment.GetEnvironmentVariable("RIPCORD_V2_HANDSHAKE") is { Length: > 0 };

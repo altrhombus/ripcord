@@ -13,11 +13,10 @@ public readonly record struct ConnectionQualityReport(
 /// Decides <em>when</em> to tell the console about our link, and what to say.
 ///
 /// <para>
-/// Two things make this worth separating from the send itself. First, the cadence matters: the statistics that
-/// drive it arrive five times a second, and sending a control message at that rate would add avoidable uplink
-/// traffic and give the console's own rate controller no time to settle between changes. Second, the interesting
-/// event is a <em>change</em> in what we want — that should go out promptly — while unchanged state only needs a
-/// periodic refresh so the console knows we are still measuring.
+/// The statistics that drive it arrive five times a second; sending a control message at that rate would add
+/// avoidable uplink traffic and give the console's own rate controller no time to settle between changes. A
+/// <em>change</em> in what we want goes out promptly; unchanged state gets only a periodic refresh so the
+/// console knows we are still measuring.
 /// </para>
 ///
 /// <para>Pure and clock-injected, so the cadence policy is testable without a console or a delay.</para>

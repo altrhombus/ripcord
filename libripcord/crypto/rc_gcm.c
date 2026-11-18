@@ -12,12 +12,6 @@ static void xor_block(uint8_t *target, const uint8_t *value)
         target[i] ^= value[i];
 }
 
-/*
- * Multiply x by y in GF(2^128), in place: x := x * y. Bit-serial - ported directly from
- * AesGcmCore.GfMulBitSerial, the same reference implementation the .NET side's own hardware-accelerated
- * paths are differentially tested against, so this is the "slow but certainly correct" form on both
- * sides, not a simplification unique to this port.
- */
 static uint32_t load_be32(const uint8_t *p)
 {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
@@ -168,8 +162,8 @@ static void write_be64(uint8_t *p, uint64_t value)
         p[i] = (uint8_t)(value >> (8 * (7 - i)));
 }
 
-/* J0 = GHASH_H( IV || 0^s || [len(IV)]_64 ), the non-96-bit-IV path - see this file's header comment for
- * why the 96-bit shortcut is not implemented (this protocol never uses a 12-byte IV). */
+/* J0 = GHASH_H( IV || 0^s || [len(IV)]_64 ), the non-96-bit-IV path. There is no 96-bit shortcut: this
+ * protocol never uses a 12-byte IV (see rc_gcm.h's header). */
 static void compute_j0(uint8_t j0[BLOCK_SIZE], const rc_gmac_key *gk, const uint8_t *iv, size_t iv_len)
 {
     uint8_t y[BLOCK_SIZE];
@@ -228,7 +222,7 @@ void rc_gmac_with_key(const rc_gmac_key *gk, const uint8_t *iv, size_t iv_len,
 
     memset(len_block, 0, sizeof(len_block));
     write_be64(len_block, (uint64_t)aad_len * 8);
-    write_be64(len_block + 8, 0); /* ciphertext length is always 0 - see the file header comment */
+    write_be64(len_block + 8, 0); /* ciphertext length is always 0 - see rc_gcm.h */
     ghash_block(s, gk, len_block);
 
     /* tag = E_K(J0) XOR S (GCTR of a single block is just one AES-ECB block) */

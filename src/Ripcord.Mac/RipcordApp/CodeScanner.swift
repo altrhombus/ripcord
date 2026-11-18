@@ -7,8 +7,8 @@
 // PairingCodeReader decides what counts as the code. Nothing is sent anywhere: the frames go no further than
 // the recogniser.
 //
-// [X] until it has read a real console's screen: that the code is legible through a phone camera at couch
-// distance, and that the recogniser reads it as digits.
+// [X]: that the code is legible through a phone camera at couch distance, and that the recogniser reads it
+// as digits.
 
 // AVCaptureSession predates Sendable; Apple documents starting and stopping it off the main thread, which is
 // what the frames queue is for.

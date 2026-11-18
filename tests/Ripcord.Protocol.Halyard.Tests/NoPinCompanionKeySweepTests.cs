@@ -10,20 +10,21 @@ using Xunit.Abstractions;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The companion-keyed sweep for the no-PIN registration transport key.
+/// A sweep of companion-keyed candidates for the no-PIN registration transport key, asserting that none of
+/// them is the key.
 ///
 /// <para>
-/// The remaining hypothesis after table entries and cloud <c>data1/2</c> were both ruled out: on the account
-/// route the passcode fold is replaced by the <b>companion</b> (<c>RP-Key</c>, the stable per-console secret),
-/// so <c>K = f(companion, context, …)</c>. We hold the companion and the context, and — because the response
-/// is AES-128-CFB and its plaintext (the registkey) is known — any candidate <c>K</c> is verified instantly and
+/// Each candidate replaces the PIN route's passcode fold with the <b>companion</b> (<c>RP-Key</c>, the stable
+/// per-console secret): <c>K = f(companion, context, …)</c>, one single-stage function per candidate. Because
+/// the response is AES-128-CFB and its plaintext (the registkey) is known, any candidate <c>K</c> is verified
 /// with certainty by the IV-free block oracle. This is a function search, not a cryptanalytic attack.
 /// </para>
 ///
 /// <para>
-/// Reports every candidate that recovers the captured registkey. If it finds one, the no-PIN key schedule is
-/// solved; if it finds none, <c>K</c> is not a simple function of the companion + the material we hold, and the
-/// next step is a fresh instrumented capture. Skips when the captures-folder fixture is absent.
+/// Fails, printing the label, if any candidate recovers a pairing record from the captured response. The
+/// derivation the account route does use (<c>seed XOR registrationTable[selector]</c>, the seed delivered
+/// over the cloud) is pinned by <see cref="LiveAccountKeyPathVectorTests"/>. Skips when the captures-folder
+/// fixture is absent.
 /// </para>
 /// </summary>
 public class NoPinCompanionKeySweepTests(ITestOutputHelper output)
@@ -50,7 +51,7 @@ public class NoPinCompanionKeySweepTests(ITestOutputHelper output)
         HalyardRegistrationSecrets secrets = bundled!.Value.Secrets;
         byte[] tableEntry = secrets.TableEntry(context[secrets.SelectorOffset] & 0x1f).ToArray();
 
-        // The material the client transmitted inside the context — the field IV depends on it, and K might too.
+        // The context's material as the PIN-route unwrap (RecoverMaterial) reads it; one of the candidate inputs.
         byte[] material = new HalyardRegistrationCipher(
             new HalyardRegistrationKdf(secrets, bundled.Value.VersionSelector), bundled.Value.ContextKey)
             .RecoverMaterial(context);
@@ -119,13 +120,10 @@ public class NoPinCompanionKeySweepTests(ITestOutputHelper output)
             _output.WriteLine($"HIT: {hit}");
         }
 
-        // The established finding: K is NOT a single-stage function of the companion + the material we hold
-        // (tried direct, reversed, table-XOR, table-fold, HMAC-SHA1/256, SHA-256, AES-ECB, and AES-CMAC over
-        // context / material / registkey / accountId / tableEntry). Combined with the earlier table-entry and
-        // data1/2 negatives, the no-PIN transport key derives from something not in the material we captured —
-        // most likely a per-session secret PSN brokers to both sides (data1/2/3 already falsified) or an
-        // on-device derivation. If this ever fails, a derivation DID work — that is the discovery; the winning
-        // label is printed above.
+        // K is NOT a single-stage function of the companion + the inputs above (direct, reversed, table-XOR,
+        // table-fold, HMAC-SHA1/256, SHA-256, AES-ECB, and AES-CMAC over context / material / registkey /
+        // accountId / tableEntry). A failure here means one of them recovered a pairing record; its label is
+        // printed above.
         Assert.True(
             hits.Count == 0,
             "A companion-derived key DID recover the registkey: " + string.Join("; ", hits)

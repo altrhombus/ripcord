@@ -1,14 +1,10 @@
 /*
  * ripcord - the menu model, on a host, with no screen attached.
  *
- * WHAT IS WORTH TESTING HERE is not that a list holds strings. It is the cursor: every bug this model
- * can have is a cursor that ends up somewhere the person looking at the screen did not put it, and every
- * one of them is invisible in a screenshot and obvious in front of a television. A row that cannot be
- * chosen but takes the highlight reads as a broken Cross button. A wrap that skips the last row hides an
- * option. A list where nothing can be chosen must not loop forever looking for something that can - on a
- * console that is a hang at the menu, with no terminal to find out why.
- *
- * So the cases below are the cursor's, not the container's.
+ * The cases below are the cursor's, not the container's. A row that cannot be chosen but takes the
+ * highlight reads as a broken Cross button. A wrap that skips the last row hides an option. A list
+ * where nothing can be chosen must not loop forever looking for something that can - on a console that
+ * is a hang at the menu.
  */
 #include "../ui/rc_menu.h"
 

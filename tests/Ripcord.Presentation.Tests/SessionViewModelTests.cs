@@ -11,9 +11,9 @@ namespace Ripcord.Presentation.Tests;
 /// The streaming surface's wording and arithmetic.
 ///
 /// <para>
-/// Every case here was previously observable only by connecting to a real console with a real GPU and watching
-/// the overlay — which is to say, not observable at all in any repeatable sense. Several of them encode faults
-/// that were found that way and fixed blind.
+/// Every case here is otherwise observable only by connecting to a real console with a real GPU and watching
+/// the overlay — which is to say, not observable in any repeatable sense. Several of them encode faults found
+/// that way.
 /// </para>
 /// </summary>
 public class SessionViewModelTests
@@ -114,8 +114,8 @@ public class SessionViewModelTests
     [Fact]
     public void ApplyLifecycle_EndedByTheConsole_SaysSoPlainly_AndLeadsBack()
     {
-        // Seen on a power-menu rest: the screen printed the console's own reason as its sentence, and led with a
-        // retry that would wake the console the player had just put to sleep (visual audit, 2026-10-08).
+        // A power-menu rest: the screen must not print the console's own reason as its sentence, nor lead with a
+        // retry that would wake the console the player has just put to sleep.
         (SessionViewModel vm, _, _) = Build();
         vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
 
@@ -130,8 +130,8 @@ public class SessionViewModelTests
     [Fact]
     public void ApplyLifecycle_ReconnectingWithTheNetworkGone_SaysSo_AndKeepsTheSocketWordsSmall()
     {
-        // A dropped Wi-Fi read "Connection failed. Retrying in 2s… (opening the control connection: A socket
-        // operation was attempted to an unreachable host.)" (visual audit, 2026-10-08).
+        // A dropped Wi-Fi must not read "Connection failed. Retrying in 2s… (opening the control connection: A
+        // socket operation was attempted to an unreachable host.)".
         (SessionViewModel vm, _, _) = Build();
         const string raw = "opening the control connection: A socket operation was attempted to an unreachable host.";
 
@@ -159,7 +159,7 @@ public class SessionViewModelTests
     public void StatusOverPicture_OnlyOnceAStreamHasShownOne()
     {
         // The first connect is over black and needs no plate; a reconnect is over the game's last frame and does
-        // (owner, 2026-10-09: the reconnect text was hard to read over the frozen stream).
+        // (the reconnect text is hard to read over the frozen stream).
         (SessionViewModel vm, _, _) = Build();
 
         vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Connecting, "Connecting"));
@@ -189,7 +189,7 @@ public class SessionViewModelTests
     [Fact]
     public void ApplyLifecycle_Connecting_KeepsTheConnectNotice()
     {
-        // The flow's last stage carried the note, and the session's own first status replaced it unseen (2026-10-05).
+        // The flow's last stage carries the note, and the session's own first status must not replace it unseen.
         (SessionViewModel vm, _, _) = Build();
         vm.SetConnectNotice("This stream uses H.264.");
 
@@ -428,7 +428,7 @@ public class SessionViewModelTests
     [Fact]
     public void Adaptive_IsNotShown_EvenWhenTheControllerWantsLess()
     {
-        // Hidden for 1.0 (2026-10-02): nothing acts on the recommendation, so neither it nor its reason is shown.
+        // Hidden: nothing acts on the recommendation, so neither it nor its reason is shown.
         (SessionViewModel vm, FakePipeline pipeline, _) = Build();
         pipeline.Snapshot = new VideoPipelineSnapshot(60, 60, 0, 8, 2, DecodedWidth: 1920, DecodedHeight: 1080);
 
@@ -518,8 +518,8 @@ public class SessionViewModelTests
     [Fact]
     public void Controllers_ReportEngineTransportAndId()
     {
-        // All three, because the connection event carries all three and they used to be discarded — which made a
-        // hardware test inconclusive.
+        // All three, because the connection event carries all three, and discarding any makes a hardware test
+        // inconclusive.
         (SessionViewModel vm, _, _) = Build();
 
         vm.ApplyControllerConnection("pad-1", connected: true, ControllerLink.Bluetooth, "GameInput");
@@ -887,9 +887,9 @@ public class SessionViewModelTests
     [Fact]
     public void TheControllersFailureIsNotPaintedOverByTheLastConnectStage()
     {
-        // The flow's last stage stays in the gate after the controller takes over, and the tick used to hand it
-        // back whenever its headline differed from the screen's. So a cancelled passcode prompt showed "Couldn't
-        // connect" for half a second and then "Connecting to your console" for good (2026-10-02).
+        // The flow's last stage stays in the gate after the controller takes over, and the tick must not hand it
+        // back when its headline differs from the screen's. Otherwise a cancelled passcode prompt shows "Couldn't
+        // connect" for half a second and then "Connecting to your console" for good.
         (SessionViewModel vm, _, TestClock clock) = Build();
 
         vm.ResetConnect();

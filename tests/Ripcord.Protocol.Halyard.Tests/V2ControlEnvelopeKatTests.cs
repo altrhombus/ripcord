@@ -12,7 +12,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// 003/004): the captured RP-Data/RP-Tag decrypt only if the GCM key (sk_9[0:16]), the IV
 /// (HMAC(N16, sk_9[16:32]‖be64(0))), the AAD (empty), and — the point of this test — <b>N16 = the bundled
 /// selectorOne context key</b> are all correct. This is what the self-consistent round-trip in
-/// <see cref="V2ControlEnvelopeTests"/> cannot prove, and it is the regression guard for the control-IV fix (N16
+/// <see cref="V2ControlEnvelopeTests"/> cannot prove, and it is the regression guard for the control IV's key (N16
 /// is the fixed bundle constant, not the per-session RP-Nonce). Fixture
 /// <c>v2_control_key_vectors.json</c> is gitignored; skips when absent.
 /// </summary>

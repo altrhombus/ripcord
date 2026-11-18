@@ -1,13 +1,12 @@
 // Which of the console's offered candidates to talk to, decided once for everything that needs to know.
 //
 // The same choice has to reach two places: the transport that opens the 9303 association
-// (ConsolePath.control) and the ACCEPT that names the candidate back to the console. They agreed while a
-// candidate parsed and parted company when none did. The ACCEPT named an unparseable candidate (the one
-// matching the known host, else the first) while the transport fell back to the known host on 9303, so we
-// talked to one address and told the console we had chosen another. It failed safely rather than throwing,
-// unlike the dotnet client's copy of the same gap, but it was still two decisions. This is the dotnet client's
-// HalyardConsoleCandidates, and the C core and the Rust engine make the choice the same way: one choice, and
-// the fallback applied by the caller to both.
+// (ConsolePath.control) and the ACCEPT that names the candidate back to the console. Decided separately,
+// the two agree while a candidate parses and part company when none does: an ACCEPT that names an
+// unparseable candidate while the transport falls back to the known host on 9303 talks to one address and
+// tells the console it chose another. This is the dotnet client's HalyardConsoleCandidates, and the C core
+// and the Rust engine make the choice the same way: one choice, and the fallback applied by the caller to
+// both.
 
 import Foundation
 

@@ -15,12 +15,9 @@ namespace Ripcord_App.Input;
 /// with a log rather than a hypothesis.
 ///
 /// <para>
-/// <b>Why this exists.</b> Focus bugs in this app have a bad habit of looking like one cause and being
-/// another, and the shell has six paths that seed focus plus a platform that moves it on its own. Two fixes
-/// for the same symptom — a web-hosted sign-in box that deselects the instant it is clicked — were aimed at
-/// the wrong mover, because a symptom seen by hand cannot tell you whose call stack it came from. The
-/// decisive fact is in the stack: a move our code made has Ripcord frames in it, and a move the platform made
-/// does not.
+/// The shell has six paths that seed focus, plus a platform that moves it on its own, and a symptom seen by
+/// hand cannot say whose call stack it came from. The stack can: a move our code made has Ripcord frames in
+/// it, and a move the platform made does not.
 /// </para>
 ///
 /// <para>
@@ -121,14 +118,13 @@ public sealed class FocusTrace : IDisposable
 
     /// <summary>
     /// The frames that answer the question. Ripcord frames are kept in full, because one of them is the
-    /// culprit whenever the culprit is ours; the rest are counted rather than listed, since a wall of WinUI
-    /// dispatch frames says only "the platform", which is exactly as much as it needs to say.
+    /// culprit whenever the culprit is ours; the rest are counted rather than listed, since WinUI dispatch
+    /// frames say only "the platform".
     ///
     /// <para>
-    /// <b>The entry point does not count as blame, and the first version of this got that wrong.</b> Every
-    /// frame in the process sits under <c>Program.Main</c>, so counting it made even a pure platform-dispatched
-    /// mouse click read as ours — which would have hidden the one answer this method exists to give. A move
-    /// arriving from the message loop has nothing of ours between it and <c>Main</c>, and that is the
+    /// <b>The entry point does not count as blame.</b> Every frame in the process sits under
+    /// <c>Program.Main</c>, so counting it would make even a pure platform-dispatched mouse click read as ours.
+    /// A move arriving from the message loop has nothing of ours between it and <c>Main</c>, and that is the
     /// signature to look for.
     /// </para>
     /// </summary>

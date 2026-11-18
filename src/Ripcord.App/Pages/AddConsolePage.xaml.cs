@@ -61,15 +61,15 @@ public sealed partial class AddConsolePage : Page, IStepBack
 
     public AddConsolePage()
     {
-        // Resolved BEFORE InitializeComponent — see ConsolesPage. This page previously named the scanner, the
-        // registrar and the store directly, which is why pairing could not be pointed at anything but the real
-        // network.
+        // Resolved BEFORE InitializeComponent — see ConsolesPage. The scanner, the registrar and the store come
+        // from the graph rather than being named here, so pairing can be pointed at something other than the
+        // real network.
         _services = App.Services;
         _account = _services.CreateAccountViewModel();
 
         InitializeComponent();
 
-        // Look first, ask second. The flow opens on the scan now, so this is what gets it going - from
+        // Look first, ask second. The flow opens on the scan, so this is what gets it going - from
         // Loaded rather than here, because the scan is asynchronous and results arriving before the page has
         // finished building would have nowhere to land.
         Loaded += (_, _) => _ = StartFlowAsync();
@@ -115,12 +115,11 @@ public sealed partial class AddConsolePage : Page, IStepBack
     /// The first console to answer takes focus, if the user is still where the page put them.
     ///
     /// <para>
-    /// This page had decided the opposite: an arrival never moves focus, because a console landing under a
-    /// thumb must not eat the next press. That rule is right for somebody navigating and wrong for somebody
-    /// waiting. Arriving on an empty list, a pad user sat on "Search again" with their console appearing above
-    /// it, and the obvious next press acted on the wrong thing (2026-10-08). So the rule now has the condition
-    /// it always implied: focus moves to the first result only while it is still on the seed and has never left
-    /// it. Anyone who has moved, even away and back, keeps their place; the FocusAnchor still protects them.
+    /// Otherwise an arrival never moves focus, because a console landing under a thumb must not eat the next
+    /// press. The exception is for somebody waiting: arriving on an empty list, a pad user sits on "Search
+    /// again" with their console appearing above it, and the next press would act on the wrong thing.
+    /// So focus moves to the first result only while it is still on the seed and has never left it. Anyone who
+    /// has moved, even away and back, keeps their place; the FocusAnchor still protects them.
     /// </para>
     /// </summary>
     private void OnDiscoveredChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -133,13 +132,13 @@ public sealed partial class AddConsolePage : Page, IStepBack
 
     /// <summary>
     /// Hand focus to the first result once it can take it. Also started by the seed itself: a console can answer
-    /// before the seed runs, in which case the seed found an item but nothing to focus, fell back to Rescan, and
-    /// the Add that would have started this had already passed.
+    /// before the seed runs, in which case the seed finds an item but nothing to focus, falls back to Rescan, and
+    /// the Add that would have started this has already passed.
     ///
     /// <para>
     /// Polled briefly rather than checked once. The container exists as soon as the item does, but the button
     /// inside it is still loading and arriving under the list's add transition, and until it has loaded nothing
-    /// in the container is focusable. A single look found the container and nothing to focus, every time.
+    /// in the container is focusable. A single look finds the container and nothing to focus.
     /// </para>
     /// </summary>
     private void QueueHandOffToFirstResult()
@@ -195,9 +194,8 @@ public sealed partial class AddConsolePage : Page, IStepBack
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
-        // Cancels an in-flight scan AND an in-flight pairing. The latter is new: the page's old cancellation
-        // source was only a registration timeout, so walking out mid-pairing left the exchange running and its
-        // result landing on a page that no longer existed.
+        // Cancels an in-flight scan AND an in-flight pairing, so walking out mid-pairing does not leave the
+        // exchange running with its result landing on a page that has gone.
         _ = _flow.DisposeAsync();
 
         // The anchor holds handlers on the list and on the flow's collection; the flow outlives this call by
@@ -239,10 +237,10 @@ public sealed partial class AddConsolePage : Page, IStepBack
         FindHeading.Text = s.FindHeading;
         FindSubheading.Text = s.FindSubheading;
         ScanProgress.Visibility = Vis(s.IsScanning);
-        // Enabled while scanning, too. It was disabled then, so a page opened mid-scan had nowhere safe to seed
-        // focus and the shell's fallback put it on "Enter an address instead": a pad user pressing A to get
-        // going was sent to type an IP address. Pressing it mid-scan restarts the scan, which is harmless; the
-        // progress bar is what says a scan is running.
+        // Enabled while scanning, too. Disabled, a page opened mid-scan has nowhere safe to seed focus and the
+        // shell's fallback puts it on "Enter an address instead": a pad user pressing A to get going is sent
+        // to type an IP address. Pressing it mid-scan restarts the scan, which is harmless; the progress bar is
+        // what says a scan is running.
         RescanButton.IsEnabled = true;
         ManualEntryPanel.Visibility = Vis(s.ManualEntryOpen);
         ManualEntryButton.Visibility = Vis(!s.ManualEntryOpen);
@@ -250,8 +248,7 @@ public sealed partial class AddConsolePage : Page, IStepBack
         LinkHeading.Text = s.LinkHeading;
         ConsoleStepsText.Text = s.ConsoleStepsText;
 
-        // Signed in, the account ID is already known and the box comes out entirely. This is the step that used
-        // to send people off to a third-party lookup tool before they could pair at all.
+        // Signed in, the account ID is already known and the box comes out entirely.
         // The account-id box belongs to the code route as well: signed in, the id is known, and the account
         // route does not ask for it at all.
         AccountEntryPanel.Visibility = Vis(!s.AccountIdIsAutomatic && s.CodeEntryShown);
@@ -345,8 +342,7 @@ public sealed partial class AddConsolePage : Page, IStepBack
         // Nothing to pair while the form is still an offer: Pair would sit there permanently disabled under
         // a proposition, which reads as a dead end rather than a choice.
         PrimaryButton.Visibility = Vis(s.Step is AddConsoleStep.Link or AddConsoleStep.Done && !s.SignInLeads);
-        // Composed portably, including at Done - the label there used to be a literal in this file, which
-        // put the one string the celebration turns on outside the catalogue.
+        // Composed portably, including at Done, so the one string the celebration turns on is in the catalogue.
         PrimaryButton.Content = s.PairActionLabel;
 
         // "Play now" is a launch, so at the celebration it is the wedge (design.md; showcase plan, part 4). From
@@ -362,9 +358,8 @@ public sealed partial class AddConsolePage : Page, IStepBack
         _renderedStep = s.Step;
         PrimaryButton.IsEnabled = s.Step == AddConsoleStep.Done || s.CanPair;
 
-        // One commit action, naming the route the step is set up for. There used to be two -- "Pair" and "Pair
-        // with my account" -- above a body that described both routes at once, so nothing said which button
-        // went with which half of what you had just read. The choice moved into the step; the button follows it.
+        // One commit action, naming the route the step is set up for. The choice of route is made in the step;
+        // the button follows it.
         // From the setup, the one way on is back to it: the primary button says so, and there is no second.
         SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done && !_flow.IsPartOfSetup);
         SecondaryButton.Content = s.DoneActionLabel;
@@ -394,9 +389,8 @@ public sealed partial class AddConsolePage : Page, IStepBack
         Control? target = step switch
         {
             // The one step the step alone does not decide. A signed-in player whose console the account knows
-            // never types a code, so seeding the code box would put the caret in a field they will not use; it
-            // was SecondaryButton, which this step never shows, so focus fell to Back after signing in (owner,
-            // pad pass, 2026-10-09). Signed out, the offer to sign in leads, and the code box is hidden.
+            // never types a code, so seeding the code box would put the caret in a field they will not use; the
+            // primary button takes it. Signed out, the offer to sign in leads, and the code box is hidden.
             AddConsoleStep.Link when s.SignInLeads => SignInLeadButton,
             AddConsoleStep.Link when s.Route == PairingRoute.Account && s.CanPairWithAccount => PrimaryButton,
             AddConsoleStep.Family => Ps5Button,
@@ -417,8 +411,8 @@ public sealed partial class AddConsolePage : Page, IStepBack
             // up into it once it fills is the predictable behaviour.
             //
             // The container of an ItemsControl item is a ContentPresenter, which is not a Control; the button
-            // the template draws is inside it. Testing the container itself never matched, so this always fell
-            // through to Rescan even with a console on screen (2026-10-08).
+            // the template draws is inside it. Testing the container itself never matches, and would always
+            // fall through to Rescan even with a console on screen.
             AddConsoleStep.Find => (DiscoveredList.Items.Count > 0
                     && DiscoveredList.ContainerFromIndex(0) is DependencyObject first
                     ? FocusManager.FindFirstFocusableElement(first) as Control
@@ -439,15 +433,15 @@ public sealed partial class AddConsolePage : Page, IStepBack
         }
 
         // Recorded only once focus has actually landed. The first render runs from OnNavigatedTo, before the
-        // page is in the tree, where Focus() returns false; marking the step seeded then meant it was never
-        // seeded at all, and a pad arrived on the Find step with focus nowhere (2026-10-08). The flow starts
-        // on Loaded, so the next render comes promptly and tries again.
+        // page is in the tree, where Focus() returns false; marking the step seeded then would mean it is never
+        // seeded at all, and a pad arrives on the Find step with focus nowhere. The flow starts on Loaded, so
+        // the next render comes promptly and tries again.
         if (target is null || target.Focus(FocusState.Keyboard))
         {
             _focusedStep = step;
             _focusedTarget = target;
 
-            // Seeded on Rescan because nothing has answered yet: the first console that does may take focus.
+            // Seeded on Rescan because nothing has answered: the first console that does may take focus.
             _awaitingFirstResult = step == AddConsoleStep.Find && ReferenceEquals(target, RescanButton);
 
             if (_awaitingFirstResult && DiscoveredList.Items.Count > 0)
@@ -554,9 +548,6 @@ public sealed partial class AddConsolePage : Page, IStepBack
         => _flow.SetLinkInput(PasscodeBox.Text, AccountBox.Text);
 
     /// <summary>
-    /// Take the other route. The one quiet way out of a decision the app made on the player's behalf.
-    /// </summary>
-    /// <summary>
     /// Kick the first scan.
     ///
     /// <para>
@@ -579,21 +570,11 @@ public sealed partial class AddConsolePage : Page, IStepBack
     }
 
     /// <summary>
-    /// Take them to where the account lives.
-    ///
-    /// <para>
-    /// Through the shell seam rather than by naming a page: a page must not know how another page is
-    /// reached, and this lands exactly where clicking the gear would.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// Sign in without leaving the flow.
     ///
     /// <para>
-    /// This used to navigate to the settings page, because that is where the sign-in sequence was written. The
-    /// user signed in and was then standing on a settings page with pairing abandoned behind them — the way
-    /// back was to start pairing over from the beginning. Sign-in is a modal over whatever asked for it, so
-    /// the step the user was on is still the step they are on.
+    /// Sign-in is a modal over whatever asked for it, so the step the user was on is still the step they are
+    /// on. Navigating to the settings page instead would abandon pairing behind them.
     /// </para>
     /// </summary>
     private async void OnSignInClick(object sender, RoutedEventArgs e)
@@ -611,6 +592,9 @@ public sealed partial class AddConsolePage : Page, IStepBack
     /// </summary>
     private void OnUseCodeClick(object sender, RoutedEventArgs e) => _flow.RevealCodeRoute();
 
+    /// <summary>
+    /// Take the other route. The one quiet way out of a decision the app made on the player's behalf.
+    /// </summary>
     private void OnSwitchRoute(object sender, RoutedEventArgs e)
         => _flow.SelectRoute(_flow.State.Route == PairingRoute.Account ? PairingRoute.Code : PairingRoute.Account);
 
@@ -640,7 +624,7 @@ public sealed partial class AddConsolePage : Page, IStepBack
 
     /// <summary>
     /// The shell's Back (the title bar, Esc, the pad's B) walks the flow's steps before it leaves the page, as it
-    /// does in setup. It used to leave from any step, so B on the code form threw away the search the player had
+    /// does in setup: leaving from any step would have B on the code form throw away the search the player has
     /// just waited for. During the pairing exchange it is held, as the footer's Back is.
     /// </summary>
     bool IStepBack.TryStepBack()

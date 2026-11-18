@@ -44,10 +44,9 @@ public sealed class HalyardSearchClient
     /// depends on.
     ///
     /// <para>The SRCH is <b>broadcast</b>, then filtered to <paramref name="console"/>, because that is what
-    /// the vendor client does and — the reason this was changed — a <b>resting</b> console answered the
-    /// broadcast SRCH in cap49 but an earlier unicast version of this method got no reply from a sleeping
-    /// console, so the wake was never even attempted. Filtering by address keeps the single-console semantics
-    /// on a LAN with several consoles.</para>
+    /// the vendor client does: a <b>resting</b> console answered the broadcast SRCH in cap49, but a unicast
+    /// SRCH got no reply from a sleeping console. Filtering by address keeps the single-console semantics on a
+    /// LAN with several consoles.</para>
     ///
     /// <para><paramref name="localPort"/> sets the UDP source port. The wake path passes 9303 to match the
     /// vendor exactly (a sleeping console may be particular about it); the always-on status probe leaves it 0
@@ -111,10 +110,9 @@ public sealed class HalyardSearchClient
     ///
     /// <para>
     /// <paramref name="onResult"/> is invoked the moment each <em>new</em> console answers, rather than only
-    /// when the window closes. The window has to stay open for its full duration — a resting console can be
-    /// slow to reply, and cutting the wait short is how consoles get missed — but there is no reason for a UI
-    /// to sit blank while consoles that have already answered wait for it. Repeat replies from a console
-    /// already seen do not re-report; consoles answer more than once.
+    /// when the window closes, so a UI need not wait. The window still stays open for its full duration: a
+    /// resting console can be slow to reply. Repeat replies from a console already seen do not re-report;
+    /// consoles answer more than once.
     /// </para>
     /// </summary>
     public async Task<IReadOnlyList<HalyardSearchResult>> SearchAsync(
@@ -162,13 +160,10 @@ public sealed class HalyardSearchClient
         }
 
         // Power state comes from the status line: `200 Ok` = awake, `620 Server Standby` = asleep. Both are
-        // now [V], wire-confirmed in cap49 (2026-08-03), a rest-mode capture. The `620` had a brief detour: an
-        // even earlier comment asserted it with no source, it was removed on 2026-08-02 as untraceable, and
-        // the rest-mode capture then produced it verbatim — right all along, and now sourced.
+        // [V], wire-confirmed in cap49 (2026-08-03), a rest-mode capture.
         //
-        // The logic still keys only on 200: anything else is treated as not-awake, which is both the
-        // conservative reading and correct for the 620 case. We do not branch on 620 specifically because
-        // nothing needs to — a console is either confirmed awake or it is not.
+        // The logic keys only on 200: anything else is treated as not-awake, which is the conservative
+        // reading and correct for the 620 case.
         string[] statusParts = lines[0].Split(' ', 3);
         bool isAwake = statusParts.Length >= 2 && statusParts[1] == "200";
 

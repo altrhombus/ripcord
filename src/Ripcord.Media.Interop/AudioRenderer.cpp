@@ -127,9 +127,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
         std::lock_guard<std::mutex> lock(m_mutex);
         m_ring.insert(m_ring.end(), interleaved.begin(), interleaved.begin() + count);
 
-        // Keep audio near-live. Video latency is now ~250 ms; if the audio backlog is allowed to grow, audio
-        // drifts audibly behind video (the ring previously banked up to ~0.5 s and dropped NEW samples once
-        // full — so audio lagged AND gapped). Instead, when the backlog exceeds a ceiling, drop the OLDEST
+        // Keep audio near-live. Video latency is ~250 ms; if the audio backlog is allowed to grow, audio
+        // drifts audibly behind video (a ring that banks up ~0.5 s and drops NEW samples once full both
+        // lags AND gaps). So when the backlog exceeds a ceiling, drop the OLDEST
         // samples down to a small target so playback re-syncs toward live. The drop is channel-aligned so the
         // L/R interleave never shifts, and the target/ceiling hysteresis keeps trims rare (only when clock
         // drift or a delivery burst has accumulated real backlog). Under-runs are handled in FillBuffer.

@@ -3,12 +3,11 @@
 # Build, verify, and only then upload.
 #
 # WHY THIS EXISTS. `make pkg` leaves the PREVIOUS package in place when it fails, and an upload does not
-# care. Three builds in a row reported a new build number, uploaded cleanly, installed cleanly and ran
-# the old binary - because the failure was "No rule to make target", which does not contain the word
-# "error", and the check was a grep for that word.
+# care. "No rule to make target" does not contain the word "error", so a grep for that word passes a
+# failed build, which then uploads, installs and runs the old binary.
 #
-# The lesson is not "grep for more words". It is that a build's success is its EXIT STATUS, and that the
-# thing uploaded has to be shown to contain the build that was just made. Both are checked here.
+# A build's success is its EXIT STATUS, and the thing uploaded has to be shown to contain the build that
+# was just made. Both are checked here.
 set -e
 
 cd "$(dirname "$0")/.."
@@ -23,10 +22,9 @@ PKG=ripcord-ps3.gnpdrm.pkg
 
 make pkg                         # set -e: a non-zero exit stops here, before anything is uploaded
 
-# THE PACKAGE STILL HAS TO PROVE IT CARRIES THE BUILD THAT WAS JUST MADE - see the note above. What
-# changed is where it says so: the XMB title is now the program's name, and the build number is its
-# VERSION, which is an NN.NN string whose digits ARE the build. So the check reads the version instead
-# of the title, and the failure it exists to catch is unchanged.
+# THE PACKAGE HAS TO PROVE IT CARRIES THE BUILD THAT WAS JUST MADE - see the note above. It says so in
+# its VERSION: the XMB title is the program's name, and the version is an NN.NN string whose digits ARE
+# the build. So the check reads the version.
 # [a-z]* tolerates the BUILD_ORIGIN suffix - "b35ci" as well as "b460". Without it the pattern needs a
 # quote straight after the digits, yields nothing for a CI build, and this script refuses to upload while
 # blaming a stale package. The digits are what the SFO version can be compared against; the suffix says

@@ -4,9 +4,9 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// One terminal signal for every end but a dispose. Until 2026-09-27 an OperationCanceledException ended the
-/// sequence silently whoever raised it, so a producer that cancelled itself left its observer waiting for good;
-/// and a producer that returned normally after a dispose still told its observer OnCompleted.
+/// One terminal signal for every end but a dispose. A producer that cancels itself ends with an error rather
+/// than silently, so its observer is not left waiting for good; and a producer that returns normally after a
+/// dispose does not tell its observer OnCompleted.
 /// </summary>
 public class AsyncObservableTests
 {

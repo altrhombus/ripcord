@@ -9,31 +9,21 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The decisive no-PIN experiment, and its result: <b>the account-route registration key is NOT derived from
-/// the cloud <c>commands</c> <c>data1</c>/<c>data2</c>.</b>
+/// Asserts that <b>no direct function of the cloud <c>commands</c> <c>data1</c>/<c>data2</c> is the
+/// account-route registration transport key</b>, against a PS5 first-time no-PIN pair.
 ///
 /// <para>
-/// This was the last standing hypothesis for where no-PIN authorisation lives, and cap64/cap65 (a PS5 and a
-/// PS4 first-time no-PIN pair, each captured as a Fiddler saz + a raw pcapng <em>together</em>, so the cloud
-/// bodies and the 9303 exchange are readable for one event) let it be tested directly and falsified two ways:
+/// The fixture comes from cap64, captured as a Fiddler saz + a raw pcapng <em>together</em>, so the cloud
+/// bodies and the 9303 exchange are readable for one event. With the PS5 <c>data1</c>/<c>data2</c> and the
+/// registkey the client actually used both in hand, no key derived from the data — directly, reversed,
+/// XORed with or folded into the selected table entry, or via SHA-256 / HMAC-SHA256 in the shapes the vendor
+/// uses elsewhere — decrypts the registration response to that registkey.
 /// </para>
-/// <list type="number">
-///   <item><description><b>Cryptographic (this file).</b> With the PS5 <c>data1</c>/<c>data2</c> and the
-///   registkey the client actually used both in hand, no key derived from the data — directly, reversed,
-///   folded into the selected table entry, or via SHA-256 / HMAC-SHA256 in the shapes the vendor uses
-///   elsewhere — decrypts the registration response to that registkey.</description></item>
-///   <item><description><b>Structural (recorded in the spec).</b> The PS4 in cap65 completed the same 9303
-///   account-route pairing with <em>no <c>commands</c> call at all</em> — it was found by search, not from
-///   the cloud list — so it never received any <c>data1/2</c>, yet still obtained a registration key. A key
-///   source the PS4 demonstrably never saw cannot be the account-route key source.</description></item>
-/// </list>
 ///
 /// <para>
-/// This mirrors the earlier fate of "the <c>data1/2/3</c> seed the session crypto" (also falsified): the
-/// commands data is real, out-of-band, 16-byte material whose role keeps not being the thing it is nearest to.
-/// Where the account-route key actually comes from is open — and since the PS4 had no cloud trigger, the
-/// source is most likely in-band (the 9303 INIT carries high-entropy blobs) or from account/session material
-/// common to both families, not the commands payload.
+/// What <c>data1</c>/<c>data2</c> are for is the seed delivery (<see cref="HalyardAccountSeedDelivery"/>):
+/// they wrap the seed the console returns as <c>customData1</c>, and the transport key is derived from that
+/// seed. <see cref="LiveAccountKeyPathVectorTests"/> pins that path against captured sessions.
 /// </para>
 ///
 /// <para>
@@ -46,8 +36,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 ///
 /// <para>
 /// Fixture: <c>docs/protocol/captures/nopin_correlation_ps5.json</c> (gitignored captures folder). Skips when
-/// absent. Should a future derivation be found to work, this test fails loudly with its label — which is the
-/// signal to promote it to a positive proof and write the mechanism into the spec.
+/// absent. Fails with the candidate's label if one of them recovers the registkey.
 /// </para>
 /// </summary>
 public class NoPinKeyCorrelationTests
@@ -97,9 +86,8 @@ public class NoPinKeyCorrelationTests
             }
         }
 
-        // The established finding: none of these derivations of the commands data produce the transport key.
-        // If this ever fails, a derivation DID work — that is the discovery, and the failing label names it.
-        // Promote the test to a positive proof and write the mechanism into the spec at that point.
+        // None of these derivations of the commands data produces the transport key. A failure means one did,
+        // and the message names it by label.
         Assert.True(
             hits.Count == 0,
             "A derivation of data1/data2 DID produce the no-PIN transport key: " + string.Join(", ", hits)
@@ -151,8 +139,7 @@ public class NoPinKeyCorrelationTests
             yield return ("hmac(data1, data2)[..16]", Hmac(d1, d2)[..16]);
             yield return ("hmac(data2, data1)[..16]", Hmac(d2, d1)[..16]);
 
-            // The material-carrying context is still present; the two data values might key the field IV path
-            // rather than the transport key. Covered indirectly: if either is the key, the tail decodes.
+            // No candidate for the field-IV path: the oracle is IV-free, so only a candidate key can be tested.
         }
     }
 
@@ -307,8 +294,8 @@ public class NoPinKeyCorrelationTests
 
         /// <summary>
         /// The registration RESPONSE is where the registkey lives and is what the oracle targets. The
-        /// generator names it <c>responseBody</c>; tolerate its absence by falling back to the request field
-        /// so an older fixture still loads (it simply will not find a hit).
+        /// generator names it <c>responseBody</c>; when it is absent this falls back to the request field, so
+        /// the fixture still loads, and the oracle finds no hit in it.
         /// </summary>
         public string ResponseBodyOrField() => ResponseBody ?? RequestField ?? string.Empty;
     }

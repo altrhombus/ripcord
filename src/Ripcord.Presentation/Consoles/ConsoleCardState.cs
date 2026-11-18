@@ -21,8 +21,8 @@ public enum ConsoleReachability
     ///
     /// <para>
     /// Distinct from <see cref="Offline"/> because the difference is the whole point: both look identical to a
-    /// discovery probe, and treating them the same is what made a console anywhere but the user's own network
-    /// unconnectable from the app while the account route could reach it perfectly well.
+    /// discovery probe, and treating them the same would make a console anywhere but the user's own network
+    /// unconnectable from the app while the account route can reach it perfectly well.
     /// </para>
     /// </summary>
     Away,
@@ -71,11 +71,8 @@ public enum ActionGlyph
 /// Everything a console card shows, as one immutable value.
 ///
 /// <para>
-/// Recomposed whole rather than patched property by property. The hand-rolled view-model this replaces raised
-/// eleven property names from a single setter, with a comment warning that "missing one of these leaves a card
-/// reading 'Offline' above a 'Connect' button", plus a second cascade of seven for a record swap. A record
-/// cannot be half-updated, so that entire failure mode is gone by construction rather than by remembering to
-/// extend a list.
+/// Recomposed whole rather than patched property by property: a record cannot be half-updated, so a card
+/// cannot read "Offline" above a "Connect" button because one notification was missed.
 /// </para>
 ///
 /// <para>

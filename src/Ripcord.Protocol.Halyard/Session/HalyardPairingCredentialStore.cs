@@ -9,7 +9,7 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// <summary>
 /// A file-backed <see cref="IConsoleCredentialStore"/>: a JSON map of <c>consoleId → blob(hex)</c>, where the
 /// blob is a serialized <see cref="Common.Crypto.HalyardPairingRecord"/> (registkey + companion + keytype).
-/// This is the concrete backing the session layer's credential seam has lacked — the value
+/// This is the concrete backing for the session layer's credential seam — the value
 /// <see cref="LoadAsync"/> returns is exactly what <c>HalyardStreamingSession</c> deserializes to drive
 /// <c>/sess/init</c> + the control KDF.
 ///

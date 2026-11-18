@@ -138,7 +138,7 @@ static int try_open_media(stream_demux *demux, const stream_header *header, cons
     return 0;
 }
 
-/* Append to the assembly buffer. Unlike the reference's Array.Resize, this port never allocates: an
+/* Append to the assembly buffer. Unlike the reference's Array.Resize, this core never allocates: an
  * append that would overflow STREAM_DEMUX_ASSEMBLY_CAPACITY marks the frame overflowed (flush_video_frame
  * then drops it rather than emitting a truncated, corrupt Annex-B stream) instead of growing. */
 static void append_to_assembly(stream_demux *demux, const uint8_t *data, size_t length)
@@ -184,8 +184,8 @@ static void open_frame(stream_demux *demux, const stream_header *header, int dat
         return;
     if (unit_count > STREAM_DEMUX_MAX_UNITS_PER_FRAME) {
         /* Counted, not just refused. A frame that wants more units than this build provides is a
-         * configuration answer - raise STREAM_DEMUX_MAX_UNITS_PER_FRAME - and used to look exactly like
-         * a network that had lost everything. */
+         * configuration answer - raise STREAM_DEMUX_MAX_UNITS_PER_FRAME - and uncounted it looks
+         * exactly like a network that had lost everything. */
         demux->stat_frames_too_many_units++;
         return;
     }
@@ -424,8 +424,8 @@ static void ingest_audio(stream_demux *demux, const stream_header *header, const
     /* The audio payload packs total_units equal-size units back to back: unit 0 is the source Opus frame,
      * the rest are redundant copies of the same 10ms for loss concealment. Feeding the whole payload to
      * the decoder corrupts every band above ~5kHz (Opus/CELT sizes its bit budget from the packet length),
-     * so only unit 0 is ever emitted here. Using the redundant units for loss concealment is a later
-     * refinement, same as the .NET reference. */
+     * so only unit 0 is ever emitted here. The redundant units are not used for loss concealment, same
+     * as the .NET reference. */
     payload_length = (int)(opened_length - (size_t)payload_offset);
     units = header->total_units > 1 ? header->total_units : 1;
     unit_size = payload_length / units;

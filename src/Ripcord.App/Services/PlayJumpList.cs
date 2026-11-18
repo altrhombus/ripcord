@@ -12,16 +12,14 @@ namespace Ripcord_App.Services;
 /// into a game.
 ///
 /// <para>
-/// <b>Guarded, because half the people running this cannot have it.</b> <c>JumpList.IsSupported()</c> is
-/// false without package identity, so the MSIX gets a jump list and the zip silently does not. That is the
-/// correct outcome and not a gap to work around — the shortcut writer covers the zip, and it covers Steam
-/// and handheld launchers besides, which a jump list never could.
+/// <b>Guarded.</b> <c>JumpList.IsSupported()</c> is false without package identity, so the MSIX gets a jump
+/// list and the zip silently does not. That is the intended outcome: the shortcut writer covers the zip, and
+/// Steam and handheld launchers besides.
 /// </para>
 ///
 /// <para>
-/// Every failure is swallowed. This is a convenience on a surface the player may never open, it runs during
-/// startup and whenever the console list changes, and there is no version of "the jump list could not be
-/// rebuilt" that is worth interrupting somebody to say.
+/// Every failure is swallowed. This is a convenience that runs during startup and whenever the console list
+/// changes, and a jump list that could not be rebuilt is not worth interrupting somebody to say.
 /// </para>
 /// </summary>
 internal static class PlayJumpList

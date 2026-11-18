@@ -1,22 +1,18 @@
 /*
- * ripcord ports - the platform seam, host side.
+ * libripcord - the platform seam, host side.
  *
- * Plain C on whatever machine runs the known-answer tests. This exists so the seam has three
- * implementations rather than two, which is the difference between a seam and a rename: a header with
- * one caller and one implementation is just indirection, and the host build is the one that will notice
- * if a "portable" file quietly grows a dependency on a console.
+ * Plain C on whatever machine runs the tests: the clock, sleep and tick of rc_platform.h over
+ * clock_gettime and nanosleep. It is what lets the host build notice if a "portable" file grows a
+ * dependency on a console.
  *
- * Nothing in the test suite links this today - the three seamed files (net/rc_tcp.c,
- * session/halyard_control_session.c, takion/takion_reliable_channel.c) all own sockets, and the suite
- * deliberately stops at the socket boundary (see tests/Makefile). It is here so that when someone
- * writes a loopback test for the reliable channel - the one protocol file with retransmit/SACK timing
- * and no host test at all - the platform half is already waiting rather than being invented under
- * deadline.
+ * tests/Makefile links it into every runner that reaches a clock or a socket on loopback
+ * (regist_flow_test, stun_test, dgram_test, wan_test, client_test, control_pipe_test,
+ * rendezvous_test) and into the fuzz archive.
  *
- * rc_random_bytes() is deliberately ABSENT. There is no host CSPRNG here on purpose: the 3DS port
- * refuses to fall back to a non-cryptographic PRNG (source/util/rc_random.c says why), and offering a
- * host one would make "built for the host" quietly mean "built with fake key material". A host test
- * that needs randomness should inject it, not source it.
+ * rc_random_bytes() is deliberately ABSENT. There is no host CSPRNG here on purpose: the ports refuse
+ * to fall back to a non-cryptographic PRNG (util/rc_random.h says why), and offering a host one would
+ * make "built for the host" quietly mean "built with fake key material". A host test that needs
+ * randomness defines its own rc_random_bytes rather than sourcing one.
  */
 
 /* clock_gettime/CLOCK_MONOTONIC are POSIX.1b, not C99, and the suite compiles with -std=c99 (not gnu99)

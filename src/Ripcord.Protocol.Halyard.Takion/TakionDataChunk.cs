@@ -90,7 +90,7 @@ public static class TakionDataChunk
 
         /// <summary>
         /// Payload when this is the first/only fragment of a message (offset 9); empty when the value is too short
-        /// for one. It threw there: one 12-byte DATA chunk from anyone ended the receive loop, and the session.
+        /// for one. Empty rather than a throw, so a short DATA chunk from anyone cannot end the receive loop.
         /// </summary>
         public ReadOnlyMemory<byte> FirstPayload
             => HasFirstPayload ? Value[FirstFragmentOffset..] : ReadOnlyMemory<byte>.Empty;

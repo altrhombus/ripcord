@@ -6,10 +6,9 @@ namespace Ripcord.Core.Reactive;
 /// pull in a System.Reactive dependency.
 ///
 /// <para>
-/// Lives in Core beside <see cref="Subject{T}"/> rather than in Ripcord.Input, where it started: it is the
-/// counterpart to Core's own IObservable contracts and had acquired consumers in the app, the input stack and
-/// the protocol layer. Ripcord.Input targets net10.0-windows, so leaving it there meant anything portable that
-/// wanted to subscribe with a lambda had to write its own copy.
+/// Lives in Core beside <see cref="Subject{T}"/> because it is the counterpart to Core's own IObservable
+/// contracts, with consumers in the app, the input stack and the protocol layer. Ripcord.Input targets
+/// net10.0-windows, so portable code could not reach it there.
 /// </para>
 /// </summary>
 /// <param name="onNext">Required — the whole point of the adapter.</param>

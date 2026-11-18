@@ -8,8 +8,8 @@ namespace Ripcord_App.Controls;
 /// A horizontal row that stacks when its items do not fit side by side, rather than cutting the last one off.
 ///
 /// <para>
-/// At 225% text in the smallest window, About's links ended in "Prot" and the picture step's "Recommended" pill in
-/// "Recommende" (showcase review, T2). WinUI has no wrapping panel and the toolkit's is a package for two rows; a
+/// At 225% text in the smallest window, a fixed row ends About's links in "Prot" and the picture step's "Recommended"
+/// pill in "Recommende". WinUI has no wrapping panel and the toolkit's is a package for two rows; a
 /// row of two or three items reads as well stacked as wrapped. It answers to the room, so text size and window
 /// width both reach it.
 /// </para>

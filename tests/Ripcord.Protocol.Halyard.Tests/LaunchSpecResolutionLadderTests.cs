@@ -8,8 +8,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// The <c>streamResolutions</c> ladder sent in the launchSpec.
 ///
 /// <para>
-/// We previously sent a single entry at score 10, which left the console no fallback if it would not serve that
-/// resolution and expressed no ordered preference. The captured vendor launchSpec advertises four rungs with
+/// A single entry at score 10 would leave the console no fallback if it would not serve that resolution, and
+/// would express no ordered preference. The captured vendor launchSpec advertises four rungs with
 /// ascending scores, so these tests pin our shape against the vendor's rather than against an assumption:
 /// scores ascend, the requested resolution is always the most preferred, and no rung above the request is
 /// offered (offering one would invite the console to send more than was asked for).

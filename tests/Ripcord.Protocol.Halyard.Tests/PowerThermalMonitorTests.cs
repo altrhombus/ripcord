@@ -11,8 +11,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// The reading itself needs a real Windows host, so what is tested here is the part that would misbehave
 /// silently: which transitions are worth telling the bandwidth controller about (it re-evaluates quality on
 /// every report, so a battery percentage ticking down one point must not trigger one), and that each device
-/// signal actually reduces quality — previously the caps existed but nothing ever reported battery or energy
-/// saver, so they could never engage at all.
+/// signal actually reduces quality — a cap that nothing reports battery or energy saver to can never engage
+/// at all.
 /// </para>
 /// </summary>
 public class PowerThermalMonitorTests
@@ -139,7 +139,7 @@ public class PowerThermalMonitorTests
         saver.ReportThermalPowerState(Battery(70, energySaver: true));
         Assert.Contains("energy saver", saver.LastDecisionReason, StringComparison.OrdinalIgnoreCase);
 
-        // A LOW battery, since a healthy one is deliberately no longer a cap at all — and the reason should
+        // A LOW battery, since a healthy one is deliberately not a cap at all — and the reason should
         // quote the actual percentage rather than a vague "to save battery".
         var plain = new AdaptiveBandwidthController(Request);
         plain.ReportThermalPowerState(Battery(20));

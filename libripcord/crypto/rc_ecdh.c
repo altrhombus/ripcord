@@ -355,27 +355,22 @@ int rc_ecdh_derive_shared_diag(const rc_ecdh_keypair *pair,
 
     /*
      * Written as a sequence rather than a single && chain so that the step and the backend's own error
-     * code survive. The chain was shorter to read and told a console-side failure nothing it could use.
+     * code survive: a failure on a console is diagnosed from those two values.
      */
     do {
         rc = mbedtls_ecp_group_load(&grp, id);
         if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_GROUP_LOAD, rc); break; }
 
         /*
-         * PEER FIRST, OUR PRIVATE KEY SECOND, and the order is deliberate twice over.
+         * Peer first, our private key second; keep the order. A secret scalar is not loaded for a point
+         * about to be rejected. It is also an experiment: on the PS3 this check refused a point that the
+         * identical sequence in rc_ecdh_check_peer_point accepted, in the same run, on bytes a
+         * fingerprint proved identical, and the one structural difference was the private-key read
+         * sitting between the group load and the peer read.
          *
-         * On its own merits: there is no reason to load a secret scalar for a point that is about to be
-         * rejected. Validate what arrived from the wire, then reach for our own key material.
-         *
-         * And as an experiment. On the PS3 this check refused a point that the identical sequence in
-         * rc_ecdh_check_peer_point accepted, in the same run, on bytes a fingerprint proved identical -
-         * and the ONE structural difference between the two was the private-key read sitting here,
-         * between the group load and the peer read. Removing it from between them is the smallest change
-         * that tests whether it was ever implicated.
-         *
-         * Reject a peer point that is not actually on the curve before multiplying by our secret scalar -
-         * the invalid-curve attack this defends against leaks the private key one small subgroup at a
-         * time, and "it came from the console" is not authentication.
+         * Reject a peer point that is not on the curve before multiplying by our secret scalar: the
+         * invalid-curve attack leaks the private key one small subgroup at a time, and "it came from
+         * the console" is not authentication.
          */
         rc = mbedtls_ecp_point_read_binary(&grp, &peer, peer_public_key, peer_public_key_length);
         if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_PEER_READ, rc); break; }
@@ -491,9 +486,9 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
 }
 
 /*
- * The fifth entry point, which this stub was missing: the header names five, and without this one any
- * backend-less build that links takion_session_negotiator.c (its precheck calls it) fails to link at all.
- * Found when libripcord/client's host test became the first such build. Fails closed like the rest.
+ * The fifth backend entry point the header names. A backend-less build that links
+ * takion_session_negotiator.c needs it to link at all: that file's precheck reaches it through the _diag
+ * variant below, as libripcord/client's host test does. Fails closed like the rest.
  */
 int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length)
 {

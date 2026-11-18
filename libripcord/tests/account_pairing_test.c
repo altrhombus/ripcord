@@ -15,10 +15,8 @@
  * record. That cannot prove a console accepts our bytes; it proves the flow assembles the layers in the
  * right order and that each failure it can reach is reported as the right status.
  *
- * WHY THE VECTORS MATTER HERE IN PARTICULAR. The account route's last real bug was a material wrapped
- * with the PIN route's transform: byte-perfect in every other respect, refused with 403 / 80108b09, and
- * nothing on the client's side of the wire could have said why. The same mistake in a C port would look
- * identical. It is caught here, on a host, against numbers the reference computed.
+ * The vectors catch a material wrapped with the PIN route's transform, which a console refuses with
+ * 403 / 80108b09 and no other symptom (see halyard_registration.h).
  */
 #include "../halyard/halyard_account_seed.h"
 #include "../halyard/halyard_registration.h"

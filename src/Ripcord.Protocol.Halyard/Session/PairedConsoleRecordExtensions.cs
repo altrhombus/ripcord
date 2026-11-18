@@ -8,11 +8,10 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// Rehydrates a Halyard pairing record from a stored console credential.
 ///
 /// <para>
-/// This used to be <c>PairedConsole.ToRecord</c>, a method on the record itself. That put a Halyard return type
-/// on a type that otherwise knows nothing about PlayStation, which inverted the dependency direction docs/architecture.md
-/// sets out — platform-specific depends on shared, never the reverse — and was the one thing preventing the
-/// paired-console store from living in Ripcord.Core at all. As an extension method here, the arrow points the
-/// right way and the record stays a plain credential holder.
+/// An extension method here rather than a method on <see cref="PairedConsole"/>: a Halyard return type on a
+/// type that otherwise knows nothing about PlayStation would invert the dependency direction docs/architecture.md
+/// sets out — platform-specific depends on shared, never the reverse — and would keep the paired-console store
+/// out of Ripcord.Core. This way the record stays a plain credential holder.
 /// </para>
 /// </summary>
 public static class PairedConsoleRecordExtensions

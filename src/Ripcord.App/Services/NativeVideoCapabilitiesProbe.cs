@@ -11,18 +11,11 @@ namespace Ripcord_App.Services;
 /// The Windows answer to "what can this machine do?", behind the portable seam.
 ///
 /// <para>
-/// <b>Every call goes through <see cref="Task.Run"/>, and that is the entire point of this class.</b> These
-/// resolve to Media Foundation and D3D12 work — <c>MFStartup</c> + <c>MFTEnumEx</c>, and a D3D12 device per
-/// adapter — and calling them on the WinUI UI thread kills the process outright: a stowed
-/// <c>E_UNEXPECTED</c> raised from <c>Microsoft.UI.Xaml.dll</c>, with no managed exception to catch and nothing
-/// written to the crash log. The app just disappears.
-/// </para>
-///
-/// <para>
-/// The settings page did precisely this and crashed on every open, while the About page — which had always
-/// wrapped the identical query in <c>Task.Run</c> — worked. Two call sites, one hazard, and only one of them
-/// knew about it. The seam is asynchronous now so the knowledge lives in the type rather than in whichever
-/// caller happened to have it.
+/// <b>Every call goes through <see cref="Task.Run"/>.</b> These resolve to Media Foundation and D3D12 work —
+/// <c>MFStartup</c> + <c>MFTEnumEx</c>, and a D3D12 device per adapter — and calling them on the WinUI UI
+/// thread kills the process outright: a stowed <c>E_UNEXPECTED</c> raised from <c>Microsoft.UI.Xaml.dll</c>,
+/// with no managed exception to catch and nothing written to the crash log. The seam is asynchronous so
+/// that no caller has to know this.
 /// </para>
 ///
 /// <para>
@@ -33,8 +26,7 @@ namespace Ripcord_App.Services;
 ///
 /// <para>
 /// <b>This is the only place in the app permitted to name <c>VideoCapabilities</c></b>, and
-/// <c>NativeCapabilityAccessTests</c> enforces it. One call site is what makes the marshalling rule above
-/// checkable at all — with two, the second was correct only because whoever wrote it happened to know.
+/// <c>NativeCapabilityAccessTests</c> enforces it, which keeps the marshalling rule above checkable.
 /// </para>
 /// </summary>
 public sealed class NativeVideoCapabilitiesProbe : IVideoCapabilitiesProbe

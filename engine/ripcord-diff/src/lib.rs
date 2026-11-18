@@ -1,6 +1,6 @@
-//! The C core, wrapped safely, for differential tests against `ripcord-proto`. docs/engine-plan.md: during
-//! the transition the C core is a free second implementation of everything, and any difference in output
-//! for the same input is a finding.
+//! The C core, wrapped safely, for differential tests against `ripcord-proto`. The C core is a second
+//! implementation of everything the engine ports from it, and any difference in output for the same input
+//! is a finding (docs/engine-plan.md).
 //!
 //! Test tooling, never linked into a host. It is the only crate besides `ripcord-ffi` with `unsafe`, and
 //! all of it is here: each wrapper checks lengths before handing a pointer to `shim/diff_shim.c`.

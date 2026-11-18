@@ -52,7 +52,7 @@ public class SessionCryptoSeamTests
 
     /// <summary>
     /// The protocol version our own capture negotiated, and the only one whose curve has been observed.
-    /// Passed explicitly because <c>CurveForVersion</c> no longer has a fallback to be defaulted into.
+    /// Passed explicitly because <c>CurveForVersion</c> has no fallback to be defaulted into.
     /// </summary>
     private const int LiveVersion = 17;
 

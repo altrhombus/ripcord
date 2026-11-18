@@ -2,8 +2,8 @@ namespace Ripcord.Presentation.Accounts;
 
 /// <summary>Who is signed in.</summary>
 /// <param name="AccountId">
-/// The account's identifier, in the form the pairing exchange wants. This is the value that used to be typed by
-/// hand on the link step.
+/// The account's identifier, in the form the pairing exchange wants. Signed out, the link step asks for this
+/// value by hand.
 /// </param>
 /// <param name="DisplayName">The user-visible account name, for a surface to show.</param>
 /// <param name="Region">The account's region, or empty when it is not known (a cached, offline identity).</param>
@@ -43,9 +43,9 @@ public sealed record CloudConsole(string Id, string Name, bool RemotePlayEnabled
 public interface IAccountSession
 {
     /// <summary>
-    /// Whether this build can sign in at all. False when no OAuth client credential was configured, which is the
-    /// shipping default — surfaces check this before offering a sign-in affordance, so the user is told up front
-    /// rather than after typing a password.
+    /// Whether this build can sign in at all. False when no OAuth client credential is configured. Surfaces
+    /// check this before offering a sign-in affordance, so the user is told up front rather than after typing a
+    /// password.
     /// </summary>
     bool CanSignIn { get; }
 

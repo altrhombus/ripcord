@@ -38,8 +38,8 @@ public sealed class HalyardWanRendezvousOptions
 /// The sequence, which is the whole point of this type:
 /// </para>
 /// <list type="number">
+///   <item><description>Start the push channel (the console's OFFER arrives there) running in the background, and wait for its upgrade.</description></item>
 ///   <item><description>Create the account session.</description></item>
-///   <item><description>Start the push channel (the console's OFFER arrives there) running in the background.</description></item>
 ///   <item><description>Send the wake/connect command so the console joins.</description></item>
 ///   <item><description>Gather our reflexive candidate <b>on the media socket</b> via STUN.</description></item>
 ///   <item><description>POST our OFFER (reflexive + LAN candidates), re-sending on an interval while we wait.</description></item>
@@ -67,8 +67,8 @@ public sealed class HalyardWanRendezvous(
 
     /// <summary>
     /// Run the rendezvous. <paramref name="mediaSocket"/> is the socket the transport will stream from;
-    /// <paramref name="pushChannel"/> is a not-yet-running push channel (the caller built it over a real or fake
-    /// WebSocket); <paramref name="timeProvider"/> is for deterministic tests.
+    /// <paramref name="pushChannel"/> is a push channel that has not been started (the caller built it over a real
+    /// or fake WebSocket); <paramref name="timeProvider"/> is for deterministic tests.
     /// </summary>
     /// <returns>
     /// A live connection carrying the console's candidates and owning the session + push channel until disposed.
@@ -298,8 +298,7 @@ public sealed class HalyardWanRendezvous(
             //
             // The target only has to be somewhere the default route would carry a packet; nothing is ever sent
             // to it. RFC 5737 TEST-NET-1 is deliberate: it says "any off-link address" out loud, and it means
-            // this does not quietly depend on a particular company's resolver staying reachable. This used to
-            // be 8.8.8.8, which worked identically and read like infrastructure.
+            // this does not quietly depend on a particular company's resolver staying reachable.
             using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             probe.Connect(new IPEndPoint(IPAddress.Parse("192.0.2.1"), 65530));
             return (probe.LocalEndPoint as IPEndPoint)?.Address;

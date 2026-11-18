@@ -102,15 +102,14 @@ extern uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int
 /*
  * 128-BYTE ALIGNED, AND THAT IS THE POINT OF b159.
  *
- * b158 localised the disagreement with cellVdec completely. ffmpeg and openh264 decode this capture to
- * bit-identical luma, so the reference is sound and vdec is the odd one out; vdec matches it exactly
- * across columns 0..631 of every row and differs only in columns 632..639, by a large positive spike at
- * column 632 that decays rightward, while a uniform row matches perfectly.
+ * b158 localised the disagreement with cellVdec. ffmpeg and openh264 decode this capture to
+ * bit-identical luma; vdec matches it exactly across columns 0..631 of every row and differs only in
+ * columns 632..639, by a large positive spike at column 632 that decays rightward, while a uniform row
+ * matches perfectly.
  *
  * 632 is 640 - 8, and 640 is 5 * 128. This hardware moves data in 128-byte units, so a destination that
  * is not itself 128-byte aligned puts every row's final chunk across an alignment boundary - which is
- * exactly where the corruption is. The probe checked that the decoder's output was tightly packed and
- * never checked what it was being written INTO; a plain static array gets 8 or 16 byte alignment.
+ * where the corruption is. A plain static array gets 8 or 16 byte alignment.
  *
  * [X] - this explains the position and shape of the fault exactly, but the fix is unconfirmed until a
  * run says the two decoders now agree.
@@ -148,15 +147,13 @@ static uint64_t s_reference_u;
 /*
  * THE CALLBACK'S DESCRIPTOR, AND WHY IT IS NOT JUST THE FUNCTION'S ADDRESS.
  *
- * b149 fed 16 access units, finished none, and never saw a single callback of any kind. The decoder was
- * branching to nothing: vdecClosure.fn was being given the address of the ELFv1 function descriptor GCC
- * emits, whose fields are 64-bit, while the firmware reads a descriptor of two 32-BIT words. Its own PRX
- * import stubs show the shape plainly - lwz r0,0(r12) for the entry and lwz r2,4(r12) for the TOC. Given
- * a 64-bit descriptor it reads the high half of the entry pointer, which for a 32-bit address is zero.
+ * GCC emits an ELFv1 function descriptor whose fields are 64-bit, while the firmware reads a descriptor
+ * of two 32-BIT words: its own PRX import stubs do lwz r0,0(r12) for the entry and lwz r2,4(r12) for
+ * the TOC. Given a 64-bit descriptor it reads the high half of the entry pointer, which for a 32-bit
+ * address is zero. b149 fed 16 access units that way, finished none, and never saw a callback.
  *
- * PSL1GHT supplies __build_opd32 for precisely this, so this is the SDK's own answer rather than a
- * second guess at one: it copies the 64-bit entry and TOC down into a two-word 32-bit descriptor and
- * returns its address.
+ * PSL1GHT supplies __build_opd32 for this: it copies the 64-bit entry and TOC down into a two-word
+ * 32-bit descriptor and returns its address.
  */
 static uint32_t s_callback_opd[2] __attribute__((aligned(8)));
 
@@ -189,8 +186,8 @@ static void step(rc_vdec_decode_result *out, int which, const char *what)
 /*
  * The library calls this on its own PPU thread. The picture is collected here rather than by signalling
  * another thread, because vdecGetPicture is the way to collect a picture the decoder is announcing and
- * it is announcing it now - handing the job elsewhere would only add a buffer whose lifetime nobody
- * has established yet.
+ * it is announcing it now - handing the job elsewhere would only add a buffer with a lifetime of its
+ * own to manage.
  */
 static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
 {
@@ -279,15 +276,13 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
              * STORED HERE, PRINTED BY THE FEEDING THREAD. The hashes still have to be written as they
              * land rather than summarised at the end - b147 lost a whole run's findings to a hang after
              * the decode - but this runs on the library's own thread, and ps3_log formats, writes a file
-             * and sends a datagram. None of that has ever run anywhere but the main thread on this port,
-             * and a callback that has never once been invoked is not the place to find out whether it
-             * can. The loop drains this after every submission.
+             * and sends a datagram, none of which has ever run anywhere but the main thread on this
+             * port. The loop drains this after every submission.
              */
             /*
              * First picture only: the same planes hashed separately, and the chroma hashed at both the
              * visible-height and coded-height offsets. Whichever of those matches openh264's U says
-             * where this decoder actually puts its planes - which is a fact to be read off a run rather
-             * than reasoned about from the header, since nothing states it.
+             * where this decoder actually puts its planes, which no header states.
              */
             if (s_out->hashes == 0) {
                 int padded = (h + 15) & ~15;
@@ -506,10 +501,6 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
     return 0;
 }
 
-/*
- * An access unit is a contiguous run of the file, so its start is the start code in front of its first
- * NAL. rc_h264_nal.start points at the header byte, which is just after that code.
- */
 /* Prints whatever the callback has stored since the last call. Runs on the feeding thread. */
 static void drain_hashes(rc_vdec_decode_result *out, int *printed)
 {
@@ -520,6 +511,10 @@ static void drain_hashes(rc_vdec_decode_result *out, int *printed)
     }
 }
 
+/*
+ * An access unit is a contiguous run of the file, so its start is the start code in front of its first
+ * NAL. rc_h264_nal.start points at the header byte, which is just after that code.
+ */
 static const uint8_t *start_code_of(const uint8_t *file, const uint8_t *nal_start)
 {
     if ((size_t)(nal_start - file) >= 4u
@@ -785,8 +780,8 @@ close_out:
      * with EndSequence called immediately before it - and EndSequence completes on the SEQDONE callback
      * rather than on return, so Close was being asked to tear down a sequence still running.
      *
-     * When SEQDONE has not arrived, Close is skipped rather than attempted. That follows the decision
-     * already recorded at the foot of rc_spu_yuv.c for the same hardware and the same class of problem:
+     * When SEQDONE has not arrived, Close is skipped rather than attempted. That is the decision
+     * rc_spu_yuv_exit makes in source/spu/rc_spu_yuv.c, for the same hardware and the same reason:
      * this runs as the process exits, lv2 reclaims a process's resources when it does, and cleanup that
      * cannot hang is worth more here than cleanup that is complete. A hang costs a reboot and the rest
      * of the log.

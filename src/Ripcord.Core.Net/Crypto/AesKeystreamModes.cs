@@ -32,10 +32,10 @@ public static class AesKeystreamModes
     /// under one key and should not pay key expansion each time.
     ///
     /// <para>
-    /// This exists because the A/V receive path was calling <see cref="Ctr(ReadOnlySpan{byte},
-    /// ReadOnlySpan{byte}, ReadOnlySpan{byte}, bool)"/> per datagram — roughly 1800 times a second at 20 Mbps —
-    /// and each call did a full <c>Aes.Create()</c> plus key expansion (a CNG key handle on Windows) to produce
-    /// a byte-for-byte identical key schedule. The caller owns and disposes the returned instance.
+    /// The A/V receive path decrypts per datagram, roughly 1800 times a second at 20 Mbps, and each call to
+    /// <see cref="Ctr(ReadOnlySpan{byte}, ReadOnlySpan{byte}, ReadOnlySpan{byte}, bool)"/> does a full
+    /// <c>Aes.Create()</c> plus key expansion (a CNG key handle on Windows) to produce a byte-for-byte
+    /// identical key schedule. The caller owns and disposes the returned instance.
     /// </para>
     /// </summary>
     public static Aes CreateReusableEcb(ReadOnlySpan<byte> key) => CreateEcb(key);
@@ -58,7 +58,7 @@ public static class AesKeystreamModes
 
         // Materialise the whole counter sequence, then generate the entire keystream in ONE EncryptEcb call.
         //
-        // The obvious implementation calls EncryptEcb once per 16-byte block, and that is what this used to do.
+        // The obvious implementation calls EncryptEcb once per 16-byte block.
         // Measured, that costs ~0.64 us per block — around a thousand times the cost of the AES round itself —
         // because the per-call overhead of the one-shot API dominates completely. A 1360-byte packet meant 85
         // such calls (~57 us); batching them into one call is ~40x faster (~1.4 us) and is the difference

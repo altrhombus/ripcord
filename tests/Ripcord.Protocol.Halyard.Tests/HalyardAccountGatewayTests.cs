@@ -8,9 +8,9 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The 2026-09-30 review's silent sign-out: a refreshed token lived only in memory, and any cloud failure at
-/// restore, a 503 included, cleared the stored account. These drive the real gateway against a fake token
-/// endpoint and an in-memory store.
+/// No silent sign-out: a refreshed token is stored, not held only in memory, and a cloud failure at restore,
+/// a 503 included, keeps the stored account; only a rejected token clears it. These drive the real gateway
+/// against a fake token endpoint and an in-memory store.
 /// </summary>
 public class HalyardAccountGatewayTests
 {

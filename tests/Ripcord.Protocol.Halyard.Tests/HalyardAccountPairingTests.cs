@@ -63,13 +63,13 @@ public sealed class HalyardAccountPairingTests
         Assert.Equal(request.LocalHashedId.ToArray(), capturedContext.LocalHashedId.ToArray());
 
         // The negotiation is answered in full — an ack for the console's OFFER and an ACCEPT naming its
-        // stream id. Stopping after our own OFFER is what left the console silent on the wire.
+        // stream id. Stopping after our own OFFER leaves the console silent on the wire.
         //
         // The ack is posted from a background task on purpose (the flow must not block on it while the
         // console is opening its side), so nothing orders it against PairAsync returning. Wait for the ack
-        // itself rather than assuming it has already landed: reading the counter straight after the call is
-        // what failed on the linux-x64 CI host, which scheduled the assertion first and saw zero. The token
-        // only bounds a genuine failure; a working ack satisfies this the moment it is sent.
+        // itself rather than assuming it has been sent: reading the counter straight after the call races
+        // it, and a host that schedules the assertion first sees zero. The token only bounds a genuine
+        // failure; a working ack satisfies this the moment it is sent.
         await signaling.ResultSent.Task.WaitAsync(cts.Token);
         Assert.Equal(1, signaling.ResultsSent);
         Assert.Equal(consoleSid, signaling.AcceptedPeerSid);
@@ -219,7 +219,7 @@ public sealed class HalyardAccountPairingTests
     {
         // From a phone hotspot the console joined, published its seed and offered in the session our own remote
         // wake had created, and the route took all three as its own (2026-10-10). Frames for another session are
-        // now not ours, so this is a console that never joined, said as such, and nothing is sent to it.
+        // not ours, so this is a console that never joined, said as such, and nothing is sent to it.
         byte[] contextKey = BundledContextKeyOrSkip();
 
         var socket = new ScriptedSocket();

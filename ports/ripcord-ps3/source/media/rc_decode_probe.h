@@ -1,21 +1,20 @@
 /*
- * ripcord-ps3 - does openh264 decode on the PPE, and does it produce the right pixels?
+ * ripcord-ps3 - does openh264 decode on the PPE, and does it produce the right pixels? Also declares
+ * the live-decode seam both decoders sit behind.
  *
- * Step 7's first hardware question. Everything established so far about this decoder was established
- * somewhere else: it compiles for the PPE, it links to a PowerPC64 executable, and it decodes this
- * project's own capture bit-exactly on big-endian PowerPC64 under qemu. None of that is the PPE. qemu is
- * a different processor model, glibc is not newlib, and a Linux process is not 256 MB of XDR with a
- * hypervisor underneath.
+ * The decoder compiles for the PPE, links to a PowerPC64 executable, and decodes this project's own
+ * capture bit-exactly on big-endian PowerPC64 under qemu. None of that is the PPE: qemu is a different
+ * processor model, glibc is not newlib, and a Linux process is not 256 MB of XDR with a hypervisor
+ * underneath.
  *
- * So this reads the capture off the console's disk, runs it through openh264, and hashes each decoded
+ * So the probe reads the capture off the console's disk, runs it through openh264, and hashes each decoded
  * frame with FNV-1a - the same hash, over the same bytes in the same order, that the development machine
  * computed from the reference decode. Matching hashes mean the PS3 produced pixel-identical output to a
  * known-good decode of the same stream. Differing hashes localise the failure to a frame number.
  *
- * THE NAL SPLITTING IS OURS, NOT OPENH264'S, and that is deliberate. rc_h264_annexb.c has 142 host
- * checks behind it and is what the real client will use to find access-unit boundaries in a live stream;
- * feeding openh264 through it here exercises the seam that will exist later rather than a convenient one
- * that will not.
+ * THE NAL SPLITTING IS OURS, NOT OPENH264'S, deliberately. rc_h264_annexb.c has 142 host checks behind
+ * it and is the splitter rc_decode_vdec.c walks live access units with, so feeding openh264 through it
+ * here exercises that seam.
  */
 #ifndef RC_DECODE_PROBE_H
 #define RC_DECODE_PROBE_H
@@ -136,9 +135,9 @@ int rc_decode_live_open(void);
 int rc_decode_live_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats);
 
 /*
- * Called with each decoded picture, inside rc_decode_live_feed, while openh264 still owns the planes.
+ * Called with each decoded picture, inside rc_decode_live_feed, while the decoder still owns the planes.
  * They are valid for the duration of the call only - the decoder reuses them - so a consumer either
- * uses them now or copies them. Using them now is what the display does.
+ * uses them during the call or copies them. The display uses them during the call.
  */
 typedef void (*rc_decode_picture_fn)(void *ctx, const unsigned char *y, const unsigned char *u,
                                      const unsigned char *v, int y_stride, int uv_stride,
@@ -151,15 +150,16 @@ void rc_decode_live_close(void);
 /*
  * WHICH DECODER IS ACTUALLY RUNNING, and the two behind the seam.
  *
- * The console's own H.264 decoder (cellVdec, on the SPEs) is the one to use and openh264 on the PPE is
+ * The console's own H.264 decoder (cellVdec, on the SPEs) is tried first and openh264 on the PPE is
  * the fallback, following the seam-and-stub pattern docs/architecture.md describes for the crypto: the rest of the
  * pipeline neither knows nor cares which answered.
  *
  * The choice is made at open time and reported, because a silent fallback to a decoder that manages
  * 4 fps would look exactly like the hardware one being slow.
  *
- * Call rc_decode_live_hint() before opening when the stream's size is known - it decides which H.264
- * level the hardware decoder is opened at, and therefore how much memory it reserves.
+ * Call rc_decode_live_hint() before opening when the stream's size is known. The hardware decoder
+ * refuses to open for a picture larger than its output buffers. The size does not choose the H.264
+ * level, which is always 42; 1280x720 is assumed when no hint is given.
  */
 typedef enum {
     RC_DECODE_BACKEND_NONE = 0,

@@ -26,13 +26,10 @@
 static rc_session_state s_state;
 
 /*
- * WHAT A FIRST PAIRING SHOULD ASK FOR ON THIS HARDWARE.
+ * What a first pairing should ask for on this hardware.
  *
- * libripcord's defaults are 960x540 at 30 fps with software scaling, which is right for the port
- * that set them - a 3DS, whose screen is 400x240 and whose decoder is a different thing entirely. They
- * are wrong here, and b324 showed exactly how: the first machine ever paired by this port streamed at
- * 29 fps through the SPE scaler, because a record written from scratch inherited a handheld's
- * settings.
+ * libripcord's defaults are 960x540 at 30 fps with software scaling, which is right for the 3DS port
+ * that set them and wrong here: b324, paired from scratch, streamed at 29 fps through the SPE scaler.
  *
  * Every number below was measured on this console during bring-up and is recorded in DECODE.md:
  *
@@ -97,20 +94,16 @@ static int ask(rc_osk_kind kind, const char *prompt, const char *initial, char *
 }
 
 /*
- * OUR OWN LAN ADDRESS, which the registration request has to carry in its HOST header.
+ * Our own LAN address, which the registration request has to carry in its HOST header: the request
+ * tells the console where the client speaking to it lives.
  *
- * Not cosmetic and not the console's: the request tells the console where the client speaking to it
- * lives.
- *
- * ASKED OF A SOCKET THAT ROUTES TO THE CONSOLE, rather than of the network stack in general. Opening a
- * UDP socket towards the console and reading back its local address gives the address on the interface
- * that actually reaches it - which is the right answer for a machine with two interfaces, and is the
- * reason this is not simply "what is my IP". No packet is sent: connect on a datagram socket only
+ * Asked of a socket that routes to the console: opening a UDP socket towards the console and reading
+ * back its local address gives the address on the interface that actually reaches it, which is the
+ * right answer for a machine with two interfaces. No packet is sent: connect on a datagram socket only
  * fixes the peer and picks a route.
  *
- * netCtlGetInfo is the fallback, and it needs netCtlInit first. b322 called it without that and got
- * nothing back, which then reported as "this console does not appear to be on a network" - about the
- * PS3, though it reads like it is about the PS5.
+ * netCtlGetInfo is the fallback, and it needs netCtlInit first (b322 called it without and got
+ * nothing back).
  */
 static int local_address(const char *console_host, char *out, size_t out_size)
 {
@@ -168,17 +161,15 @@ const char *rc_pair_record_dir(void)
 }
 
 /*
- * WHICH FAMILY IS AT THIS ADDRESS, when nobody has said.
+ * Which family is at this address, when nobody has said.
  *
- * The arming probe is already a family test and it is the one that matters: "SRC3" for a PS5 and "SRC2"
- * for a PS4, on TCP 9295's own UDP port, answered with "RES3"/"RES2". That is the same port the
- * registration POST goes to, so a console that answers here is a console that will take the POST - and
- * sending the probe is what arms its listener anyway, which registration requires regardless.
+ * The arming probe is already a family test: "SRC3" for a PS5 and "SRC2" for a PS4, on TCP 9295's own
+ * UDP port, answered with "RES3"/"RES2". That is the same port the registration POST goes to, and
+ * sending the probe is what arms its listener, which registration requires regardless.
  *
- * PS5 IS TRIED FIRST because this port has only ever had PS5s pointed at it; the cost of the order
- * being wrong is one two-second window. Returns 1 for PS5, 0 for PS4, and -1 for "neither answered",
- * which is a real answer rather than a reason to guess: an address that does not respond here is not
- * going to accept a registration, and saying so beats sending one to find out.
+ * PS5 is tried first; the cost of the order being wrong is one two-second window. Returns 1 for PS5,
+ * 0 for PS4, and -1 for "neither answered": an address that does not respond here is not going to
+ * accept a registration, so the caller says so rather than guessing.
  */
 static int detect_family(const char *host)
 {
@@ -219,21 +210,16 @@ int rc_pair_run(const char *host, const char *name, const char *console_id, cons
         return 0;
 
     /*
-     * PRE-FILLED, AND THE PS3 ITSELF IS ASKED FIRST WHEN THERE IS NOTHING REMEMBERED.
+     * The account id is pre-filled, and the PS3 itself is asked first when nothing is remembered:
+     * this console is signed in to that very account and keeps the number in
+     * /dev_hdd0/home/<user>/np_cache.dat - see rc_account_ps3.h for how that was established.
      *
-     * A PSN account id is a nineteen-digit number entered with a controller, and it was the worst step
-     * in the only flow a new user has to get through. This console is signed in to that very account
-     * and keeps the number in /dev_hdd0/home/<user>/np_cache.dat - see rc_account_ps3.h for how that
-     * was established, which was by searching for a number this port already had rather than by
-     * guessing at a file format.
-     *
-     * THE RECORD STILL WINS. A value somebody has already paired with beats one derived from the
+     * The record still wins. A value somebody has already paired with beats one derived from the
      * console, because it is confirmed and this is not.
      *
-     * AND IT IS STILL SHOWN. The keyboard comes up with the number in it rather than being skipped, so
+     * And it is still shown. The keyboard comes up with the number in it rather than being skipped, so
      * a wrong one is a wrong number on a screen instead of a registration the console refuses for
-     * reasons it does not explain. One button instead of nineteen digits is the whole win; skipping the
-     * step as well would trade a falsifiable flow for an unfalsifiable one.
+     * reasons it does not explain.
      */
     {
         const char *prefill = (record.account_id[0] != '\0') ? record.account_id : NULL;
@@ -295,8 +281,7 @@ int rc_pair_run(const char *host, const char *name, const char *console_id, cons
 
     /*
      * THE FAMILY, from discovery when it found one and from the console itself when it did not. Never
-     * assumed: this line used to read `params.is_ps5 = 1;` and that single assumption is the whole
-     * reason a PS4 could be paired with, prompted for a PIN, and refused.
+     * assumed: a PS4 taken for a PS5 can be paired with, prompted for a PIN, and is then refused.
      */
     if (host_type != NULL && host_type[0] != '\0') {
         params.is_ps5 = (strcmp(host_type, "PS4") != 0);
@@ -342,17 +327,11 @@ int rc_pair_run(const char *host, const char *name, const char *console_id, cons
 
         rc_log("pair:  failed - %s\n", detail);
         /*
-         * THE TWO FACTS THE SENTENCE ABOVE LEAVES OUT, and the first attempt at a PS4 needed both.
-         *
-         * "The console refused the registration" is HALYARD_REGIST_ERR_REFUSED, which means a non-2xx
-         * status - and the status is the whole diagnosis: a 404 says the PATH was wrong, which is a
-         * different fault from a 403 saying the key was. The probe matters just as much;
+         * Two facts for the log, not the television. "The console refused the registration" is
+         * HALYARD_REGIST_ERR_REFUSED, which means a non-2xx status, and the status is the diagnosis: a
+         * 404 says the PATH was wrong, which is a different fault from a 403 saying the key was.
          * halyard_regist_message.h records that a console refuses a registration that was not preceded
          * by a matching search probe, so a probe that went unanswered explains the refusal by itself.
-         *
-         * Neither is worth a line on the television - they are for whoever reads the log afterwards -
-         * but leaving them out of the log too meant a refusal that had four possible causes and no way
-         * to tell them apart.
          */
         rc_log("       HTTP status %d; the search probe was %s\n",
                result.http_status,
@@ -388,8 +367,8 @@ int rc_pair_run(const char *host, const char *name, const char *console_id, cons
     /*
      * SAVED WITHOUT LOSING THE OTHERS. halyard_pairing_file_save reads the file, adds or replaces the
      * entry at this address, selects it and writes the whole set back - so pairing a second console
-     * keeps the first. The version that wrote this record straight out destroyed the first console's
-     * keys and said nothing about it.
+     * keeps the first. Writing this one record straight out would destroy the first console's keys
+     * and say nothing about it.
      */
     if (!halyard_pairing_file_save(RC_PAIR_DIR, &record)) {
         show(RC_PHASE_FAILED, "Paired, but could not save it",

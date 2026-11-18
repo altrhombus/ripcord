@@ -23,12 +23,11 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
     /// query parameter, which the caller passes to <see cref="ExchangeCodeAsync"/>.
     ///
     /// <para>
-    /// <b>No <c>state</c> parameter</b>, which is worth stating because its absence looks like an oversight.
-    /// The observed flow sends none, and sending an unrecognised parameter to someone else's authorize endpoint
-    /// is a good way to be rejected for no benefit. What <c>state</c> would defend against — an unsolicited code
-    /// arriving from somewhere else — does not arise here: the flow runs in a web view this process created for
-    /// this one sign-in, and the caller matches the redirect against
-    /// <see cref="HalyardClientConfig.RedirectUri"/> before reading anything out of it.
+    /// <b>No <c>state</c> parameter</b>, deliberately. The observed flow sends none, and an unrecognised
+    /// parameter risks rejection. What <c>state</c> would defend against — an unsolicited code arriving from
+    /// somewhere else — does not arise here: the flow runs in a web view this process created for this one
+    /// sign-in, and the caller matches the redirect against <see cref="HalyardClientConfig.RedirectUri"/>
+    /// before reading anything out of it.
     /// </para>
     /// </summary>
     /// <param name="clientDeviceId">This machine's id, from <see cref="HalyardClientDeviceId"/>.</param>
@@ -43,7 +42,7 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
         q["redirect_uri"] = _config.RedirectUri;
         q["scope"] = _config.ScopeString;
 
-        // The authorize call carries the same device identity the token exchange does. Omitting these was the
+        // The authorize call carries the same device identity the token exchange does. Omitting these is the
         // difference between a code the token endpoint accepts and one it rejects as issued to another device.
         q["device_type"] = HalyardClientConfig.DeviceType;
         q["duid"] = clientDeviceId;
@@ -146,7 +145,7 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
         }
 
         // A body that isn't JSON at all (a proxy's error page, a truncated reply) is the same failure as an empty
-        // one, and reports as one: a raw JsonException used to escape every caller's fallback.
+        // one, and reports as one: a raw JsonException would escape every caller's fallback.
         HalyardTokenResponse? parsed;
         try
         {

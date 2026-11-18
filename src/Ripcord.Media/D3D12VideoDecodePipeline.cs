@@ -8,13 +8,6 @@ using Ripcord.Media.Interop;
 
 namespace Ripcord.Media;
 
-/// <summary>
-/// D3D12-backed decode pipeline over the native <see cref="VideoRenderer"/> (a composition swap
-/// chain). Submissions are non-blocking: video/BGRA frames are queued and a dedicated background
-/// thread does the (potentially expensive) decode + present, so a real stream never blocks the UI
-/// thread. All native-renderer access is serialized under one lock, so the UI-thread resize/dispose
-/// can't race the worker.
-/// </summary>
 /// <summary>Decode-pipeline diagnostics snapshot for the on-screen readout (see <see cref="D3D12VideoDecodePipeline.GetStats"/>).</summary>
 public readonly record struct PipelineStats(
     long DecodedFrames,
@@ -41,9 +34,9 @@ public readonly record struct PipelineStats(
     /// <summary>The display accepts HDR10. Says nothing about what the stream carries.</summary>
     bool IsDisplayHdr = false,
     /// <summary>Both of the above, and the swap chain accepted the colour space — the only one of the three that
-    /// means "you are looking at HDR". When this is false while <see cref="IsHdrTransfer"/> is true, the driver
-    /// is tone-mapping to SDR. These are separate booleans rather than one because the UI previously inferred
-    /// HDR by substring-matching <see cref="Decoder"/>, which lit an HDR pill while tone-mapping to SDR.</summary>
+    /// means "you are looking at HDR". When this is false while <see cref="IsHdrTransfer"/> is true, the picture
+    /// is tone-mapped to SDR. These are separate booleans rather than one so the UI does not infer
+    /// HDR from text, which would light an HDR pill while tone-mapping to SDR.</summary>
     bool IsHdrOutput = false,
     /// <summary>10-bit decode (P010). Independent of HDR — a stream can be 10-bit and SDR.</summary>
     bool IsTenBit = false,
@@ -65,6 +58,13 @@ public readonly record struct PipelineStats(
     /// <summary>Stream format and the device format it is being converted to, or why audio is silent.</summary>
     string AudioFormat = "");
 
+/// <summary>
+/// D3D12-backed decode pipeline over the native <see cref="VideoRenderer"/> (a composition swap
+/// chain). Submissions are non-blocking: video/BGRA frames are queued and a dedicated background
+/// thread does the (potentially expensive) decode + present, so a real stream never blocks the UI
+/// thread. All native-renderer access is serialized under one lock, so the UI-thread dispose can't
+/// race the worker; resizes and display changes are published for the worker to apply.
+/// </summary>
 public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
 {
     private readonly VideoRenderer _renderer = new();
@@ -91,8 +91,8 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         set
         {
             _upscaleMode = value;
-            // Map the product mode to the renderer's spatial filter. Only bilinear (None) and a bicubic
-            // "sharp" fallback are implemented today; the AutoSR/DirectML tiers land later.
+            // Map the product mode to the renderer's spatial filter: FsrFallback is the bicubic "sharp"
+            // filter, and every other mode (None, AutoSrOs, DirectMlApp) is bilinear.
             _renderer.SetUpscaleMode(value == UpscaleMode.FsrFallback ? 1 : 0);
         }
     }
@@ -181,7 +181,7 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
     /// <summary>
     /// Raised once when the graphics device is lost (driver update, TDR, external GPU unplugged). The pipeline
     /// stops rendering at that point and cannot recover in place; the owner must rebuild it and re-bind the
-    /// swap chain. Previously this condition threw on every frame forever behind a frozen picture.
+    /// swap chain.
     /// </summary>
     public event Action<int>? DeviceLost;
 
@@ -261,10 +261,9 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
 
     /// <summary>
     /// Backlog depth at which we stop trying to catch up frame-by-frame and resynchronise instead (~0.5 s at
-    /// 60 fps). Previously this was 90 frames (~1.5 s) and the response was to decode the entire backlog —
-    /// but if the decoder is that far behind, every one of those frames is stale by the time it appears, and
-    /// once any frame is dropped the reference chain is broken anyway. Asking for a fresh IDR and skipping to
-    /// it costs one brief freeze instead of a second and a half of late, corrupt video.
+    /// 60 fps). If the decoder is that far behind, every one of those frames is stale by the time it appears,
+    /// and once any frame is dropped the reference chain is broken anyway. Asking for a fresh IDR and skipping
+    /// to it costs one brief freeze instead of a stretch of late, corrupt video.
     /// </summary>
     private const int MaxQueuedFrames = 30;
 
@@ -318,7 +317,7 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
             _awaitingKeyFrame = false;
         }
 
-        // Pooled copy rather than ToArray(): at 60 fps this path allocated a fresh (often >100 KB, i.e.
+        // Pooled copy rather than ToArray(), which at 60 fps would allocate a fresh (often >100 KB, i.e.
         // large-object-heap) array per frame. The worker returns the buffer to the pool once decoded.
         int length = frame.Payload.Length;
         byte[] buffer = ArrayPool<byte>.Shared.Rent(length);
@@ -342,8 +341,8 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
     private bool _audioReady;
     private bool _audioFailed;
 
-    // Audio observability. There was none: after declaring audioChannels in the launchSpec the only available
-    // signal was whether it sounded different, which cannot distinguish "working" from "silently degraded".
+    // Audio observability. Whether it sounds different cannot distinguish "working" from "silently
+    // degraded"; these counters can.
     private long _audioFramesDecoded;
     private long _audioFramesSkipped;
     private string _audioFormat = string.Empty;
@@ -370,8 +369,8 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
                     // Both sides matter: the console always sends 48 kHz stereo Opus, but the render device may
                     // want something else, and that difference is a resample nobody would otherwise see.
                     // Compare the FORMATS, not the rendered strings: the source string carries an "opus " prefix
-                    // the device string does not, so a string comparison never matched and the arrow was shown
-                    // even when nothing was being converted.
+                    // the device string does not, so a string comparison never matches and the arrow would show
+                    // even when nothing is being converted.
                     bool converting = _audioOutput.SampleRate != OpusAudioDecoder.SampleRate
                                       || _audioOutput.Channels != _audioDecoder!.Channels;
 
@@ -416,18 +415,18 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         }
     }
 
-    /// <summary>Layer 2 test hook: queue a BGRA frame to be drawn scaled to fill the surface.</summary>
+    /// <summary>Test hook: queue a BGRA frame to be drawn scaled to fill the surface.</summary>
     public void PresentBgra(byte[] bgra, int width, int height)
         => _jobs?.TryAdd(RenderJob.Bgra((byte[])bgra.Clone(), width, height));
 
-    /// <summary>Layer 1 test hook: clear the surface to a colour (runs on the worker).</summary>
+    /// <summary>Test hook: clear the surface to a colour (runs on the worker).</summary>
     public void RenderClear(float red, float green, float blue)
         => _jobs?.TryAdd(RenderJob.Clear(red, green, blue));
 
     // Pending panel geometry, published by the UI thread and applied by the decode worker.
     //
-    // These used to call into the renderer directly under _lock — the same lock the worker holds across a whole
-    // decode + present. A window resize or a monitor DPI change therefore blocked the UI thread for a full
+    // Calling into the renderer directly would mean taking _lock — the same lock the worker holds across a whole
+    // decode + present — so a window resize or a monitor DPI change would block the UI thread for a full
     // frame's GPU work, which is exactly the kind of hitch that makes an app feel broken while dragging.
     // Publishing two ints and letting the worker pick them up costs nothing and never blocks.
     private int _pendingWidth;
@@ -673,8 +672,8 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
             {
                 _initialized = false;
 
-                // The rest of this method still runs if the renderer's shutdown throws: the audio stream and the
-                // queued payloads behind it were skipped when it did (after a device loss, review 2026-10-05).
+                // The rest of this method still runs if the renderer's shutdown throws (after a device loss, say),
+                // so the audio stream and the queued payloads behind it are still released.
                 try
                 {
                     _renderer.Shutdown();

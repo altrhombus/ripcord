@@ -1,23 +1,18 @@
 /*
  * ripcord-ps3 - the screen a person actually starts at.
  *
- * Everything before this was a bring-up harness: it ran a fixed list of checks, read its one console's
- * address out of a text file put there over FTP, and reported to a log. That is the right shape for
- * finding out whether a decoder works and the wrong shape for anything else - there was no way to
- * choose a console, no way to change a setting, and no way to find out what went wrong except by
- * fetching a file from the machine afterwards.
+ * The start-up checks in source/app/main.c report to a log; this is where somebody chooses a console,
+ * changes a setting, and finds out what went wrong without fetching a file from the machine.
  *
  * WHAT THIS OWNS AND WHAT IT DOES NOT. It owns the home screen, the settings screen, and the loop that
  * turns a d-pad into a cursor. It owns none of the drawing primitives (rc_overlay), none of the list
  * arithmetic (libripcord/ui/rc_menu.c, which is tested on a host with no console attached), and none
- * of the protocol. It decides what is on the screen and what happens when Cross is pressed, which is
- * the part that is genuinely about this platform.
+ * of the protocol. It decides what is on the screen and what happens when Cross is pressed.
  *
  * IT DRAWS ONTO THE OVERLAY'S SURFACE rather than into the back buffer, for the reason that file gives
  * at length: antialiased text has to be blended, blending means reading what is already there, and
  * reads from RSX memory on this machine are about a hundred times slower than writes. The surface is
- * in main memory with one queued copy per change - which also means the menu costs nothing at all on
- * the frames where nobody pressed anything.
+ * in main memory and is copied to video memory once a frame.
  */
 #ifndef RC_SHELL_H
 #define RC_SHELL_H

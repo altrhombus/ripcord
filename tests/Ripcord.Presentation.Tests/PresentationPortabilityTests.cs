@@ -9,12 +9,9 @@ namespace Ripcord.Presentation.Tests;
 /// that is not WinUI.
 ///
 /// <para>
-/// This is deliberately a test rather than a comment. The repo has precedent both ways — the interop-constants
-/// bundle is protected by <c>BundledInteropConstantsTests</c> and holds, while the "styles live in Styles/, not
-/// in a page's resources" rule was written only as prose and was broken by four separate pages. A layering rule
-/// that nothing checks is a rule that decays, and the specific decay here is silent: the first stray
-/// <c>using Microsoft.UI.Xaml;</c> in the wrong file would undo the entire extraction without any visible
-/// symptom until someone tried to build the macOS front end.
+/// A test rather than a comment, because a layering rule that nothing checks decays, and this decay is silent:
+/// the first stray <c>using Microsoft.UI.Xaml;</c> in the wrong file would undo the entire extraction without
+/// any visible symptom until someone tried to build the macOS front end.
 /// </para>
 /// </summary>
 public class PresentationPortabilityTests

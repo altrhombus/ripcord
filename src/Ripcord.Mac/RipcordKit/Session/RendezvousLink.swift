@@ -1,11 +1,11 @@
 // The rendezvous route's meeting point between the session thread and Swift's cloud work.
 //
 // The rendezvous route (ripcord.h, after halyard_client.h's "THE RENDEZVOUS ROUTE") interleaves two
-// timelines at exact points: the UDP one, which the engine runs on the session's one host-owned thread, and the cloud one (sign-in, the session, the push
-// channel, OFFER/ACCEPT/RESULT), which is async Swift. Neither may drive the other's calls: the engine is not
-// thread-safe and the cloud work must not block a thread. So the session thread prepares the control leg,
-// hands this link to the route's `drive` closure on a task of its own, and then waits on the link, running
-// what the cloud work asks for as it asks for it:
+// timelines at exact points: the UDP one, which the engine runs on the session's one host-owned thread, and
+// the cloud one (sign-in, the session, the push channel, OFFER/ACCEPT/RESULT), which is async Swift. Neither
+// may drive the other's calls: the engine is not thread-safe and the cloud work must not block a thread. So
+// the session thread prepares the control leg, hands this link to the route's `drive` closure on a task of
+// its own, and then waits on the link, running what the cloud work asks for:
 //
 //   drive (Swift, async)                       the session thread (the engine)
 //   ------------------------------------       ---------------------------------------------------------

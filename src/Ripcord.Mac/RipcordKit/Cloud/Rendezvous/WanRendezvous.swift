@@ -2,9 +2,9 @@
 // socket, and re-offer every second until the console's OFFER (its candidates) comes back over the push
 // channel. Ported from HalyardWanRendezvous.cs and HalyardWanConnection.cs.
 //
-// This is the older, simpler route the .NET tree keeps beside the account route (AccountRendezvous), which
-// is the one the app drives today. Ported because it is small and its timeline is tested; the UDP steps
-// (the STUN gather, the local port) are the transport's.
+// The simpler route the .NET tree keeps beside the account route (AccountRendezvous). The app drives the
+// account route; ripcord-lab drives this one. The UDP steps (the STUN gather, the local port) are the
+// transport's.
 
 import Foundation
 import Synchronization

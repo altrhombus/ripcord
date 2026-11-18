@@ -30,9 +30,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     ///
     /// <para>
     /// The grid, not a specific container: focusing a <see cref="GridView"/> hands focus to its own first (or
-    /// last-focused) item, which survives the list being rebuilt underneath. That now covers the one-console
-    /// case too, which used to be a separate panel with a separate focus target — it is a hero-sized cell in
-    /// the same grid, so there is one answer here instead of two.
+    /// last-focused) item, which survives the list being rebuilt underneath. The one-console case is a
+    /// hero-sized cell in the same grid, so it is covered too.
     /// </para>
     ///
     /// <para>
@@ -138,9 +137,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     }
 
     /// <summary>
-    /// Called by the window when a stream closes and this page becomes visible again. Fixes the stale-list
-    /// problem (the page's own <c>Loaded</c> only fires once, so returning from a stream never re-probed), and
-    /// carries the rest-on-disconnect intent so the just-left console can be shown transitioning to rest.
+    /// Called by the window when a stream closes and this page becomes visible again. The page's own
+    /// <c>Loaded</c> fires once, so returning from a stream re-probes from here; it also carries the
+    /// rest-on-disconnect intent so the just-left console can be shown transitioning to rest.
     /// </summary>
     public void OnReturnedFromStream(string? consoleHost, bool restRequested)
     {
@@ -152,10 +151,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Rebuild the page for whatever is actually paired.
     ///
     /// <para>
-    /// Two surfaces now, not three. Nothing paired → the first-run explanation. Anything else → the grid, at
-    /// whatever density <see cref="CardMetrics"/> returns for the viewport and the count. The one-console
-    /// "hero" is that grid holding a single hero-sized cell, which is what removed ~115 lines of code-behind
-    /// and, with them, the drift between two copies of the same card.
+    /// Two surfaces. Nothing paired → the first-run explanation. Anything else → the grid, at whatever density
+    /// <see cref="CardMetrics"/> returns for the viewport and the count. The one-console "hero" is that grid
+    /// holding a single hero-sized cell.
     /// </para>
     /// </summary>
     private void Refresh()
@@ -263,25 +261,22 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     private void OnPageSizeChanged(object sender, SizeChangedEventArgs e)
         => ApplyCardLayout(_items.OfType<ConsoleCardViewModel>().Count());
 
-    /// <summary>
-    /// Size the grid's cells and cap its columns, from <see cref="CardMetrics"/>.
-    ///
-    /// <para>
-    /// The arithmetic is not here on purpose. Breakpoints, cell sizes and the column cap are a rule that can
-    /// be wrong on a display nobody in the room owns, and the previous version of it — three literals in a
-    /// switch — could only be checked by resizing a window and looking. <c>CardMetrics</c> is pure and has
-    /// tests; this method's whole job is to hand it a width and apply the answer.
-    /// </para>
-    ///
-    /// <para>
-    /// Returns the layout so the caller can also ask it about the add tile, rather than computing it twice
-    /// from the same two inputs and eventually disagreeing with itself.
-    /// </para>
-    /// </summary>
     // Windows' text size, read once: the page is built fresh on each visit, and the rest of the app reads it at
     // start-up too (see App.ScaleSettingsWrapToTextSize).
     private static readonly double TextScale = new Windows.UI.ViewManagement.UISettings().TextScaleFactor;
 
+    /// <summary>
+    /// Size the grid's cells and cap its columns, from <see cref="CardMetrics"/>.
+    ///
+    /// <para>
+    /// Breakpoints, cell sizes and the column cap live in <c>CardMetrics</c>, which is pure and has tests; this
+    /// method hands it a width and applies the answer.
+    /// </para>
+    ///
+    /// <para>
+    /// Returns the layout so the caller can also ask it about the add tile, rather than computing it twice.
+    /// </para>
+    /// </summary>
     private CardLayout ApplyCardLayout(int consoleCount)
     {
         CardLayout layout = CardMetrics.For(
@@ -311,14 +306,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     }
 
     /// <summary>
-    /// Push the current cell size onto the wrapping panel, if it exists yet.
+    /// Push the current cell size onto the wrapping panel, if it exists.
     ///
     /// <para>
-    /// <b>It usually does not, at the moment you would expect it to.</b> <c>ItemsPanelRoot</c> is null while
-    /// the page is loading and still null in the grid's own <c>Loaded</c> - it is materialised from the
-    /// <c>ItemsPanelTemplate</c> during the first measure pass. Setting the size before then goes nowhere and
-    /// leaves the markup's own <c>ItemWidth</c> standing, which put a hero-density CARD inside a
-    /// grid-density CELL and wrapped the console's name to one letter per line.
+    /// <c>ItemsPanelRoot</c> is null while the page is loading and still null in the grid's own <c>Loaded</c>:
+    /// it is materialised from the <c>ItemsPanelTemplate</c> during the first measure pass. Setting the size
+    /// before then goes nowhere and leaves the markup's own <c>ItemWidth</c> standing, which puts a
+    /// hero-density CARD inside a grid-density CELL and wraps the console's name to one letter per line.
     /// </para>
     ///
     /// <para>
@@ -399,7 +393,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// <summary>
     /// Hand the card off to the stream page, so starting a session carries the eye across instead of cutting
     /// to black. Best-effort in every direction: if the container is not realised, or the animation is not
-    /// picked up by the other page, navigation happens exactly as it did before.
+    /// picked up by the other page, navigation happens without it.
     /// </summary>
     private void PrepareConnectAnimation(ConsoleCardViewModel item)
     {
@@ -410,12 +404,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         try
         {
-            // Always the container now. This used to branch on which layout was showing, because the hero
-            // card sat outside any items control and had no container to ask for - so the one-console path
-            // was the only one that cut to black when the branch was wrong. Every card is a GridViewItem.
+            // Always the container: every card is a GridViewItem, the hero included.
             //
             // The card's mark, not the card: the stream page lands it on its own mark, top left. A whole card
-            // stretched over the window is what it used to be, and in Light that is a white screen.
+            // stretched over the window is, in Light, a white screen.
             UIElement? source = ConsoleGrid.ContainerFromItem(item) is GridViewItem container
                 ? FindMark(container)
                 : null;
@@ -452,11 +444,6 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     }
 
     /// <summary>
-    /// The card's secondary actions. Built here rather than in markup so the overflow button and the
-    /// right-click / menu-key path share one definition \u2014 two copies would drift the moment either grew an
-    /// entry.
-    /// </summary>
-    /// <summary>
     /// Write a desktop shortcut that launches straight into this console, and say whether it worked.
     ///
     /// <para>
@@ -475,6 +462,11 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         ShortcutBar.IsOpen = true;
     }
 
+    /// <summary>
+    /// The card's secondary actions. Built here rather than in markup so the overflow button and the
+    /// right-click / menu-key path share one definition \u2014 two copies would drift the moment either grew an
+    /// entry.
+    /// </summary>
     private MenuFlyout BuildConsoleFlyout(ConsoleCardViewModel item)
     {
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
@@ -561,8 +553,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
     /// <summary>
     /// The pointer wash, and only the pointer. Focus is the container's ring - see the container style - and
-    /// the two are deliberately different kinds of mark: they were one shared wash at two opacities until
-    /// 2026-09-20, which left a pad user unable to tell where focus was.
+    /// the two are deliberately different kinds of mark: one shared wash at two opacities leaves a pad user
+    /// unable to tell where focus is.
     /// </summary>
     private static void SetHighlight(object sender, bool on)
     {
@@ -594,9 +586,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// <summary>
     /// End the press in progress, from the page. Pressing a card lets its GridViewItem capture the pointer, and
     /// while it holds the capture the release, the capture-lost and the exit all go to that container, not the
-    /// card's Border where the handlers sit. Pressing and dragging off the card before letting go therefore left
-    /// it drawn pressed (2026-10-02). The page sees every release and capture-lost, handled or not, so it ends
-    /// the press whichever element got the event.
+    /// card's Border where the handlers sit. Pressing and dragging off the card before letting go would therefore
+    /// leave it drawn pressed. The page sees every release and capture-lost, handled or not, so it ends the
+    /// press whichever element got the event.
     /// </summary>
     private void EndPress()
     {
@@ -647,17 +639,16 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Wire each realized container, which is where focus actually lands.
     ///
     /// <para>
-    /// <b>The container, not the card inside it.</b> The template's Border hooks GotFocus, but a
-    /// <see cref="GridView"/> focuses the <see cref="GridViewItem"/> that <em>wraps</em> the template — and
-    /// routed events bubble upward, so a descendant never learns that its own ancestor was focused. Everything
-    /// hung on the Border's focus therefore only ever fired for the mouse: the accent wash never lit for a pad,
-    /// and the context menu attached there was invisible to a search that walks up from the focused element.
-    /// The pad's North button found nothing to open, which is exactly how this was discovered.
+    /// <b>The container, not the card inside it.</b> A <see cref="GridView"/> focuses the
+    /// <see cref="GridViewItem"/> that <em>wraps</em> the template, and routed events bubble upward, so the
+    /// template's Border never learns that its ancestor was focused. Anything hung on the Border's focus fires
+    /// only for the mouse, and a context menu attached there is invisible to a search that walks up from the
+    /// focused element, so the pad's North button would find nothing.
     /// </para>
     ///
     /// <para>
     /// Containers are recycled, so both the flyout and the handlers are reassigned on every pass rather than
-    /// set once — a container that arrives carrying the previous item's menu is worse than one carrying none.
+    /// set once, or a container arrives carrying the previous item's menu.
     /// </para>
     /// </summary>
     private void OnPrepareConsoleContainer(ListViewBase sender, ContainerContentChangingEventArgs args)
@@ -685,9 +676,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 : null;
         }
 
-        // No focus handlers. Focus used to light the hover wash too, against "hover is a wash, focus is a ring";
-        // in light theme that turned the focused hero grey. The ring is the container's focus visual, and it is
-        // the only mark focus makes. See ConsoleCardViewModel.IsHighlighted.
+        // No focus handlers: hover is a wash, focus is a ring. Lighting the wash on focus as well turns the
+        // focused hero grey in light theme. The ring is the container's focus visual, and it is the only mark
+        // focus makes. See ConsoleCardViewModel.IsHighlighted.
         container.ContextFlyout = BuildConsoleFlyout(item);
 
         // Open the window, press A, playing - the promise the one-console layout exists to keep.
@@ -822,8 +813,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         try
         {
             // Removing a pairing is destructive and not undoable — it discards the credential, so getting the
-            // console back means re-entering a link code on the console itself. It previously happened
-            // instantly on a single click, next to the Connect button.
+            // console back means re-entering a link code on the console itself. So it asks first.
             var confirm = new ContentDialog
             {
                 XamlRoot = XamlRoot,

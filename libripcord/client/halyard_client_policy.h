@@ -1,10 +1,9 @@
 /*
  * libripcord - the connect sequence's timing and bookkeeping, as pure functions.
  *
- * WHY A SEPARATE FILE. halyard_client.c owns sockets and a console, and nothing that owns a console can
- * be tested without one. The decisions it makes on a clock - when to ask for a keyframe again, when an
- * input STATE packet is owed, what a zero in the config means - do not need either, and each of them has
- * a hardware finding behind it that a test should be able to hold in place:
+ * Separate from halyard_client.c so they can be tested without sockets or a console. Each decision -
+ * when to ask for a keyframe again, when an input STATE packet is owed, what a zero in the config means -
+ * has a hardware finding behind it:
  *
  *   the IDR latch            b124 (asking once per loss starves the decoder) and b141 (armed at start,
  *                            because a loss-free stream otherwise never asks at all)
@@ -30,13 +29,13 @@
 /* .NET's senkusha budget: 20 attempts at 300 ms, inside the 8 s box below. */
 #define HALYARD_CLIENT_DEFAULT_SENKUSHA_ATTEMPTS 20u
 /* .NET's stream budget, matched to the vendor client persisting ~100 tries / ~30 s under loss (cap55).
- * The PS3 used 20; its console was on a clean wire. */
+ * The PS3 uses 20, against a console on a clean wire. */
 #define HALYARD_CLIENT_DEFAULT_STREAM_ATTEMPTS 100u
 #define HALYARD_CLIENT_DEFAULT_ATTEMPT_INTERVAL_MS 300u
 /* .NET's ask. The granted size is reported: the PS3's lv2 capped a 1 MB ask at 124,800 bytes (b128). */
 #define HALYARD_CLIENT_DEFAULT_RCVBUF (4 * 1024 * 1024)
-/* .NET's launch-spec defaults (HalyardStreamingSession.BuildLaunchSpecJson). The PS3's 640x360@30 and
- * 2000 kbps were that port's decoder talking, as its 720p cap was. */
+/* .NET's launch-spec defaults (HalyardStreamingSession.BuildLaunchSpecJson). A port whose decoder needs
+ * less, as the PS3's 720p cap does, sets its own in the config. */
 #define HALYARD_CLIENT_DEFAULT_WIDTH 1280
 #define HALYARD_CLIENT_DEFAULT_HEIGHT 720
 #define HALYARD_CLIENT_DEFAULT_FPS 60
@@ -61,7 +60,7 @@
  * Fills every 0 in `in` with its default and normalises the rest, into `out` (which may be `in`).
  *
  * fps: anything above 30 becomes 60 and anything else 30, because the only two rates either reference
- * implementation has ever asked for are 30 and 60 and the console's answer to a third is unknown [X].
+ * implementation asks for are 30 and 60 and the console's answer to a third is unknown [X].
  * width/height: if either is 0 both take the default, since half a resolution is not one.
  * require_session_ready: 0 is the default, which is 1 (wait); a NEGATIVE value is the explicit "do not
  * wait". The header's "Default 1" and its "0 takes the default" could not both hold for a flag
@@ -76,8 +75,8 @@ void halyard_client_config_resolve(const halyard_client_config *in, halyard_clie
 
 /*
  * "We are blind until a keyframe arrives." ARMED AT THE START of streaming (b141: 890 frames, no
- * keyframe, no request ever sent, because the only thing that had ever armed it was loss and the crypto
- * rewrite removed the loss), re-armed by loss and by the host's KEYFRAME command, and cleared only when a
+ * keyframe, no request sent, because loss was the only thing that armed it and that stream had
+ * none), re-armed by loss and by the host's KEYFRAME command, and cleared only when a
  * keyframe is actually delivered - a request that produced nothing has fixed nothing (b124: one request
  * per loss event, 2 keyframes in thirty seconds, 835 of 857 frames undecodable).
  *
@@ -145,7 +144,7 @@ typedef struct {
  * passed; a STATE packet on the first poll and every HALYARD_CLIENT_INPUT_STATE_MS after, changed or not.
  *
  * `writer->previous` and `have_previous` are updated here, once both packets are built - both decisions
- * are against the SAME previous frame, which is what rc_connect.c 1404-1407 records. Sequence numbers
+ * are against the SAME previous frame, as in send_input (rc_connect.c). Sequence numbers
  * advance only for packets actually produced.
  *
  * Compared field by field, never with memcmp: the struct has padding, and padding is not copied

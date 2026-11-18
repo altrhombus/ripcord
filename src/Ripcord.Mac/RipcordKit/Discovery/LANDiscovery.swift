@@ -4,11 +4,10 @@
 // the reply);
 // this file is only the socket. It follows the PS3 port's broadcast_find, which is hardware-verified:
 // one UDP socket with SO_BROADCAST, the probe to the limited broadcast address on each family's port,
-// and every reply fed to the core's parser. One socket serves both families, since a PS5 and a PS4
+// and every reply fed to the engine's parser. One socket serves both families, since a PS5 and a PS4
 // answer on different ports and nothing else about the exchange differs.
 //
-// Synchronous and blocking for now, because its first caller is ripcord-lab. The session actor will
-// wrap it rather than change it.
+// Synchronous and blocking: a caller that must not block runs it off its own actor, as NetworkWatch does.
 
 internal import CRipcordEngine
 import Darwin
@@ -46,6 +45,9 @@ public enum DiscoveryError: Error, Sendable {
 }
 
 public enum LANDiscovery {
+    public static let defaultTimeout: Duration = .seconds(3)
+    public static let resendInterval: Duration = .milliseconds(500)
+
     /// Searches for consoles until `timeout` has passed, or until every one of `hosts` has answered.
     ///
     /// **Broadcast or direct.** With no `hosts` the probe is broadcast. With hosts, it goes to each of
@@ -59,9 +61,6 @@ public enum LANDiscovery {
     /// figures are [X]; and one three-second run with a single probe heard nothing at all. Repeating it
     /// covers a lost datagram and a slow wake alike, and costs 64 bytes a time. Replies are de-duplicated by
     /// host id.
-    public static let defaultTimeout: Duration = .seconds(3)
-    public static let resendInterval: Duration = .milliseconds(500)
-
     public static func search(families: [ConsoleFamily] = ConsoleFamily.allCases, hosts: [String] = [],
                               timeout: Duration = defaultTimeout) throws(DiscoveryError) -> [DiscoveredConsole] {
         let sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)

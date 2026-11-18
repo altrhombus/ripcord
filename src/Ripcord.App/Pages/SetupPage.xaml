@@ -60,7 +60,7 @@
         </StackPanel>
 
         <!--  ============ Steps ============  -->
-        <!--  The scroller gets a full-width child and the column centres inside it. Handed the 820 column directly, it drew it against the right edge (its own placement for content narrower than itself), and the steps sat off to the right of the title.  -->
+        <!--  The scroller gets a full-width child and the column centres inside it. Handed the 820 column directly, it draws it against the right edge (its own placement for content narrower than itself), and the steps sit off to the right of the title.  -->
         <ScrollViewer
             x:Name="StepsScroller"
             Grid.Row="1"
@@ -161,9 +161,8 @@
                             TextWrapping="Wrap" />
                         <!--
                             What to switch on at the console, as numbered steps at body size with each menu path set
-                            under it. It was one run-on paragraph in small grey caption text, and it is the thing most
-                            likely to stop a first pairing (visual audit, 2026-10-08). The steps are built in code from
-                            the flow's state; see BuildPreflight.
+                            under it, not a paragraph of caption text: it is the thing most likely to stop a first
+                            pairing. The steps are built in code from the flow's state; see BuildPreflight.
                         -->
                         <StackPanel Spacing="8">
                             <TextBlock x:Name="ConsolePreflightText" TextWrapping="Wrap" />
@@ -239,7 +238,7 @@
                             Height="96"
                             HorizontalAlignment="Left"
                             WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
-                        <!--  The summary in the row cards Settings uses: it was three plain lines, the least composed screen in setup (showcase review, R8).  -->
+                        <!--  The summary, one row card per step, in the cards Settings uses. Each card's description is set in code.  -->
                         <StackPanel Spacing="4">
                             <tk:SettingsCard x:Name="DonePictureCard" x:Uid="SetupPage_DonePictureCard" />
                             <tk:SettingsCard x:Name="DoneConsoleCard" x:Uid="SetupPage_DoneConsoleCard" />
@@ -280,16 +279,14 @@
         <!--
             ============ Welcome ============
 
-            The identity room (design.md: personality has three rooms, and first run is one). It was the barest
-            screen in the app: a title, an 88 px mark at the top-left, a paragraph, and stock buttons at the
-            window's corner, with most of the window empty (visual audit, 2026-10-08).
+            The identity room (docs/design.md: personality has three rooms, and first run is one).
 
-            So it is a composition of its own, over the whole page, centred: the lockup, which assembles when the
+            A composition of its own, over the whole page, centred: the lockup, which assembles when the
             step appears; one sentence; and one way on, the wedge button, because starting Ripcord is a launch.
             Skipping is beside it and quiet. The page's header, steps and footer are hidden while it shows, and the
             step dashes only begin once you are past it: Welcome is the door, not step zero.
 
-            The wordmark is here and nowhere else in a task screen (showcase plan, decision B, 2026-10-09).
+            The wordmark is here and on no other task screen.
         -->
         <StackPanel
             x:Name="WelcomeView"

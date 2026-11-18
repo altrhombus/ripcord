@@ -1,7 +1,7 @@
 /*
  * ripcord-ps3 - the console's own H.264 decoder (cellVdec) behind the live-decode seam.
  *
- * VALIDATED BEFORE IT WAS WIRED IN, which is the only reason it is here. b159 decoded the same capture
+ * VALIDATED AGAINST TWO OTHER DECODERS, which is the only reason it is here. b159 decoded the same capture
  * with this decoder and with openh264 and compared them plane by plane: Y, U and V are bit-identical
  * over all 230,400 luma bytes, and a third decoder (ffmpeg, on the development machine) produces the
  * same luma hash again. Three independent decoders agreeing is what makes it safe to put this in the
@@ -49,14 +49,13 @@ void rc_decode_vdec_set_sink(rc_decode_picture_fn fn, void *ctx);
 void rc_decode_vdec_set_rgb_sink(rc_decode_picture_rgb_fn fn, void *ctx);
 
 /*
- * Submits one access unit and delivers at most one finished picture to the sink. Returns 1 if a picture
- * was delivered.
+ * Submits one access unit and delivers every finished picture that is waiting to the sink. Returns 1 if
+ * a picture was delivered.
  *
  * DELIVERY HAPPENS HERE, ON THE CALLER'S THREAD, not in the library's callback. The callback collects
- * the picture into one of two buffers this file owns and marks it ready; this call picks it up. The sink
- * drives the SPE colour conversion and the RSX blit, and those have only ever run on the thread that
- * calls this - keeping them there is worth the flag. There is no copy: the buffers are ours, so the
- * handoff is a pointer and a flag.
+ * each picture into a ring of buffers this file owns and publishes it; this call drains the ring. The
+ * sink drives the RSX blit, which runs on the thread that calls this. There is no copy: the buffers
+ * are ours, so the handoff is a ring index.
  */
 int  rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats);
 void rc_decode_vdec_close(void);

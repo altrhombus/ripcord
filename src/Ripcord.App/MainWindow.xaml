@@ -2,16 +2,16 @@
 <!--
     Two layers: chrome, and the stage.
 
-    There used to be a NavigationView here. It disambiguates five or more peer destinations, and Ripcord has
-    one destination and two utilities — so its steady state was a column whose only job was to highlight the
-    page you were already on. On a 1280px handheld that column is most of a fourth console card. It also cost
-    a gamer their first press: the first focus stop was the pane, not the thing they came to play.
+    The chrome is a title bar over one Frame, with no NavigationView. A NavigationView disambiguates five or
+    more peer destinations, and Ripcord has one destination and two utilities — so its steady state would be
+    a column whose only job is to highlight the page you are already on. On a 1280px handheld that column is
+    most of a fourth console card, and it would make the pane the first focus stop instead of the thing a
+    gamer came to play.
 
-    The stage stays a separate Frame, but now for a principled reason rather than the workaround it started as.
-    It was invented because hosting the stream inside the NavigationView inherited that control's content-area
-    border and rounded corner, which drew a thin light line along the top and left of the video. The honest
-    version of the same arrangement: a running stream is not a place you navigate to inside app furniture — it
-    owns the window, it is never in a back stack, and GoBack cannot reach it.
+    The stage is a separate Frame over the chrome: a running stream is not a place you navigate to inside
+    app furniture — it owns the window, it is never in a back stack, and GoBack cannot reach it. Hosting it
+    inside a control's content area would also inherit that control's border and rounded corner, a thin
+    light line along the top and left of the video.
 -->
 <Window
     x:Class="Ripcord_App.MainWindow"
@@ -32,18 +32,18 @@
         free — it only applies when the focused element does not handle the arrow itself, so text boxes,
         sliders and scrollers keep their own behaviour untouched.
 
-        The point is not the keyboard feature. It is that the pad's Down and the keyboard's Down now land on
-        the same element by construction, because both go through the same focus engine. Two directional
-        models over one layout is how a surface ends up navigable with one input and subtly wrong with the
-        other, and nobody notices until someone puts a keyboard down and picks a controller up.
+        The point is not the keyboard feature. It is that the pad's Down and the keyboard's Down land on the
+        same element. Two directional models over one layout is how a surface ends up navigable with one
+        input and subtly wrong with the other, and nobody notices until someone puts a keyboard down and picks
+        a controller up.
 
-        Since 2026-10-01 a plain arrow that reaches this grid unhandled goes through FocusPilot instead, the pad's
-        own path, because the pad needed a fallback the engine doesn't have (see OnRootKeyDown). This setting
-        still covers what doesn't bubble here.
+        A plain arrow that reaches this grid unhandled goes through FocusPilot, the pad's own path, because
+        the pad has a straight-line fallback the focus engine does not (see OnRootKeyDown). This setting
+        covers what does not bubble here.
     -->
     <Grid XYFocusKeyboardNavigation="Enabled">
         <Grid.RowDefinitions>
-            <!--  Collapsed while a stream is running, so the video is genuinely immersive.  -->
+            <!--  Set to 0 from code while a stream runs full screen; a windowed stream keeps the title bar.  -->
             <RowDefinition x:Name="TitleBarRow" Height="48" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>

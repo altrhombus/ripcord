@@ -14,16 +14,16 @@
 
     <Page.Resources>
         <!--
-            The card. Two layers: a Border for the surface, and a Rectangle inside it carrying a wash of the
-            console's vendor accent. Same trick the About page's identity card uses — kept to a low opacity so
-            it reads as a tint over Mica rather than a coloured panel, and rounded on the rectangle itself
-            rather than relying on the parent to clip.
+            The card. A Border in the card's own material (Ripcord.Card.xaml), and inside it one Grid that
+            stacks the top highlight, the hover wash, the play wedge, the content and the overflow button.
+            The vendor accent appears only on the wedge's rim and the family mark, never as a fill.
 
             The whole card is the primary action. That is one focus stop per console for a controller, which
             is the entire reason it is built this way rather than as a row of buttons: a pad should reach a
             console in one press, not tab past a Connect and a Remove to get to the next one. Secondary
-            actions live in the overflow flyout, which is also wired as the card's ContextFlyout so
-            right-click and the pad's menu button both open it.
+            actions live in the overflow flyout, which the code-behind also opens on a context request and
+            sets as the container's ContextFlyout, so right-click, the menu key and the pad's menu button
+            all open it.
         -->
         <!--
             Bindings go through State, which is the view-model's single notifying property: the whole card is one
@@ -68,8 +68,8 @@
 
                     <!--
                         Hover only. Focus is a ring drawn OUTSIDE the card by the system focus visual, which
-                        is a different kind of mark on purpose: the two used to be one wash at two opacities,
-                        0.10 and 0.22, and were indistinguishable on a real screen.
+                        is a different kind of mark on purpose: one wash at two opacities is
+                        indistinguishable on a real screen.
                     -->
                     <!--  Faded in and out over RipcordDurationStateChange; the transition is set in code, and only with motion on.  -->
                     <Rectangle
@@ -79,9 +79,10 @@
                         Opacity="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource ShownOpacity}}" />
 
                     <!--
-                        The wedge, trailing edge, full height. 92 of the card's 280 - a third of it, which is
-                        what stops it reading as an icon that wandered right. Muted rather than removed when
-                        the console did not answer; PlayWedge.xaml has the argument for that departure.
+                        The wedge, trailing edge, full height. Its width comes from CardMetrics: 72 of the
+                        dense card's 280, 112 of the roomy card's 348, and 35% of the hero - wide enough
+                        that it does not read as an icon that wandered right. Muted rather than removed when
+                        the console did not answer; PlayWedge.xaml has the argument for that.
                     -->
                     <controls:PlayWedge
                         Width="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=Wedge}"
@@ -96,25 +97,25 @@
                         MutedAccent="{ThemeResource ControlStrongFillColorDisabledBrush}" />
 
                     <!--
-                        Content sits in the leading two-thirds. The right margin clears the wedge, and the
-                        slack lives in the name's row, the one line that can trim whole lines away rather than
-                        be cut through. "Played 31 min ago" lost its bottom third when the slack sat on a row
-                        that could only be clipped.
+                        Content sits in the leading part of the card. The right margin clears the wedge, and
+                        the slack lives in the name's row, the one line that can trim whole lines away rather
+                        than be cut through. On a row that can only be clipped, a short card would cut the
+                        bottom third off a line of text.
                     -->
                     <Grid Margin="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=Margin}">
                         <!--
-                            Last-played gets its own row. It shared the status row for one build and "Played 11
-                            Sep 2026" came out as "Played 11 Sep 2" - the text column here is about 164px once
-                            the wedge and the padding are taken out, which is not enough for a status word and a
-                            date side by side. The hero has room for both; this does not.
+                            Last-played gets its own row. The dense card's text column is 180px once the wedge
+                            and the padding are taken out, which is not enough for a status word and a date side
+                            by side: "Played 11 Sep 2026" comes out as "Played 11 Sep 2". The hero has room
+                            for both; this does not.
 
                             The name and its vendor trail share the one * row, and that is what decides who loses
-                            when the card is short. The card's height is fixed and Windows' text size is not, so
-                            at 150% text a two-line name on the hero needs more than the card has. Auto rows are
-                            measured first, so the status line is sized before the name is offered anything, and
-                            the name trims to the lines that are left. While the name sat in an Auto row, the
-                            status line was the one clipped, and it is the line that says whether pressing the
-                            card will work.
+                            when the card is short. The card's height is set by the layout and Windows' text
+                            size is not, so at 150% text a two-line name on the hero can need more than the card
+                            has. Auto rows are measured first, so the status line is sized before the name is
+                            offered anything, and the name trims to the lines that are left. With the name in an
+                            Auto row, the status line would be the one clipped, and it is the line that says
+                            whether pressing the card will work.
                         -->
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
@@ -124,7 +125,7 @@
 
                         <!--
                             Top-aligned so the trail stays under the name rather than being pushed down to meet
-                            the status line; the slack falls below it, as it did when it had a spacer row.
+                            the status line; the slack falls below it.
                         -->
                         <Grid VerticalAlignment="Top">
                             <Grid.RowDefinitions>
@@ -133,13 +134,13 @@
                             </Grid.RowDefinitions>
 
                             <!--
-                                The name leads. Two lines at most; the overflow button lives in the wedge's corner
-                                now, so the name has the whole text column. The tooltip REPEATS the name rather than being the only copy:
-                                touch never hovers, so anything reachable by hover alone is unreachable on a
-                                handheld. Details in the overflow menu is the copy reachable by finger, pad and
-                                mouse.
+                                The name leads. Two lines at most; the overflow button lives in the wedge's corner,
+                                so the name has the whole text column. The tooltip REPEATS the name rather than
+                                being the only copy: touch never hovers, so anything reachable by hover alone is
+                                unreachable on a handheld. Details in the overflow menu is the copy reachable by
+                                finger, pad and mouse.
                             -->
-                            <!--  Its own foreground, like every other line here: inherited, it took the grid item's pointer-over colour and greyed out under the pointer.  -->
+                            <!--  Its own foreground, like every other line here: inherited, it would take the grid item's pointer-over colour and grey out under the pointer.  -->
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                 MaxLines="2"
@@ -170,9 +171,10 @@
                         </Grid>
 
                         <!--
-                            Status, last. A coloured dot AND the word, never colour alone. While the probe is
-                            in flight the dot is a spinner instead: "finding out" and "found out, it is
-                            nothing" are opposite answers and must not look alike.
+                            Status is the last row, the Grid after the caption below. A coloured dot AND the
+                            word, never colour alone. While the probe is in flight the dot is a spinner
+                            instead: "finding out" and "found out, it is nothing" are opposite answers and
+                            must not look alike.
                         -->
                         <!--
                             Below hero density this row exists and the status row is beneath it; at hero
@@ -200,9 +202,9 @@
 
                         <!--
                             A Grid, not a horizontal StackPanel: a StackPanel offers its children unlimited width, so
-                            nothing in it could trim, and at large text "Played 2 days ago" ran on under the wedge and
-                            was cut there mid-word (visual audit, 2026-10-08). The caption takes what is left and
-                            trims; the dot and the status word keep their size.
+                            nothing in it can trim, and at large text "Played 2 days ago" would run on under the
+                            wedge and be cut there mid-word. The caption takes what is left and trims; the dot and
+                            the status word keep their size.
                         -->
                         <Grid
                             Grid.Row="2"
@@ -213,15 +215,15 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <!--
-                                The ring is 16, not 10, and that is the whole of the fix.
+                                The ring is 16, and must not be smaller.
 
                                 This is the stock WinUI ProgressRing - nothing here is hand-drawn - but its
                                 template lays six dots around a circle and animates their size and opacity.
                                 Below about sixteen pixels the dots land on fractions of a pixel, so instead
-                                of reading as motion around a ring they read as a faint sparkle, which is
-                                exactly how it was reported. The control's own documented minimum is 16.
+                                of reading as motion around a ring they read as a faint sparkle. The
+                                control's own documented minimum is 16.
 
-                                The dot it replaces stays 8: a resting indicator wants to be small and a
+                                The dot it stands in for is 8: a resting indicator wants to be small and a
                                 moving one wants to be legible, and the Grid sizes to the larger so neither
                                 shifts the caption beside it.
                             -->
@@ -269,8 +271,8 @@
                         carries the state and the wedge already says the card launches.
                     -->
                     <!--
-                        Held inside the wedge: at large text the label grew left across the diagonal (visual audit,
-                        2026-10-08). The hero's wedge is 184 wide; this keeps clear of its slant and wraps instead.
+                        Held inside the wedge: at large text an unbounded label grows left across the diagonal.
+                        MaxWidth is 65% of the wedge's width, which keeps clear of the slant, and the label wraps.
                     -->
                     <TextBlock
                         MaxWidth="{x:Bind State.Geometry, Mode=OneWay, Converter={StaticResource Geometry}, ConverterParameter=ActionLabelWidth}"
@@ -286,9 +288,8 @@
 
                     <!--
                         The overflow sits in the card's top-trailing corner, the place Windows and the console
-                        shells put a tile's "more". It used to float at the wedge's leading edge, mid-card, which
-                        read as misplaced (visual audit, 2026-10-08). A button nested inside a clickable item is
-                        fine: it handles the pointer first, so opening the menu does not also start a connect.
+                        shells put a tile's "more". A button nested inside a clickable item is fine: it handles
+                        the pointer first, so opening the menu does not also start a connect.
                     -->
                     <Button
                         MinWidth="{StaticResource RipcordTouchTarget}"
@@ -319,10 +320,10 @@
                     outline is a Rectangle sitting over the fill, sized to the tile.
                 -->
                 <!--
-                    The card's own material, at lower emphasis. It was a flat SubtleFillColorSecondaryBrush,
-                    which looked fine beside the old flat cards and looked like a different app beside the
-                    new ones - a grey rectangle sitting in a row of gradients. A ghost of a card has to be
-                    made of the same stuff as the card, or it stops reading as "one more of these".
+                    The card's own material, at lower emphasis. A flat fill beside the cards is a grey
+                    rectangle sitting in a row of gradients, and looks like a different app. A ghost of a
+                    card has to be made of the same stuff as the card, or it stops reading as "one more of
+                    these".
 
                     Opacity rather than a second set of colours: one number says "this one is not real yet",
                     and it cannot drift out of step with the card the way a parallel palette would.
@@ -391,11 +392,10 @@
     </Page.Resources>
 
     <!--
-        The page column every other page uses, centred, with the title on its left edge. Home had its own: a
-        1500 cap, sized to its content, so its title followed the cards and sat at three different places for one,
-        three and no consoles (showcase review, R1). Now the hero stops at the column's width, the grid fills the
-        column from its left edge (two cards a row), and the empty state is centred in it (decision E, 2026-10-09).
-        Stretched, not centred: centred, a grid sizes to its content and the title moves with it.
+        The page column every other page uses, centred, with the title on its left edge. The hero stops at the
+        column's width, the grid fills the column from its left edge (two cards a row), and the empty state is
+        centred in it. Stretched, not centred: centred, a grid sizes to its content and the title moves with it,
+        sitting in a different place for one, three and no consoles.
     -->
     <Grid
         Padding="24,16,24,0"
@@ -406,19 +406,16 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
 
-            <!--  The shortcut confirmation, below the grid. ("Add another console" moved into the grid's footer.)  -->
+            <!--  The shortcut confirmation, below the grid.  -->
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!--
-            No add button up here. There used to be one beside the title, kept on the reasoning that a header
-            button is what people look for and stays reachable when the grid scrolls — but it sat about two
-            hundred pixels from the ghost tile that does the same thing, and it wore AccentButtonStyle, which
-            made "Add console" the loudest element on a page whose entire point is Play. Two affordances for one
-            action, and the wrong one shouting.
+            No add button up here. A header button would sit about two hundred pixels from the ghost tile that
+            does the same thing, and as an accent button it would make "Add console" the loudest element on a
+            page whose entire point is Play: two affordances for one action, and the wrong one shouting.
 
             The grid does not scroll at the console counts that actually occur, so the tile is always in view.
-            If a filter header ever arrives for large collections, a persistent add command belongs there.
         -->
         <TextBlock
             VerticalAlignment="Center"
@@ -432,8 +429,8 @@
                 x:Uid="ConsolesPage_PickOneStartStreaming" />
 
             <!--
-                An Xbox pad without GameInput does nothing at all, and nothing else on this page would say why
-                (review, 2026-10-05). Shown only when GameInput is missing, and closed for good when closed: a
+                An Xbox pad without GameInput does nothing at all, and nothing else on this page would say why.
+                Shown only when GameInput is missing, and closed for good when the person closes it: a
                 DualSense player has no use for it.
             -->
             <InfoBar
@@ -446,20 +443,13 @@
         </StackPanel>
 
         <!--
-            The one-console layout is no longer a layout. It was its own StackPanel with its own card and
-            its own RenderHero(), and the two copies drifted three ways in a single release: the hero could
-            not show the "checking" spinner, its overflow button sat under the touch minimum, and changes
-            made to the grid card were routinely not made to it.
+            There is no separate one-console layout. The GridView below renders whenever a console is
+            paired: CardMetrics returns a hero-sized cell when there is one console, and the card template
+            reads its own density. The hero and the grid card are one template, so they cannot drift
+            apart, and every fact the hero shows is on ConsoleCardState.
 
-            Every fact RenderHero() set by hand was already on ConsoleCardState. The hero needed code-behind
-            only because it was not inside an items control - so it is inside one now. The GridView always
-            renders, CardMetrics returns a hero-sized cell when there is one console, and the card template
-            reads its own density. Divergence stops being discouraged and becomes unrepresentable, which is
-            the only version of that rule that holds.
-
-            What survives is the link: "Add another console" stays a quiet HyperlinkButton rather than a
-            ghost tile, because at one console a second hero-sized tile would make adding one look like half
-            the page.
+            At one console "Add another console" is a quiet HyperlinkButton, the grid's footer, rather
+            than a ghost tile: a second hero-sized tile would make adding one look like half the page.
         -->
         <!--
             Confirmation for the shortcut menu item. An InfoBar rather than a dialog: writing a shortcut is
@@ -475,8 +465,8 @@
 
         <!--
             Empty state — shown when no consoles are paired. In a scroller: at 225% text in the smallest window the
-            composition is taller than the room, and it was clipped at both ends, the mark gone and "Add a console"
-            focused but off the window (showcase review, T1).
+            composition is taller than the room, and unscrolled it is clipped at both ends, the mark gone and
+            "Add a console" focused but off the window.
         -->
         <ScrollViewer
             x:Name="EmptyState"
@@ -496,13 +486,12 @@
                         FamilyMark is the console badge - its own XAML says the wedge is left out because the wedge is
                         the app's identity.
 
-                        **Still no wordmark, asked again and answered the same way (2026-09-24).** The first time,
-                        there was no wordmark to add; there is one now, and RipcordWordmark beside this mark would
-                        be a legitimate lockup rather than the bare word brand/README.md forbids. It is left out
-                        anyway. The title bar already carries the name, so a lockup here is the third time it is on
-                        screen - and this screen is a task, not an introduction, which is the same reason the
-                        connect sequence stopped being a ceremony. About is the surface that gets the lockup,
-                        because it is the one that is about Ripcord rather than about getting you to a console.
+                        **No wordmark, deliberately.** RipcordWordmark beside this mark would be a legitimate
+                        lockup rather than the bare word brand/README.md forbids, and it is left out anyway. The
+                        title bar already carries the name, and this screen is a task, not an introduction,
+                        which is the same reason the connect sequence is not a ceremony. About and first run are
+                        the surfaces that get the lockup, because they are about Ripcord rather than about
+                        getting you to a console.
                     -->
                     <controls:RipcordMark
                         Width="88"
@@ -551,10 +540,10 @@
             SelectionMode="None"
             Visibility="Collapsed">
             <!--
-                "Add another console" rides under the hero, 16 below the card, as part of the same centred block. It sat
-                in its own row at the window's bottom edge, a long way from the card it belongs with (visual audit,
-                2026-10-08). The grid's footer, so it moves with the card wherever the card goes. Collapsed below the
-                hero, where the ghost tile does this job.
+                "Add another console" rides under the hero, 16 below the card, as part of the same centred block.
+                The grid's footer, so it moves with the card wherever the card goes and is never a long way from
+                the card it belongs with. Collapsed at every density but the hero, where the ghost tile does
+                this job.
             -->
             <GridView.Footer>
                 <HyperlinkButton
@@ -571,12 +560,12 @@
                         These are CELL sizes, and the cell has to contain the container's gutter margin as well
                         as the card. ConsoleCardContainerStyle sets Margin="0,0,12,12" — ItemsWrapGrid has no
                         spacing of its own — so the visible card is 12 smaller than each number here: 280x176
-                        inside a 292x188 cell.
+                        inside a 292x188 cell. These are the dense cell, and only the starting values:
+                        SizePanel sets both from CardMetrics once the panel exists.
 
-                        Getting this wrong is not obvious, which is why it was wrong: at ItemHeight 176 the card
-                        was 164 tall while the template's rows were sized for 176, so the "Played 31 min ago"
-                        line lost its bottom third. It clipped rather than reflowing because that row is the
-                        only Height="*" one, so it absorbed the whole 12px shortfall on its own.
+                        Getting this wrong is not obvious: at ItemHeight 176 the card is 164 tall while the
+                        template's rows are sized for 176, and the card's one Height="*" row absorbs the whole
+                        12px shortfall on its own, clipping rather than reflowing.
                     -->
                     <ItemsWrapGrid
                         ItemHeight="188"

@@ -5,9 +5,8 @@
  * libripcord/platform/rc_platform.h for what each function promises; this file only says how libctru
  * delivers it.
  *
- * rc_random_bytes() is NOT here - it lives in source/util/rc_random.c, which predates this seam and
- * carries its own argument about why the port refuses to fall back to a non-cryptographic PRNG. Moving
- * it would have buried that argument in a file about clocks.
+ * rc_random_bytes() is NOT here - it lives in source/util/rc_random.c, and libripcord/util/rc_random.h
+ * carries the argument for why the port refuses to fall back to a non-cryptographic PRNG.
  */
 
 #include <3ds.h>
@@ -22,8 +21,7 @@ uint64_t rc_time_ms(void)
 
 void rc_sleep_ms(uint32_t ms)
 {
-    /* svcSleepThread takes NANOseconds as s64. The three original call sites each wrote the conversion
-     * out by hand (20000000 for 20 ms); doing it once here is the entire reason this wrapper exists. */
+    /* svcSleepThread takes NANOseconds as s64; the conversion is done once, here. */
     svcSleepThread((s64)ms * 1000000LL);
 }
 

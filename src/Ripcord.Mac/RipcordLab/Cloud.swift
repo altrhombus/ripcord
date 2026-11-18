@@ -1,5 +1,5 @@
 // The lab's account commands: the cloud tier from a terminal, the counterpart of ProtocolLab's signin and
-// friends. The refresh token goes where the app's will, the Keychain, under the app's service name, so a
+// friends. The refresh token goes where the app's does, the Keychain, under the app's service name, so a
 // sign-in here is a sign-in there.
 //
 // Sign-in from a terminal works the way the .NET lab's does: the URL is printed, the person signs in in any

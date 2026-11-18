@@ -43,10 +43,10 @@ public enum AdaptiveTriggerEffect
 }
 
 /// <summary>
-/// De-duplicates the same physical controller seen through multiple APIs at once (e.g. an
-/// advanced pad visible via both generic HID and a gamepad-emulation layer): exactly one
-/// <see cref="IControllerSource"/> entry per physical device, preferring the raw-HID path for
-/// advanced vendor pads and GameInput for standard gamepads.
+/// A controller input engine: connection events, neutral state frames, and extended features where the
+/// engine has them. The same physical controller can be visible to more than one engine at once (a
+/// DualSense through raw HID and through GameInput); <see cref="CompositeControllerSource"/> runs every
+/// engine and merges their frames.
 /// </summary>
 public interface IControllerSource
 {

@@ -13,11 +13,10 @@
  *                     nothing else linked.
  *   rc_stun_client.c  the socket layer. Sends on a caller's socket and waits for the matching answer.
  *
- * The split is the same one halyard_control_arm.c / halyard_control_probe.c make, for a reason specific
- * to how the fuzz build links: the harnesses link against an archive of the whole core, and an object is
- * pulled in whole. A parser sharing a file with a function that calls rc_random_bytes() would drag in a
- * CSPRNG the host deliberately does not provide (tests/rc_platform_host.c says why), and the fuzz link
- * would fail for a reason that has nothing to do with parsing.
+ * The split is the one halyard_control_arm.c / halyard_control_probe.c make, for the fuzz build: the
+ * harnesses link an archive of the whole core, and an object is pulled in whole. A parser sharing a file
+ * with a caller of rc_random_bytes() would drag in a CSPRNG the host deliberately does not provide
+ * (tests/rc_platform_host.c says why), and the fuzz link would fail.
  *
  * WHAT THIS IS NOT. Only what a client needs to learn its own reflexive address: no attributes are sent,
  * none are authenticated. The vendor's own STUN endpoints expect USERNAME + MESSAGE-INTEGRITY and belong
@@ -154,9 +153,8 @@ typedef enum {
  * here - one gathered answer cannot be reused for the other.
  *
  * The socket must already be bound, is not connect()ed (requests go out with sendto), and is left open.
- * It is put into non-blocking mode with rc_socket_set_nonblocking if it is not already, because a
- * blocking socket here is not a failure but a hang - the deadline is never evaluated - and everything
- * that later uses this socket in the core wants it non-blocking anyway.
+ * It is put into non-blocking mode with rc_socket_set_nonblocking if it is not already: a blocking
+ * socket here hangs, because the deadline is never evaluated.
  *
  * Anything else arriving while an attempt waits - a stale answer to an earlier attempt, a datagram from
  * the console - is read and discarded, exactly as .NET does. Gather before the session starts talking.
@@ -197,7 +195,7 @@ int rc_stun_address_equal(const rc_stun_address *a, const rc_stun_address *b);
  *
  * THE SERVERS SHOULD BE ON DIFFERENT OPERATORS. The comparison turns on two genuinely different
  * destinations; two names of one provider can resolve to one host, and a symmetric NAT would then look
- * endpoint-independent. Which servers is the caller's (and the Mac's DNS resolver's) business.
+ * endpoint-independent. Which servers is the caller's (and its DNS resolver's) business.
  *
  * DELIBERATE DIFFERENCE: .NET binds a throwaway socket on the chosen port, asks, closes it, and binds the
  * real one afterwards, leaving a window where something else can take the port. This asks on the socket

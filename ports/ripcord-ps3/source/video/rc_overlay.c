@@ -2,30 +2,24 @@
  * ripcord-ps3 - the on-screen diagnostics overlay.
  *
  * The same answers the .NET client's diagnostics report gives, on a console with no second window to
- * put them in. Every number this port produced used to go to a log file readable only after the session
- * ended, over FTP, from another machine - fine for bring-up and useless for "why did it just go blocky".
+ * put them in. The alternative is a log file readable only after the session ended, over FTP, from
+ * another machine.
  *
- * IT DRAWS INTO ITS OWN BITMAP, NOT INTO THE BACK BUFFER, and b225 is why. Drawing into the back buffer
- * put the text there with the PPE immediately after the picture blit had been QUEUED - so the RSX ran
- * the picture afterwards and painted over every pixel of it. Nothing appeared, on a path where every
- * counter said the frame had been drawn. The bitmap is copied over the picture by a command issued
- * after it, which is an ordering the hardware keeps instead of one this code has to win.
+ * IT DRAWS INTO ITS OWN BITMAP, NOT INTO THE BACK BUFFER. Text drawn into the back buffer by the PPE
+ * lands immediately after the picture blit has been QUEUED, so the RSX runs the picture afterwards and
+ * paints over every pixel of it (b225). The bitmap is copied over the picture by a command issued
+ * after it, which is an ordering the hardware keeps.
  *
- * THE PANEL IS BUILT IN MAIN MEMORY AND COPIED TO RSX MEMORY WHEN IT CHANGES, which is a reversal.
- * It used to be built directly in RSX memory under a rule that it may only ever be written, because a
- * Cell read from there is roughly two orders of magnitude slower than a write. That rule made
- * antialiasing impossible - blending a glyph's coverage over a background IS a read - and antialiasing
- * is most of what separates the console's own typeface from a hand-drawn bitmap.
- *
- * So the drawing happens where reads are cheap and the result is copied across on rebuild: 555 KB,
- * four times a second, in the direction that is fast. The per-frame path is unchanged - the RSX copies
- * the same VRAM bitmap over the picture every frame either way.
+ * THE BITMAP IS BUILT IN MAIN MEMORY. Antialiasing blends a glyph's coverage over a background, which
+ * is a read, and a Cell read from RSX memory is roughly two orders of magnitude slower than a write. So
+ * the drawing happens where reads are cheap. The RSX then reads the bitmap where it is, through the
+ * window rc_video_map_main gives it; if that mapping is refused, the bitmap is copied to RSX memory
+ * when it changes and the RSX copies from there. Either way the RSX copies it over the picture every
+ * frame.
  *
  * TWO FONTS, ON PURPOSE. Words are set in the proportional face and anything that MOVES is set in the
- * monospaced one and right-aligned. A column of figures has to hold still while the figures change: a
- * digit one pixel narrower than its neighbour makes the whole row shuffle every time it ticks, and a
- * number that moves while you read it is a number you read twice. Fixed pitch is wrong for the words
- * for the opposite reason - it reads like a teletype, and every label here is prose.
+ * monospaced one and right-aligned: a digit one pixel narrower than its neighbour makes the whole row
+ * shuffle every time it ticks. Fixed pitch is wrong for the words - every label here is prose.
  *
  * THE TEXT IS REBUILT A FEW TIMES A SECOND, NOT EVERY FRAME. All of it is rates and totals nobody reads
  * at 60 Hz. The COPY is queued every frame, because the picture blit clears the back buffer each time.
@@ -52,29 +46,26 @@
  * Every measurement here and in the layout is a "design pixel" against a 1920x1080 screen, and
  * rc_overlay_px converts one to a real one. Without that the panel is a fixed 760 pixels wide: 40% of
  * a 1080p screen, 59% of a 720p one, and WIDER THAN a 720x480 one - at which point
- * rc_video_overlay_blit refuses the rectangle and the overlay silently is not there. A diagnostic that
- * disappears on the displays least able to spare the bandwidth is worse than no diagnostic.
+ * rc_video_overlay_blit refuses the rectangle and the overlay silently is not there.
  *
- * Scaling the bitmap on the way to the screen would have been less code and would have softened every
- * glyph. The atlas is built once at open, so building it at the right size instead costs nothing.
+ * Scaling the bitmap on the way to the screen would have softened every glyph. The atlas is built once
+ * at open, so building it at the right size instead costs nothing.
  */
 #define RC_OV_DESIGN_W     760
 #define RC_OV_DESIGN_H     352
 #define RC_OV_DESIGN_SCR_H 1080
 #define RC_OV_REBUILD_MS   250u
 
-/* Big enough for the design size at 1080p; anything smaller uses less of it. */
 /*
- * THE SURFACE IS NOW THE WHOLE SCREEN, and that is what lets the shell put a moving background behind
- * antialiased text at all. Blending means reading what is underneath; reads from RSX memory are about a
+ * THE SURFACE IS THE WHOLE SCREEN, which is what lets the shell put a moving background behind
+ * antialiased text. Blending means reading what is underneath; reads from RSX memory are about a
  * hundred times slower than writes, and the one time a blend was handed to the RSX instead its command
  * processor stopped and every flip after the first stayed pending forever (b232 - "no video just
  * audio"). So everything composites here, in main memory, and exactly one opaque copy reaches the
  * screen.
  *
- * It costs 8 MB of main memory and 8 MB of video memory at 1080p, held for the run. The alternative was
- * a second surface with a second font atlas and a second copy of the blending, which costs the same
- * memory and an extra copy of every bug.
+ * It costs 8 MB of main memory and 8 MB of video memory at 1080p, held for the run. 1080p is the
+ * largest it is sized for; a smaller display uses less.
  */
 #define RC_OV_MAX_W        1920
 #define RC_OV_MAX_H        1088
@@ -97,18 +88,16 @@ static int s_y = 40;
 static uint32_t *s_bitmap;      /* main memory - drawn into, read from, blended in          */
 
 /*
- * WHERE THE TEXT ACTUALLY LANDS, which is no longer always the surface.
+ * WHERE THE TEXT ACTUALLY LANDS, which is not always the surface.
  *
  * The shell draws its whole interface once into a cached LAYER and composites that over the moving
- * background every frame, rather than re-drawing it onto the background sixty times a second - see
- * rc_shell.c. Text is most of what a layer contains, so this file has to be able to aim somewhere else.
+ * background every frame - see rc_shell.c - so this file has to be able to aim somewhere else.
  *
  * It is a destination and a pitch, not a mode: the compositing arithmetic below is the same either way.
- * The only thing that differs is that a layer starts transparent and accumulates an alpha, where the
- * surface starts opaque and stays opaque - and writing the alpha out properly covers both, because a
- * blend onto an opaque destination arrives at 255 on its own.
+ * A layer starts transparent and accumulates an alpha, where the surface starts opaque and stays
+ * opaque - and writing the alpha out properly covers both, because a blend onto an opaque destination
+ * arrives at 255 on its own.
  */
-/* An IO window onto s_bitmap, when the RSX would accept one - see rc_video_map_main. */
 static uint32_t s_main_offset;
 static int s_from_main;
 
@@ -176,14 +165,11 @@ uint32_t *rc_overlay_pixels(int *pitch_px)
 /*
  * PREPARED AND SHOWN ARE DIFFERENT QUESTIONS, and separating them is what makes a runtime toggle safe.
  *
- * Preparing means allocating two megabytes of panel and rasterising an atlas of a couple of hundred
+ * Preparing means allocating the surface and rasterising an atlas of a couple of hundred
  * glyphs. Doing that when someone presses the toggle would do it ON THE DECODE THREAD, mid-stream,
- * which is precisely the b256 fault: 1,483 ms inside one rebuild and 2 fps. So preparation happens once
- * at session set-up whether or not the overlay is wanted, and the toggle only decides whether to draw.
- *
- * The cost of preparing something nobody asked for is memory that is there anyway and a few
- * milliseconds before the stream starts. The cost of the alternative is a visible stall every time
- * someone wants to see the numbers - which is, by definition, when something already looks wrong.
+ * which is the b256 fault: 1,483 ms inside one rebuild and 2 fps. So preparation happens once at
+ * session set-up whether or not the overlay is wanted, and the toggle only decides whether to draw.
+ * The cost is memory that is there anyway and a few milliseconds before the stream starts.
  */
 static int s_shown;
 
@@ -212,8 +198,8 @@ int rc_overlay_on(void)
 /*
  * Straight ARGB in, premultiplied ARGB out.
  *
- * The RSX's blend expects the colour already scaled by the alpha; writing the constants that way would
- * make every one of them unreadable and impossible to adjust. The division is by 255 rather than a
+ * The surface and a cached layer hold colour already scaled by the alpha; writing the constants that way
+ * would make every one of them unreadable and impossible to adjust. The division is by 255 rather than a
  * shift by 8 so that full opacity stays exactly the input colour - >>8 loses a level and turns white
  * into 254 grey, which is invisible alone and shows up as a seam where two "white" things meet.
  */
@@ -303,8 +289,7 @@ void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb)
 
 /*
  * Integer square root, Newton from a power-of-four seed. The seed MUST be a power of four: seeded at
- * 1<<15 this answers sqrt(2v) and saturates, which in the shell drew corners at the wrong radius for
- * three builds before anyone could name what was wrong with them.
+ * 1<<15 this answers sqrt(2v) and saturates, which draws corners at the wrong radius.
  */
 static int ov_isqrt(int v)
 {
@@ -455,9 +440,8 @@ void rc_overlay_set(int on)
         /*
          * MEGABYTE-ALIGNED AND A WHOLE NUMBER OF MEGABYTES, so the RSX can be given a window onto it.
          * See rc_video_map_main: if the mapping is accepted, the 2D engine reads this buffer where it
-         * stands and the eight-megabyte copy into video memory every frame stops happening. It cost
-         * 10,884 us a frame, which was 29 percent of the budget for a copy that exists only because
-         * nothing had asked the RSX to look at main memory.
+         * stands and the eight-megabyte copy into video memory is not needed. That copy measured
+         * 10,884 us a frame, 29 percent of the budget.
          *
          * The alignment costs a little padding and nothing else, so it is done unconditionally: a
          * refusal then falls back to the copy without needing a second allocation.
@@ -479,13 +463,10 @@ void rc_overlay_set(int on)
         s_dst_pitch = s_w;
 
         /*
-         * The console's own face if it will open, the drawn one if it will not. Asked for here rather
-         * than at start-up so a font library that refuses costs an overlay nobody had yet rather than
-         * a session: everything below falls back glyph for glyph.
-         */
-        /*
-         * The console's own face, read out of /dev_flash with FreeType. Opt-in only because the
-         * hand-drawn fallback is the thing that cannot fail to load; see rc_sysfont.c.
+         * The console's own face, read out of /dev_flash with FreeType, if it was asked for and will
+         * open; the drawn one if not. Opt-in only because the hand-drawn fallback is the thing that
+         * cannot fail to load; see rc_sysfont.c. A refusal costs nothing but the face: everything
+         * below falls back glyph for glyph.
          */
         if (s_ready && s_want_sysfont)
             s_sysfont = rc_sysfont_open(size_for(1), size_for(2), size_for(3));
@@ -568,16 +549,14 @@ static int prop_width(const char *text, int scale)
 
 /*
  * One pixel of antialiased text: the glyph's coverage says how much of the run's colour to put over
- * what is already there. This is the read the panel moved out of RSX memory for.
- */
-/*
- * THE ALPHA IS WRITTEN RATHER THAN ASSUMED, and that one change is what lets the same arithmetic serve
- * the opaque surface and a transparent layer.
+ * what is already there. This is the read that keeps the panel out of RSX memory.
  *
- * The colour maths is unchanged: a layer holds PREMULTIPLIED colour, so a source's contribution is
- * src * cov and what is already there contributes dst * (255 - cov), which is exactly the blend that
- * was here. Only the top byte differs - and computing it costs nothing on the surface, because a
- * destination that is already opaque arrives back at 255 by itself.
+ * THE ALPHA IS WRITTEN RATHER THAN ASSUMED, which is what lets the same arithmetic serve the opaque
+ * surface and a transparent layer.
+ *
+ * A layer holds PREMULTIPLIED colour, so a source's contribution is src * cov and what is already
+ * there contributes dst * (255 - cov). The top byte is computed the same way - and that costs nothing
+ * on the surface, because a destination that is already opaque arrives back at 255 by itself.
  */
 static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
 {
@@ -594,17 +573,11 @@ static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
 }
 
 /*
- * A run in the console's own face. The coverage buffer is one line tall and the run is rendered at a
- * baseline inside it, then composited at `y`, which is the TOP of the line - callers lay out against
- * boxes, not against a baseline they cannot see.
+ * `scale` carries over from the drawn font, where it means "multiply every pixel". For the system face
+ * it selects a size instead: body, heading, or the display size. Keeping the parameter rather than
+ * adding a second one means one set of layout code serves both faces. The sizes are design pixels,
+ * converted like every other measurement here.
  */
-/*
- * `scale` carries over from the drawn font, where it meant "multiply every pixel". Here it selects a
- * size instead, and the two sizes are the two the panel uses - a heading and everything else. Keeping
- * the parameter rather than adding a second one means the layout code did not have to change when the
- * face did.
- */
-/* Design pixels, converted like every other measurement here. */
 static float size_for(int scale)
 {
     if (scale >= 3)
@@ -612,6 +585,11 @@ static float size_for(int scale)
     return (float)rc_overlay_px((scale >= 2) ? 34 : 24);
 }
 
+/*
+ * A run in the console's own face. The coverage buffer is one line tall and the run is rendered at a
+ * baseline inside it, then composited at `y`, which is the TOP of the line - callers lay out against
+ * boxes, not against a baseline they cannot see.
+ */
 static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
 {
     int base, w, x0, x1;
@@ -621,16 +599,13 @@ static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
     base = rc_sysfont_ascent();
 
     /*
-     * A RUN THAT CANNOT BE SEEN COSTS NOTHING, and until b363 it cost almost everything.
+     * A RUN THAT CANNOT BE SEEN COSTS NOTHING.
      *
      * Callers measure a string by drawing it at y = -10000 and taking the returned advance - the width
-     * comes from text_width and is free. This function, though, ran the whole way for such a call: it
-     * cleared its band of the coverage buffer, rasterised every glyph into it, and only then skipped
-     * the composite row by row because each row was above the surface. So every measured run was
-     * rasterised twice and shown once, and the shell measures nearly everything it draws - card names,
-     * pill labels, the whole hint row.
-     *
-     * The guard is two comparisons and it halves the text cost of a frame.
+     * comes from text_width and is free. Without this guard such a call clears its band of the
+     * coverage buffer and rasterises every glyph into it before skipping the composite row by row,
+     * and the shell measures nearly everything it draws. The guard halves the text cost of a frame
+     * (b363).
      */
     if (y >= s_h || y + RC_OV_COV_H <= 0)
         return;
@@ -638,11 +613,10 @@ static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
     /*
      * ONLY THE COLUMNS THIS RUN TOUCHES ARE CLEARED AND COMPOSITED.
      *
-     * Measuring is free now that the glyphs are an atlas, so the run's width is known before it is
+     * Measuring is free because the glyphs are an atlas, so the run's width is known before it is
      * drawn - and clearing the whole 760-pixel band for a six-character label, twenty times a rebuild,
      * is most of a megabyte of memset and a million pixel tests to put a few thousand pixels down.
-     * That was affordable before only because nothing else was competing; this runs on the thread that
-     * drains the socket.
+     * This runs on the thread that drains the socket.
      */
     w = rc_sysfont_render(NULL, 0, 0, 0, 0, text);
     x0 = x - 2;
@@ -884,8 +858,8 @@ void rc_overlay_bars(int x, int y, int w, int h, const unsigned *v, unsigned n, 
 
 /*
  * The baseline offset for a size, so two sizes on one row can share a baseline instead of sharing a
- * top edge. Aligning tops is what made "Ripcord" and the build id sit at different heights in the
- * header: their boxes lined up and their letters did not.
+ * top edge. Aligning tops puts two sizes of text at different heights: their boxes line up and their
+ * letters do not.
  */
 int rc_overlay_ascent(int scale)
 {
@@ -926,7 +900,7 @@ int rc_overlay_begin_now(void)
     if (!s_ready)
         return 0;
     /*
-     * ONLY THE PANEL, not the whole surface. The surface is the screen now; clearing all of it for a
+     * ONLY THE PANEL, not the whole surface. The surface is the screen; clearing all of it for a
      * 760-pixel panel would be eight megabytes of memset four times a second on the thread that is also
      * draining a socket. The shell, which does want all of it, asks for it by name.
      */
@@ -968,28 +942,19 @@ int rc_overlay_begin(void)
 }
 
 /*
- * The copy, without the `shown` gate. rc_overlay_end is for the diagnostics panel and correctly does
- * nothing when it is hidden; a status card is drawn because something asked for it, not because a
- * toggle is on.
- */
-/*
  * PUSH THE BITMAP OUT OF THE CACHE BEFORE THE RSX READS IT - AND READ THIS BEFORE DELETING IT.
  *
- * HONESTY FIRST: this was added to fix visible smearing, and the smearing turned out to be something
- * else entirely - rc_shell.c's glow was drawing outside the bounds it reported, so the composite was
- * clipping it. Nothing here was ever shown to fix anything. Two builds were spent inferring a cache
- * fault from a symptom that, being PERSISTENT AND REPEATABLE, should have ruled one out immediately.
+ * Nothing has shown this to fix anything. The smearing it was tried against was rc_shell.c's glow
+ * drawing outside the bounds it reported.
  *
- * It is kept anyway, and the reason is not sentiment. The RSX now reads a buffer the PPE writes through
- * its cache, and whether that read path snoops the PPE's L2 is a question this project has not answered
- * either way. Absence of a symptom is not absence of a race - a rare one would be miserable to find
- * later, from a report of one bad frame an hour. `sync` orders the stores and costs nothing; dcbf
- * pushes the lines to memory, and the lines being pushed have to reach memory anyway, so it brings a
- * writeback forward rather than adding one.
+ * It is kept because the RSX reads a buffer the PPE writes through its cache, and whether that read
+ * path snoops the PPE's L2 is a question this project has not answered either way. `sync` orders the
+ * stores and costs nothing; dcbf pushes the lines to memory, and they have to reach memory anyway, so
+ * it brings a writeback forward rather than adding one.
  *
- * WHAT IT COSTS, measured: 482 us a frame of a 34,232 us frame, in place of the 10,884 us copy it
- * replaced. If somebody needs that 482 us back, this is the first thing to try removing - and the
- * honest way to test it is a long run watching for one bad frame, not a clean minute.
+ * WHAT IT COSTS, measured: 482 us a frame of a 34,232 us frame, against 10,884 us for the copy that
+ * is needed without the mapping. If somebody needs that 482 us back, this is the first thing to try
+ * removing - and the way to test it is a long run watching for one bad frame, not a clean minute.
  */
 static void flush_for_rsx(int h)
 {
@@ -1011,6 +976,11 @@ int rc_overlay_reads_main(void)
     return s_from_main;
 }
 
+/*
+ * The copy, without the `shown` gate. rc_overlay_end is for the diagnostics panel and correctly does
+ * nothing when it is hidden; a status card is drawn because something asked for it, not because a
+ * toggle is on.
+ */
 void rc_overlay_end_now(int x, int y, int w, int h)
 {
     if (!s_ready)
@@ -1022,8 +992,8 @@ void rc_overlay_end_now(int x, int y, int w, int h)
     /*
      * Copied only when something was actually drawn. A caller that redraws because a frame went past
      * rather than because anything moved - a menu nobody is touching - reaches this with the bitmap
-     * unchanged, and the surface is 2.3 MB. rc_overlay_end has always been gated this way; this one
-     * was not, and the shell is the first caller that runs at the flip rate.
+     * unchanged, and the copy is the whole surface. rc_overlay_end is gated the same way; the shell
+     * calls this at the flip rate.
      */
     if (s_rebuilt) {
         if (!s_from_main)
@@ -1033,10 +1003,10 @@ void rc_overlay_end_now(int x, int y, int w, int h)
     if (s_from_main)
         flush_for_rsx(h);
     /*
-     * THE POSITION IS AN ARGUMENT, NOT STATE, and it is that way because making it state was a bug.
-     * The status card set a shared origin to centre itself and never put it back, so the diagnostics
-     * overlay - which wants the top left - moved to the middle for the rest of the session. Two callers
-     * wanting different positions is not a reason for either to mutate the other's.
+     * THE POSITION IS AN ARGUMENT, NOT STATE. A shared origin that the status card set to centre
+     * itself would leave the diagnostics overlay - which wants the top left - in the middle for the
+     * rest of the session. Two callers wanting different positions is not a reason for either to
+     * mutate the other's.
      */
     /* Only the region the caller drew. The surface is bigger than most of its users. */
     rc_video_overlay_blit(s_from_main ? s_main_offset : s_offset, s_w * 4, w, h, x, y,
@@ -1049,9 +1019,9 @@ void rc_overlay_end(void)
         return;
 
     /*
-     * The copy across happens only when the panel actually changed. It is 555 KB in the direction the
-     * Cell is fast at, four times a second - and doing it every frame instead would be 33 MB/s of
-     * writes to VRAM for a picture that is identical fourteen times out of fifteen.
+     * The copy across is needed only when the RSX cannot read the bitmap where it is, and it happens
+     * only when the panel actually changed: the whole surface, at most four times a second, rather
+     * than every frame for a picture that is identical fourteen times out of fifteen.
      */
     if (s_rebuilt) {
         if (!s_from_main)

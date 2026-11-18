@@ -7,13 +7,13 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// Drives the v2 RPCS during-stream control channel over the connection that carried <c>/sess/ctrl</c> (spec §9).
 /// It keeps the channel alive — a periodic keepalive (<c>0x0036</c>) and, once at start, the probe report
 /// (<c>0x000d</c>, the v2 analogue of v1's pre-stream probe) — while reading incoming frames and surfacing each
-/// decoded message through <see cref="MessageReceived"/> for the session to act on (session-id, stream-channel
-/// setup, errors). Teardown (<c>0x00fe</c>) or a closed connection ends the loop.
+/// decoded message through <see cref="MessageReceived"/>. A frame that does not authenticate or decode is
+/// dropped. Teardown (<c>0x00fe</c>) or a closed connection ends the loop.
 ///
 /// <para>The <b>framing, commands and payloads are confirmed</b> from our own capture (session 004); the
 /// <b>send schedule is <c>[X]</c></b> — whether the probe report is required, its ordering, and the keepalive
 /// cadence were not pinned offline. The defaults here (probe once up front, keepalive every second) are a
-/// first-guess from the confirmed commands and the v1 analogue, to be settled on hardware.</para>
+/// guess from the confirmed commands and the v1 analogue.</para>
 /// </summary>
 internal sealed class HalyardRpcsLoop
 {

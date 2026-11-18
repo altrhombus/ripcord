@@ -12,11 +12,9 @@ namespace Ripcord_App.Services;
 /// Runs the account sign-in, wherever the user asked for it.
 ///
 /// <para>
-/// <b>Why this is not a method on the settings page any more.</b> It was, and that is the only reason the
-/// pairing flow's sign-in invitation navigated to Settings to use it — an implementation detail that became a
-/// journey. Signing in halfway through pairing then left the user on a settings page with the pairing flow
-/// abandoned behind them, and the way back was to start pairing again from the beginning. Sign-in is a modal
-/// over whatever surface asked for it; it never needed to be somewhere.
+/// Not a method on the settings page: sign-in is a modal over whatever surface asked for it. Navigating to
+/// Settings to sign in halfway through pairing would leave the pairing flow abandoned behind the user, and the
+/// way back would be to start pairing again from the beginning.
 /// </para>
 /// </summary>
 public static class AccountSignIn

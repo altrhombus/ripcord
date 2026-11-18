@@ -31,9 +31,9 @@ namespace Ripcord.Cloud.Halyard;
 /// </para>
 ///
 /// <para>
-/// Absent when built with <c>-p:BundleOAuthClient=false</c>, or when the placeholder has never been populated
-/// (a checkout without the captures folder). Both cases report <see cref="IsBundled"/> false and degrade to
-/// "sign-in is unavailable", which every account surface already renders.
+/// Absent when built with <c>-p:BundleOAuthClient=false</c>, or when the embedded file's fields are empty.
+/// Both cases report <see cref="IsBundled"/> false and degrade to "sign-in is unavailable", which every
+/// account surface renders.
 /// </para>
 /// </summary>
 public static partial class HalyardBundledClient
@@ -74,9 +74,9 @@ public static partial class HalyardBundledClient
             BundledCredential? parsed = JsonSerializer.Deserialize(
                 stream, BundledClientContext.Default.BundledCredential);
 
-            // The shipped file is populated, so this branch is not the normal path -- it is what a build made
-            // with -p:BundleOAuthClient=false, or a deliberately emptied file, produces. Either is
-            // indistinguishable here from an omitted bundle, and all three mean the same thing to every caller.
+            // The committed file is populated, so empty fields are not the normal path -- they are what a
+            // deliberately emptied file produces. That resolves to the same thing as a build made with
+            // -p:BundleOAuthClient=false, and means the same thing to every caller.
             return string.IsNullOrWhiteSpace(parsed?.ClientId) || string.IsNullOrWhiteSpace(parsed.ClientSecret)
                 ? HalyardClientConfig.Unconfigured
                 : new HalyardClientConfig(
@@ -95,7 +95,7 @@ public static partial class HalyardBundledClient
 }
 
 /// <summary>
-/// A convenience for reflecting over what this build actually shipped, used by the tests that guard the
+/// A convenience for reading what this build actually embedded, used by the tests that guard the
 /// bundle. Separate from <see cref="HalyardBundledClient"/> so the guard cannot be satisfied by the same
 /// code path it is checking.
 /// </summary>

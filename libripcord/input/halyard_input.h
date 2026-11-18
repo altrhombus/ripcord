@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - controller input, up the stream socket.
+ * libripcord - controller input, up the stream socket.
  *
  * Ported from src/Ripcord.Protocol.Halyard.Common/Input/HalyardInputPacketWriter.cs, which carries the
  * provenance: spec 6.3, re-derived from this project's own capture cap48 by correlating 10,165 state
@@ -15,19 +15,18 @@
  *   off 8..11  u32   GMAC tag                                        [written at seal]
  *   off 0xc..        AES-CTR encrypted payload
  *
- * TWO DECRYPTION FACTS THAT EACH COST A DEBUGGING PASS on the .NET side, recorded in the spec so this
- * port did not have to repeat them: the keystream offset is a u32 at offset 4 (not where control puts it),
- * and the CTR counter increments LITTLE-endian - a stock big-endian CTR decodes only the first 16-byte
- * block correctly and produces noise after it.
+ * TWO DECRYPTION FACTS, both in the spec: the keystream offset is a u32 at offset 4 (not where control
+ * puts it), and the CTR counter increments LITTLE-endian - a stock big-endian CTR decodes only the
+ * first 16-byte block correctly and produces noise after it.
  *
  * STATE (type 6) is a periodic analog snapshot, fixed 0x1c bytes. HISTORY (type 1) carries button
  * transitions only when something changes, newest event first.
  *
- * WHAT A GIVEN PAD CANNOT SEND is the front end's business, not this file's. The six motion fields go out
- * at their captured resting values and orientation at a fixed identity unless a caller supplies better -
- * the spec notes a pad without a motion sensor may do exactly this. Everything else
- * HalyardInputPacketWriter.cs can express is expressible here: every button it knows about has a bit,
- * including the stick clicks, and L2/R2 carry a level rather than a boolean.
+ * WHAT A GIVEN PAD CANNOT SEND is the front end's business. halyard_input_state has no motion fields:
+ * the six motion fields always go out at their captured resting values and orientation at a fixed
+ * identity - the spec notes a pad without a motion sensor may do exactly this. Every button
+ * HalyardInputPacketWriter.cs knows about has a bit, including the stick clicks, and L2/R2 carry a
+ * level rather than a boolean.
  */
 #ifndef HALYARD_INPUT_H
 #define HALYARD_INPUT_H
@@ -64,8 +63,8 @@ typedef struct {
     uint8_t left_trigger, right_trigger;
 } halyard_input_state;
 
-/* Button bits. Names are the PlayStation control's, because that is what goes on the wire; the 3DS
- * mapping lives in the connect flow, not here. */
+/* Button bits. Names are the PlayStation control's, because that is what goes on the wire; mapping a
+ * port's own buttons onto them is the port's job, not this file's. */
 #define HALYARD_PAD_CROSS      (1u << 0)
 #define HALYARD_PAD_CIRCLE     (1u << 1)
 #define HALYARD_PAD_SQUARE     (1u << 2)
@@ -82,11 +81,8 @@ typedef struct {
 #define HALYARD_PAD_CREATE     (1u << 13)
 #define HALYARD_PAD_PS         (1u << 14)
 /*
- * THE STICK CLICKS, added when a port arrived that has them.
- *
- * They were absent because the first port to use this was a 3DS, whose hardware has no stick to click -
- * and a gap in the shared layer that exists for one front end's hardware is a gap for every front end
- * after it. HalyardInputPacketWriter.cs has carried both codes all along.
+ * THE STICK CLICKS. A front end whose hardware has no stick to click leaves these clear; the shared
+ * layer carries every code HalyardInputPacketWriter.cs does, whatever one port's pad lacks.
  */
 #define HALYARD_PAD_L3         (1u << 15)
 #define HALYARD_PAD_R3         (1u << 16)

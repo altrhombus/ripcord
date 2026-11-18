@@ -1,5 +1,5 @@
 //! Per-packet stream crypto cost: the workload `src/Ripcord.Mac/RipcordKit/Diagnostics/
-//! PacketCryptoBenchmark.swift` runs against the C core, reproduced exactly so the two figures compare.
+//! PacketCryptoBenchmark.swift` runs through the C ABI, reproduced exactly so the figures compare.
 //!
 //! Each iteration does what the demuxer does to every A/V packet: verify the 4-byte GMAC, then
 //! CTR-decrypt the payload. 256 distinct packets are sealed up front at keystream offsets 64 payloads

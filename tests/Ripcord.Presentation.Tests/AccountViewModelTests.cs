@@ -11,8 +11,8 @@ namespace Ripcord.Presentation.Tests;
 /// <para>
 /// The cases worth pinning here are the ones that are invisible until they go wrong in front of a user: a build
 /// with no credential must say so rather than offering a button that throws, a failed restore must read as
-/// "signed out" rather than as an error the user is expected to act on, and — the one this layer has got wrong
-/// twice before — a result from an abandoned operation must not land on top of a newer one.
+/// "signed out" rather than as an error the user is expected to act on, and a result from an abandoned
+/// operation must not land on top of a newer one.
 /// </para>
 /// </summary>
 public class AccountViewModelTests
@@ -77,7 +77,7 @@ public class AccountViewModelTests
     [Fact]
     public async Task SignedIn_NamesTheCountry_NotTheServicesCode()
     {
-        // The service reports a lowercase country code; printed verbatim it read "Signed in — us." (2026-10-08).
+        // The service reports a lowercase country code; printed verbatim it would read "Signed in — us.".
         var session = new FakeAccountSession
         {
             HasStoredSession = true,

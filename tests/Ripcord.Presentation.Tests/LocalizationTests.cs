@@ -11,14 +11,11 @@ namespace Ripcord.Presentation.Tests;
 /// <summary>
 /// Structural guard on the portable layer's string catalogue.
 ///
-/// <para>The same reasoning as <see cref="PresentationPortabilityTests"/>: a rule nothing checks decays,
-/// and the decay here is silent in both directions. A key left in the resource file after its last use is
-/// dead weight a translator still pays for; a key used in code but missing from the file throws
-/// <see cref="MissingManifestResourceException"/> at run time, on whichever screen happens to reach it
-/// first, in whichever language the user picked. Neither shows up in a build.</para>
+/// <para>A key left in the resource file after its last use is dead weight a translator still pays for; a
+/// key used in code but missing from the file throws <see cref="MissingManifestResourceException"/> at run
+/// time, on whichever screen happens to reach it first. Neither shows up in a build.</para>
 ///
-/// <para><b>What is deliberately not in the catalogue.</b> Three kinds of string stay hard-coded, and the
-/// distinction cost a bad automated migration to learn:</para>
+/// <para><b>What is deliberately not in the catalogue.</b> Three kinds of string stay hard-coded:</para>
 /// <list type="bullet">
 ///   <item>Exception messages for programmer error — they are read in logs and bug reports by people
 ///     diagnosing a fault, and translating them makes a stack trace less useful, not more.</item>
@@ -229,9 +226,9 @@ public class LocalizationTests
 
     /// <summary>
     /// One x:Uid, one element. A uid applies every one of its entries to every element that carries it, so a
-    /// SettingsCard and the ComboBox inside it sharing "SettingsPage_VideoCodec" both took its <c>.Header</c>:
-    /// the title printed twice, and at large text the second copy crushed the description into a column one
-    /// word wide (visual audit, 2026-10-08).
+    /// SettingsCard and the ComboBox inside it sharing "SettingsPage_VideoCodec" would both take its
+    /// <c>.Header</c>: the title prints twice, and at large text the second copy crushes the description into
+    /// a column one word wide.
     /// </summary>
     [Fact]
     public void NoUid_IsUsedTwiceInOneFile()
@@ -288,15 +285,11 @@ public class LocalizationTests
     /// Types that cannot carry an <c>x:Uid</c>, because MRT applies resources through
     /// <c>FrameworkElement</c> and these do not derive from it.
     ///
-    /// <para>This exists because the other guards could not see the failure. Every x:Uid had an entry and
-    /// every entry was referenced — the catalogue was perfectly consistent — and the app still died on
-    /// launch with "Failed to assign to property 'Microsoft.UI.Xaml.Window.Title'". A <c>Window</c> in
-    /// WinUI 3 derives from <c>DependencyObject</c>, so it has no x:Uid support at all, and a migration
-    /// that moved its Title into the catalogue produced markup that compiles, indexes into the PRI, and
-    /// throws a XamlParseException the first time it is loaded.</para>
-    ///
-    /// <para>Consistency between markup and catalogue was the wrong question. Whether the element can
-    /// receive the resource at all is the one that crashes.</para>
+    /// <para>A consistent catalogue does not catch this: every x:Uid can have an entry and every entry be
+    /// referenced while the app dies on launch with "Failed to assign to property
+    /// 'Microsoft.UI.Xaml.Window.Title'". A <c>Window</c> in WinUI 3 derives from <c>DependencyObject</c>,
+    /// so markup that moves its Title into the catalogue compiles, indexes into the PRI, and throws a
+    /// XamlParseException the first time it is loaded.</para>
     /// </summary>
     private static readonly string[] CannotCarryUid = ["Window", "Application", "ResourceDictionary"];
 

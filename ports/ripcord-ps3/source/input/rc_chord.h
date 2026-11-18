@@ -7,11 +7,11 @@
  * and the chord fires; if it does not, the withheld press is released and travels late, and a lone TAP is
  * replayed for a moment so it still reaches the console rather than being eaten.
  *
- * WHY THIS IS ITS OWN FILE. The logic caused two hardware bugs - a tap that was withheld and then never
- * sent, and a stray press left behind when the chord's buttons were released a moment apart - and both
- * were invisible in review and obvious the instant a sequence of (buttons, time) was run through them. So
- * the decision is factored out of rc_pad_read, which is bound to PSL1GHT's pad types, into this: plain C
- * over a mask and a clock, driven by rc_pad on hardware and by rc_chord_test on the host.
+ * WHY THIS IS ITS OWN FILE. The logic has two failure modes - a tap that is withheld and then never
+ * sent, and a stray press left behind when the chord's buttons are released a moment apart - and both
+ * are invisible in review and obvious the instant a sequence of (buttons, time) is run through them. So
+ * the decision is kept out of rc_pad_read, which is bound to PSL1GHT's pad types: plain C over a mask
+ * and a clock, driven by rc_pad on hardware and by tests/chord_test.c on the host.
  */
 #ifndef RC_CHORD_H
 #define RC_CHORD_H
@@ -19,7 +19,7 @@
 #include <stdint.h>
 
 /*
- * How long a lone chord button is withheld while its partner is awaited. A fifth of a second: long
+ * How long a lone chord button is withheld while its partner is awaited. A quarter of a second: long
  * enough that a two-thumb press registers as a chord, short enough that a real lone press is not
  * perceptibly delayed when it finally travels.
  */

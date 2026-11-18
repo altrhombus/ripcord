@@ -3,8 +3,8 @@ namespace Ripcord.Core.Platform;
 /// <summary>
 /// Where this host keeps per-user configuration, data, and state. A seam because every one of these differs
 /// per platform (and because the alternative — hardcoding <c>%LocalAppData%</c> at each call site, or walking
-/// up parent directories hunting for a dev-tree file — is what previously made the app unable to find its own
-/// configuration once installed rather than run from the repo).
+/// up parent directories hunting for a dev-tree file — leaves the app unable to find its own configuration
+/// once installed rather than run from the repo).
 /// </summary>
 public interface IPlatformPaths
 {
@@ -41,9 +41,9 @@ public sealed class DefaultPlatformPaths : IPlatformPaths
     ///
     /// <para>
     /// For a clean profile beside a real one. Windows resolves LocalApplicationData through the registered known
-    /// folder and ignores <c>LOCALAPPDATA</c>, so before this a first-run audit had to rename the user's own folder
-    /// aside and restore it afterwards (visual audit, 2026-10-08). Tests, screenshot passes and a second profile for
-    /// debugging all want the same thing. A relative or empty value is ignored, as the XDG variables are.
+    /// folder and ignores <c>LOCALAPPDATA</c>, so without this a first-run check has to rename the user's own
+    /// folder aside and restore it afterwards. Tests, screenshot passes and a second profile for debugging all
+    /// want the same thing. A relative or empty value is ignored, as the XDG variables are.
     /// </para>
     /// </summary>
     public const string DataDirectoryVariable = "RIPCORD_DATA_DIR";

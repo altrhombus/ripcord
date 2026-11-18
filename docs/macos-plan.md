@@ -2,15 +2,14 @@
 
 **The question this answers: what is the macOS client, what is it built on, and in what order?**
 
-Settled 2026-09-24. This is a plan, and it is forward-looking. Work that lands moves to
-[`journal.md`](journal.md) and the open items stay in [`../ROADMAP.md`](../ROADMAP.md), the same way as
-everywhere else in the repository. Where this file and the roadmap disagree about what is still open, the
-roadmap wins.
+Settled 2026-09-24. This is a forward-looking plan. Work that lands moves to [`journal.md`](journal.md) and
+the open items stay in [`../ROADMAP.md`](../ROADMAP.md), as everywhere else in the repository. Where this
+file and the roadmap disagree about what is still open, the roadmap wins.
 
 ## The position
 
-**A native Mac app, not a port of the Windows one.** It shares the protocol and the brand with the Windows
-client. It shares no layout, component or flow. The test is that someone who uses a Mac every day already
+**A native Mac app, not a port of the Windows one.** It shares the protocol and the brand with the dotnet
+client, and no layout, component or flow. The test is that someone who uses a Mac every day already
 knows how it works: double-click to connect, ⌘W to leave, ⌘, for Settings, the green button for full
 screen, and secrets in the Keychain. Nothing in the app should need explaining.
 

@@ -177,8 +177,8 @@ def outgoing(remote):
             continue
         local, remote_sha = parts[1], parts[3]
         # A remote tip this clone does not have is what a force-push after a history rewrite looks like: the
-        # rewrite dropped the old commits. "remote..local" cannot be computed then, and the hook used to crash
-        # and refuse the push. Check everything not already on a remote branch instead, as for a new branch.
+        # rewrite dropped the old commits. "remote..local" cannot be computed then, so check everything not
+        # already on a remote branch instead, as for a new branch.
         known = subprocess.run(["git", "cat-file", "-e", f"{remote_sha}^{{commit}}"], capture_output=True)
         if remote_sha == ZERO or known.returncode != 0:
             spec = [local, "--not", f"--remotes={remote}"]

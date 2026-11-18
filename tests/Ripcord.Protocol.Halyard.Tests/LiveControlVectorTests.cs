@@ -8,7 +8,7 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// Validates the control-plane crypto against real captured ground truth (the KDF lookup tables extracted
 /// from our own client binary, the context keys, and live-captured input→output triples). All of this is
 /// extracted/interop material that stays in the gitignored captures folder, so these tests load a local fixture
-/// and <see cref="Assert.SkipUnless"/> when it is absent — keeping CI green and committing no secrets.
+/// and <see cref="Skip.IfNot(bool, string)"/> when it is absent — keeping CI green and committing no secrets.
 ///
 /// <para>
 /// Fixture: <c>docs/protocol/captures/control_crypto_vectors.json</c> (gitignored). Generated once from the

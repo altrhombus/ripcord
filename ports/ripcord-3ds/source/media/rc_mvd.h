@@ -9,26 +9,17 @@
  * NEW 3DS ONLY, AND THAT IS NOT A SOFT REQUIREMENT. The original 3DS has no MVD block. rc_mvd_init()
  * checks and refuses rather than failing later in a way that looks like a decode bug.
  *
- * ANNEX-B IN, ONE NAL UNIT AT A TIME. `mvdstdProcessVideoFrame` takes a single NAL unit with its start
- * code already stripped, so rc_mvd_decode_frame() splits the demuxer's whole-frame Annex-B buffer on
- * 00 00 00 01 boundaries and feeds each unit in turn. That split is why the parameter sets from
+ * ANNEX-B IN, ONE NAL UNIT AT A TIME. rc_mvd_decode_frame() splits the demuxer's whole-frame Annex-B
+ * buffer on its start codes and feeds each unit in turn. That split is why the parameter sets from
  * STREAM_INFO matter: they arrive as their own NAL units prepended to the first IDR, and MVD answers
  * MVD_STATUS_PARAMSET to them - a "success, but no picture yet" that must not be treated as a failure.
  *
  * THE INPUT BUFFER MUST BE LINEAR AND FLUSHED. MVD reads through physical addresses, so each NAL unit is
- * copied into a linearAlloc'd staging buffer and GSPGPU_FlushDataCache'd before the call. Feeding it a
+ * copied into an aligned linear staging buffer and GSPGPU_FlushDataCache'd before the call. Feeding it a
  * pointer into an ordinary heap or stack buffer produces silence or garbage rather than an error.
  *
- * VERIFIED ON HARDWARE, and this header said the opposite until 2026-09-18 - "this file has never run:
- * there is no MVD block on a build machine and no way to emulate one honestly", with the
- * output-dimension handling called out as provisional. Both were true when written. Neither survived:
- * MVD has decoded video from a real PS5 on a real console, six defects were found in this path by
- * building an offline replay harness and measuring rather than guessing, and the output dimensions were
- * the part that took the most finding rather than the part left unexamined - the .c now explains the
- * 240x400 memory orientation against the 400x240 screen instead of flagging it as unknown.
- *
- * The caution is retired rather than deleted because it was the right caution to have had: without an
- * MVD block on a build machine, everything here WAS assumption until a console said otherwise.
+ * VERIFIED ON HARDWARE: MVD has decoded video from a real PS5 on a real console. source/mvdreplay
+ * replays a captured stream through this module with no console attached.
  */
 #ifndef RC_MVD_H
 #define RC_MVD_H
@@ -48,11 +39,8 @@ typedef struct {
     long process_errors;    /* mvdstdProcessVideoFrame rejected the unit */
     long oversized_units;   /* never offered to MVD - larger than the staging buffer */
     /*
-     * How many times ProcessNALUnit returned each status. This distinguishes the one thing never yet
-     * checked: OK (0x17000) means the unit was consumed, FRAMEREADY (0x17003) means a picture actually
-     * exists to render. This port has been calling RenderVideoFrame on both, following the devkitPro
-     * example - and if FRAMEREADY never occurs, every render has been asking for a frame the decoder
-     * does not have, which would explain a successful render producing no output.
+     * How many times ProcessNALUnit returned each status. OK (0x17000) means the unit was consumed,
+     * FRAMEREADY (0x17003) means a picture actually exists to render.
      */
     long status_ok;         /* 0x17000 */
     long status_frameready; /* 0x17003 */
@@ -65,31 +53,28 @@ typedef struct {
 } rc_mvd;
 
 /*
- * Brings up MVD for H.264 decode at `input_width` x `input_height`. Returns 1 on success, 0 on failure
- * (not a New 3DS, service unavailable, or no linear memory), having left `out` unusable but safe to
- * pass to the other calls.
+ * Brings up MVD for H.264 decode at `input_width` x `input_height`. `rgb565` non-zero selects RGB565
+ * output, zero BGR565. Returns 1 on success, 0 on failure (not a New 3DS, service unavailable, or no
+ * linear memory), having left `out` unusable but safe to pass to the other calls.
  */
 int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565);
 
 /*
- * Decodes one whole Annex-B frame, splitting it into NAL units and rendering directly into the top
- * screen's current framebuffer. Returns 1 if a picture was produced, 0 otherwise (parameter sets only,
- * or an error - check `decode_errors`).
- *
- * Renders straight to the framebuffer rather than to an intermediate buffer, which is what the official
- * example does and avoids an ARM11-side rotate of every frame. The caller still owns the swap.
+ * Decodes one whole Annex-B frame: splits it into NAL units, feeds them to MVD and renders the picture
+ * into this module's own output buffer. Without a scale thread the picture is also scaled into the top
+ * screen's current framebuffer here; with one it is handed to the worker. Returns 1 if a picture was
+ * produced, 0 otherwise (parameter sets only, skipped while awaiting a keyframe, or an error - check
+ * `process_errors` and `render_errors`). The caller owns the swap; see rc_mvd_scale_begin.
  */
 int rc_mvd_decode_frame(rc_mvd *mvd, const uint8_t *annexb, size_t length, int is_keyframe);
 
 /*
- * Tells the decoder that video was lost. Until the next keyframe arrives, rc_mvd_decode_frame() will
- * skip whatever it is handed and count it in `frames_skipped`.
+ * Tells the decoder that video was lost. If skip-until-keyframe is enabled (see
+ * rc_mvd_set_skip_until_keyframe; default off), rc_mvd_decode_frame() then skips whatever it is handed
+ * until the next keyframe arrives and counts it in `frames_skipped`. Otherwise this does nothing.
  *
- * This is correctness before it is economy. H.264 inter-frames are differences against earlier frames,
- * so once one is missing every frame that references it is undecodable - feeding them to MVD produces a
- * guaranteed error per frame, and on the first hardware run that was most of them. Skipping also removes
- * the CPU cost of decoding frames that could never have produced a picture, which matters on a handheld
- * where that cost comes out of the same thread as the network receive loop.
+ * H.264 inter-frames are differences against earlier frames, so once one is missing every frame that
+ * references it cannot be decoded properly until the next IDR.
  */
 void rc_mvd_signal_loss(rc_mvd *mvd);
 
@@ -97,7 +82,7 @@ void rc_mvd_signal_loss(rc_mvd *mvd);
  * hardware measurement that made 'correct' the wrong trade here. */
 void rc_mvd_set_skip_until_keyframe(int enabled);
 
-/* 800x240 top-screen mode. 640-wide source then UPSCALES horizontally instead of losing 61% of its
+/* 800x240 top-screen mode. 640-wide source then UPSCALES horizontally instead of losing 37.5% of its
  * columns, which is the single biggest lever on text legibility. See the .c. Call before streaming. */
 void rc_mvd_set_widescreen(int enabled);
 
@@ -109,8 +94,10 @@ int rc_mvd_start_scale_thread(unsigned core_mask);
 
 /*
  * Scale-and-present, split so the caller never blocks on it:
- *   rc_mvd_scale_begin    - 1 if a new picture was handed to the scaler (or drawn inline), else 0
- *   rc_mvd_scale_complete - 1 once the framebuffer is written and flushed; the caller then swaps
+ *   rc_mvd_scale_begin    - 1 when a scaled picture is ready: inline, one was drawn since the last call
+ *                           and is now flushed; threaded, a worker blit has finished. Else 0.
+ *   rc_mvd_scale_complete - inline, always 1; threaded, 1 if the worker's done event is set, which
+ *                           this call consumes. The caller then swaps.
  * Call at DISPLAY rate, not decode rate - the decoder outruns a 60 Hz screen whenever it is keeping up.
  */
 int rc_mvd_scale_begin(rc_mvd *mvd);
@@ -118,7 +105,7 @@ int rc_mvd_scale_begin(rc_mvd *mvd);
 /*
  * Percentage of the last blitted frame that differs from its own mean luminance. A real picture is
  * mostly detail (typically 40-80%); a cleared buffer with motion painted into it is a few percent, and
- * crucially still shows a large min-to-max SPREAD - which is why spread was the wrong thing to measure.
+ * crucially still shows a large min-to-max SPREAD - which is why spread is not what this measures.
  */
 unsigned rc_mvd_last_detail(void);
 int rc_mvd_scale_complete(void);

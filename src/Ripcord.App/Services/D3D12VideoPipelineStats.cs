@@ -8,14 +8,14 @@ namespace Ripcord_App.Services;
 ///
 /// <para>
 /// The whole of the WinUI side of <see cref="IVideoPipelineStats"/>: one field mapping. The pipeline itself is
-/// created, bound to a swap chain and torn down by <c>SessionPage</c>, which is where it belongs — this only
-/// answers "what is it doing right now?" for the diagnostics readout.
+/// created, bound to a swap chain and torn down by <c>SessionPage</c>; this only answers "what is it doing
+/// right now?" for the diagnostics readout.
 /// </para>
 ///
 /// <para>
 /// The pipeline is handed over via <see cref="Attach"/> rather than the constructor because the view-model is
-/// built before the device exists, and outlives it: the diagnostics panel runs from before the session starts
-/// until after it ends, so "no pipeline yet" and "no pipeline any more" are both ordinary states.
+/// built before the device exists, and outlives it: "no pipeline yet" and "no pipeline any more" are both
+/// ordinary states.
 /// </para>
 /// </summary>
 public sealed class D3D12VideoPipelineStats : IVideoPipelineStats

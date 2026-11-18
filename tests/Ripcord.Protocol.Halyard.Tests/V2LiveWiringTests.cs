@@ -11,9 +11,10 @@ namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
 /// The opt-in v2 live wiring: when a console's pairing selects v2 (RP-SupportGcm or a held rolled token) and the
-/// session is given a v2 crypto, <c>ConnectAsync</c> runs the built v2 HTTP control handshake end-to-end and
-/// stops honestly at the (not yet implemented) persistent control channel — it does not fall into the v1 field
-/// crypto, which v2 throws on. Driven against the same <see cref="MockV2Console"/> the handshake tests use.
+/// session is given a v2 crypto, <c>ConnectAsync</c> runs the v2 HTTP control handshake end-to-end. The mock's
+/// control transport carries no RPCS channel, so the session stops there with a reason — it does not fall into
+/// the v1 field crypto, which v2 throws on. Driven against the same <see cref="MockV2Console"/> the handshake
+/// tests use.
 /// </summary>
 public class V2LiveWiringTests
 {
@@ -46,8 +47,8 @@ public class V2LiveWiringTests
         var config = new SessionConfig(1920, 1080, 60, 10_000, VideoCodec.H264, LatencyMode.Balanced);
         SessionHandshakeResult result = await session.ConnectAsync(config, CancellationToken.None);
 
-        // The v2 handshake ran (the mock received our init2 verifyKey) and the session stopped at the honest
-        // boundary rather than crashing into the v1 field crypto.
+        // The v2 handshake ran (the mock received our init2 verifyKey) and the session stopped where the
+        // transport has no RPCS channel rather than crashing into the v1 field crypto.
         Assert.NotNull(console.ReceivedVerifyKey);
         Assert.False(result.Succeeded);
         Assert.Contains("v2 control handshake completed", result.FailureReason);

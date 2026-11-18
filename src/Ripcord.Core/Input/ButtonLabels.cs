@@ -33,29 +33,20 @@ public enum PromptButton
 public readonly record struct InputPrompt(PromptButton Button, string Verb, string? KeyLabel = null);
 
 /// <summary>
-/// What a button prompt says.
-///
-/// <para>
-/// <b>This file exists to be the single place anyone has to look.</b> Button prompts are where a client like
-/// this one is most tempted to reproduce a console vendor's iconography, because their symbols are what users
-/// recognise. This project does not, anywhere, and centralising the decision means the claim can be checked in
-/// one file rather than argued about per surface.
-/// </para>
+/// What a button prompt says. The single place the decision lives, so it can be checked in one file.
 ///
 /// <para>
 /// <b>The rule: our own badge, with text inside it.</b> The badge shape is ours. The content is a WORD or a
-/// LETTER, never a reproduction of a vendor symbol set and never a symbol font containing one — those glyph
-/// designs are the mark, and drawing them is the thing to avoid regardless of which font happens to be
-/// installed. For a vendor pad the face buttons have names, and a name in our own badge is a plain description
-/// of what the user is looking at; for everything else the letters A/B/X/Y are nobody's mark. This follows the
-/// position the on-screen touch bar already took deliberately: text, not glyph designs.
+/// LETTER, never a reproduction of a vendor symbol set and never a symbol font containing one, whichever
+/// font happens to be installed. For a vendor pad the face buttons have names, and a name in our own badge
+/// is a plain description of what the user is looking at; for everything else the letters A/B/X/Y are
+/// nobody's mark. The on-screen touch bar follows the same rule: text, not glyph designs.
 /// </para>
 ///
 /// <para>
-/// <b>The verb always accompanies the badge</b> — "Cross · Select", never a lone badge. That is not only
-/// caution: a badge alone is unreadable at couch distance, means nothing to someone who has not memorised the
-/// layout, and is silent to a screen reader. The safe choice and the legible one are the same choice here,
-/// which is why the API gives no way to render one without the other.
+/// <b>The verb always accompanies the badge</b> — "Cross · Select", never a lone badge. A badge alone is
+/// unreadable at couch distance, means nothing to someone who has not memorised the layout, and is silent to
+/// a screen reader, so the API gives no way to render one without the other.
 /// </para>
 /// </summary>
 public static class ButtonLabels

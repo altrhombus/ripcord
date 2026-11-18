@@ -8,11 +8,10 @@ namespace Ripcord.Protocol.Halyard.Discovery;
 /// How a registration request reaches the console.
 ///
 /// <para>
-/// Two of these exist because the two pairing routes reach the console differently, and only differently: the
-/// PIN route opens TCP 9295 to a console it can already see, while the account route arrives through the cloud
-/// rendezvous and the console serves the identical HTTP over UDP 9303 instead. Everything above this seam —
-/// the request layout, the body crypto, the response parse — is shared, which is the whole reason it is a seam
-/// rather than a second registration client.
+/// Two of these exist because the two pairing routes reach the console differently: the PIN route opens TCP
+/// 9295 to a console it can already see, while the account route arrives through the cloud rendezvous and the
+/// console serves the identical HTTP over UDP 9303 instead. Everything above this seam — the request layout,
+/// the body crypto, the response parse — is shared.
 /// </para>
 ///
 /// <para>
@@ -27,10 +26,9 @@ public interface IHalyardRegistrationTransport
     /// Get the transport ready before the caller finishes negotiating, if it needs to be.
     ///
     /// <para>
-    /// Exists for one reason, and it is a protocol fact rather than an optimisation: on the account route the
-    /// side that opens the association is the side that may open a connection on it, and the console starts
-    /// its own the instant our ACCEPT reaches it. A client that waits until it wants to send a request has
-    /// already lost that race. The TCP route has nothing to prepare.
+    /// A protocol requirement, not an optimisation: on the account route the side that opens the association
+    /// is the side that may open a connection on it, and the console starts its own the instant our ACCEPT
+    /// reaches it. The TCP route has nothing to prepare.
     /// </para>
     /// </summary>
     Task PrepareAsync(CancellationToken cancellationToken) => Task.CompletedTask;

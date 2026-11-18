@@ -21,8 +21,7 @@ using Ripcord_App.Services;
 namespace Ripcord_App.Pages;
 
 /// <summary>
-/// The tunables. Everything here was previously a compile-time constant scattered across the app, which is why
-/// this page used to read "This is the Settings page".
+/// The tunables.
 ///
 /// <para>
 /// Changes save immediately — there is no OK/Cancel, matching how Windows 11 settings behave. Video and GPU
@@ -38,18 +37,17 @@ namespace Ripcord_App.Pages;
 /// <para>
 /// <b>Handlers are attached in code, after the first render — not in markup.</b> XAML parsing raises change
 /// events on its own: <c>Slider.Minimum="2"</c> moves <c>Value</c> from 0 to 2 and fires <c>ValueChanged</c>
-/// during <c>InitializeComponent</c>. Markup-attached handlers therefore ran before the page had loaded
-/// anything, which is what the old <c>_loading</c> bool existed to paper over — a flag checked in fourteen
-/// places and one more to forget in the fifteenth. Attaching afterwards means the event cannot happen at all.
+/// during <c>InitializeComponent</c>, so markup-attached handlers run before the page has loaded anything.
+/// Attaching afterwards means the event cannot happen at all, and no loading flag is needed.
 /// </para>
 /// </summary>
 public sealed partial class SettingsPage : Page, IInitialFocusTarget
 {
     private readonly SettingsViewModel _viewModel;
 
-    // Guards the projection, and is NOT _loading under another name. That flag protected against events fired
-    // before the page had any data, and had to be checked in fourteen handlers plus inside the save; this is set
-    // and cleared in exactly one method and read in exactly one place. It earns its keep on one specific case:
+    // Guards the projection, and is not a loading flag: handlers are attached after the first render, so none
+    // is needed. This is set and cleared in exactly one method and read in exactly one place. It earns its keep
+    // on one specific case:
     // clearing a ComboBox's items drives SelectedIndex to -1 and raises SelectionChanged on the way past, and a
     // handler seeing -1 would clamp it to a real option and save a setting the user never touched.
     private bool _rendering;
@@ -96,11 +94,6 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     }
 
     /// <summary>
-    /// async void, confined to this one launcher and unable to throw: everything inside is either guarded by the
-    /// view-model or caught here. The load has to be asynchronous because the capability probes are native and
-    /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
-    /// </summary>
-    /// <summary>
     /// Where the caller asked us to land. <see cref="SettingsDestination.Top"/> for an ordinary visit
     /// through the gear button.
     /// </summary>
@@ -112,20 +105,17 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     /// <para>
     /// This has to be the shell's answer rather than a Focus() call of this page's own. The shell seeds focus
     /// from ChromeFrame.Navigated at Low dispatcher priority - which is AFTER Loaded - so anything focused
-    /// during load is overwritten a moment later by first-in-tree-order, and the button came up unfocused
-    /// with the resolution dropdown holding focus instead. Answering here is answering the question the shell
-    /// actually asks.
+    /// during load is overwritten a moment later by first-in-tree-order.
     /// </para>
     ///
     /// <para>
-    /// Returned unconditionally when that is where they were headed, because the button is COLLAPSED unless
-    /// the build can sign in at all - and the shell already treats a Focus() that does not land as a reason
-    /// to fall through to tree order. Second-guessing that here would be two guards for one question.
+    /// Returned unconditionally when that is where they were headed: the button is COLLAPSED unless the build
+    /// can sign in at all, and the shell already treats a Focus() that does not land as a reason to fall
+    /// through to tree order.
     /// </para>
     ///
     /// <para>
-    /// Null for an ordinary visit: tree order is the right default for a settings page, where no single
-    /// control is the reason you are there.
+    /// Null for an ordinary visit: tree order is the right default for a settings page.
     /// </para>
     /// </summary>
     public Control? InitialFocus
@@ -138,14 +128,8 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     }
 
     /// <summary>
-    /// Put the account section in front of somebody who asked for it.
-    ///
-    /// <para>
-    /// The pairing step's sign-in button used to open this page at the top, where the account is the last
-    /// card on a long scroll — so a button reading "Sign in to PlayStation Network" delivered them to a
-    /// resolution dropdown and left them hunting. Landing on the right page is only half of taking somebody
-    /// somewhere.
-    /// </para>
+    /// Put the account section in front of somebody who asked for it: the account is the last card on a long
+    /// scroll, and the pairing step's sign-in button would otherwise land them at the top.
     ///
     /// <para>
     /// After the load, because the account card's own contents decide its height and bringing it into view
@@ -160,10 +144,15 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         }
 
         // Scrolling only. Focus is answered through InitialFocus, because the shell seeds it after this
-        // runs and would overwrite anything set here - which is exactly what happened.
+        // runs and would overwrite anything set here.
         AccountCard.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0 });
     }
 
+    /// <summary>
+    /// async void, confined to this one launcher and unable to throw: everything inside is either guarded by the
+    /// view-model or caught here. The load has to be asynchronous because the capability probes are native and
+    /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
+    /// </summary>
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
         try
@@ -264,14 +253,8 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     // ---- render ----
 
     /// <summary>
-    /// Project the whole state onto the controls. One method rather than per-property handlers: the state
-    /// arrives as one value, so the codec picker and the HDR toggle it gates cannot disagree — which is exactly
-    /// what they used to do when a change handler updated one and left the other until the page was reopened.
-    /// </summary>
-    /// <summary>
-    /// Run the sign-in flow. The sequence lives in <see cref="AccountSignIn"/> because this page is no longer
-    /// the only surface that starts one — the pairing flow signs in where it stands rather than sending the
-    /// user here and stranding them.
+    /// Run the sign-in flow. The sequence lives in <see cref="AccountSignIn"/> because this page is not the only
+    /// surface that starts one — the pairing flow signs in where it stands rather than sending the user here.
     /// </summary>
     private async Task SignInAsync()
     {
@@ -293,7 +276,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         AccountCard.Header = s.Heading;
         AccountCard.Description = s.Detail;
 
-        // Its header is set here rather than from a uid, so its accessible name has to be too; the row had none.
+        // Its header is set here rather than from a uid, so its accessible name has to be too.
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(AccountCard, s.Heading);
 
         AccountBusy.IsActive = s.IsBusy;
@@ -339,6 +322,10 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         }
     }
 
+    /// <summary>
+    /// Project the whole state onto the controls. One method rather than per-property handlers: the state
+    /// arrives as one value, so the codec picker and the HDR toggle it gates cannot disagree.
+    /// </summary>
     private void Render(SettingsViewState s)
     {
         _rendering = true;
@@ -431,8 +418,8 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
             return;
         }
 
-        // The good state is Informational, not Success. A permanent green bar for "nothing to do" was the loudest
-        // thing on the page (visual audit, 2026-10-08); colour is for the states that ask something of the reader.
+        // The good state is Informational, not Success. A permanent green bar for "nothing to do" would be the
+        // loudest thing on the page; colour is for the states that ask something of the reader.
         CredentialProtectionBar.Severity = s.CredentialTone switch
         {
             StatusTone.Caution => InfoBarSeverity.Warning,
@@ -510,8 +497,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     // ---- actions ----
 
     /// <summary>
-    /// Open the rebinding dialog. Its result goes to the view-model, which merges it onto the keyboard toggle
-    /// rather than replacing the whole bindings record.
+    /// Open the rebinding page, which saves each change through its own view-model as it is made.
     /// </summary>
     private async void KeyBindings_Click(object sender, RoutedEventArgs e)
     {

@@ -13,10 +13,9 @@
 
     WHY THE GEOMETRY IS BUILT IN CODE AND NOT A VIEWBOX.
 
-    The first version wrapped a fixed 92x176 canvas in a Uniform Viewbox, which is wrong in two ways at once
-    and only looks right at exactly one size. Uniform letterboxes: asked for 184 wide beside a 150-tall hero
-    card it would scale to the height and leave the zone 78 wide, so the wedge simply would not reach the
-    card's edge. Stretch="Fill" fixes the size and breaks the angle instead - the slant would be near 9
+    A fixed 92x176 canvas in a Uniform Viewbox is wrong in two ways at once and only looks right at exactly
+    one size. Uniform letterboxes: asked for 184 wide beside a 150-tall hero card it would scale to the
+    height and leave the zone 78 wide, so the wedge would not reach the card's edge. Stretch="Fill" fixes the size and breaks the angle instead - the slant would be near 9
     degrees on a grid card and near 20 on the hero, which is the one thing about this shape that has to stay
     constant, because the diagonal is the app's signature and a signature that changes slope is not one.
 
@@ -24,10 +23,11 @@
     on every size change. The angle is then identical at 92px beside a grid card and at 184px beside the
     hero, which is what docs/design.md means by "it scales with its container, not as a fixed chip".
 
-    ON THE UNREACHABLE CASE, WHICH DEPARTS FROM THE WRITTEN DESIGN - see Muted in the code-behind. In short:
-    docs/design.md said an unreachable console has no wedge at all, that was written when "cannot be reached"
-    was believed to be knowledge, and it is not. The wedge goes quiet instead of vanishing. The design doc
-    records the amendment; if the two ever disagree again, the doc wins and this comment is what to correct.
+    THE UNREACHABLE CASE - see Muted in the code-behind. A console that did not answer keeps its wedge, and
+    the wedge goes quiet: the rim takes the caller's neutral in place of the family accent, and the bleed is
+    not drawn. "Cannot be reached" is one lost datagram away from being wrong, so it may change how the
+    action looks and must not remove it. docs/design.md ("Form: the wedge") has the rule; if the two
+    disagree, the doc wins and this comment is what to correct.
 -->
 <UserControl
     x:Class="Ripcord_App.Controls.PlayWedge"
@@ -50,9 +50,9 @@
 
             Their geometry is rebuilt in OnSizeChanged. In a Grid that is a feedback loop: assigning Data
             changes the Path's desired size, which invalidates layout, which raises SizeChanged again. The
-            plane alone survived it by accident - its quadrilateral fills the container exactly, so its
-            desired size never changed. The rim is a single diagonal, its bounds are smaller, and adding it
-            turned the whole window black with no exception thrown and nothing in the crash log.
+            plane alone would survive it by accident - its quadrilateral fills the container exactly, so its
+            desired size never changes. The rim is a single diagonal with smaller bounds, and in a Grid it
+            turns the whole window black with no exception thrown and nothing in the crash log.
 
             A Canvas does not size to its children, so the loop cannot start. Add shapes here, not to the Grid.
             The Viewbox stays a Grid child because it needs centring, and it is sized from code.
@@ -69,11 +69,11 @@
             <!--
                 The bleed: the accent falling off the rim into the plane, built in code from AccentColor.
 
-                This is what stops the rim reading as a drawn edge rather than a lit one, and it is the
-                answer to "the wedge is too quiet" that does NOT reintroduce the slab - it is a gradient to
-                transparent, so there is no field of colour anywhere, only a falloff. Suppressed entirely
-                when Muted, and it carries no information a colour-blind or high-contrast user could miss,
-                because the rim and the mark both say the same thing without it.
+                This is what stops the rim reading as a drawn edge rather than a lit one. It is a gradient
+                to transparent, so there is no field of colour anywhere, only a falloff. Not drawn when
+                Muted or when AppEffects allows no accent wash, and it carries no information a colour-blind
+                or high-contrast user could miss, because the rim and the mark both say the same thing
+                without it.
             -->
             <Path x:Name="Bleed" />
 
@@ -100,11 +100,10 @@
             Stretch="Uniform">
             <Canvas Width="30" Height="36">
                 <!--
-                    Filled, not filled-and-stroked. The rounded corners used to come from a 6px round-joined
-                    stroke in the same brush as the fill. In light theme that brush is translucent, so the band
-                    where stroke and fill overlap was drawn twice and the mark wore a dark outline (visual audit,
-                    2026-10-08). This outline is the same shape - the triangle grown by the stroke's radius,
-                    corners rounded at 3 - drawn once.
+                    Filled, with no stroke. The outline is the mark's triangle grown by 3 with its corners
+                    rounded at 3, which is the shape a 6px round-joined stroke gives, drawn once. A stroke in
+                    the fill's brush would paint the band where the two overlap twice, and where that brush is
+                    translucent (the light theme) the mark would wear a dark outline.
                 -->
                 <Path
                     Data="M 2,3 A 3,3 0 0 1 6.69,0.521 L 28.69,15.521 A 3,3 0 0 1 28.69,20.479 L 6.69,35.479 A 3,3 0 0 1 2,33 Z"

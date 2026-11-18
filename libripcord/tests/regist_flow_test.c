@@ -2,16 +2,13 @@
  * ripcord - the registration flow against a fake console on loopback.
  *
  * WHAT THIS PROVES AND WHAT IT DOES NOT. It cannot prove the console accepts our bytes; only a console
- * can. What it proves is that the flow assembles the three layers correctly and, above all, that every
- * failure it can reach reports the RIGHT ONE of its named statuses - because the whole argument for
- * having named statuses is that a user standing in front of two screens with an expiring PIN needs to
- * be told which thing went wrong, and a status that is merely plausible is worse than none.
+ * can. It proves that the flow assembles the three layers correctly and that every failure it can
+ * reach reports the RIGHT ONE of its named statuses.
  *
  * The fake console is a thread on 127.0.0.1 that speaks the shape of the protocol: it reads the POST,
  * recovers the material from the context exactly as the console must, derives the same key from the PIN
- * it "displayed", and answers with an encrypted pairing record. That it can do so at all is the real
- * check - it exercises unwrap and the key derivation from the far side, which the known-answer vectors
- * verify arithmetically but never actually use in the direction the console does.
+ * it "displayed", and answers with an encrypted pairing record. That exercises unwrap and the key
+ * derivation in the console's direction, which the known-answer vectors only verify arithmetically.
  */
 #include "../halyard/halyard_registration.h"
 #include "../halyard/halyard_v1.h"
@@ -30,10 +27,10 @@
 /*
  * THE SEARCH PROBE, REPLACED AT LINK TIME. The real one (halyard_control_probe.c) sends to the LAN
  * broadcast address as well as the host, because a console that has not been spoken to recently answers
- * only the broadcast - so linking it put a datagram on the network on every `make`. This suite sends
- * nothing beyond loopback, so the probe is a stub that records the call and reports what an unanswered
- * probe reports: no reply. That is still the best-effort case the flow has to tolerate, and the call
- * itself is now checked rather than merely survived.
+ * only the broadcast - so linking it would put a datagram on the network on every `make`. This suite
+ * sends nothing beyond loopback, so the probe is a stand-in that records the call and reports what an
+ * unanswered probe reports: no reply. That is the best-effort case the flow has to tolerate, and the
+ * test asserts the call was made.
  */
 static int g_probe_calls;
 
@@ -48,9 +45,9 @@ int halyard_control_arm_probe(const char *host, int is_ps5)
 /*
  * THE TEST'S OWN RANDOMNESS, AND IT IS NOT RANDOM.
  *
- * rc_platform_host.c deliberately provides no rc_random_bytes: "offering a host one would make 'built
- * for the host' quietly mean 'built with fake key material'. A host test that needs randomness should
- * inject it, not source it." This is that injection, and it is a counter rather than a PRNG on purpose.
+ * rc_platform_host.c deliberately provides no rc_random_bytes: offering a host one would make "built
+ * for the host" quietly mean "built with fake key material", so a host test that needs randomness
+ * defines its own. This is that definition, and it is a counter rather than a PRNG on purpose.
  *
  * It is safe here for one reason only: the sole peer is a fake console in this same process, and
  * nothing this produces leaves it. It would be catastrophic anywhere else, which is why it lives in the
@@ -107,12 +104,12 @@ static void *fake_console(void *arg)
 
     (void)arg;
     /*
-     * A BOUNDED ACCEPT, because an unbounded one is how this test hung.
+     * A BOUNDED ACCEPT, because an unbounded one hangs the test.
      *
      * If the client never connects - which is what happens the moment anything upstream of the connect
      * fails - an accept() with no timeout blocks forever, and the pthread_join that follows it blocks
      * with it. The run then has to be killed, and a killed run LEAVES THE LISTENER BOUND, which breaks
-     * every later run with a message about the port being in use. One missing timeout cost all of that.
+     * every later run with a message about the port being in use.
      */
     {
         struct timeval tv;

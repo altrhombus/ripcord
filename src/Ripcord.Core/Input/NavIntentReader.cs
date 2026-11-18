@@ -46,19 +46,13 @@ public readonly record struct NavIntent(
 }
 
 /// <summary>
-/// Turns a stream of absolute controller frames into discrete navigation intents.
-///
-/// <para>
-/// Extracted from <c>MainWindow</c>, where it was interleaved with focus movement and WinUI automation calls
-/// and could only be exercised by holding a real pad. Everything here is arithmetic over a frame and a
-/// timestamp, and every rule in it was written for a specific complaint:
-/// </para>
+/// Turns a stream of absolute controller frames into discrete navigation intents. Everything here is
+/// arithmetic over a frame and a timestamp:
 ///
 /// <list type="bullet">
 ///   <item>
-///     <b>Auto-repeat.</b> Without it, holding a stick or D-pad moved focus exactly once, so navigating a long
-///     list meant flicking repeatedly — the single most obviously-wrong thing about gamepad navigation. The
-///     initial pause stops an intended single step becoming two.
+///     <b>Auto-repeat.</b> A held stick or D-pad keeps moving focus at the repeat cadence; the initial pause
+///     stops an intended single step becoming two.
 ///   </item>
 ///   <item>
 ///     <b>Edge detection on buttons.</b> Frames are absolute state, so a held button is present in every frame;
@@ -72,7 +66,7 @@ public readonly record struct NavIntent(
 ///
 /// <para>
 /// Pure and clock-injected, following <see cref="ExitGestureDetector"/>: the caller supplies <c>now</c>, so
-/// repeat timing is unit-testable rather than something to try on a real pad and hope.
+/// repeat timing is unit-testable.
 /// </para>
 /// </summary>
 public sealed class NavIntentReader
@@ -120,8 +114,8 @@ public sealed class NavIntentReader
             Accept: IsRisingEdge(frame.Buttons, ControllerButtons.South),
             Back: IsRisingEdge(frame.Buttons, ControllerButtons.East),
             // North (Y, triangle) or Start (Menu, Options). Start is the Windows and Xbox convention for "the
-            // menu for this", and it is the button somebody reached for first on the console card (owner, with a
-            // pad, 2026-10-08). Inside a stream neither reaches here; the session scope keeps the pad.
+            // menu for this", and it is the button a player reaches for first on the console card. Inside a
+            // stream neither reaches here; the session scope keeps the pad.
             Context: IsRisingEdge(frame.Buttons, ControllerButtons.North)
                 || IsRisingEdge(frame.Buttons, ControllerButtons.Start),
             Scroll: ScrollOf(frame));

@@ -9,15 +9,15 @@ namespace Ripcord.Input;
 ///
 /// <para>
 /// The session consumes a single stream of <see cref="ControllerStateFrame"/>, and each frame is <em>absolute
-/// state</em> rather than a delta. Simply forwarding both sources would mean the pad's resting frame cancelling a
-/// held key at whatever rate the pad reports, so the latest of each is kept and merged on every change. That is
-/// also what allows a pad and keyboard to be used together, which is the normal case for a handheld on a desk.
+/// state</em> rather than a delta. Forwarding both sources would mean the pad's resting frame cancelling a held
+/// key at whatever rate the pad reports, so the latest of each is kept and merged on every change. That also
+/// lets a pad and keyboard be used together.
 /// </para>
 ///
 /// <para>
 /// Keyboard events arrive from the UI thread and pad frames from a device thread, so the held state and the last
 /// pad frame are both guarded. Frames are published outside the lock: a subscriber that blocks (the session send
-/// path) must not be able to stall the key handler and make typing feel stuck.
+/// path) must not be able to stall the key handler.
 /// </para>
 /// </summary>
 public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisposable

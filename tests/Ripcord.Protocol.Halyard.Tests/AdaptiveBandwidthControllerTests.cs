@@ -242,9 +242,9 @@ public class AdaptiveBandwidthControllerTests
     [Fact]
     public void HealthyBattery_DoesNotCapAnything()
     {
-        // The regression this guards: the cap used to key off "on battery" alone, so a laptop at 94% charge on a
-        // flawless link was silently dropped to 720p despite an explicit 1080p request. Being unplugged is not
-        // the same as being low.
+        // The regression this guards: a cap keyed off "on battery" alone silently drops a laptop at 94% charge
+        // on a flawless link to 720p despite an explicit 1080p request. Being unplugged is not the same as
+        // being low.
         var c = NewController();
 
         c.ReportThermalPowerState(new PowerState(PowerSource.Battery, 94, ThermalThrottling: false));

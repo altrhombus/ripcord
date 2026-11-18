@@ -6,28 +6,6 @@ using System.Security.Cryptography;
 namespace Ripcord.Core.Net;
 
 /// <summary>
-/// Discovers this machine's reflexive (public) address for a given local UDP port, by asking a STUN server.
-///
-/// <para>
-/// A peer behind NAT cannot be reached at its own address: what the far side must be told is the address the
-/// NAT presents on its behalf, which only something outside the NAT can observe. That is all this does —
-/// one RFC 5389 Binding Request, one <c>XOR-MAPPED-ADDRESS</c> back.
-/// </para>
-///
-/// <para>
-/// <b>The port matters more than the address.</b> A NAT maps per source port, so the answer is only useful
-/// for the port it was asked about — which is why this binds the caller's port rather than picking its own.
-/// The mapping is what the peer will send to, so the same port must then carry the real traffic.
-/// </para>
-///
-/// <para>
-/// Which server is asked is an implementation choice and nothing to do with any console protocol: these are
-/// ordinary public STUN servers, tried in order because any one of them can be down. There is no
-/// authentication and nothing session-specific is sent — a Binding Request carries a random transaction id
-/// and nothing else.
-/// </para>
-/// </summary>
-/// <summary>
 /// A reflexive address, and what the NAT's behaviour was measured to be.
 /// </summary>
 /// <param name="Reflexive">The address a peer must be told about.</param>
@@ -38,6 +16,22 @@ namespace Ripcord.Core.Net;
 /// </param>
 public sealed record StunMapping(IPEndPoint Reflexive, bool? EndpointIndependent);
 
+/// <summary>
+/// Discovers this machine's reflexive (public) address for a given local UDP port, by asking a STUN server:
+/// one RFC 5389 Binding Request, one <c>XOR-MAPPED-ADDRESS</c> back.
+///
+/// <para>
+/// <b>The port matters more than the address.</b> A NAT maps per source port, so this binds the caller's
+/// port rather than picking its own, and the same port must then carry the real traffic.
+/// </para>
+///
+/// <para>
+/// Which server is asked is an implementation choice and nothing to do with any console protocol: these are
+/// ordinary public STUN servers, tried in order because any one of them can be down. There is no
+/// authentication and nothing session-specific is sent — a Binding Request carries a random transaction id
+/// and nothing else.
+/// </para>
+/// </summary>
 public static class StunReflexiveAddress
 {
     private const int BindingRequest = 0x0001;

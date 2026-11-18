@@ -31,9 +31,9 @@ public sealed record HalyardPairingRecord(
     /// The v2 rolled session token (the stored type-11 token): the 16-byte <c>RP-VerifyKey</c> a previous v2
     /// session minted and the console accepted, used as <b>this</b> session's K16. Empty until the first v2
     /// session rolls one — the first session after pairing bootstraps from the bundled <c>K16_reg</c> instead.
-    /// It is a non-positional <c>init</c> property so the registration call sites that build a record need no
-    /// change, and a session rolls it forward with <c>record with { RolledToken = … }</c> only once the console
-    /// has accepted the new token. v1 (PS4 / HalyardLegacy) never sets it.
+    /// It is a non-positional <c>init</c> property: registration builds a record without it, and a session
+    /// rolls it forward with <c>record with { RolledToken = … }</c> only once the console has accepted the new
+    /// token. A v1 session never sets it.
     /// </summary>
     public byte[] RolledToken { get; init; } = [];
 
@@ -80,9 +80,9 @@ public sealed record HalyardPairingRecord(
     ///
     /// <para><b>Rendered as a signed 32-bit decimal.</b> <c>docs/protocol/ps5-local-discovery.md</c> pins it
     /// from the PS4 captures (cap53–cap57), whose credential is negative; every PS5 sample is below 2^31,
-    /// where signed and unsigned read the same, which is why this was unsigned here until the engine
-    /// comparisons of 2026-09-26. A key at <c>0x80000000</c> or above, about half of them, got a credential the
-    /// console would not recognise. The C core and the Rust engine render it signed.</para>
+    /// where signed and unsigned read the same. Rendered unsigned, a key at <c>0x80000000</c> or above, about
+    /// half of them, gets a credential the console would not recognise. The C core and the Rust engine render
+    /// it signed.</para>
     ///
     /// <para>False for a key that is not hex or does not fit 32 bits: a corrupt record, not something to paper
     /// over with a guess.</para>

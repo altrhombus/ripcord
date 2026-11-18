@@ -8,9 +8,8 @@ namespace Ripcord.Core.Net.Udp;
 /// Link measurements the console is told about in the launchSpec: round-trip time and MTU.
 ///
 /// <para>
-/// The arithmetic is separated from the OS queries so it can be tested. Both values were previously hardcoded —
-/// <c>rtt: 0</c> and <c>mtu: 1454</c> — which is a claim rather than a measurement, and the console uses what we
-/// declare.
+/// The arithmetic is separated from the OS queries so it can be tested. The console uses what we declare, so a
+/// fixed <c>rtt: 0</c> and <c>mtu: 1454</c> would be a claim rather than a measurement.
 /// </para>
 /// </summary>
 public static class LinkMetrics
@@ -96,11 +95,10 @@ public static class LinkMetrics
     /// determined.
     ///
     /// <para>
-    /// Found by asking the OS routing table which local address it would use (connecting a UDP socket performs no
-    /// I/O and sends nothing) and then matching that address to an adapter. This is the interface MTU rather than a
-    /// true path MTU: discovering the latter means sending don't-fragment probes and interpreting ICMP, which on a
-    /// LAN or Wi-Fi link — where the first hop is the constraint — buys nothing for the risk of firing unparseable
-    /// datagrams at a port the console is mid-handshake on.
+    /// Asks the OS routing table which local address it would use (connecting a UDP socket sends nothing) and
+    /// matches that address to an adapter. This is the interface MTU, not a path MTU: path discovery needs
+    /// don't-fragment probes and ICMP, and on a LAN or Wi-Fi link the first hop is the constraint, so it is
+    /// not worth firing unparseable datagrams at a port the console is mid-handshake on.
     /// </para>
     /// </summary>
     public static int? InterfaceMtuTowards(IPAddress destination)

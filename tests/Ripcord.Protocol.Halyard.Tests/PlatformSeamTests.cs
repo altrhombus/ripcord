@@ -27,8 +27,8 @@ public class PlatformSeamTests
     [Fact]
     public void PlatformPaths_FollowTheDataDirectoryVariable()
     {
-        // A clean profile beside a real one: before this, a first-run audit had to rename the user's own folder
-        // aside (2026-10-08). Set and cleared within this class only, which is the one place that builds paths.
+        // A clean profile beside a real one: with the variable, a first-run check does not have to rename the
+        // user's own folder aside. Set and cleared within this class only, which is the one place that builds paths.
         string root = Path.Combine(Path.GetTempPath(), "ripcord-data-dir-" + Guid.NewGuid().ToString("N"));
         string? original = Environment.GetEnvironmentVariable(DefaultPlatformPaths.DataDirectoryVariable);
         try
@@ -99,8 +99,8 @@ public class PlatformSeamTests
     [Fact]
     public void CredentialProtector_OnWindows_NeverFallsBackToPlaintext()
     {
-        // PRIVACY.md promises the shipped client encrypts at rest. Without DPAPI the answer is "store nothing",
-        // so a plaintext protector on Windows means that promise quietly stopped being true.
+        // PRIVACY.md promises the client encrypts at rest. Without DPAPI the answer is "store nothing", so a
+        // plaintext protector on Windows would make that promise quietly untrue.
         if (!OperatingSystem.IsWindows())
         {
             return;
@@ -210,15 +210,15 @@ public class PlatformSeamTests
     [SkippableFact]
     public void DeviceIdentity_ResolvesOnWindows_FromANeutralHost()
     {
-        // The regression this exists for: the Windows read used to REFLECT for Microsoft.Win32.Registry, which
-        // resolves inside Ripcord.App (net10.0-windows) and silently does not in a neutral net10.0 host. So the
-        // device id was correct in the app and empty in the console harness, on the same machine — surfacing
+        // The regression this exists for: a Windows read that REFLECTS for Microsoft.Win32.Registry, which
+        // resolves inside Ripcord.App (net10.0-windows) and silently does not in a neutral net10.0 host. The
+        // device id is then correct in the app and empty in the console harness, on the same machine — surfacing
         // as "this machine did not supply a stable 16-byte device id" from an ordinary Windows box, and taking
         // account sign-in down with it via the InvalidOperationException HalyardClientDeviceId throws.
         //
         // This assembly is itself plain net10.0, which is exactly what makes it the right place to catch it.
         // The test above deliberately tolerates empty (CI hosts legitimately have no machine id); this one does
-        // not, because on a real Windows machine empty is now always a bug.
+        // not, because on a real Windows machine empty is always a bug.
         Skip.IfNot(OperatingSystem.IsWindows(), "MachineGuid is a Windows concept.");
 
         ReadOnlyMemory<byte> id = new DefaultDeviceIdentity().StableDeviceId;

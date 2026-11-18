@@ -75,9 +75,8 @@ pub fn inverse(a: u8) -> Option<u8> {
 /// `dest[t] ^= coeff * src[t]` for every byte.
 ///
 /// One lookup per byte, from a row of products built for this coefficient: 256 multiplies, against a unit
-/// of a thousand bytes or more. This used to read the row out of a 64 KB table of every product, built at
-/// compile time, which was a tenth of the whole engine's size (2026-09-26) for work done only when a frame
-/// has lost units.
+/// of a thousand bytes or more. A 64 KB compile-time table of every product would be a tenth of the whole
+/// engine's size, for work done only when a frame has lost units.
 fn mul_accumulate(dest: &mut [u8], src: &[u8], coeff: u8) {
     if coeff == 0 {
         return;

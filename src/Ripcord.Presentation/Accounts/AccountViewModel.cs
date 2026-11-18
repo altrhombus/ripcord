@@ -11,16 +11,14 @@ namespace Ripcord.Presentation.Accounts;
 ///
 /// <para>
 /// One view-model shared by every surface that cares who is signed in — the settings page shows it, the pairing
-/// flow reads its account id, and the console picker merges its console list. That sharing is the point: an
-/// account id fetched twice by two surfaces is two chances to disagree about who is signed in, which is the class
-/// of bug the single-graph rule exists to prevent.
+/// flow reads its account id, and the console picker merges its console list. Two surfaces fetching the account
+/// separately could disagree about who is signed in.
 /// </para>
 ///
 /// <para>
 /// <b>Freshness is decided synchronously.</b> Every asynchronous entry point here captures its own generation
 /// before awaiting and compares it after, on the calling continuation, never inside a posted <c>Mutate</c>
-/// closure — the layer's second rule, and the one this repo has broken twice. A sign-out that lands while a
-/// restore is in flight must not have the restore's result overwrite it a moment later.
+/// closure. A sign-out that lands while a restore is in flight must not have the restore's result overwrite it.
 /// </para>
 /// </summary>
 public sealed class AccountViewModel : ObservableState<AccountViewState>
@@ -333,7 +331,7 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
 
     /// <summary>
     /// The account's region as a person would say it, or null when there is nothing to say. The service reports
-    /// a lowercase country code, and printing it verbatim gave "Signed in — us." (visual audit, 2026-10-08).
+    /// a lowercase country code, and printing it verbatim would give "Signed in — us.".
     /// Anything that is not a recognisable country code says nothing rather than something cryptic.
     /// </summary>
     internal static string? RegionName(string code)

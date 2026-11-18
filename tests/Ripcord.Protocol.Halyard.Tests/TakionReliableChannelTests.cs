@@ -53,7 +53,7 @@ public class TakionReliableChannelTests
     /// <summary>
     /// A cumulative SACK across the TSN wrap. The initial TSN is the local tag, so a session whose tag sits at
     /// the top of the space sends 0xFFFFFFFF and then 0x00000000. Acknowledging 0xFFFFFFFF must clear it even
-    /// though 0 is the lower key; it used to stop at 0 and leave 0xFFFFFFFF outstanding for good.
+    /// though 0 is the lower key; stopping at 0 would leave 0xFFFFFFFF outstanding for good.
     /// </summary>
     [Fact]
     public async Task CumulativeSack_AcrossTheTsnWrap_ClearsTheChunkBeforeIt()
@@ -78,8 +78,8 @@ public class TakionReliableChannelTests
     }
 
     /// <summary>
-    /// One bad packet must cost one packet, not the session. A 12-byte DATA chunk used to throw out of the
-    /// reassembler and end whichever receive loop fed it; now it is dropped, and the next message still arrives.
+    /// One bad packet must cost one packet, not the session. A 12-byte DATA chunk that threw out of the
+    /// reassembler would end whichever receive loop fed it; it is dropped, and the next message still arrives.
     /// </summary>
     [Fact]
     public async Task ShortDataChunk_DoesNotEndTheChannel()
@@ -137,9 +137,9 @@ public class TakionReliableChannelTests
     }
 
     /// <summary>
-    /// A message is delivered even when its SACK can't be sent. It used to be handed on only after the SACK, so a
-    /// send that threw lost it, and the console's retransmission was re-acked as old rather than redelivered. The
-    /// remote here is an IPv6 address on an IPv4 socket, so every send throws.
+    /// A message is delivered even when its SACK can't be sent. Handed on only after the SACK, a send that
+    /// throws would lose it, and the console's retransmission would be re-acked as old rather than redelivered.
+    /// The remote here is an IPv6 address on an IPv4 socket, so every send throws.
     /// </summary>
     [Fact]
     public async Task AFailedSack_DoesNotLoseTheMessage()
@@ -196,9 +196,9 @@ public class TakionReliableChannelTests
     [Fact]
     public async Task SubMillisecondRtt_IsNotRoundedAwayToZero()
     {
-        // The regression this guards: RoundTripTimeMs used to be an int, so a genuine 0.4 ms wired-LAN RTT
-        // reported as "0 ms" — technically true, indistinguishable from "not implemented", and it erased the
-        // difference between a wired link and a Wi-Fi one, which is the comparison that matters on a handheld.
+        // The regression this guards: as an int, RoundTripTimeMs reports a genuine 0.4 ms wired-LAN RTT as
+        // "0 ms" — technically true, indistinguishable from an unwired metric, and it erases the difference
+        // between a wired link and a Wi-Fi one, which is the comparison that matters on a handheld.
         using var serverSocket = new UdpChannel();
         using var clientSocket = new UdpChannel();
         var serverEndpoint = new IPEndPoint(IPAddress.Loopback, serverSocket.LocalEndPoint.Port);
@@ -270,11 +270,10 @@ public class TakionReliableChannelTests
         }
     }
 
-    // THROWS when the condition never arrives, rather than returning as though it had. It used to exit on
-    // cancellation and let the caller assert against whatever state existed - so "the console never answered
-    // inside ten seconds" surfaced as whichever assertion happened to read an unset field next, naming a
-    // value rather than the wait. That is the same misdiagnosis shape as a stale-package check reporting a
-    // version mismatch: the guard fired, and pointed somewhere else.
+    // THROWS when the condition never arrives, rather than returning as though it had. Exiting on
+    // cancellation would let the caller assert against whatever state existed - so "the console never
+    // answered inside ten seconds" would surface as whichever assertion happened to read an unset field
+    // next, naming a value rather than the wait.
     private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct, string what)
     {
         while (!condition())

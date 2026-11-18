@@ -70,11 +70,10 @@ public sealed class HalyardSessionCoordinator(HalyardCloudClient cloud) : IHalya
     /// then stop.
     ///
     /// <para>
-    /// This is the half of <see cref="BeginAsync"/> that works today. The command reaches the console through
+    /// The first half of <see cref="BeginAsync"/>, without the offer. The command reaches the console through
     /// PSN's own server-side fan-out rather than over any path we hold open, so waking a console does not depend
-    /// on the push channel — which matters, because the push channel is the one cloud piece still undecoded. It
-    /// is also the only way to wake a console you are not on the same network as; the LAN wake needs a broadcast
-    /// that will not leave the subnet.
+    /// on the push channel. It is also the only way to wake a console you are not on the same network as; the
+    /// LAN wake needs a broadcast that will not leave the subnet.
     /// </para>
     ///
     /// <para>

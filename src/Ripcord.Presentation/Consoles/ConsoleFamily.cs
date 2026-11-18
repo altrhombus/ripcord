@@ -22,8 +22,8 @@ public enum ConsoleVendor
 }
 
 /// <summary>
-/// How much of a family actually works, so the UI can be honest rather than aspirational. This is set from
-/// what the project has really done, not what it intends to do.
+/// How much of a family works, so the UI can be honest rather than aspirational. A family's value decides
+/// whether it can be selected and which caveat it carries.
 /// </summary>
 public enum ConsoleFamilySupport
 {
@@ -33,7 +33,7 @@ public enum ConsoleFamilySupport
     /// <summary>Every layer is implemented and wire-confirmed, but the whole path has never been driven.</summary>
     Early,
 
-    /// <summary>Named here so the shape of the app is legible, but nothing behind it exists yet.</summary>
+    /// <summary>Named so the family can be shown; no backend is behind it, and it cannot be selected.</summary>
     NotYetAvailable,
 }
 
@@ -67,23 +67,22 @@ public sealed record ConsoleFamily(
     ConsoleVendor Vendor,
     ConsoleFamilySupport Support)
 {
-    /// <summary>PS5 — live end to end: pairing, connect, video, audio and input all verified on hardware.</summary>
+    /// <summary>PS5. <see cref="ConsoleFamilySupport.Full"/>, so it carries no caveat.</summary>
     public static readonly ConsoleFamily Ps5 =
         new("Ps5", "PS5", "PlayStation 5", ConsoleVendor.PlayStation, ConsoleFamilySupport.Full);
 
     /// <summary>
-    /// PS4 — full as of 2026-08-05. Promoted from "Early" that day, when the last open item was closed: a
-    /// pairing-from-scratch run against a real PS4 succeeded from the UI, and a connect test streamed it. Until
-    /// then this said "a PS4 hasn't been streamed end to end yet", which was true when written and had quietly
-    /// stopped being true — the caveat is what the user sees, so it has to track reality.
+    /// PS4. <see cref="ConsoleFamilySupport.Full"/>, so it carries no caveat. The support value decides the
+    /// caveat the user sees (<see cref="SupportNote"/>), so it has to match what the backend does.
     /// </summary>
     public static readonly ConsoleFamily Ps4 =
         new("Ps4", "PS4", "PlayStation 4", ConsoleVendor.PlayStation, ConsoleFamilySupport.Full);
 
     /// <summary>
-    /// Xbox — present so the three-family shape of the app is visible from the first screen, but there is no
-    /// protocol project, discovery service or session factory behind it. Offering it and then failing would
-    /// be worse than saying so.
+    /// Xbox. Present so the three-family shape of the app is visible from the first screen. It has no
+    /// protocol project, discovery service or session factory behind it, so it is
+    /// <see cref="ConsoleFamilySupport.NotYetAvailable"/>: offering it and then failing would be worse than
+    /// saying so.
     /// </summary>
     public static readonly ConsoleFamily Xbox =
         new(nameof(ConsolePlatform.Lanyard), "Xbox", "Xbox", ConsoleVendor.Xbox, ConsoleFamilySupport.NotYetAvailable);
@@ -91,10 +90,10 @@ public sealed record ConsoleFamily(
     /// <summary>Every family the app knows about, in the order a picker would offer them.</summary>
     public static readonly IReadOnlyList<ConsoleFamily> All = [Ps5, Ps4, Xbox];
 
-    /// <summary>The families that can actually be paired and streamed today.</summary>
+    /// <summary>The families that can be paired and streamed.</summary>
     public static IReadOnlyList<ConsoleFamily> Selectable { get; } = [.. All.Where(f => f.IsSelectable)];
 
-    /// <summary>True when this family can actually be paired and streamed today.</summary>
+    /// <summary>True when this family can be paired and streamed.</summary>
     public bool IsSelectable => Support != ConsoleFamilySupport.NotYetAvailable;
 
     /// <summary>The accent slot this family draws in. Vendor identity, not generation.</summary>

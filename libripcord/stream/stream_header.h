@@ -1,5 +1,5 @@
 /*
- * ripcord-3ds - the v1 A/V data-packet header, bit-exact per docs/protocol/ps5-remoteplay-v1-spec.md
+ * libripcord - the v1 A/V data-packet header, bit-exact per docs/protocol/ps5-remoteplay-v1-spec.md
  * sec6.1 (all multi-byte integers big-endian). Ported from HalyardStreamHeader.cs.
  *
  *   off 0      u8   low nibble = type (2=video, 3=audio, 0x12=FEC); bit 4 = extended-header flag
@@ -75,8 +75,8 @@ static inline int stream_header_payload_offset(const stream_header *header)
 int stream_header_parse(const uint8_t *packet, size_t packet_length, stream_header *out);
 
 /* Writes the fixed 18-byte header to `out` (exactly STREAM_HEADER_LENGTH bytes) - the inverse of
- * stream_header_parse, for constructing test fixtures and any future client-originated stream packet
- * (e.g. input). The tag region (bytes 10..13, STREAM_HEADER_TAG_OFFSET) is not part of this struct -
+ * stream_header_parse, which the tests use to construct fixtures; nothing in the client sends a packet
+ * with this header. The tag region (bytes 10..13, STREAM_HEADER_TAG_OFFSET) is not part of this struct -
  * it is written separately by stream_packet_crypto once the rest of the packet exists - and is zeroed
  * here, matching stream_packet_crypto_compute_tag's own AAD-zeroing convention for that region. Returns 0
  * if header->type is neither STREAM_HEADER_TYPE_VIDEO nor STREAM_HEADER_TYPE_AUDIO, or a field does not
