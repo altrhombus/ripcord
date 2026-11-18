@@ -23,7 +23,8 @@ hardware decoder handles the video and the RSX scales it, so the whole video pat
 16,667 µs frame** (that's 0.68%). It pairs using the PS3's on-screen keyboard, and if the PS3 is signed in to
 your PlayStation Network account it finds your account id on its own, so you never have to type 19 digits
 with a controller. It even has a home screen that looks right at home on the XMB.
-A fresh package is being cut; until it lands, it builds from [`ports/ripcord-ps3`](ports/ripcord-ps3).
+The `ps3-v1.1` package is waiting on a run against the console; until it's published, the port builds from
+[`ports/ripcord-ps3`](ports/ripcord-ps3).
 
 Along the way it measured the clock every timeout in the protocol depends on: **79,800,986 Hz against the
 79,800,000 we expected**. Twelve parts per million out. Not bad for a console from 2006.
@@ -62,13 +63,13 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 
 ### And the rest
 
-- **A New 3DS** streams a PS5. It was the first port, and the proof that someone other than the spec's author
-  could build a client from it.
+- **A New 3DS** streams a PS5. It was the first port: a second client, in another language, built from the
+  spec.
 - **A PS Vita** port is under way; it isn't in the repository yet.
 - **Built with care.** Every pull request runs a dozen CI jobs across Windows, Linux and macOS, and the engine
-  gets fuzzed and checked with Miri every night. The C core is fuzzed too (its very first CI run found a real
-  bug). A published-tree sweep and a commit-time leak guard keep personal details out of the history, and the
-  lab tools print placeholders instead of real addresses, so a test run can be written up safely.
+  is fuzzed and checked with Miri every night. The C core is fuzzed too (its very first CI run found a real
+  bug). A leak guard at commit time and a sweep of the published tree keep personal details out, and the lab
+  tools print placeholders instead of real addresses, so a test run can be written up safely.
 
 ---
 
@@ -77,7 +78,7 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 | Client | State |
 |---|---|
 | **Windows** (the dotnet client) | Streams PS5 and PS4, on the LAN and over the internet. Heading for **1.0**: no download yet |
-| **PlayStation 3** | Streams 720p60 from a PS5 or PS4. Builds from source; a fresh package is being cut |
+| **PlayStation 3** | Streams 720p60 from a PS5 or PS4. Builds from source; the `ps3-v1.1` package is waiting on a console run |
 | **New 3DS** | Streams a PS5 |
 | **macOS** | On the Rust engine. Streams from its lab tool; the app is waiting for its first hardware session |
 | **iPhone, iPad, Apple TV** | Builds for all three; not yet run on a device |
@@ -104,21 +105,23 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 
 ### Your first ten minutes with the dotnet client
 
-Here's what a first run meets, so none of it is a surprise:
+There's no download yet, so this describes the release zip that 1.0 will ship. Here's what a first run
+meets, so none of it is a surprise:
 
 - **Unzip it somewhere it can stay,** not Downloads, and run `Ripcord.exe` from the `Ripcord` folder. Desktop
   shortcuts and the taskbar's jump list remember where it is.
-- **Windows 11, 25H2 or later.** That's what Ripcord is built and tested for. The release zip doesn't check, so
-  an older Windows 11 may start it, but that isn't supported.
+- **Windows 11, 25H2 or later.** The zip doesn't check, so an older Windows 11 may start it, but that isn't
+  supported.
 - **SmartScreen will warn you** the first time you run it, because the zip isn't signed yet. Choose **More
   info**, then **Run anyway**.
-- **Smart App Control blocks it outright.** If it's on, which it can be on a new PC or a fresh Windows 11
-  install, Windows refuses unsigned apps with no way to run them anyway. Ripcord won't start on that PC until
-  it's signed, which is planned.
+- **Smart App Control blocks it outright.** It can be on by default on a new PC or a fresh Windows 11 install,
+  and it refuses unsigned apps with no way round. Ripcord won't start on that PC until it's signed, which is
+  planned.
 - **If your PS5 has HDR on,** choose **Best picture** when Ripcord first asks, or turn on **HEVC** and
   **Request HDR** in Settings. With HDR on, the console's ordinary (SDR) stream loses the detail in bright skies
-  and highlights; asking for HDR keeps it, and Ripcord converts it for an SDR screen. HEVC needs Microsoft's HEVC Video Extensions: many PCs have them already, and
-  they're in the Microsoft Store otherwise. Without them, Ripcord connects with H.264 and says so.
+  and highlights; asking for HDR keeps it, and Ripcord converts it for an SDR screen. HEVC needs Microsoft's
+  HEVC Video Extensions: many PCs have them already, and they're in the Microsoft Store otherwise. Without
+  them, Ripcord connects with H.264 and says so.
 - **Xbox controllers need Microsoft's GameInput.** If one does nothing, run `GameInputRedist.msi` from the
   Ripcord folder once (it asks for administrator rights), then restart Ripcord. **About**, beside Settings, says
   whether it's installed, and so does the first-run setup. A DualSense doesn't need it.
@@ -224,25 +227,27 @@ PlayStation.
 | `tools/` | `ProtocolLab` (the harness), `HidCapture`, and the leak guard |
 
 `Halyard`, `Takion` and `Senkusha` are the codenames used throughout. Only `Halyard` is ours; the other two
-are the vendor's own names, kept as protocol terminology. [`docs/architecture.md`](docs/architecture.md) has the naming table and
-the reasoning.
+are the vendor's own names, kept as protocol terminology. [`docs/architecture.md`](docs/architecture.md) has
+the naming table and the reasoning.
 
 ---
 
 ## Provenance
 
 Ripcord is an interoperability implementation: it connects your own client to your own console, under your
-own account. The protocol was worked out from the authors' own installed copies of the vendor client, the authors' own
-captures of their own console and account, and public references (RFCs, NIST test vectors, platform
-documentation). Where a value is an assumption rather than something our own evidence established, it carries an `[X]` tag next to it in [`docs/protocol/`](docs/protocol/).
-Vendor code is cited by address only; no vendor source, symbol names or log strings are reproduced.
+own account. The protocol was worked out from the authors' own installed copies of the vendor client, the
+authors' own captures of their own console and account, and public references (RFCs, NIST test vectors,
+platform documentation). Where a value is an assumption rather than something our own evidence established,
+it carries an `[X]` tag next to it in [`docs/protocol/`](docs/protocol/). Vendor code is cited by address only;
+no vendor source, symbol names or log strings are reproduced.
 
 Two generic values recovered from the vendor client are committed on purpose: about 4 KB of protocol
-constants the console computes against (a registration-authentication key among them), and the application OAuth credential the vendor's own client signs
-in with. Each is identical for every user and console, each can be left out of a build
-(`-p:BundleInteropConstants=false`, `-p:BundleOAuthClient=false`), and nothing tied to any user, console or
-account is included. [`NOTICE`](NOTICE) describes the methods and both values in full, and
-[`docs/protocol-research-log.md`](docs/protocol-research-log.md) records the captures, analysis and references behind each section.
+constants the console computes against (a registration-authentication key among them), and the application
+OAuth credential the vendor's own client signs in with. Each is identical for every user and console, each can
+be left out of a build (`-p:BundleInteropConstants=false`, `-p:BundleOAuthClient=false`), and nothing tied to
+any user, console or account is included. [`NOTICE`](NOTICE) describes the methods and both values in full,
+and [`docs/protocol-research-log.md`](docs/protocol-research-log.md) records the captures, analysis and
+references behind each section.
 
 *Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.*
 
@@ -258,26 +263,22 @@ instead.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Contributions require a DCO sign-off and an independence attestation —
-the latter matters more here than in most projects, and the reasons are explained there.
-
-Security reports: [`SECURITY.md`](SECURITY.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Contributions need a DCO sign-off and the pull request template's
+three confirmations about where protocol detail came from; `CONTRIBUTING.md` explains why.
 
 ---
 
 ## AI assistance disclosure
 
-Ripcord has been developed with heavy use of AI coding assistants, including its protocol research,
-implementation, tests, and documentation. This is disclosed deliberately: this is a sensitive area, and a
-consistent record of candour is worth more than the ambiguity of silence.
+Ripcord is developed with heavy use of AI coding assistants, in its protocol research, implementation, tests
+and documentation.
 
-The assistant works under the same rules as everyone else: everything in the protocol comes from this
-project's own evidence (see [Provenance](#provenance)), and the assistant is not used to obtain
-implementation detail from another Remote Play implementation, not its source, constants, byte layouts or
-naming. A language model may have another implementation in its training data and can reproduce it fluently
-without being asked, so the method is **derive first, then confirm against our own evidence**: a value that
-can't be traced to a capture, our own analysis or a public reference is marked `[X]` and derived properly.
-[`CONTRIBUTING.md`](CONTRIBUTING.md) spells out the habits that go with that.
+The assistant works under the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md), the same as every contributor: it
+is not used to obtain implementation detail from another Remote Play implementation, not its source,
+constants, byte layouts or naming. A language model may have another implementation in its training data and
+can reproduce it fluently without being asked, so the method is **derive first, then confirm against our own
+evidence**: a value that can't be traced to a capture, our own analysis or a public reference is marked `[X]`
+and derived properly.
 
 ---
 
@@ -285,7 +286,6 @@ can't be traced to a capture, our own analysis or a public reference is marked `
 
 [Apache-2.0](LICENSE). See [`NOTICE`](NOTICE) for the interoperability and non-affiliation statement.
 
-Apache-2.0 was chosen over a permissive alternative for its express patent grant and patent-retaliation
-clause, which cover what contributors license to each other (they grant nothing on anyone else's patents),
-and over a copyleft licence
-for compatibility with MSIX/Microsoft Store distribution.
+Apache-2.0 was chosen over a simpler permissive licence for its express patent grant and patent-retaliation
+clause, which cover what contributors license to each other (they grant nothing on anyone else's patents), and
+over a copyleft licence for compatibility with MSIX and Microsoft Store distribution.

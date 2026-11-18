@@ -34,8 +34,8 @@ Does not work, or is not done:
 
 ## Installing
 
-A package is being re-cut under a new `ps3-v*` tag. Until it lands, build the `.pkg` from this directory (see
-Building). Copy `ripcord-ps3.pkg` to `/dev_hdd0/packages/` over FTP (webMAN MOD's FTP server is enough), then
+The `ps3-v1.1` package is built, and is published once it has run on a console. Until then, build the
+`.pkg` from this directory (see Building). Copy `ripcord-ps3.pkg` to `/dev_hdd0/packages/` over FTP (webMAN MOD's FTP server is enough), then
 install it from the XMB package manager. It installs to `/dev_hdd0/game/RIPC00003/`.
 
 Installing replaces `USRDIR`, so back up `pairing.txt` first if the console is paired, or it has to be paired
