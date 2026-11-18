@@ -15,23 +15,21 @@
  * where cellFont has a header with a typo in it.
  *
  * COVERAGE, NOT PIXELS. FT_LOAD_RENDER gives an 8-bit antialiased bitmap, which the caller composites
- * in whatever colour it wants. That is what makes the antialiasing real, and it is why the overlay's
- * panel lives in main memory: blending needs the destination read, and a Cell read from RSX memory is
- * roughly two orders of magnitude slower than a write.
+ * in whatever colour it wants. That is why the overlay's panel lives in main memory: blending needs
+ * the destination read, and a Cell read from RSX memory is roughly two orders of magnitude slower than
+ * a write.
  *
- * EVERY GLYPH IS RASTERISED ONCE, AT START-UP, AND NEVER AGAIN. b256 did it the obvious way - call
- * FT_LOAD_RENDER whenever a character is wanted - and cost the session: a 1,483 ms stall inside one
- * panel rebuild, 3,237 of 3,534 frames dropped for overrun, 299 keyframes requested and 2 fps on
- * screen. Three things compounded.
+ * EVERY GLYPH IS RASTERISED ONCE, AT START-UP, AND NEVER AGAIN. Calling FT_LOAD_RENDER whenever a
+ * character is wanted (b256) cost a 1,483 ms stall inside one panel rebuild, 3,237 of 3,534 frames
+ * dropped for overrun, 299 keyframes requested and 2 fps on screen, for three reasons:
  *
  *   The rebuild runs on the DECODE THREAD, which also drains the socket and feeds the decoder, so a
- *   stall there is not slow drawing - it is a stopped pipeline.
+ *   stall there is a stopped pipeline.
  *
- *   Measuring a run rasterised it. Right-aligned text is measured and then drawn, so every one of
- *   those glyphs was rendered twice and half the work thrown away.
+ *   Measuring a run rasterised it, and right-aligned text is measured and then drawn.
  *
- *   And the panel uses two sizes, so FT_Set_Pixel_Sizes was called several times per rebuild, which
- *   rescales the face underneath all of it.
+ *   The panel uses two sizes, so FT_Set_Pixel_Sizes was called several times per rebuild, which
+ *   rescales the face.
  *
  * So the printable ASCII is rendered into an atlas at each size when the overlay opens - before the
  * stream starts, off the decode thread - and everything after that is a memcpy and a table lookup.

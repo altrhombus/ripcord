@@ -9,12 +9,9 @@
  * Original to this project: the shapes were written out by hand here rather than taken from any
  * existing font. Nothing is taken from another font, and no font file is redistributed.
  *
- * EVERY CODE FROM 32 TO 95 HAS ITS OWN SHAPE, and that is worth stating because the first version did
- * not. Nine of them - " # $ & ' ; ? @ ^ - shared the question mark's glyph, because the table was
- * written from the characters the overlay happened to use and the rest fell through a default. The
- * first text added after that used '@' and drew a question mark, which looks like a bug in whatever
- * produced the string rather than in the font. A table with holes in it that renders something
- * plausible is worse than one that renders nothing.
+ * EVERY CODE FROM 32 TO 95 HAS ITS OWN SHAPE. In the first version nine of them - " # $ & ' ; ? @ ^ -
+ * fell through a default to the question mark's glyph, so text using '@' drew a question mark, which
+ * looks like a bug in whatever produced the string rather than in the font.
  *
  * One byte a row, low five bits, most significant of those five on the LEFT. Lower case is folded to
  * upper by the drawing code, because a diagnostics overlay has no use for two cases and 64 glyphs is

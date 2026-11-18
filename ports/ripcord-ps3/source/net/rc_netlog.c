@@ -67,16 +67,10 @@ int rc_netlog_open(const char *ip, uint16_t port)
      * PSL1GHT's samples/network/networktest sets it on every sockaddr it builds, and this was copied
      * from there.
      *
-     * AN EARLIER VERSION OF THIS COMMENT CALLED IT "NOT OPTIONAL" AND WAS WRONG. It was copied, not
-     * tested, and the difference mattered to more than this file: libripcord builds sockaddr_in in
-     * three places without the field, so "required" would have meant the shared core could not open a
-     * control session on this platform. Rather than change code every port shares on the strength of a
-     * comment, the question was put to the hardware - source/discovery/rc_discover.c broadcasts the same
-     * probe twice, once with the field zeroed - and on 2026-09-12 the console accepted BOTH and replied
-     * to both. sin_len is not required for sendto here.
-     *
-     * It stays set, because matching the SDK's own sample costs nothing and the field is real. What
-     * changed is the claim about it.
+     * libripcord builds sockaddr_in in three places without the field, so the question was put to the
+     * hardware: source/discovery/rc_discover.c broadcasts the same probe twice, once with the field
+     * zeroed, and on 2026-09-12 the console accepted BOTH and replied to both. sin_len is not required
+     * for sendto here. It stays set to match the SDK's own sample.
      */
     s_dest.sin_len = (uint8_t)sizeof(s_dest);
     s_dest.sin_family = AF_INET;

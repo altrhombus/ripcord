@@ -24,26 +24,20 @@
  * which lv2 will give a normal process rather fewer. Asking for this many and accepting what arrives is
  * more robust than asserting a number the firmware has opinions about.
  *
- * FOUR, NOT FIVE, AND ONE IS DELIBERATELY LEFT UNCLAIMED. cellVdec runs its decoder on the SPEs -
- * vdecConfig has a num_spus field - so a build that means to use the console's own H.264 decoder cannot
- * also hold every SPE for colour conversion. This group is created once and never released: the teardown
- * at the foot of rc_spu_yuv.c writes a quit sentinel and deliberately does NOT destroy the group,
- * because sysSpuThreadGroupDestroy and sysSpuThreadGroupTerminate each locked this console during b105
- * and b107. So the SPE that vdec needs has to be left free from the start; there is no giving one back
- * later.
- *
- * b146 hung somewhere inside the vdec probe with all five held. That does not prove this was the cause -
- * the instrumentation that was supposed to name the call did not survive the hang, which is fixed
- * separately - but leaving vdec an SPE is required by the design either way, not a guess at the fix.
+ * NOT EVERY SPE IS CLAIMED. cellVdec runs its decoder on the SPEs - vdecConfig has a num_spus field -
+ * so a build that means to use the console's own H.264 decoder cannot also hold every SPE for this.
+ * This group is created once and never released: the teardown at the foot of rc_spu_yuv.c writes a quit
+ * sentinel and deliberately does NOT destroy the group, because sysSpuThreadGroupDestroy and
+ * sysSpuThreadGroupTerminate each locked this console during b105 and b107. So the SPEs that vdec needs
+ * have to be left free from the start; there is no giving one back later. (b146 hung somewhere inside
+ * the vdec probe with all five held, which does not prove this was the cause.)
  */
 /*
- * THREE, because this no longer converts anything.
- *
- * It was five while it did YUV-to-RGB and scaling, then four to leave the decoder an SPE, then the
- * decoder took a second. Now the decoder produces RGB itself and this only scales - 10,876 us a frame
- * across the group against 16,444 before - so the group can give one back to the side that still cannot
- * keep up: b190 still refused twelve submissions, all of them on the large frames of a transition, and
- * refusing one breaks the reference chain.
+ * THREE, because this no longer converts anything. It was five while it did YUV-to-RGB and scaling,
+ * then four to leave the decoder an SPE, then the decoder took a second. Now the decoder produces RGB
+ * itself and this only scales - 10,876 us a frame across the group against 16,444 before - so the group
+ * gives one back to the decoder: b190 still refused twelve submissions, all of them on the large frames
+ * of a transition, and refusing one breaks the reference chain.
  *
  * Three SPEs scaling costs about 3,600 us each against 2,700, which the frame budget has room for. Two
  * decoding against three does not, which is where the blockiness comes from.
@@ -64,11 +58,10 @@ typedef struct {
      * decrementer, which runs at the same timebase rc_tick_hz reports.
      *
      * The kernel blocks on every transfer - one tag, a status wait after each get and each put - so it
-     * is idle for the whole of each round trip. This says whether that idling or the arithmetic is the
-     * 4,945 us, and the answer decides the next change: if the arithmetic dominates, taking ARGB32 from
-     * the decoder (b179 proved it will) removes the colour pass; if the waiting dominates, that same
-     * change makes it worse, since ARGB is 4 bytes a pixel against YUV420's 1.5, and double buffering is
-     * the answer instead.
+     * is idle for the whole of each round trip. These say whether that idling or the arithmetic is the
+     * 4,945 us: if the arithmetic dominates, taking ARGB32 from the decoder (b179 proved it will)
+     * removes the colour pass; if the waiting dominates, that same change makes it worse, since ARGB is
+     * 4 bytes a pixel against YUV420's 1.5, and double buffering is the answer instead.
      */
     unsigned last_dma_us;
     unsigned last_work_us;

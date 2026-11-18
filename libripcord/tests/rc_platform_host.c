@@ -2,16 +2,13 @@
  * ripcord ports - the platform seam, host side.
  *
  * Plain C on whatever machine runs the known-answer tests. This exists so the seam has three
- * implementations rather than two, which is the difference between a seam and a rename: a header with
- * one caller and one implementation is just indirection, and the host build is the one that will notice
- * if a "portable" file quietly grows a dependency on a console.
+ * implementations rather than two, and so the host build notices if a "portable" file grows a
+ * dependency on a console.
  *
  * Nothing in the test suite links this today - the three seamed files (net/rc_tcp.c,
  * session/halyard_control_session.c, takion/takion_reliable_channel.c) all own sockets, and the suite
- * deliberately stops at the socket boundary (see tests/Makefile). It is here so that when someone
- * writes a loopback test for the reliable channel - the one protocol file with retransmit/SACK timing
- * and no host test at all - the platform half is already waiting rather than being invented under
- * deadline.
+ * deliberately stops at the socket boundary (see tests/Makefile). It is here for a future loopback
+ * test of the reliable channel, the one protocol file with retransmit/SACK timing and no host test.
  *
  * rc_random_bytes() is deliberately ABSENT. There is no host CSPRNG here on purpose: the 3DS port
  * refuses to fall back to a non-cryptographic PRNG (source/util/rc_random.c says why), and offering a

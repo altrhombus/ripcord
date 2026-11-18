@@ -1,20 +1,16 @@
 /*
  * ripcord - what the client is doing, and what went wrong, in a form any front end can render.
  *
- * WHY THIS EXISTS. Until now a failure had nowhere to go. A dropped stream, a refused pairing, a wrong
- * PIN and a console that never answered all presented the same way on a television - a black screen -
- * while the actual reason went into a log file readable afterwards, over FTP, from another machine.
- * That is fine for bring-up and useless for someone using the thing.
+ * WHY THIS EXISTS. Without it a dropped stream, a refused pairing, a wrong PIN and a console that never
+ * answered all present the same way on a television - a black screen - with the reason only in a log
+ * file.
  *
  * SHAPED AFTER Ripcord.Presentation, which keeps the same rule: no front end's types cross into here.
  * There is no colour, no font, no widget and no console API in this file - a phase and three strings,
- * which each front end renders however it can. A 3DS with two small screens and a PS3 with a television
- * disagree about everything except what they need to say.
+ * which each front end renders however it can.
  *
- * THE THIRD STRING IS THE ONE THAT MATTERS. `headline` says what is happening and `detail` says why,
- * which between them make a good log line and a poor screen. `hint` says what the person in front of it
- * can DO - and if a failure has no useful hint, that is worth noticing at the point it is written
- * rather than discovered by someone stuck.
+ * `headline` says what is happening, `detail` says why, and `hint` says what the person in front of it
+ * can DO. A failure should carry a useful hint.
  */
 #ifndef RC_SESSION_STATE_H
 #define RC_SESSION_STATE_H

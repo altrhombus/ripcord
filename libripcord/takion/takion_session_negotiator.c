@@ -145,17 +145,14 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
     }
 
     /*
-     * THE SAME QUESTION, ASKED HERE, A MICROSECOND EARLIER.
+     * A DIAGNOSTIC PRECHECK. rc_ecdh_check_peer_point runs the identical group load, point read and
+     * check_pubkey that rc_ecdh_derive_shared is about to run, on the same pointer. On the PS3 the two
+     * disagreed: run from the caller, after the derivation had failed and freed its working memory, the
+     * check ACCEPTED the point the derivation refused, on identical bytes.
      *
-     * rc_ecdh_check_peer_point runs the identical group load, point read and check_pubkey that
-     * rc_ecdh_derive_shared is about to run, on the same pointer. On the PS3 the two disagree: run from
-     * the caller, after the derivation has failed and freed its working memory, this ACCEPTS the very
-     * point the derivation refused - on bytes a fingerprint proves identical.
-     *
-     * Asking it here pins down which of those two differences matters. Same heap, same stack depth, same
-     * instant, same bytes: if it accepts here and the derivation still refuses, the subject is inside the
-     * derivation's own frame. If it refuses here too, the subject is the environment at this moment, and
-     * the earlier acceptance was a consequence of the derivation having cleaned up after itself.
+     * Run here it shares the derivation's heap, stack depth and bytes: if it accepts and the derivation
+     * still refuses, the fault is inside the derivation's own frame; if it refuses too, the fault is the
+     * environment at this moment.
      */
     /* The _diag variants: this session's answers in this session's own record, not the process-wide one
      * another session's derivation could overwrite between the call and the read (rc_ecdh.h). */

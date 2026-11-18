@@ -6,28 +6,28 @@
  * reliable channel (TAKION_CHANNEL_SESSION, 0x0001) after the SCTP handshake completes and before GMAC
  * sealing is switched on - see takion_session_negotiator.h for the sequence.
  *
- * WHY HAND-ROLLED RATHER THAN A GENERATED CODEC. The .NET side compiles the whole 41-message schema with
- * Google.Protobuf + Grpc.Tools, which is the right call there and the wrong one here: this port needs
- * exactly two messages, has no malloc anywhere, and adding a code generator to a cross-compiled C
- * makefile would cost more than the ~200 lines below. What is NOT negotiable is the wire contract -
- * field numbers and wire types are interoperability facts (protobuf transmits numbers, never names), and
- * the numbers here are read straight from the committed .proto, which is the authority. Field *names* in
- * this file follow that .proto's own descriptive naming, which is Ripcord's, not the vendor's.
+ * HAND-ROLLED RATHER THAN GENERATED. The .NET side compiles the whole 41-message schema with
+ * Google.Protobuf + Grpc.Tools; this port needs a few messages, has no malloc anywhere, and a code
+ * generator in a cross-compiled C makefile would cost more than the code below. The wire contract is
+ * fixed: field numbers and wire types are interoperability facts (protobuf transmits numbers, never
+ * names), and the numbers here are read straight from the committed .proto, which is the authority.
+ * Field *names* in this file follow that .proto's own descriptive naming, which is Ripcord's, not the
+ * vendor's.
  *
  * WIRE SUBSET IMPLEMENTED. Only wire types 0 (varint), 2 (length-delimited), 1 (64-bit) and 5 (32-bit)
- * are understood, which covers every field in these two messages; parsing skips unknown field numbers so
- * a console that sends more than we model is not a parse failure. Groups (wire types 3/4, deprecated in
- * proto2 and absent from this schema) are rejected rather than skipped, because skipping a group
- * correctly requires matching END_GROUP tags and there is nothing here to test that against.
+ * are understood; parsing skips unknown field numbers, so a console that sends more than we model is
+ * not a parse failure. Groups (wire types 3/4, deprecated in proto2 and absent from this schema) are
+ * rejected rather than skipped: skipping one correctly requires matching END_GROUP tags and there is
+ * nothing here to test that against.
  *
  * PROTO2 `required` IS ENFORCED ON BOTH SIDES. Building emits every required field; parsing fails if one
- * is missing. That matters more than it looks: `launchSpecJson` is required, and it is the only channel
- * through which the console ever learns the handshakeKey that authenticates the ECDH exchange (spec
- * sec4.3/sec5.1), so a SESSION_REQUEST that omits it is not a degraded request, it is an unusable one.
+ * is missing. `launchSpecJson` is required, and it is the only channel through which the console learns
+ * the handshakeKey that authenticates the ECDH exchange (spec sec4.3/sec5.1), so a SESSION_REQUEST that
+ * omits it is unusable.
  *
  * STRINGS AND BYTES ARE NOT COPIED ON PARSE. Every out-pointer points INTO the caller's buffer and is
- * NOT NUL-terminated, the same convention takion_data_chunk.h already uses for payloads. Copy what you
- * need to keep before the receive buffer is reused.
+ * NOT NUL-terminated, the convention takion_data_chunk.h uses for payloads. Copy what you need to keep
+ * before the receive buffer is reused.
  */
 #ifndef TAKION_CONTROL_PROTO_H
 #define TAKION_CONTROL_PROTO_H
@@ -134,9 +134,8 @@ int takion_control_parse_session_reply(const uint8_t *data, size_t length,
 /*
  * Extracts DISCONNECT's reason string. Returns 1 and points *out_reason INTO `data` on success.
  *
- * Worth having as its own entry point because a console that hangs up says why, and discarding that
- * turns a stated reason into a debugging session - which is exactly what happened when a rejected
- * launch spec produced two 70-odd-byte DISCONNECT messages that this port logged only as "type 8".
+ * A console that hangs up says why (a rejected launch spec produces a 70-odd-byte DISCONNECT), so log
+ * the reason rather than only "type 8".
  */
 int takion_control_parse_disconnect(const uint8_t *data, size_t length,
                                     const char **out_reason, size_t *out_reason_length);
@@ -145,21 +144,19 @@ int takion_control_parse_disconnect(const uint8_t *data, size_t length,
  * Walks every field of a ControlMessage without interpreting it, returning 1 if the whole message is
  * well-formed protobuf and 0 otherwise.
  *
- * Exists because hand-written literals are the one place this port still encodes protobuf by eye - the
- * senkusha PROTOCOL_VERSION_REQUEST in source/connect/main.c being the live example. Field 31
- * length-delimited is (31 << 3) | 2 = 250, which needs a TWO-byte varint tag; writing the single byte
- * the arithmetic suggests produces a message whose first field still reads correctly and whose
- * remainder is garbage, so peeking the type is not a check. This walks to the end, which is.
+ * For checking hand-written literals, such as the senkusha PROTOCOL_VERSION_REQUEST in
+ * source/connect/main.c. Field 31 length-delimited is (31 << 3) | 2 = 250, which needs a TWO-byte varint
+ * tag; a one-byte tag leaves the first field readable and the remainder garbage, so peeking the type is
+ * not a check. This walks to the end.
  */
 int takion_control_validate(const uint8_t *data, size_t length);
 
 /*
  * STREAM_INFO, as parsed. Pointers aim into the caller's buffer.
  *
- * `video_header` is the SPS/PPS parameter-set blob from the FIRST resolution entry. It matters more than
- * its size suggests: those parameter sets are NOT present in the video stream itself, so a decoder that
- * never receives them cannot decode the first IDR - which is why stream_demux takes them separately and
- * re-prepends them. The console sends this unprompted once the session is sealed; the client only acks.
+ * `video_header` is the SPS/PPS parameter-set blob from the FIRST resolution entry. Those parameter sets
+ * are NOT present in the video stream itself, so stream_demux takes them separately and re-prepends
+ * them. The console sends this unprompted once the session is sealed; the client only acks.
  */
 typedef struct {
     uint32_t width;
@@ -186,15 +183,14 @@ int takion_control_parse_stream_info(const uint8_t *data, size_t length,
 size_t takion_control_build_bare(uint32_t type, uint8_t *buf, size_t buf_size);
 
 /*
- * THE GRACEFUL GOODBYE the vendor's client sends at the end of a session, and the reason it is not a
- * bare message: DisconnectPayload.reason is a REQUIRED string, so a DISCONNECT with no payload is not a
- * valid message of that type. An empty reason is still a present field - two bytes inside a two-byte
- * sub-message - which is what the reference sends and what this builds when `reason` is NULL or empty.
+ * THE GRACEFUL GOODBYE the vendor's client sends at the end of a session. It is not a bare message:
+ * DisconnectPayload.reason is a REQUIRED string, so a DISCONNECT with no payload is not valid. An empty
+ * reason is still a present field - two bytes inside a two-byte sub-message - which is what the
+ * reference sends and what this builds when `reason` is NULL or empty.
  *
- * Worth being precise about what this does and does not do. cap52 isolated it by diffing a rest-off
- * against a rest-on disconnect: the DISCONNECT is byte-identical either way and does NOT carry the rest
- * bit, so this is the polite close and nothing more. Resting the console is a separate frame on the
- * binary control channel (HALYARD_CTRL_TYPE_REST_MODE).
+ * cap52 (a rest-off disconnect diffed against a rest-on one): the DISCONNECT is byte-identical either
+ * way and does NOT carry the rest bit. Resting the console is a separate frame on the binary control
+ * channel (HALYARD_CTRL_TYPE_REST_MODE).
  *
  * Returns bytes written, or 0 if the buffer is too small or the reason will not fit.
  */
@@ -203,10 +199,9 @@ size_t takion_control_build_disconnect(const char *reason, uint8_t *buf, size_t 
 /*
  * PROTOCOL_VERSION_REQUEST carrying the versions we are willing to speak, highest last.
  *
- * This matters more than it looks. The CURVE the session's ECDH runs on is chosen from the NEGOTIATED
- * version, not the one we asked for - so a client that assumes its own top version generates a key on a
- * curve the console may not have picked, and the mismatch does not surface until the peer's point is
- * rejected, long after a signature over it has verified. Ask, then read the answer.
+ * The CURVE the session's ECDH runs on is chosen from the NEGOTIATED version, not the one we asked for,
+ * so read the answer (takion_control_parse_protocol_version_ack) before generating a key: a wrong curve
+ * does not surface until the peer's point is rejected, after a signature over it has verified.
  */
 size_t takion_control_build_protocol_version_request(const uint32_t *versions, size_t version_count,
                                                      uint8_t *buf, size_t buf_size);
@@ -252,14 +247,12 @@ size_t takion_control_build_mtu_command(uint32_t id, uint32_t mtu_req, uint32_t 
 /*
  * CONNECTION_QUALITY (type 16) - the client to server half of rate control.
  *
- * The console's encoder decides its own rate, and loss reports only tell it what was lost. This is
- * how it learns what the client actually WANTS, which is a different thing: a client may be losing
- * nothing and still be unable to use what it is being sent. HalyardTakionStream.SendConnectionQualityAsync
- * builds the same three fields - targetBitrate (1, varint), rtt (5, double) and lossPercent (7, double) -
- * inside ConnectionQualityPayload at field 17.
+ * Loss reports tell the console's encoder what was lost; this tells it the rate the client wants.
+ * HalyardTakionStream.SendConnectionQualityAsync builds the same three fields - targetBitrate (1,
+ * varint), rtt (5, double) and lossPercent (7, double) - inside ConnectionQualityPayload at field 17.
  *
- * `rtt_ms` and `loss_percent` are IEEE-754 doubles, written little-endian as protobuf requires, which is
- * not this target's byte order and is the reason they go through a shift loop rather than a memcpy.
+ * `rtt_ms` and `loss_percent` are IEEE-754 doubles, written little-endian as protobuf requires, through
+ * a shift loop rather than a memcpy because the target may be big-endian.
  *
  * [X] THE UNITS OF targetBitrate ARE NOT CONFIRMED. kbps is sent to match the launch spec's bwKbpsSent,
  * and bps is equally plausible; being wrong by 1000x would have the console pick an absurd rate. The

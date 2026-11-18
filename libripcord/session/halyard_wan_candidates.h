@@ -4,9 +4,8 @@
  *
  * THE SPLIT. The signaling itself - the OFFER/ACCEPT/RESULT POSTs, the push WebSocket that carries the
  * console's OFFER back - is HTTPS and JSON, and on the Mac it is Swift's (docs/macos-plan.md, "The
- * split"). What is here is the two DECISIONS inside it that every client has to make identically and that
- * decide whether a distant console can reach us at all. Getting either wrong fails silently: our packets
- * still leave, and the symptom is a peer that was never told where to send.
+ * split"). What is here is the two DECISIONS inside it that every client has to make identically. Either
+ * one wrong fails silently: our packets still leave, and the peer was never told where to send.
  *
  * Ported from src/Ripcord.Protocol.Halyard/Discovery/HalyardAccountPairing.cs (OurCandidates,
  * PreferredCandidate) and src/Ripcord.Presentation.Halyard/Sessions/HalyardAccountConsoleSession.cs

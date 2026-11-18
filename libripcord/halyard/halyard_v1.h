@@ -97,9 +97,8 @@ extern const uint8_t halyard_v1_registration_auth_key[HALYARD_REGISTRATION_AUTH_
  *
  * ROLES, AND THEY ARE NOT INTERCHANGEABLE: `key` is derived from the COMPANION and is the AES-128 key;
  * `material` is derived from the NONCE and is fed into halyard_field_iv_derive - it is not itself an IV.
- * Ripcord shipped these swapped once. It passed every primitive-level test, because those feed key and
- * material in directly, and then produced garbage against a real console. If a test here starts failing,
- * check this before anything else.
+ * Swapped, they still pass every primitive-level test (those feed key and material in directly) and
+ * produce garbage against a real console.
  *
  * Returns 0 on success, non-zero if the requested family's tables are not bundled.
  */

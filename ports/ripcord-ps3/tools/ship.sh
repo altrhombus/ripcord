@@ -3,12 +3,11 @@
 # Build, verify, and only then upload.
 #
 # WHY THIS EXISTS. `make pkg` leaves the PREVIOUS package in place when it fails, and an upload does not
-# care. Three builds in a row reported a new build number, uploaded cleanly, installed cleanly and ran
-# the old binary - because the failure was "No rule to make target", which does not contain the word
-# "error", and the check was a grep for that word.
+# care. "No rule to make target" does not contain the word "error", so a grep for that word passed three
+# failed builds in a row, each of which uploaded, installed and ran the old binary.
 #
-# The lesson is not "grep for more words". It is that a build's success is its EXIT STATUS, and that the
-# thing uploaded has to be shown to contain the build that was just made. Both are checked here.
+# A build's success is its EXIT STATUS, and the thing uploaded has to be shown to contain the build that
+# was just made. Both are checked here.
 set -e
 
 cd "$(dirname "$0")/.."

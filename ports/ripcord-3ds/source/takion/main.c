@@ -5,21 +5,20 @@
  * PROTOCOL_VERSION_REQUEST-shaped message, against a UDP host:port read from a small config file next
  * to this .3dsx. This is EXPLORATORY, not the real connect flow: a real session gates the Takion INIT on
  * the binary control channel's session-ready frame (Phase 4) and a keyless senkusha probe first (both
- * out of scope - see SETUP.md), neither of which this program does. It was written to answer "does the
- * handshake complete against a real peer, and does its SACK/DATA behaviour match tests/takion_test.c's
- * captured vectors" - a question it turns out to be structurally unable to ask a console at all.
+ * out of scope - see SETUP.md), neither of which this program does. It was written to ask whether the
+ * handshake completes against a real peer and whether its SACK/DATA behaviour matches
+ * tests/takion_test.c's captured vectors.
  *
- * THIS PROGRAM CANNOT SUCCEED ON ITS OWN, and hardware confirmed it (2026-08-12): five INITs to
- * <console-ip>:9297 went unanswered. That is not a transport bug, it is the design of this probe. The
- * console opens its UDP listeners only between /sess/ctrl and the stream, so with no live session there
- * is nothing listening to answer an INIT - and the run that proved it had already ended its session and
- * put the console into rest mode. The default port compounds it: 9297 is the SENKUSHA port, one above
- * the A/V stream port 9296 (HalyardStreamingSession.SenkushaPort, wire-confirmed).
+ * THIS PROGRAM CANNOT SUCCEED AGAINST A CONSOLE ON ITS OWN, and hardware confirmed it (2026-08-12): five
+ * INITs to <console-ip>:9297 went unanswered. The console opens its UDP listeners only between
+ * /sess/ctrl and the stream, so with no live session there is nothing listening to answer an INIT. The
+ * default port compounds it: 9297 is the SENKUSHA port, one above the A/V stream port 9296
+ * (HalyardStreamingSession.SenkushaPort, wire-confirmed).
  *
  * Keep this program for driving the transport against a peer you control (a host-side responder, a
- * second 3DS), which is what it is actually good for. Testing Takion against a console needs the
- * connect flow instead: hold the Phase 4 control channel open past session-ready, run senkusha on 9297,
- * then INIT the stream on 9296. That is a single combined probe, not this one plus a port number.
+ * second 3DS). Testing Takion against a console needs the connect flow instead: hold the Phase 4 control
+ * channel open past session-ready, run senkusha on 9297, then INIT the stream on 9296. That is a single
+ * combined probe, not this one plus a port number.
  *
  * takion.txt (next to this .3dsx, plain key=value text):
  *   host=192.168.1.42   (required)

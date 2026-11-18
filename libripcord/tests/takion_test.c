@@ -343,16 +343,11 @@ static void test_reassembler(void)
         "single-fragment message content mismatch");
 
     /*
-     * THE LIFETIME, not the content - and it is the half that actually broke.
-     *
-     * Both headers promise the returned pointer aims at the reassembler's own buffer and stays valid
-     * until the next call. The single-fragment path did not: it handed back the caller's `payload`
-     * pointer, which in takion_channel_poll is a LOCAL receive buffer, so a complete message under
-     * about a kilobyte - the common case - was valid only until poll's frame went away.
-     *
-     * Content comparison could never catch that; the bytes are identical either way, right up until
-     * something else uses the stack. So this asserts on provenance: the message must come from inside
-     * the reassembler, and must NOT be the pointer that was passed in.
+     * THE LIFETIME, not the content. Both headers promise the returned pointer aims at the
+     * reassembler's own buffer and stays valid until the next call. A single-fragment path that hands
+     * back the caller's `payload` pointer - in takion_channel_poll a LOCAL receive buffer - passes any
+     * content comparison. So this asserts the message comes from inside the reassembler and is NOT the
+     * pointer that was passed in.
      */
     CHECK(message != whole,
         "a completed message must not alias the caller's buffer - that buffer is poll's stack frame");

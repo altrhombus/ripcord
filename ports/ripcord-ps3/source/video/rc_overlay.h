@@ -155,15 +155,13 @@ void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb);
 
 /*
  * A CONTROLLER BUTTON, as its shape, in a square box `size` on a side. Returns the width consumed, so a
- * row of hints is laid out by chaining rather than by hand-measured offsets - which is how the last one
- * ended up off-centre in the shell.
+ * row of hints is laid out by chaining rather than by hand-measured offsets.
  *
- * CIRCLE AND CROSS ONLY. Those are the two the in-session menu names, and a shape nobody draws is a
- * shape nobody checks - the shell has its own richer set because it needs triangle and the two word
- * pills. Anything else asked for here is drawn as nothing rather than as an approximation.
+ * CIRCLE AND CROSS ONLY. Those are the two the in-session menu names; the shell has its own richer set
+ * because it needs triangle and the two word pills. Anything else asked for here is drawn as nothing
+ * rather than as an approximation.
  *
- * Takes `button` as a HALYARD_PAD_* bit so callers pass the same value they test input against, rather
- * than a second enumeration that has to be kept in step with the first.
+ * Takes `button` as a HALYARD_PAD_* bit so callers pass the same value they test input against.
  */
 int rc_overlay_glyph(uint32_t button, int x, int y, int size, uint32_t argb);
 
@@ -179,15 +177,11 @@ uint32_t *rc_overlay_pixels(int *pitch_px);
  *
  * _num is the monospaced 5x7, and is for anything that CHANGES. A column of figures has to hold still
  * while the figures change: a digit one pixel narrower than its neighbour shuffles the whole row every
- * time it ticks, and a number that moves while you read it is a number you read twice. Prefer
- * _num_right for those, so the digits grow leftwards from a fixed edge.
+ * time it ticks. Prefer _num_right for those, so the digits grow leftwards from a fixed edge.
  */
 /*
  * BOTH RETURN THE ADVANCE, so a caller chains `x += rc_overlay_text(x, ...)` rather than writing down
- * where the next piece goes. The first version of the panel used hand-measured pixel offsets for every
- * run that mixed words and figures; they were measured against one font at one size, and the first
- * time either changed the labels started cutting into the numbers beside them. An offset that has to
- * be recomputed by hand whenever anything moves is a bug with a delay on it.
+ * where the next piece goes. Hand-measured pixel offsets break the first time a font or a size changes.
  */
 int rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
 int rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...);

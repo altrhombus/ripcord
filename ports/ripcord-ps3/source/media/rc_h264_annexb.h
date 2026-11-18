@@ -4,26 +4,24 @@
  * TWO LAYERS, ONE FILE, BECAUSE THE LOWER ONE IS USELESS ALONE.
  *
  * `rc_h264_annexb` walks a byte buffer and yields NAL units. `rc_h264_au` takes those units, absorbs the
- * parameter sets, parses the slice headers, and answers the only question the layer above actually has:
- * where does one picture end and the next begin. Splitting without that answer just moves the problem.
+ * parameter sets, parses the slice headers, and answers the question the layer above has: where does
+ * one picture end and the next begin.
  *
  * ZERO COPY, DELIBERATELY. A NAL unit is reported as a pointer into the caller's buffer and a length.
  * Nothing is copied, nothing is allocated, and the iterator holds no buffer of its own. The demuxer above
- * already has the whole frame in main memory; copying it again to hand out slices would be pure cost, and
- * on the target the cost lands where it hurts - an SPE has 256 KB of local store and no cache, so the
+ * already has the whole frame in main memory, and an SPE has 256 KB of local store and no cache, so the
  * decoder DMAs slice bytes in from exactly these pointers. Same reasoning as the on-the-fly emulation-
- * prevention handling in rc_h264_bits.h, for the same machine.
+ * prevention handling in rc_h264_bits.h.
  *
  * The buffer must therefore outlive the iteration, and must not be the receive buffer another thread is
  * still writing into.
  *
- * TRAILING ZEROS ARE NOT PART OF THE NAL UNIT, and trimming them is not cosmetic. Three separate things
- * put zero bytes between the end of one NAL and the next start code: `trailing_zero_8bits` (sec 7.4.1),
- * the `zero_byte` that makes a four-byte start code out of a three-byte one, and `cabac_zero_words` -
- * which matter here specifically, because this console encodes with CABAC and the padding is therefore a
- * live case rather than a theoretical one. One rule handles all three: after locating the bytes between
- * two start codes, walk back over any zeros. A unit left empty by that is not a NAL unit at all and is
- * skipped, counted rather than hidden, because a run of them means the buffer is damaged.
+ * TRAILING ZEROS ARE NOT PART OF THE NAL UNIT. Three separate things put zero bytes between the end of
+ * one NAL and the next start code: `trailing_zero_8bits` (sec 7.4.1), the `zero_byte` that makes a
+ * four-byte start code out of a three-byte one, and `cabac_zero_words` - a live case here, because this
+ * console encodes with CABAC. One rule handles all three: after locating the bytes between two start
+ * codes, walk back over any zeros. A unit left empty by that is not a NAL unit at all and is skipped,
+ * counted rather than hidden, because a run of them means the buffer is damaged.
  *
  * WHERE AN ACCESS UNIT STARTS IS NOT WHERE ITS PICTURE STARTS. sec 7.4.1.2.3 puts an access delimiter,
  * the parameter sets and any SEI *before* the first slice of the picture they describe - so a caller
@@ -31,7 +29,7 @@
  * flags in `rc_h264_au_nal` are therefore separate and both are needed: `begins_access_unit` marks the
  * first NAL of the unit whatever its type, and `begins_picture` marks the slice that starts the primary
  * coded picture. For this console's stream, which sends no delimiters and repeats its parameter sets
- * rarely, the two usually coincide - which is exactly why they must not be conflated in code.
+ * rarely, the two usually coincide.
  *
  * BOUNDARIES COME FROM THE BITSTREAM, NOT FROM THE FRAMING. The 9297 framing layer carries a frame index
  * that is constant across a frame's fragments (docs/protocol/ps5-av-stream.md), and ripcord-3ds groups on

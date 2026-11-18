@@ -74,16 +74,15 @@
 /*
  * Console -> client: the stream service is ready for its Takion association. Empty payload.
  *
- * PRESENT SO A PORT CAN RECOGNISE IT, NOT BECAUSE A LAN PORT SHOULD WAIT FOR IT. The reference
- * implementation's own note is that only the rendezvous route appears to need this: there the console
- * sends it after the client has probed the A/V leg, and the client opens the stream association within
- * milliseconds - "whereas a LAN console answers the SESSION_REQUEST whether or not anything like this
- * has passed", and its LAN sessions reach SESSION_ID and the probe without this ever arriving.
+ * A LAN PORT MUST NOT WAIT FOR IT. The reference implementation's own note is that only the rendezvous
+ * route appears to need this: there the console sends it after the client has probed the A/V leg, and
+ * the client opens the stream association within milliseconds - "whereas a LAN console answers the
+ * SESSION_REQUEST whether or not anything like this has passed", and its LAN sessions reach SESSION_ID
+ * and the probe without this ever arriving.
  *
- * The console ports are LAN-only, so a port that blocks on this would wait forever for something the
- * route does not send. libripcord/client waits for it only on the rendezvous route, and only for 10 s
- * after PROBE_REPORT, non-fatally, as .NET does. **[X]** what the console requires before sending it is
- * unknown on the reference side too, beyond PROBE_REPORT.
+ * libripcord/client waits for it only on the rendezvous route, and only for 10 s after PROBE_REPORT,
+ * non-fatally, as .NET does. **[X]** what the console requires before sending it is unknown on the
+ * reference side too, beyond PROBE_REPORT.
  */
 #define HALYARD_CTRL_TYPE_STREAM_READY   0x0034u
 
@@ -118,12 +117,10 @@ size_t halyard_ctrl_message_parse(const uint8_t *data, size_t length,
  * `counter`. Returns the payload length, or 0 if the passcode is not digits, is longer than
  * HALYARD_SESS_LOGIN_PIN_MAX, or `out` is too small.
  *
- * PURE, AND SEPARATE FROM SENDING IT, so the part with a security property can be tested without a
- * socket. That property is the counter: it is one running per-connection value, the five /sess/ctrl
- * headers consume 0-4, and the reference implementation is explicit that each retry must advance it -
- * "a fresh IV per submit, never reused". Encrypting two passcodes at the same counter reuses an IV under
- * one key, which is a real key-recovery bug that looks like nothing whatsoever on the wire, so it is
- * worth a test that can run on any machine.
+ * PURE, AND SEPARATE FROM SENDING IT, so the counter rule can be tested without a socket: it is one
+ * running per-connection value, the five /sess/ctrl headers consume 0-4, and the reference
+ * implementation is explicit that each retry must advance it - "a fresh IV per submit, never reused".
+ * Two passcodes at the same counter reuse an IV under one key.
  *
  * The caller owns the counter. halyard_control_session_submit_login takes it from the session and
  * advances it there, which is what every port should use; this exists underneath it.

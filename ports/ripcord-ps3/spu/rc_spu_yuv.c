@@ -25,14 +25,11 @@
 /*
  * TWO MORE TAGS, ONE PER OUTPUT BUFFER, SO A STORE NEED NOT BE WAITED ON.
  *
- * The loop used a single tag and blocked after every transfer, which was the right shape while the
- * arithmetic dominated: b185 measured 1,667 us of waiting against 16,444 us of converting and scaling,
- * 9%, and double buffering was proposed, measured and rejected on exactly that number.
- *
- * Removing the colour conversion and vectorising the scaler changed the answer. b193 measures 4,007 us
- * of waiting against 4,386 us of work - 48% - so the waiting is now worth removing, and the stores are
- * the larger half of it: at 720p into 1080p each SPE issues about 360 puts of 7,680 bytes against 240
- * gets of 5,120.
+ * With a single tag and a block after every transfer, b185 measured 1,667 us of waiting against
+ * 16,444 us of converting and scaling, 9%. After the colour conversion was removed and the scaler
+ * vectorised, b193 measures 4,007 us of waiting against 4,386 us of work - 48% - and the stores are the
+ * larger half of it: at 720p into 1080p each SPE issues about 360 puts of 7,680 bytes against 240 gets
+ * of 5,120.
  *
  * With two output buffers a put need only be waited on before its buffer is written again, which is two
  * source rows later rather than immediately.
@@ -73,20 +70,16 @@ static rc_spu_yuv_job g_job __attribute__((aligned(128)));
 /*
  * FOUR PIXELS AT A TIME, IN VECTORS.
  *
- * b100 ran this scalar and measured it: five SPEs converted a picture in 5884 us where the PPE alone
- * took 11869. Two times, for five processors - and per pixel each SPE was 2.5x SLOWER than the PPE.
- * That is what scalar code on an SPE costs. There is no scalar unit: every scalar operation is a vector
- * operation with the value extracted and reinserted around it, so the parallelism was buying back what
- * the instruction mix was throwing away.
+ * b100 ran this scalar: five SPEs converted a picture in 5884 us where the PPE alone took 11869, so
+ * per pixel each SPE was 2.5x SLOWER than the PPE. The SPE has no scalar unit: every scalar operation
+ * is a vector operation with the value extracted and reinserted around it.
  *
- * The multiply is the part worth explaining. The SPE has no 32x32 integer multiply, but spu_mulo takes
- * the ODD halfwords of two short vectors and produces 32-bit products - which, on this big-endian
- * machine, is the LOW 16 bits of each 32-bit lane. Every value here fits in 16 bits (y-16 is -16..239,
- * the largest coefficient is 2163), so keeping them as 32-bit lanes and multiplying with spu_mulo is a
- * 16x16 -> 32 multiply per lane with no packing at all.
+ * The SPE has no 32x32 integer multiply, but spu_mulo takes the ODD halfwords of two short vectors and
+ * produces 32-bit products - which, on this big-endian machine, is the LOW 16 bits of each 32-bit lane.
+ * Every value here fits in 16 bits (y-16 is -16..239, the largest coefficient is 2163), so keeping them
+ * as 32-bit lanes and multiplying with spu_mulo is a 16x16 -> 32 multiply per lane with no packing.
  *
- * Clamping is spu_cmpgt and spu_sel rather than branches. A branch per channel per pixel on a processor
- * with no branch predictor is the other half of what made the scalar version slow.
+ * Clamping is spu_cmpgt and spu_sel rather than branches: the SPE has no branch predictor.
  */
 /* vec_int4, vec_short8 and vec_uint4 come from spu_intrinsics.h - this file does not define them. */
 static inline vec_int4 mul_coef(vec_int4 v, short coef)
@@ -156,18 +149,12 @@ static void convert_line(unsigned int width)
  * The horizontal scale: g_line (src_width pixels) into g_out (dst_width pixels), nearest neighbour.
  *
  * FIXED-POINT STEPPING, NOT A DIVISION PER PIXEL. The source column for output column x is
- * x * src_width / dst_width, and computing that directly would be a divide for every pixel on the
- * screen. Accumulating a 16.16 step is an add and a shift instead.
+ * x * src_width / dst_width; accumulating a 16.16 step is an add and a shift instead of a divide.
  *
- * Nearest neighbour rather than bilinear, and a measurement settled that rather than an estimate. It is
- * exactly correct for the integer factors that matter most here (960x540 doubles to 1080p), and the plan
- * was to find out what the cheap version costs before choosing a better one.
- *
- * THAT COMPARISON HAS HAPPENED, AND IT OVERTURNED WHAT THIS COMMENT PREDICTED. It guessed bilinear at
- * "roughly three times the work" and marked the question [X], not yet compared on hardware. It has been:
- * scale_line_bilinear below measured 21,038 us an SPE for a frame and halved the frame rate, which is
- * five times the guess. Nearest neighbour is not a placeholder waiting for budget - it is the one that
- * fits, and the [X] is removed because the question is closed rather than because it was tidied.
+ * Nearest neighbour rather than bilinear, and a measurement settled that. It is exactly correct for the
+ * integer factors that matter most here (960x540 doubles to 1080p), and scale_line_bilinear below
+ * measured 21,038 us an SPE for a frame and halved the frame rate. The [X] this comment used to carry
+ * is removed because that comparison has been made on hardware.
  */
 static void scale_line(unsigned int *out, unsigned int src_width, unsigned int dst_width)
 {
@@ -176,17 +163,13 @@ static void scale_line(unsigned int *out, unsigned int src_width, unsigned int d
     unsigned int x = 0u;
 
     /*
-     * FOUR OUTPUT PIXELS PER STORE, AND THE STORE IS THE POINT.
-     *
-     * This SPU has no scalar store: writing one 32-bit word to local store is a read-modify-write of the
-     * whole 16-byte quadword, so the obvious `g_out[x] = g_line[idx]` costs a load, a rotate, an insert
-     * and a store for every pixel. Building four in a register and storing one quadword removes three of
-     * every four of those.
+     * FOUR OUTPUT PIXELS PER STORE. This SPU has no scalar store: writing one 32-bit word to local
+     * store is a read-modify-write of the whole 16-byte quadword, so the obvious
+     * `g_out[x] = g_line[idx]` costs a load, a rotate, an insert and a store for every pixel. Building
+     * four in a register and storing one quadword removes three of every four of those.
      *
      * The GATHER cannot be vectorised the same way - each output picks a source pixel at an index the
-     * accumulator computes, and the SPU has no vector gather - so the reads stay one at a time. That is
-     * why this is four-at-a-time rather than properly SIMD, and why the gain is a fraction rather than a
-     * factor.
+     * accumulator computes, and the SPU has no vector gather - so the reads stay one at a time.
      */
     if (src_width == dst_width) {
         /* No scaling at all: a straight quadword copy, with whatever the width leaves over done singly. */
@@ -227,20 +210,17 @@ static void scale_line(unsigned int *out, unsigned int src_width, unsigned int d
 }
 
 /*
- * Bilinear, with the four channels of a pixel interpolated at once.
- *
- * The scalar version this replaces pulled each channel out of a word, interpolated it three times and
- * put it back - nine interpolations a pixel, each with its own extract and insert - and missed the 25 ms
- * strip deadline so completely that b195 converted no stream frames at all.
+ * Bilinear, with the four channels of a pixel interpolated at once. The scalar version this replaces -
+ * nine interpolations a pixel - missed the 25 ms strip deadline so completely that b195 converted no
+ * stream frames at all.
  *
  * A pixel's four bytes are unpacked into four 32-bit lanes, interpolated as one vector, and packed back.
  * The multiply is the same idiom convert_line uses: spu_mulo against the odd halfword of each lane,
  * which is where a small signed value sits in a 32-bit lane on this byte order. Differences are within
  * +/-255 and the weights within 0..255, so the products fit a lane with room to spare.
  *
- * The four source pixels are remembered between output pixels. Upscaling means consecutive outputs often
- * share a source column - at 1.5x two in three do - and re-unpacking the same four words is the largest
- * avoidable cost left after the channels.
+ * The four source pixels are remembered between output pixels: upscaling means consecutive outputs
+ * often share a source column - at 1.5x two in three do.
  */
 static const vec_uchar16 k_unpack_px = {
     0x80u, 0x80u, 0x80u, 0u, 0x80u, 0x80u, 0x80u, 1u,
@@ -279,18 +259,13 @@ static inline vec_int4 lerp_px(vec_int4 a, vec_int4 b, short w)
 /*
  * Horizontal interpolation only: smooth across a row, nearest between rows.
  *
- * WHY THIS EXISTS ALONGSIDE THE FULL VERSION. Full bilinear measured 21,038 us an SPE for a frame
- * against a 16,667 us budget at 60 fps - it works and does not fit. This is the cheaper two thirds of
- * the idea: one source row instead of two, so two gathers a pixel instead of four and one interpolation
- * instead of three.
+ * Full bilinear measured 21,038 us an SPE for a frame against a 16,667 us budget at 60 fps. This uses
+ * one source row instead of two, so two gathers a pixel instead of four and one interpolation instead
+ * of three. With one source row a computed output line can also be stored twice when two output rows
+ * map to the same source row - one in three at 1.5x - which the full version cannot do, because every
+ * output row sits at a different distance between its two rows.
  *
- * It also inherits the structure the nearest path uses, which is the larger saving. With one source row
- * a computed output line can be stored twice when two output rows map to the same source row - one in
- * three at 1.5x - and the full version cannot, because every output row sits at a different distance
- * between its two rows.
- *
- * What it removes is the column doubling, which at a 1.5x horizontal scale is where the repetition is
- * most visible. Rows are still duplicated.
+ * What it removes is the column doubling. Rows are still duplicated.
  *
  * No clamp: one interpolation between two values already in 0..255, with the lerp rounded, cannot leave
  * the range. a=0,b=255,w=255 gives 254 and a=255,b=0,w=255 gives 1.
@@ -410,18 +385,13 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
         unsigned int phase;
 
         /*
-         * Blocks until the PPE has a frame. The value is ignored - the job block's address was fixed at
-         * thread creation and the mailbox is only a doorbell. Reading the EA from the mailbox instead
-         * would need two writes for a 64-bit address and a protocol to match them up.
-         */
-        /*
-         * A doorbell, and now also a way out. Zero means "stop": the thread returns from main and lv2
-         * can join it normally.
+         * Blocks until the PPE has a frame. The mailbox is only a doorbell - the job block's address
+         * was fixed at thread creation, and reading the EA from the mailbox instead would need two
+         * writes for a 64-bit address and a protocol to match them up. Zero means "stop": the thread
+         * returns from main.
          *
-         * b105 completed its entire run, printed its summary, and then locked the console hard enough to
-         * take the FTP server with it - because rc_spu_yuv_exit terminated a thread group whose five
-         * SPEs were all blocked in this read with no way to be told to leave. Terminating is not the
-         * same as asking, and the difference only shows at shutdown, which is exactly where nobody looks.
+         * b105 locked the console because rc_spu_yuv_exit terminated a thread group whose five SPEs
+         * were all blocked in this read with no way to be told to leave.
          */
         if (spu_read_in_mbox() == 0u)
             return 0;
@@ -455,16 +425,13 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
             /*
              * WHERE THE TIME GOES, split between waiting for the MFC and doing the arithmetic.
              *
-             * This loop blocks on every transfer - one tag, mfc_read_tag_status_all after each get and
-             * each put - so the SPE is idle for the whole of every round trip. At 1280x720 into
-             * 1920x1080 that is roughly 270 blocking puts and 180 blocking gets per SPE per frame, and
-             * the conversion measures 4,945 us a frame without anyone knowing which half that is.
-             *
-             * It decides the next change. If the arithmetic dominates, dropping the YUV-to-RGB pass (the
-             * decoder can output ARGB32 - b179 confirmed it) is worth doing. If the waiting dominates,
-             * that same change makes things WORSE, because ARGB source is 4 bytes a pixel against
-             * YUV420's 1.5 - and double buffering is the answer instead, which is what IBM's Cell
-             * programming guide spends a chapter on.
+             * When this loop blocked on every transfer - one tag, at 1280x720 into 1920x1080 roughly
+             * 270 blocking puts and 180 blocking gets per SPE per frame - the conversion measured
+             * 4,945 us a frame without anyone knowing which half that was. If the arithmetic
+             * dominates, dropping the YUV-to-RGB pass (the decoder can output ARGB32 - b179 confirmed
+             * it) is worth doing. If the waiting dominates, that same change makes things WORSE,
+             * because ARGB source is 4 bytes a pixel against YUV420's 1.5, and double buffering is the
+             * answer instead.
              */
             /*
              * The output buffer alternates only when a row is RECOMPUTED. Consecutive output rows often

@@ -8,9 +8,7 @@
  *
  * NO SOCKET, DELIBERATELY - the same split halyard_discovery.h and the Takion codecs already use. This
  * module produces the bytes to send and consumes the bytes received; whoever owns the reliable channel
- * moves them. That keeps the whole key agreement host-testable, which matters more here than anywhere
- * else in the port: this is the one exchange where a bug yields a session that connects and then decodes
- * to garbage, with nothing in between to say which side was wrong.
+ * moves them. That keeps the whole key agreement host-testable.
  *
  * WHERE THIS SITS in the connect sequence (HalyardTakionStream.StartAsync):
  *   1. /sess/ctrl control plane is up (Phase 4) - it is what carries handshakeKey to the console, see
@@ -21,19 +19,18 @@
  *   5. GMAC sealing is switched on with those keys; everything after this point is authenticated.
  * Both messages ride TAKION_CHANNEL_SESSION (0x0001) as reliable DATA.
  *
- * ON handshakeKey, WHICH IS EASY TO GET WRONG. It is 16 fresh random bytes generated per session by the
- * CLIENT, and it is NOT derived from the pairing record and NOT related to the control-plane KDF. It
- * reaches the console inside the launch spec - AES-128-OFB-encrypted under the control plane's "out1"
- * key and base64'd (halyard_control_streaminfo_crypt), as the JSON member "handshakeKey" - so by the
- * time this exchange runs, both sides already know it and can each authenticate the other's public key
- * with it. Its only job is to bind the two ECDH public keys to a session the console already agreed to;
- * it contributes no long-term secrecy, and a caller that passes a fixed value instead of random bytes
- * has removed the exchange's only protection against a man in the middle.
+ * ON handshakeKey. It is 16 fresh random bytes generated per session by the CLIENT, NOT derived from
+ * the pairing record and NOT related to the control-plane KDF. It reaches the console inside the launch
+ * spec - AES-128-OFB-encrypted under the control plane's "out1" key and base64'd
+ * (halyard_control_streaminfo_crypt), as the JSON member "handshakeKey" - so by the time this exchange
+ * runs, both sides know it and can each authenticate the other's public key with it. It binds the two
+ * ECDH public keys to a session the console already agreed to and contributes no long-term secrecy; a
+ * caller that passes a fixed value instead of random bytes has removed the exchange's only protection
+ * against a man in the middle.
  *
  * WHAT THIS DOES NOT DO. It does not build the launch spec (that needs session configuration - codec,
  * resolution, bitrate - and belongs to whoever owns the connect flow), and it does not generate the
- * handshakeKey. Both arrive as caller-supplied inputs, the same way stream_packet_crypto takes an
- * already-derived key rather than reaching for the layer above it.
+ * handshakeKey. Both arrive as caller-supplied inputs.
  */
 #ifndef TAKION_SESSION_NEGOTIATOR_H
 #define TAKION_SESSION_NEGOTIATOR_H
@@ -156,10 +153,8 @@ size_t takion_session_negotiator_begin(takion_session_negotiator *ctx,
 /*
  * WHY accept_reply SAID NO, recorded in the context rather than returned.
  *
- * The function has five distinct ways to refuse a reply and they all used to collapse into a single 0,
- * which on hardware reads as "the console answered and we did not like it" - true, unactionable, and one
- * console round trip per guess. This is a field rather than a new parameter so that existing callers,
- * which are ports this change has no business breaking, keep compiling unchanged.
+ * accept_reply returns a single 0 for every refusal; this says which. A field rather than a new
+ * parameter so that existing callers keep compiling unchanged.
  *
  * The distinction that matters most is SIGNATURE vs the rest: a signature that does not verify means the
  * console computed it under a different handshakeKey than the one we embedded, which points at the launch

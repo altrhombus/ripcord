@@ -145,24 +145,18 @@ static uint32_t hsv(int h, int s, int v)
  * THE ACCENT IS DESATURATED UNTIL IT CAN BE READ, AND NO FURTHER.
  *
  * It sets the family tag on a card, the rule under the wordmark and the value in a settings row - all at
- * the body size, all on the card's near-black fill. So it is not a colour choice, it is a legibility
- * requirement with a colour preference attached, and one hue per month means twelve chances to get it
- * wrong in a way nobody sees for eleven months.
- *
- * Two of them WERE wrong. September's purple came out at 4.20:1 against the card and December's blue at
- * 3.82:1, against the 4.5:1 that WCAG asks for body text - because luminance is mostly green, and a hue
- * with no green in it is dark however bright you ask for it. Neither was visible to anybody: one is a
- * month nobody had launched in and the other had not come round yet. tests/wave_test.c found both.
+ * the body size, all on the card's near-black fill - so it has to clear the 4.5:1 that WCAG asks for
+ * body text. Unadjusted, September's purple came out at 4.20:1 against the card and December's blue at
+ * 3.82:1, because luminance is mostly green and a hue with no green in it is dark however bright you
+ * ask for it. tests/wave_test.c checks every month.
  *
  * Saturation is what gives: dropping it mixes in white and lifts every channel, where raising the value
  * cannot help a channel that is already at its ceiling. It comes down in steps until the colour is light
- * enough, so a hue that was fine keeps exactly the saturation it always had and only the ones that need
- * it are touched.
+ * enough, so a hue that was fine keeps exactly the saturation it always had.
  *
  * The luminance here approximates sRGB's gamma as a square rather than the standard's 2.4. It is
  * monotonic, which is all a threshold needs, and it keeps this file free of floating point - the test
- * checks the real WCAG figure, which is the number that matters, and the threshold below is set so
- * every month clears it with room.
+ * checks the real WCAG figure, and the threshold below is set so every month clears it with room.
  */
 static unsigned linearise(unsigned c)
 {
@@ -223,19 +217,16 @@ static const struct {
 typedef char rc_wave_levels_fit[(46 + 38 + 26) < 256 ? 1 : -1];
 
 /*
- * THE INNER LOOP HAS NO DIVIDE AND NO BRANCH IN IT, and that is not premature optimisation - it is the
- * whole difference between this working and not.
+ * THE INNER LOOP HAS NO DIVIDE AND NO BRANCH IN IT.
  *
- * The first version did the obvious thing: per pixel, per ribbon, take |y - centre[x]|, test it against
- * the band, and scale it to a table index with a divide. Two million pixels, three ribbons: six million
- * integer divides and six million unpredictable branches. It measured 85,342 us a frame on hardware -
- * five whole frames at 60 Hz - which is how a background that is meant to be ambient ended up visibly
- * stepping.
+ * Per pixel, per ribbon, taking |y - centre[x]|, testing it against the band and scaling it to a table
+ * index with a divide is six million integer divides and six million unpredictable branches over two
+ * million pixels and three ribbons. It measured 85,342 us a frame on hardware.
  *
  * Both go away by indexing a table with the SIGNED offset instead. Each ribbon gets one table spanning
- * every dy the screen can produce, with zeroes outside its band, so "is this pixel in the ribbon" stops
- * being a question anybody asks: it is a load and an add. The vertical lift is folded into a second
- * table so composing the final pixel is one more load rather than three clamps and three shifts.
+ * every dy the screen can produce, with zeroes outside its band, so "is this pixel in the ribbon" is a
+ * load and an add. The vertical lift is folded into a second table so composing the final pixel is one
+ * more load rather than three clamps and three shifts.
  */
 #define RC_WAVE_MAX_H 1088
 #define RC_WAVE_DY_BIAS RC_WAVE_MAX_H
@@ -244,23 +235,18 @@ typedef char rc_wave_levels_fit[(46 + 38 + 26) < 256 ? 1 : -1];
 /*
  * AND THEN IT IS DRAWN SMALL AND BLOWN UP, WHICH IS THE WHOLE REASON IT CAN RUN AT THE FLIP RATE.
  *
- * Removing the divides and the branches took the full-screen fill from 85 ms to 29. That is four times
- * faster and still four times too slow: 29 ms is under 35 frames a second before a single card has been
- * drawn, and a background that takes most of two frames does not step - it judders, which is worse,
- * because the eye reads unevenness as a fault where it reads slowness as a choice.
+ * Removing the divides and the branches took the full-screen fill from 85 ms to 29, which is still
+ * under 35 frames a second before a single card has been drawn. There is nothing in this picture above
+ * a few cycles across the screen - three soft ribbons and a vertical gradient - so a quarter-scale
+ * buffer holds all of it. 480x270 is a SIXTEENTH of the work.
  *
- * The fix is not another constant factor, it is to stop drawing two million pixels. There is nothing in
- * this picture above a few cycles across the screen - three soft ribbons and a vertical gradient - so a
- * quarter-scale buffer holds every bit of it that exists, and the missing pixels are not missing
- * information, they are a resampling. 480x270 is a SIXTEENTH of the work.
+ * The blow-up back to full size is bilinear, and it is cheap because the ratio is exactly four: the
+ * only weights that ever occur are 0, 1/4, 1/2 and 3/4, and all three non-zero ones are reachable by
+ * halving twice. avg2 below is the whole of the arithmetic. No multiply, no divide, no per-pixel
+ * weight, three averages per four output pixels.
  *
- * The blow-up back to full size is bilinear, and it is cheap for one specific reason: the ratio is
- * exactly four, so the only weights that ever occur are 0, 1/4, 1/2 and 3/4 - and all three non-zero
- * ones are reachable by halving twice. avg2 below is the whole of the arithmetic. No multiply, no
- * divide, no per-pixel weight, three averages per four output pixels.
- *
- * It is NOT handed to the RSX, which is the obvious thing to do and is the thing that stopped the GPU
- * in b232. Everything here stays in main memory; see rc_overlay.c.
+ * It is NOT handed to the RSX, which is the thing that stopped the GPU in b232. Everything here stays
+ * in main memory; see rc_overlay.c.
  */
 #define RC_WAVE_SHRINK 4
 /*
@@ -288,21 +274,16 @@ static uint32_t avg2(uint32_t a, uint32_t b)
 }
 
 /*
- * TRIED AND REJECTED: dcbz. RECORDED BECAUSE THE RESULT RULES SOMETHING OUT.
+ * TRIED AND REJECTED: dcbz.
  *
- * b363 measured the small fill plus this expansion at 12,612 us. For two million pixels that is about
- * six nanoseconds each, far more than the arithmetic accounts for - three averages and a store per four
- * pixels - and the copy to video memory measured 10,976 us for the same eight megabytes. Two unrelated
- * pieces of code arriving at the same number looked like the tell for a shared limit: moving the bytes.
+ * b363 measured the small fill plus this expansion at 12,612 us - about six nanoseconds a pixel, far
+ * more than three averages and a store per four pixels account for - and the copy to video memory
+ * measured 10,976 us for the same eight megabytes, which pointed at moving the bytes.
  *
- * The standard remedy for a buffer that is overwritten in full is dcbz, which claims a cache line as
- * zeroed without first reading the data that is about to be discarded - halving the traffic, if the
- * fetch is what costs. b366 put one dcbz every 128 bytes across this loop and measured 13,774 us: very
- * slightly WORSE, which is the instruction's own cost showing through with nothing saved behind it.
- *
- * So the line fetch is not what this is paying for, and whatever the ceiling is, it is not one a store
- * pattern can be arranged around. That is worth knowing before anybody tries it again, and it is part
- * of why the next move for this file is the SPEs rather than another pass over the PPE code.
+ * dcbz claims a cache line as zeroed without first reading the data that is about to be discarded.
+ * b366 put one dcbz every 128 bytes across this loop and measured 13,774 us: very slightly WORSE. So
+ * the line fetch is not what this is paying for, which is part of why the next move for this file is
+ * the SPEs rather than another pass over the PPE code.
  */
 
 /* The wave itself, at whatever size it is asked for. Every dimension below is proportional, so this is
@@ -470,44 +451,25 @@ static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *
 }
 
 /*
- * MOTES, AND WHY THEY ARE DRAWN AT A QUARTER SIZE ON PURPOSE.
- *
- * The XMB's background has slow drifting points of light in it, and a nod to them is the cheapest
- * recognisable thing this screen can carry. They go into the SMALL buffer, before the expansion - which
- * is not a shortcut, it is the better picture: a mote one pixel across at 480 wide becomes a soft
- * four-pixel bloom once the bilinear expansion has been over it, where the same mote drawn at full size
- * would be a hard dot. The blur is free and it is what makes them read as light rather than as pixels.
- *
- * It is also almost nothing to compute. Forty motes over a 481x271 buffer is a few hundred pixels a
- * frame against the two million the expansion writes.
- *
- * ADDITIVE, AND CLAMPED. They brighten what is under them rather than replacing it, so a mote crossing
- * a ribbon reads as being in the same light as the ribbon. The drift is slow, upward and slightly
- * sideways, and they wrap - nobody watches one long enough for the wrap to be visible, and the
- * alternative is a spawn schedule that has to be tuned.
- */
-/*
  * MOTES THAT LEAVE THE RIBBON, AND HAVE A DEPTH.
  *
- * Two reversals live here and both were corrections from looking at a television.
+ * The XMB's background has slow drifting points of light in it, and these are a nod to them.
  *
- * FIRST, THEY ARE DRAWN AT FULL SIZE. They went into the small buffer so the 4x expansion would soften
- * them for nothing - and a two-pixel splat at 480 wide becomes an eight-pixel smear on screen, which
- * moving looks like something too fast for the shutter. Free blur is only free if blur is what you
- * wanted. Sixteen motes at a few dozen pixels each is nothing against the two million the expansion
- * writes, so they are drawn properly instead.
+ * THEY ARE DRAWN AT FULL SIZE. In the small buffer, a two-pixel splat at 480 wide becomes an
+ * eight-pixel smear on screen once the 4x expansion has been over it. At a few dozen pixels each they
+ * are nothing against the two million the expansion writes.
  *
- * SECOND, THEY RISE FROM THE MIDDLE RATHER THAN THE FLOOR. Every mote starting at the bottom and
- * travelling up reads as carbonation in a glass, which is a different thing from the XMB's background
- * and a busier one. Its points of light leave the ribbon - some up, some down - and live a while. So
- * each is born in the band the ribbons occupy, picks a direction, fades in, drifts, and fades out.
+ * ADDITIVE, AND CLAMPED. They brighten what is under them rather than replacing it, so a mote crossing
+ * a ribbon reads as being in the same light as the ribbon.
  *
- * AND THEY HAVE A DEPTH, which is the part that makes it read as air rather than as dots. A far mote is
- * small, bright and slow; a near one is large, dim and quick. That is three numbers off one - the tent
- * kernel's radius, the peak brightness, and the speed - and the brightness falls as the SQUARE of the
- * radius, because a mote's total light is its peak times its area and the near ones should not be
- * brighter for being bigger. What comes out is a soft translucent blob for near and a crisp point for
- * far, which is the out-of-focus effect without anything that could be called a blur.
+ * THEY RISE FROM THE MIDDLE RATHER THAN THE FLOOR. Every mote starting at the bottom and travelling up
+ * reads as carbonation in a glass. So each is born in the band the ribbons occupy, picks a direction -
+ * some up, some down - fades in, drifts, and fades out.
+ *
+ * AND THEY HAVE A DEPTH. A far mote is small, bright and slow; a near one is large, dim and quick.
+ * That is three numbers off one - the tent kernel's radius, the peak brightness, and the speed - and
+ * the brightness falls as the SQUARE of the radius, because a mote's total light is its peak times its
+ * area and the near ones should not be brighter for being bigger.
  *
  * The kernel is evaluated against the sub-pixel position, which is what keeps the motion smooth: a mote
  * placed on whole pixels hops, and at this size a hop is the whole dot.
@@ -670,11 +632,8 @@ static void motes_row(uint32_t *dst, int w, int y)
 /*
  * BEGIN AND ROW, RATHER THAN ONE CALL THAT FILLS A SCREEN.
  *
- * The shell no longer wants the background written into the surface and then read back to blend the
- * interface over it: that read-modify-write against eight megabytes is what four separate attempts at
- * the inner loop failed to make cheaper. It wants one row at a time, in a buffer small enough to stay
- * in cache while the interface is composited onto it, and then one sequential store of the finished
- * row. This file supplies the row; see rc_shell.c for the rest of that pass.
+ * The shell composites the interface over the background a row at a time rather than blending it over
+ * a finished screen. This file supplies the row; see rc_shell.c for the rest of that pass.
  *
  * The small buffer is built once per frame by rc_wave_begin, which is where nearly all the arithmetic
  * lives; rc_wave_row is an expansion and nothing else.

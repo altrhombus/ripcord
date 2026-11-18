@@ -296,13 +296,11 @@ void rc_account_probe_run(const char *known_account_id, rc_account_probe *out)
  *
  * [X] Every account id this project has seen is nineteen decimal digits, but that is an observation over
  * a handful of accounts and is documented nowhere - so the bound here is set far below it rather than at
- * it. What it has to catch is the file being absent in all but name: zeroed after a sign-out, or some
- * other 248 bytes entirely. What it must NOT do is reject a real id that happens to be shorter than the
- * ones seen so far, because a wrong rejection sends somebody back to typing nineteen digits with no
- * explanation. Sixteen digits is comfortably under any observed id and comfortably over any counter.
+ * it. It has to catch the file being absent in all but name: zeroed after a sign-out, or some other
+ * 248 bytes entirely. It must NOT reject a real id that happens to be shorter than the ones seen so
+ * far. Sixteen digits is comfortably under any observed id and comfortably over any counter.
  *
- * A rejection is reported, not swallowed - rc_account_status_text names this case - so if the bound is
- * ever wrong it says so on the screen instead of looking like the console has no account.
+ * A rejection is reported, not swallowed - rc_account_status_text names this case.
  */
 #define RC_ACC_MIN_PLAUSIBLE 1000000000000000ull
 

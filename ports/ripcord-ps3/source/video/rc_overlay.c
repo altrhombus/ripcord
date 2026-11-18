@@ -2,30 +2,23 @@
  * ripcord-ps3 - the on-screen diagnostics overlay.
  *
  * The same answers the .NET client's diagnostics report gives, on a console with no second window to
- * put them in. Every number this port produced used to go to a log file readable only after the session
- * ended, over FTP, from another machine - fine for bring-up and useless for "why did it just go blocky".
+ * put them in. The alternative is a log file readable only after the session ended, over FTP, from
+ * another machine.
  *
- * IT DRAWS INTO ITS OWN BITMAP, NOT INTO THE BACK BUFFER, and b225 is why. Drawing into the back buffer
- * put the text there with the PPE immediately after the picture blit had been QUEUED - so the RSX ran
- * the picture afterwards and painted over every pixel of it. Nothing appeared, on a path where every
- * counter said the frame had been drawn. The bitmap is copied over the picture by a command issued
- * after it, which is an ordering the hardware keeps instead of one this code has to win.
+ * IT DRAWS INTO ITS OWN BITMAP, NOT INTO THE BACK BUFFER. Text drawn into the back buffer by the PPE
+ * lands immediately after the picture blit has been QUEUED, so the RSX runs the picture afterwards and
+ * paints over every pixel of it (b225). The bitmap is copied over the picture by a command issued
+ * after it, which is an ordering the hardware keeps.
  *
- * THE PANEL IS BUILT IN MAIN MEMORY AND COPIED TO RSX MEMORY WHEN IT CHANGES, which is a reversal.
- * It used to be built directly in RSX memory under a rule that it may only ever be written, because a
- * Cell read from there is roughly two orders of magnitude slower than a write. That rule made
- * antialiasing impossible - blending a glyph's coverage over a background IS a read - and antialiasing
- * is most of what separates the console's own typeface from a hand-drawn bitmap.
- *
- * So the drawing happens where reads are cheap and the result is copied across on rebuild: 555 KB,
- * four times a second, in the direction that is fast. The per-frame path is unchanged - the RSX copies
- * the same VRAM bitmap over the picture every frame either way.
+ * THE PANEL IS BUILT IN MAIN MEMORY AND COPIED TO RSX MEMORY WHEN IT CHANGES. Antialiasing blends a
+ * glyph's coverage over a background, which is a read, and a Cell read from RSX memory is roughly two
+ * orders of magnitude slower than a write. So the drawing happens where reads are cheap and the result
+ * is copied across on rebuild: 555 KB, four times a second, in the direction that is fast. The RSX
+ * copies the same VRAM bitmap over the picture every frame.
  *
  * TWO FONTS, ON PURPOSE. Words are set in the proportional face and anything that MOVES is set in the
- * monospaced one and right-aligned. A column of figures has to hold still while the figures change: a
- * digit one pixel narrower than its neighbour makes the whole row shuffle every time it ticks, and a
- * number that moves while you read it is a number you read twice. Fixed pitch is wrong for the words
- * for the opposite reason - it reads like a teletype, and every label here is prose.
+ * monospaced one and right-aligned: a digit one pixel narrower than its neighbour makes the whole row
+ * shuffle every time it ticks. Fixed pitch is wrong for the words - every label here is prose.
  *
  * THE TEXT IS REBUILT A FEW TIMES A SECOND, NOT EVERY FRAME. All of it is rates and totals nobody reads
  * at 60 Hz. The COPY is queued every frame, because the picture blit clears the back buffer each time.
@@ -52,11 +45,10 @@
  * Every measurement here and in the layout is a "design pixel" against a 1920x1080 screen, and
  * rc_overlay_px converts one to a real one. Without that the panel is a fixed 760 pixels wide: 40% of
  * a 1080p screen, 59% of a 720p one, and WIDER THAN a 720x480 one - at which point
- * rc_video_overlay_blit refuses the rectangle and the overlay silently is not there. A diagnostic that
- * disappears on the displays least able to spare the bandwidth is worse than no diagnostic.
+ * rc_video_overlay_blit refuses the rectangle and the overlay silently is not there.
  *
- * Scaling the bitmap on the way to the screen would have been less code and would have softened every
- * glyph. The atlas is built once at open, so building it at the right size instead costs nothing.
+ * Scaling the bitmap on the way to the screen would have softened every glyph. The atlas is built once
+ * at open, so building it at the right size instead costs nothing.
  */
 #define RC_OV_DESIGN_W     760
 #define RC_OV_DESIGN_H     352
@@ -65,16 +57,14 @@
 
 /* Big enough for the design size at 1080p; anything smaller uses less of it. */
 /*
- * THE SURFACE IS NOW THE WHOLE SCREEN, and that is what lets the shell put a moving background behind
- * antialiased text at all. Blending means reading what is underneath; reads from RSX memory are about a
+ * THE SURFACE IS THE WHOLE SCREEN, which is what lets the shell put a moving background behind
+ * antialiased text. Blending means reading what is underneath; reads from RSX memory are about a
  * hundred times slower than writes, and the one time a blend was handed to the RSX instead its command
  * processor stopped and every flip after the first stayed pending forever (b232 - "no video just
  * audio"). So everything composites here, in main memory, and exactly one opaque copy reaches the
  * screen.
  *
- * It costs 8 MB of main memory and 8 MB of video memory at 1080p, held for the run. The alternative was
- * a second surface with a second font atlas and a second copy of the blending, which costs the same
- * memory and an extra copy of every bug.
+ * It costs 8 MB of main memory and 8 MB of video memory at 1080p, held for the run.
  */
 #define RC_OV_MAX_W        1920
 #define RC_OV_MAX_H        1088
@@ -97,18 +87,16 @@ static int s_y = 40;
 static uint32_t *s_bitmap;      /* main memory - drawn into, read from, blended in          */
 
 /*
- * WHERE THE TEXT ACTUALLY LANDS, which is no longer always the surface.
+ * WHERE THE TEXT ACTUALLY LANDS, which is not always the surface.
  *
  * The shell draws its whole interface once into a cached LAYER and composites that over the moving
- * background every frame, rather than re-drawing it onto the background sixty times a second - see
- * rc_shell.c. Text is most of what a layer contains, so this file has to be able to aim somewhere else.
+ * background every frame - see rc_shell.c - so this file has to be able to aim somewhere else.
  *
  * It is a destination and a pitch, not a mode: the compositing arithmetic below is the same either way.
- * The only thing that differs is that a layer starts transparent and accumulates an alpha, where the
- * surface starts opaque and stays opaque - and writing the alpha out properly covers both, because a
- * blend onto an opaque destination arrives at 255 on its own.
+ * A layer starts transparent and accumulates an alpha, where the surface starts opaque and stays
+ * opaque - and writing the alpha out properly covers both, because a blend onto an opaque destination
+ * arrives at 255 on its own.
  */
-/* An IO window onto s_bitmap, when the RSX would accept one - see rc_video_map_main. */
 static uint32_t s_main_offset;
 static int s_from_main;
 
@@ -178,12 +166,9 @@ uint32_t *rc_overlay_pixels(int *pitch_px)
  *
  * Preparing means allocating two megabytes of panel and rasterising an atlas of a couple of hundred
  * glyphs. Doing that when someone presses the toggle would do it ON THE DECODE THREAD, mid-stream,
- * which is precisely the b256 fault: 1,483 ms inside one rebuild and 2 fps. So preparation happens once
- * at session set-up whether or not the overlay is wanted, and the toggle only decides whether to draw.
- *
- * The cost of preparing something nobody asked for is memory that is there anyway and a few
- * milliseconds before the stream starts. The cost of the alternative is a visible stall every time
- * someone wants to see the numbers - which is, by definition, when something already looks wrong.
+ * which is the b256 fault: 1,483 ms inside one rebuild and 2 fps. So preparation happens once at
+ * session set-up whether or not the overlay is wanted, and the toggle only decides whether to draw.
+ * The cost is memory that is there anyway and a few milliseconds before the stream starts.
  */
 static int s_shown;
 
@@ -621,16 +606,13 @@ static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
     base = rc_sysfont_ascent();
 
     /*
-     * A RUN THAT CANNOT BE SEEN COSTS NOTHING, and until b363 it cost almost everything.
+     * A RUN THAT CANNOT BE SEEN COSTS NOTHING.
      *
      * Callers measure a string by drawing it at y = -10000 and taking the returned advance - the width
-     * comes from text_width and is free. This function, though, ran the whole way for such a call: it
-     * cleared its band of the coverage buffer, rasterised every glyph into it, and only then skipped
-     * the composite row by row because each row was above the surface. So every measured run was
-     * rasterised twice and shown once, and the shell measures nearly everything it draws - card names,
-     * pill labels, the whole hint row.
-     *
-     * The guard is two comparisons and it halves the text cost of a frame.
+     * comes from text_width and is free. Without this guard (before b363) such a call cleared its band
+     * of the coverage buffer and rasterised every glyph into it before skipping the composite row by
+     * row, and the shell measures nearly everything it draws. The guard halves the text cost of a
+     * frame.
      */
     if (y >= s_h || y + RC_OV_COV_H <= 0)
         return;
@@ -975,21 +957,17 @@ int rc_overlay_begin(void)
 /*
  * PUSH THE BITMAP OUT OF THE CACHE BEFORE THE RSX READS IT - AND READ THIS BEFORE DELETING IT.
  *
- * HONESTY FIRST: this was added to fix visible smearing, and the smearing turned out to be something
- * else entirely - rc_shell.c's glow was drawing outside the bounds it reported, so the composite was
- * clipping it. Nothing here was ever shown to fix anything. Two builds were spent inferring a cache
- * fault from a symptom that, being PERSISTENT AND REPEATABLE, should have ruled one out immediately.
+ * Nothing here was ever shown to fix anything. It was added against visible smearing that turned out
+ * to be rc_shell.c's glow drawing outside the bounds it reported.
  *
- * It is kept anyway, and the reason is not sentiment. The RSX now reads a buffer the PPE writes through
- * its cache, and whether that read path snoops the PPE's L2 is a question this project has not answered
- * either way. Absence of a symptom is not absence of a race - a rare one would be miserable to find
- * later, from a report of one bad frame an hour. `sync` orders the stores and costs nothing; dcbf
- * pushes the lines to memory, and the lines being pushed have to reach memory anyway, so it brings a
- * writeback forward rather than adding one.
+ * It is kept because the RSX reads a buffer the PPE writes through its cache, and whether that read
+ * path snoops the PPE's L2 is a question this project has not answered either way. `sync` orders the
+ * stores and costs nothing; dcbf pushes the lines to memory, and they have to reach memory anyway, so
+ * it brings a writeback forward rather than adding one.
  *
  * WHAT IT COSTS, measured: 482 us a frame of a 34,232 us frame, in place of the 10,884 us copy it
- * replaced. If somebody needs that 482 us back, this is the first thing to try removing - and the
- * honest way to test it is a long run watching for one bad frame, not a clean minute.
+ * replaced. If somebody needs that 482 us back, this is the first thing to try removing - and the way
+ * to test it is a long run watching for one bad frame, not a clean minute.
  */
 static void flush_for_rsx(int h)
 {

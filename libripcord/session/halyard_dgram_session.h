@@ -2,12 +2,11 @@
  * libripcord - what the session layers need from the UDP 9303 transport: the control session's byte pipe,
  * the account registration's exchange, and a "leg" (one socket, its STUN mapping and its association).
  *
- * WHY THESE THREE, TOGETHER. halyard_dgram_channel.h is the transport and deliberately knows nothing above
- * it. The code above it was written against other contracts before the transport existed in C: the
- * control session against a byte pipe (halyard_control_session.h, halyard_control_pipe), and account
- * pairing against "send this request, give me the whole reply" (halyard_account_regist_flow.h,
- * halyard_account_regist_exchange_fn). Each needs a few lines of adapter, and those adapters are the whole
- * of this file's protocol content; the leg is the socket bookkeeping every rendezvous caller repeats.
+ * halyard_dgram_channel.h is the transport and knows nothing above it. The code above it is written
+ * against other contracts: the control session against a byte pipe (halyard_control_session.h,
+ * halyard_control_pipe), and account pairing against "send this request, give me the whole reply"
+ * (halyard_account_regist_flow.h, halyard_account_regist_exchange_fn). The adapters for those two are
+ * this file's protocol content; the leg is the socket bookkeeping every rendezvous caller repeats.
  *
  * Ported from src/Ripcord.Protocol.Halyard/Transport/:
  *

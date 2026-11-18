@@ -9,19 +9,15 @@
  * implementation's answers (HalyardStreamKeySchedule). Same cross-language method as vector_runner.c and
  * stream_crypto_test.c; what is new here is that the thing being checked is a *delegated* primitive.
  *
- * WHY CHECK A LIBRARY WE DID NOT WRITE. rc_ecdh.c hands the point arithmetic to mbedtls, so this is not
- * testing mbedtls's ECDH - it is testing the ~150 lines of ours around it, which is where every plausible
- * bug actually lives: curve selection, uncompressed-point layout, whether the shared X is written at the
- * curve's full width or trimmed, and whether a peer key is validated before use. Those got the whole port
- * wrong the last time a coordinate width was assumed rather than checked, and mbedtls will not catch any
- * of them because from its side each is a legal request.
+ * WHY CHECK A LIBRARY WE DID NOT WRITE. rc_ecdh.c hands the point arithmetic to mbedtls, so this tests
+ * the ~150 lines of ours around it: curve selection, uncompressed-point layout, whether the shared X is
+ * written at the curve's full width or trimmed, and whether a peer key is validated before use. mbedtls
+ * catches none of those, because from its side each is a legal request.
  *
  * SKIPS CLEANLY WITH NO BACKEND. Built without -DRC_CRYPTO_MBEDTLS there is no EC implementation to
- * check, and this runner says so and exits 0 rather than failing - the same contract the managed suites
- * use for vectors that need the captures folder, and the reason rc_crypto.h's "builds anywhere" property
- * survives this phase. The `streamkeys` chain is the one that matters most when it does run: it goes
- * private scalar -> shared secret -> KDF -> keys with no intermediate handed over, so a port that gets
- * ECDH wrong cannot pass the half it can still do.
+ * check, and this runner says so and exits 0 rather than failing. The `streamkeys` chain goes private
+ * scalar -> shared secret -> KDF -> keys with no intermediate handed over, so a port that gets ECDH
+ * wrong cannot pass the half it can still do.
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
  */

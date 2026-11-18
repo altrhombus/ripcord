@@ -37,9 +37,8 @@
  *
  * One deliberate difference: .NET ends the attempt on a SocketException, which is how an ICMP port-
  * unreachable surfaces on some platforms. Here a failing recvfrom is treated like an empty one and the
- * window runs out. Which errno a non-blocking read with no data reports is exactly the kind of thing the
- * ports disagree about, and misclassifying "nothing yet" as fatal would turn every attempt into an
- * instant failure. The cost of the conservative reading is time, never a wrong answer.
+ * window runs out: the ports disagree on which errno a non-blocking read with no data reports, and
+ * misclassifying "nothing yet" as fatal would fail every attempt at once. The cost is time only.
  */
 static int await_response(int sock, const uint8_t *transaction_id, uint32_t timeout_ms,
                           rc_stun_address *out)

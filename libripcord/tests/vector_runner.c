@@ -7,20 +7,17 @@
  *
  * and checks this port's control-plane crypto against it, line by line. Every answer in that file was
  * computed by the .NET implementation; every answer here is computed by the C one. Where they disagree,
- * one of the two has misread docs/protocol/ps5-remoteplay-v1-spec.md - and that is the finding worth having,
- * because a spec two independent implementations read differently is a spec defect, not a porting detail.
+ * one of the two has misread docs/protocol/ps5-remoteplay-v1-spec.md.
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS. It is plain C99 with no devkitPro, no libctru and no console
  * involved, so the crypto can be verified on any machine with a compiler:
  *
  *     make -C ports/ripcord-3ds/tests
  *
- * The on-device build compiles the same source/ files; if they are wrong, they are wrong here first and
- * far more cheaply.
+ * The on-device build compiles the same source/ files.
  *
  * The file format is deliberately flat text rather than JSON: a line per vector, hex fields, split on
- * spaces. A JSON parser would be a dependency this port does not otherwise need, on a target where every
- * kilobyte of binary is real, to read a file whose entire grammar is "words on a line".
+ * spaces, so the port needs no JSON parser.
  */
 #include "../crypto/rc_crypto.h"
 #include "../halyard/halyard_v1.h"

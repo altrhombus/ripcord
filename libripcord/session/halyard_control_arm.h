@@ -34,15 +34,12 @@ void halyard_control_arm_build_probe(int is_ps5, char out[HALYARD_CONTROL_ARM_PR
 int halyard_control_arm_is_reply(int is_ps5, const uint8_t *data, size_t length);
 
 /*
- * SEND THE PROBE AND WAIT BRIEFLY FOR THE REPLY, then settle.
+ * SEND THE PROBE AND WAIT BRIEFLY FOR THE REPLY, then settle. Best-effort: SENDING is what arms the
+ * listener (see the header note), so a lost reply is not fatal and callers proceed regardless.
  *
- * The console does not hold TCP 9295 open continuously; this 4-byte UDP probe opens it. Best-effort by
- * design: SENDING is what arms it, so a lost reply is not fatal and callers proceed regardless.
- *
- * IT IS NOT OPTIONAL FOR REGISTRATION EITHER, which is why it lives here rather than inside the control
- * session that first needed it. A registration POST from a client the console has not just heard from
- * is refused with 80108bff - a byte-perfect request, rejected, with an application reason
- * that says nothing. The vendor's own client always searches first.
+ * IT IS NOT OPTIONAL FOR REGISTRATION EITHER, which is why it is not inside the control session. A
+ * registration POST from a client the console has not just heard from is refused with 80108bff. The
+ * vendor's own client always searches first.
  *
  * Returns 1 if a reply was seen, 0 if not; both are usable outcomes and the distinction is only worth
  * reporting.

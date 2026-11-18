@@ -39,16 +39,9 @@ static const struct { uint32_t flag; uint8_t code; int state_in_code; } kButtonM
 #define BUTTON_MAP_COUNT (sizeof(kButtonMap) / sizeof(kButtonMap[0]))
 
 /*
- * L2 AND R2 ARE NOT IN THAT TABLE, and they used to be.
- *
- * Every other three-byte code carries 0x00 or 0xff and nothing else; 0x86 and 0x87 carry a LEVEL, which
- * cap48 established independently by counting 57 and 52 distinct values for them across one session.
- * Diffing them as bits therefore threw away most of what they say: a trigger squeezed halfway and a
- * trigger buried both arrived as the same 0xff, and everything between one and the other arrived as
- * nothing at all.
- *
- * They are diffed on their level instead, which subsumes the bit - a level is a boolean that also says
- * how much.
+ * L2 AND R2 ARE NOT IN THAT TABLE. Every other three-byte code carries 0x00 or 0xff and nothing else;
+ * 0x86 and 0x87 carry a LEVEL (cap48: 57 and 52 distinct values for them across one session). They are
+ * diffed on their level, not as bits, so a half-squeezed trigger is not sent as 0xff.
  */
 #define L2_CODE 0x86u
 #define R2_CODE 0x87u

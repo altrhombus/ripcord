@@ -29,13 +29,10 @@
 /*
  * How long a submission may wait for the decoder's four-deep command queue - ONE FRAME at 60 fps.
  *
- * 6 ms was a number picked for being obviously small. The trade is one-sided and it argues for a whole
- * frame: giving up costs that frame AND breaks the reference chain, so everything after it is wrong
- * until a keyframe arrives, while waiting costs at most the frame. Dropping is only better if the
- * decoder is permanently behind, and it is not - b189 refused 11 submissions in 1,772.
- *
- * The refusals cluster on big transitions, where the frames are large and the decoder takes longest,
- * which is exactly where a broken chain is most visible. That is the residual blockiness.
+ * Giving up costs that frame AND breaks the reference chain, so everything after it is wrong until a
+ * keyframe arrives, while waiting costs at most the frame. Dropping is only better if the decoder is
+ * permanently behind, and it is not - b189 refused 11 submissions in 1,772 (with a 6 ms wait). The
+ * refusals cluster on big transitions, where the frames are large and the decoder takes longest.
  *
  * Still bounded, because this hardware punishes an unbounded wait, and the rings in front of and behind
  * this absorb a frame's delay without dropping anything.
@@ -61,19 +58,15 @@
 static uint8_t s_au[RC_VDEC_AU_SLOTS][RC_VDEC_AU_BYTES] __attribute__((aligned(128)));
 
 /*
- * Two output buffers, so the decoder can be filling one while the caller is still blitting the other.
- * One would mean dropping a picture whenever the blit and the decode overlap, which at 30 fps they will.
- */
-/*
  * FOUR PICTURES, NOT TWO, AND A RING RATHER THAN A SINGLE PUBLISHED SLOT.
  *
- * b185 decoded 1,788 frames with zero errors and delivered 960 of them. Nothing was dropped by the
- * decoder; they were overwritten here. Two buffers with one "ready" index means a picture announced
- * while the previous is still unconsumed replaces it, and at 60 fps announcements arrive in bursts, so
- * slightly under half never reached the screen.
+ * More than one, so the decoder can be filling one while the caller is still blitting another. With
+ * two buffers and one "ready" index, a picture announced while the previous is still unconsumed
+ * replaces it, and at 60 fps announcements arrive in bursts: b185 decoded 1,788 frames with zero errors
+ * and delivered 960 of them.
  *
  * A ring lets the decoder run ahead a few pictures and lets the consumer take everything waiting. Four
- * costs 12.5 MB against two's 6.3, which this console has and a half-rate stream is not worth.
+ * costs 12.5 MB against two's 6.3.
  */
 #define RC_VDEC_PICTURE_SLOTS 4
 
@@ -90,15 +83,15 @@ static uint8_t s_picture_main[RC_VDEC_PICTURE_SLOTS][RC_VDEC_PICTURE_BYTES] __at
  *
  * When the RSX does the scaling it has to read the picture, and it can only read its own local memory.
  * Decoding into main memory means something must move 3.7 MB a frame across to it first - a pass that
- * does no arithmetic at all and still cost 1,880 us of SPE time in b208, nearly all of it waiting for
- * the MFC. Decoding straight into RSX memory deletes the pass rather than making it quicker.
+ * cost 1,880 us of SPE time in b208, nearly all of it waiting for the MFC. Decoding straight into RSX
+ * memory deletes the pass.
  *
  * s_picture points at whichever was obtained. The static array above is the fallback and is always
  * allocated, because failing to get RSX memory must not mean failing to decode.
  *
- * THE DIRECTION OF TRAVEL IS THE WHOLE POINT. The Cell writes this quickly and reads it roughly two
- * orders of magnitude more slowly, so nothing on the PPE may sample the picture per frame - see
- * RC_VDEC_SAMPLE_PICTURES, which is why the two content grids now stop after the first few.
+ * The Cell writes this memory quickly and reads it roughly two orders of magnitude more slowly, so
+ * nothing on the PPE may sample the picture per frame - see RC_VDEC_SAMPLE_PICTURES, which is why the
+ * two content grids stop after the first few.
  */
 static uint8_t *s_picture[RC_VDEC_PICTURE_SLOTS];
 static uint32_t s_picture_offset[RC_VDEC_PICTURE_SLOTS];
@@ -157,26 +150,24 @@ static volatile int s_chain_broken;
  * At 8 Mbps this port decodes 873 of 875 frames perfectly; at 15 Mbps, with the same profile, the same
  * level and the same nine reference frames, every picture comes back black. The only thing that changes
  * is frame size - about 21 units a frame against about 90 - and the demuxer's assembly of a 96-unit
- * frame is byte-exact on the host, so the bytes leave it intact.
+ * frame is byte-exact on the host.
  *
- * That leaves what happens between there and the decoder. An access unit must begin with an Annex-B
- * start code; counting the ones that do not is the difference between "we are feeding it rubbish" and
- * "it is being fed correctly and still produces black", and no amount of reasoning separates those.
+ * An access unit must begin with an Annex-B start code; counting the ones that do not separates "we
+ * are feeding it rubbish" from "it is being fed correctly and still produces black".
  */
 static unsigned s_au_bad_start;
 static unsigned s_au_largest;
 
 /*
- * WHAT IS INSIDE THE ACCESS UNITS, since their outsides are provably fine.
+ * WHAT IS INSIDE THE ACCESS UNITS.
  *
  * b172: every one of 893 units began with a start code, the largest was 112 KB against a 256 KB buffer,
  * the profile, level and reference count matched the stream that decodes perfectly at a lower bitrate,
- * and all 893 pictures came back black. The bytes are correct and the decoder still cannot use them, so
- * the remaining difference has to be in the structure of the unit rather than its size.
+ * and all 893 pictures came back black. So the remaining difference has to be in the structure of the
+ * unit rather than its size.
  *
- * Slice count is the candidate worth counting first: a frame split into many slices is a different shape
- * of work from one split into few, hardware decoders have limits there that software ones do not, and
- * nothing in this port has ever looked.
+ * Slice count is the candidate counted first: a frame split into many slices is a different shape of
+ * work from one split into few, and hardware decoders have limits there that software ones do not.
  */
 static unsigned s_au_max_nals;
 static unsigned s_au_max_slices;
@@ -222,19 +213,17 @@ static uint32_t s_callback_opd[2] __attribute__((aligned(8)));
  * signature b163 found at 720p and b169 found again at 1080p.
  *
  * Lowering the declared level is sound ONLY when the content genuinely fits the lower one, and the
- * binding constraint is not the macroblock rate. b170 got that wrong: 1080p30 is 244,800 macroblocks a
- * second against 4.2's ceiling of 522,240 and 8,160 a frame against 8,704, so on throughput it fits
- * easily - and it still decoded black, because level also bounds the DECODED PICTURE BUFFER and the
- * console uses NINE reference frames.
+ * binding constraint is not the macroblock rate. 1080p30 is 244,800 macroblocks a second against 4.2's
+ * ceiling of 522,240 and 8,160 a frame against 8,704, and it still decoded black (b170), because level
+ * also bounds the DECODED PICTURE BUFFER and the console uses NINE reference frames.
  *
- * Nine frames is 32,400 macroblocks of DPB at 720p, inside level 4.0's 32,768, which is exactly why the
- * console declares 4.0 there and why 720p works. At 1080p the same nine frames need 73,440 against
- * 4.2's 34,816. The console is not padding its declared level; it is asking for what it uses, and this
- * hardware cannot be configured to provide it.
+ * Nine frames is 32,400 macroblocks of DPB at 720p, inside level 4.0's 32,768, which is why the console
+ * declares 4.0 there and why 720p works. At 1080p the same nine frames need 73,440 against 4.2's
+ * 34,816, and this hardware cannot be configured to provide it.
  *
- * So the clamp stays, and it is guarded by the thing that actually decides: it fires only when the
- * stream's own max_num_ref_frames fits the target level's DPB at the stream's own resolution. At 1080p
- * against this console it will not fire, which is the correct answer rather than a missing feature.
+ * So the clamp fires only when the stream's own max_num_ref_frames fits the target level's DPB at the
+ * stream's own resolution. At 1080p against this console it will not fire, which is the correct answer
+ * rather than a missing feature.
  */
 #define RC_VDEC_MAX_LEVEL 42
 
@@ -357,16 +346,12 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         }
 
         /*
-         * ONLY FOR THE FIRST FEW PICTURES, and that is a correction rather than a tuning.
+         * ONLY FOR THE FIRST FEW PICTURES.
          *
-         * This grid answers "did any content ever arrive", which b160 through b162 needed and which is
-         * settled within a second of the first picture. It was left running on every picture for the
-         * rest of the session: 4,096 PPE loads a frame at 60 fps, reading a buffer nothing else on this
-         * core touches, so every one of them is a cache miss.
-         *
-         * It became load-bearing when the picture moved into RSX local memory, where a Cell read is
-         * roughly two orders of magnitude slower than a write. A diagnostic that cost something
-         * invisible in main memory would have cost the frame rate there.
+         * This grid answers "did any content ever arrive" (b160 through b162), which is settled within
+         * a second of the first picture. Left running it is 4,096 PPE loads a frame at 60 fps, and with
+         * the picture in RSX local memory, where a Cell read is roughly two orders of magnitude slower
+         * than a write, that would cost the frame rate.
          */
         if (s_cb_pictures < RC_VDEC_SAMPLE_PICTURES) {
             const uint8_t *py = s_picture[slot];
@@ -481,17 +466,14 @@ int rc_decode_vdec_open(int width, int height)
     /*
      * THE HIGHEST LEVEL THE CONSOLE ACCEPTS, AND NOT ONE CHOSEN FROM THE RESOLUTION.
      *
-     * b163 is why. The decoder was opened at level 31 for a 1280x720 stream, on the reasoning that 3.1
-     * is the level for 720p - and the stream's own SPS says 0x28, level 4.0. H.264 levels constrain
-     * bitrate and frame rate as well as picture size, so a resolution cannot pick one. Given a
-     * configuration below what the stream needs, the decoder accepted every access unit, reported no
-     * error at all, and produced 889 uniformly black pictures. The offline capture really was level 31,
-     * which is exactly why the probe worked and the live path did not.
+     * H.264 levels constrain bitrate and frame rate as well as picture size, so a resolution cannot
+     * pick one. b163 opened the decoder at level 31 for a 1280x720 stream whose own SPS says 0x28,
+     * level 4.0: it accepted every access unit, reported no error at all, and produced 889 uniformly
+     * black pictures. (The offline capture really was level 31, which is why the probe worked.)
      *
      * 42 is the highest of the thirteen values b145's sweep found the console accepts, and a decoder
      * opened high decodes anything below it. The cost is memory reserved up front - level 40 asked for
-     * 57 MB against level 31's 33 MB - which is worth paying to never make this mistake again from a
-     * number that looked like it could be inferred.
+     * 57 MB against level 31's 33 MB.
      */
     type.profile_level = 42u;
 
@@ -548,24 +530,17 @@ int rc_decode_vdec_open(int width, int height)
     config.ppu_thread_stack_size = 256u * 1024u;
     config.spu_thread_prio = 200;
     /*
-     * TWO SPEs, because one decodes about 41 frames a second and 60 are arriving.
+     * THREE SPEs. One decodes about 41 frames a second and 60 are arriving: b183 measured 1,747
+     * submissions at 720p60, of which 1,373 came back BUSY - 907 rescued by waiting and 466 given up
+     * on - and 1,225 pictures came out. The decoder's command queue being four deep is why BUSY appears
+     * at all; being saturated is why waiting stops helping.
      *
-     * b183 measured it rather than inferred it: of 1,747 submissions at 720p60, 1,373 came back BUSY -
-     * 907 rescued by waiting and 466 given up on - and 1,225 pictures came out. The decoder's command
-     * queue being four deep is why BUSY appears at all; being saturated is why waiting stops helping.
-     *
-     * One SPE was chosen when the stream was 30 fps and nothing had measured what it could take. Six are
-     * initialised, the colour converter holds four and never releases them, so a second was sitting idle
-     * the whole time.
-     */
-    /*
-     * THREE. Two decodes 720p60 well enough that only the largest frames refuse - twelve of 1,770 in
-     * b190, every one on a transition, and a refusal breaks the reference chain and shows as a block of
+     * Two decodes 720p60 well enough that only the largest frames refuse - twelve of 1,770 in b190,
+     * every one on a transition, and a refusal breaks the reference chain and shows as a block of
      * wrong picture until a keyframe repairs it.
      *
      * The third comes from the colour converter, which can spare it now that the decoder produces RGB
-     * and it only scales. That is the payoff from the ARGB32 change: not a smaller number on a graph but
-     * an SPE moved to the side of the pipeline that was short of one.
+     * and it only scales.
      */
     config.num_spus = 3;
     s_num_spus = (int)config.num_spus;
@@ -729,15 +704,14 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
             t0 = rc_tick();
             {
                 /*
-                 * BUSY IS BACK-PRESSURE, NOT A FAILURE, and b182 is what treating it as one costs: 468
-                 * submissions refused in thirty seconds at 60 fps, with the ring never full and five
-                 * units lost on the network. The decoder's own command queue is four deep - b145 read
-                 * cmd_depth from vdecQueryAttr - so at 16 ms a frame it is routinely still working when
-                 * the next one arrives.
+                 * BUSY IS BACK-PRESSURE, NOT A FAILURE. Treating it as one cost 468 submissions refused
+                 * in thirty seconds at 60 fps (b182), with the ring never full and five units lost on
+                 * the network. The decoder's own command queue is four deep - b145 read cmd_depth from
+                 * vdecQueryAttr - so at 16 ms a frame it is routinely still working when the next one
+                 * arrives.
                  *
-                 * The offline probe has always retried here; the live path counted and dropped, and
-                 * every drop is a frame the decoder never sees and a reference chain to repair. A few
-                 * milliseconds of waiting costs nothing against a 16 ms frame, and this thread's only
+                 * Every drop is a frame the decoder never sees and a reference chain to repair, and a
+                 * few milliseconds of waiting costs nothing against a 16 ms frame. This thread's only
                  * other job - handing over a finished picture - happens further down the same call.
                  */
                 s32 rc = vdecDecodeAu(s_handle, VDEC_DECODER_MODE_NORMAL, &info);

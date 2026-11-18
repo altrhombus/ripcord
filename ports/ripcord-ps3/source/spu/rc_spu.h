@@ -5,15 +5,13 @@
  * actually runs on the SPE, and it explains why the job is a memory copy rather than anything useful.
  *
  * WHAT THIS IS FOR. The PS3's decoder has to live on the SPEs - the PPE alone will not decode 720p
- * H.264 and there is no fixed-function block to fall back on. Before any of that is designed, one
- * number is needed: the cost of handing an SPE a unit of work. A large per-job overhead forces the
- * decoder to batch coarsely, whole slices at a time; a small one allows a pipeline at macroblock-row
- * granularity, which is what makes the entropy and reconstruction stages overlap. DECODE.md's staging
- * cannot be settled without it, and it cannot be reasoned out - it has to be measured on a console.
+ * H.264 and there is no fixed-function block to fall back on. The number needed first is the cost of
+ * handing an SPE a unit of work: a large per-job overhead forces the decoder to batch coarsely, whole
+ * slices at a time; a small one allows a pipeline at macroblock-row granularity. DECODE.md's staging
+ * cannot be settled without it, and it has to be measured on a console.
  *
- * NOT A JOB MODEL, AND NOT TRYING TO BE. One thread group, one SPE, one job, synchronous. The real
- * decoder will want several SPEs and a queue; this exists so that the first version of that has a
- * baseline to be compared against rather than being the first thing ever run.
+ * NOT A JOB MODEL. One thread group, one SPE, one job, synchronous. The real decoder will want several
+ * SPEs and a queue; this is the baseline that is compared against.
  */
 #ifndef RC_SPU_H
 #define RC_SPU_H
@@ -53,9 +51,8 @@ int rc_spu_init(void);
  *
  * All three are also filled in on success, where they are less interesting but cost nothing.
  *
- * THIS CALL CANNOT HANG. An earlier version waited on the SPE indefinitely, on the argument that a hang
- * pinpoints the line. It does not: what it produces is a blank screen and a power cycle, and it destroys
- * the log that would have said something. It now gives up after a fixed deadline and reports.
+ * THIS CALL CANNOT HANG. It gives up after a fixed deadline and reports; an indefinite wait produces a
+ * blank screen and a power cycle, and destroys the log that would have said something.
  */
 int rc_spu_run(const void *src, void *dst, size_t size, uint64_t *ticks,
                uint32_t *phase, uint32_t *heartbeat, uint64_t *spu_args,

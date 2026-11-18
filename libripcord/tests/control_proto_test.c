@@ -7,18 +7,14 @@
  *
  * Every expected byte string in that file was encoded by Google.Protobuf from
  * docs/protocol/stream_control.proto; every byte string here is produced (or consumed) by the ~200 hand-
- * rolled lines in source/takion/takion_control_proto.c. That is the whole point of this runner: the .NET
- * side gets its wire format from a code generator reading the schema, this port gets it from a human
- * reading the same schema, and only a byte-for-byte comparison catches a field number typed wrong or a
- * varint boundary handled wrong. Neither implementation is checking the other's *understanding* of what
- * the console wants - both could be wrong together about that - but a divergence here is unambiguously a
- * bug in one of them.
+ * rolled lines in source/takion/takion_control_proto.c. The .NET side gets its wire format from a code
+ * generator reading the schema, this port from a human reading the same schema, so a byte-for-byte
+ * comparison catches a field number typed wrong or a varint boundary handled wrong. It does not check
+ * either side's understanding of what the console wants.
  *
- * The vectors deliberately include a launch spec long enough to push the payload's length prefix to a
- * two-byte varint, an absent-optional case, and a reply carrying a nested message this port does not
- * model (extendedInfo) - the last of which exists to prove the parser skips an unknown length-delimited
- * field without losing its place, which is the failure that would otherwise only show up against a
- * console firmware newer than this code.
+ * The vectors include a launch spec long enough to push the payload's length prefix to a two-byte
+ * varint, an absent-optional case, and a reply carrying a nested message this port does not model
+ * (extendedInfo), to prove the parser skips an unknown length-delimited field without losing its place.
  *
  * Needs no crypto backend and no hardware. Builds for the host - see tests/Makefile.
  */

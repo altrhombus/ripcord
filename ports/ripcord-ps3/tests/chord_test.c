@@ -1,12 +1,10 @@
 /*
  * ripcord-ps3 - the two-button chord state machine, exercised on the host.
  *
- * THIS IS THE TEST THE LOGIC EARNED. The chord that opens the in-session menu has had two bugs, both
- * invisible in review and both a wrong answer to a particular sequence of (buttons, time): a lone tap
- * that was withheld and then never sent, and a stray press left on the console when the two buttons were
- * released a moment apart. rc_chord.c is that logic with nothing else attached - a mask in, a mask out,
- * the clock an argument - so the sequences that broke it can be run here in microseconds instead of found
- * on a television.
+ * The chord that opens the in-session menu has had two bugs, each a wrong answer to a particular
+ * sequence of (buttons, time): a lone tap that was withheld and then never sent, and a stray press left
+ * on the console when the two buttons were released a moment apart. rc_chord.c is that logic with
+ * nothing else attached - a mask in, a mask out, the clock an argument - so those sequences run here.
  *
  * The buttons are named as the wire sees them (Options/Create); on the pad they are START/SELECT. The
  * chord is those two together. Every case drives rc_chord_apply step by step and asserts what the console

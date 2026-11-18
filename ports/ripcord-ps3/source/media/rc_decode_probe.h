@@ -1,21 +1,19 @@
 /*
  * ripcord-ps3 - does openh264 decode on the PPE, and does it produce the right pixels?
  *
- * Step 7's first hardware question. Everything established so far about this decoder was established
- * somewhere else: it compiles for the PPE, it links to a PowerPC64 executable, and it decodes this
- * project's own capture bit-exactly on big-endian PowerPC64 under qemu. None of that is the PPE. qemu is
- * a different processor model, glibc is not newlib, and a Linux process is not 256 MB of XDR with a
- * hypervisor underneath.
+ * Step 7's first hardware question. Before this the decoder was known to compile for the PPE, link to
+ * a PowerPC64 executable, and decode this project's own capture bit-exactly on big-endian PowerPC64
+ * under qemu. None of that is the PPE: qemu is a different processor model, glibc is not newlib, and a
+ * Linux process is not 256 MB of XDR with a hypervisor underneath.
  *
  * So this reads the capture off the console's disk, runs it through openh264, and hashes each decoded
  * frame with FNV-1a - the same hash, over the same bytes in the same order, that the development machine
  * computed from the reference decode. Matching hashes mean the PS3 produced pixel-identical output to a
  * known-good decode of the same stream. Differing hashes localise the failure to a frame number.
  *
- * THE NAL SPLITTING IS OURS, NOT OPENH264'S, and that is deliberate. rc_h264_annexb.c has 142 host
- * checks behind it and is what the real client will use to find access-unit boundaries in a live stream;
- * feeding openh264 through it here exercises the seam that will exist later rather than a convenient one
- * that will not.
+ * THE NAL SPLITTING IS OURS, NOT OPENH264'S, deliberately. rc_h264_annexb.c has 142 host checks behind
+ * it and is what the real client will use to find access-unit boundaries in a live stream, so feeding
+ * openh264 through it here exercises that seam.
  */
 #ifndef RC_DECODE_PROBE_H
 #define RC_DECODE_PROBE_H

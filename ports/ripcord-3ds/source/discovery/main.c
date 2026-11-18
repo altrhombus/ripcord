@@ -72,19 +72,15 @@ static int run_search(void)
     }
 
     /*
-     * A FIXED local port, and NOT the ephemeral port 0 that the obvious port of this code would use.
-     *
-     * The .NET side binds IPAddress.Any:0 here (HalyardControlSearch) and is right to - on Windows and
-     * Linux the stack picks a free port and everything works. On the 3DS it does not: SOC rejects a zero
-     * port outright with EINVAL. Confirmed on real hardware 2026-08-12, where this call failed with
-     * errno 22 for both an awake and a resting console, while source/linktest/main.c's otherwise
-     * identical bind to a nonzero port had already been working on the same device since Phase 2. That
-     * differential is what identified it: same socket type, same INADDR_ANY, same addrlen - only the
-     * port differed.
+     * A FIXED local port, and NOT the ephemeral port 0: SOC rejects a zero port outright with EINVAL.
+     * Confirmed on real hardware 2026-08-12, where this call failed with errno 22 for both an awake and
+     * a resting console, while source/linktest/main.c's otherwise identical bind to a nonzero port
+     * worked on the same device. (The .NET side binds IPAddress.Any:0 here, HalyardControlSearch, and is
+     * right to on Windows and Linux.)
      *
      * Any port will do, because a console answers SRCH to whatever source port the probe arrived from.
-     * "Let the stack choose" is the single option unavailable. The small range exists so that a port
-     * left occupied by a previous run is a retry rather than a second trip to the console.
+     * The small range exists so that a port left occupied by a previous run is a retry rather than a
+     * second trip to the console.
      */
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_family = AF_INET;

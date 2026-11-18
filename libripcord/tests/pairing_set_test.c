@@ -1,11 +1,8 @@
 /*
  * ripcord - the paired-console list, on a host, against real files.
  *
- * WHY THIS IS WORTH A SUITE. The file it parses holds the only copy of material that cannot be
- * regenerated without standing in front of a console reading a PIN off its screen. Every failure here is
- * therefore expensive in a way an ordinary parser bug is not: losing an entry costs somebody a trip to
- * another room, and the single-console version of this file lost one every time a second console was
- * paired, silently.
+ * The file it parses holds the only copy of material that cannot be regenerated without standing in
+ * front of a console reading a PIN off its screen.
  *
  * So the cases below are about PRESERVATION - that a file written before sections existed still loads,
  * that adding a console keeps the others, that removing one moves the cursor to the right place, and
@@ -191,15 +188,11 @@ static void test_settings_can_be_applied_from_outside_the_set(void)
 /*
  * A SHARED SETTING SURVIVES SAVE THEN LOAD, which is the half apply_settings does not cover.
  *
- * apply_settings is an in-memory copy; the file round trip is a separate risk with its own failure mode.
  * Each shared field is written by name in save_set and read by name in the loader, and a key string that
  * disagrees between the two - `restondisconnect` written, `rest_on_disconnect` parsed - drops the setting
- * silently, with no compile error and nothing else to notice it. copy_shared_settings, the writer and the
- * parser are three lists that must agree; this asserts the two that touch the file do.
- *
- * The two newest fields (rest_on_disconnect, skip_until_keyframe) are the ones this was written for - they
- * were added late and had no round-trip coverage - but it checks a spread across the record so a future
- * field dropped from the writer or the parser is caught here rather than on a console.
+ * silently. copy_shared_settings, the writer and the parser are three lists that must agree; this
+ * asserts the two that touch the file do, over a spread of fields across the record (including
+ * rest_on_disconnect and skip_until_keyframe).
  */
 static void test_shared_settings_survive_the_file(void)
 {

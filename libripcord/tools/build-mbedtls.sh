@@ -3,8 +3,7 @@
 # ripcord ports - cross-build the Mbed TLS ECP/MPI layer, and nothing else.
 #
 # WHY THIS EXISTS. libripcord/crypto/rc_ecdh.c delegates one primitive - ECDH over P-256/P-521 - to
-# Mbed TLS, for the reason rc_ecdh.h gives at length: a hand-written constant-time bigint is the last
-# thing this project should write twice. devkitPro packages that library for the 3DS as `3ds-mbedtls`.
+# Mbed TLS (rc_ecdh.h says why). devkitPro packages that library for the 3DS as `3ds-mbedtls`.
 # vitasdk packages no equivalent (its vdpm list has openssl and libsodium; libsodium is
 # Curve25519/Ed25519 and cannot do the NIST curves at all), so this port builds its own.
 #
@@ -13,19 +12,17 @@
 # reasoning that keeps the interop constants generated rather than copied. A checked-in third-party
 # crypto tree would be a maintenance and provenance liability nobody asked for.
 #
-# VERSION IS PINNED TO MATCH THE 3DS. devkitPro ships 2.28.8; building anything else here would mean two
-# ports running different curve code behind one seam, and 3.x moved struct fields behind accessors, so
-# rc_ecdh.c would need a second code path. One version, one code path.
+# VERSION IS PINNED TO MATCH THE 3DS. devkitPro ships 2.28.8; anything else would mean two ports running
+# different curve code behind one seam, and 3.x moved struct fields behind accessors, so rc_ecdh.c would
+# need a second code path.
 #
 #     PREFIX=<dir> ./build-mbedtls.sh                       cross-build for the Vita (the default)
 #     PREFIX=<dir> CROSS= ./build-mbedtls.sh                 build for THIS machine, for the host tests
 #     PREFIX=<dir> CROSS=arm-none-eabi- ./build-mbedtls.sh   some other toolchain
 #
-# It lives in libripcord/tools rather than in one port because it serves libripcord/crypto/rc_ecdh.c,
-# and two different builds already want it: the Vita port, which has no packaged mbedtls, and the host
-# test suite, whose ecdh_test otherwise skips on any machine without libmbedtls-dev installed. The 3DS
-# does not need it - devkitPro packages 3ds-mbedtls - which is why the version here is pinned to match
-# that package rather than chosen freely.
+# It lives in libripcord/tools because two builds want it: the Vita port, which has no packaged mbedtls,
+# and the host test suite, whose ecdh_test otherwise skips on any machine without libmbedtls-dev
+# installed. The 3DS does not need it.
 #
 # The Makefile of each caller runs it automatically; run it by hand only to re-fetch or to debug.
 # Only the host suite is in this tree - the Vita port is not - so the CROSS= (empty)

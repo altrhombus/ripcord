@@ -8,13 +8,9 @@
  * and checks halyard_registration.c against it line by line. Every answer in that file was computed by
  * the .NET implementation; every answer here is computed by the C one.
  *
- * WHY THIS MATTERS MORE THAN MOST OF THE SUITE. The registration key exchange is the one part of pairing
- * that fails SILENTLY. A wrong transport key does not produce a wrong answer - it produces a console
- * that responds 403 with a generic application reason, which reads exactly like a mistyped PIN, a stale
- * search probe, or the wrong transport. Every one of those is a plausible thing to chase, and none of
- * them is checkable from the console's side of the wire. Checking the arithmetic here, on a host,
- * against numbers the reference computed, is what stops that from being a hardware mystery in front of a
- * television with a PIN on it.
+ * The registration key exchange fails SILENTLY: a wrong transport key produces a console that responds
+ * 403 with a generic application reason, which reads exactly like a mistyped PIN, a stale search probe,
+ * or the wrong transport. Hence the arithmetic is checked here, on a host.
  *
  * Runs on the host. No console, no toolchain, no devkit.
  */

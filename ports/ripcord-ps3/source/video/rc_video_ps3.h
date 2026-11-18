@@ -66,10 +66,9 @@ int rc_video_info_get(rc_video_info *out);
 /*
  * Is the previous flip finished, so the back buffer is safe to write?
  *
- * The caller asks BEFORE converting a picture, not after. b87 blitted and flipped for every decoded
- * frame and waited for vsync each time, on the receive thread - so the display's pace became the
- * network's pace, the socket buffer overflowed, and 90 units were lost where the run before had lost
- * none. The loss looked like a network fault and was self-inflicted.
+ * The caller asks BEFORE converting a picture, not after. Waiting for vsync per decoded frame on the
+ * receive thread (b87) made the display's pace the network's pace: the socket buffer overflowed and 90
+ * units were lost where the run before had lost none.
  *
  * Dropping a picture is the right answer when the display is behind: a frame not shown costs a frame,
  * while a frame waited on costs every packet that arrives during the wait.
@@ -77,10 +76,9 @@ int rc_video_info_get(rc_video_info *out);
 /*
  * Clears EVERY buffer, not just the back one, and presents.
  *
- * Both matter. The test pattern is drawn into both buffers alternately, so clearing one leaves the
- * other still holding it - and with the video window occupying only the centre, the result is a stream
- * framed by a test pattern that flickers between two stale frames. That is what b87 and b89 actually
- * looked like on a television, and it reads as "a glimpse in the middle" rather than as a stream.
+ * The test pattern is drawn into both buffers alternately, so clearing one leaves the other still
+ * holding it - and with the video window occupying only the centre, the result is a stream framed by a
+ * test pattern that flickers between two stale frames (b87, b89).
  */
 void rc_video_clear_all(uint32_t colour);
 

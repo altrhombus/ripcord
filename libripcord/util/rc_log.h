@@ -32,9 +32,8 @@ void rc_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 /*
  * A LINE SINK, for a host that has somewhere better than stdout to put these.
  *
- * The core logs through rc_log() from deep inside the control session, and on a console that output
- * belongs on the screen. A desktop host (the macOS client, via halyard_client's `log` callback) wants the
- * same lines in its own logger instead, and without a sink it had no way to receive them.
+ * On a console rc_log() output belongs on the screen. A desktop host (the macOS client, via
+ * halyard_client's `log` callback) wants the same lines in its own logger instead.
  *
  * With a sink set, each complete line goes to `sink` INSTEAD OF stdout - without its newline and with
  * any ANSI colour sequences removed, since those are for a terminal - and the ring and the log file
@@ -56,22 +55,17 @@ void rc_log_close(void);
  * RECENT LINES, so the bottom screen can be given away to an overlay and taken back.
  *
  * libctru's console owns that framebuffer and anything drawn over it destroys the rendered text -
- * PrintConsole keeps a character buffer but exposes no redraw. Without a scrollback of our own, an
- * overlay could borrow the screen and never hand it back.
+ * PrintConsole keeps a character buffer but exposes no redraw.
  *
  * 30 lines is exactly one bottom-screen page at the console's 8x8 font (320/8 = 40 columns, 240/8 = 30
- * rows). This is a VIEW, not the record: every line still goes to the SD file, flushed, as it always has.
+ * rows). This is a VIEW, not the record: every line still goes to the SD file, flushed.
  */
 /*
- * How large the log may get before rc_log_open rotates it, and why it rotates at all.
+ * How large the log may get before rc_log_open rotates it.
  *
- * The log is opened for append so a run can be compared against the ones before it - which is the whole
- * reason it is not truncated every time. But nothing was ever reclaiming it: on hardware it reached
- * 44 KB across fourteen runs, all of it on a console partition, and the only thing that would eventually
- * stop it growing is the partition filling up.
- *
- * One previous generation is kept, because the run BEFORE last is exactly the one wanted when the last
- * run destroyed the evidence. Two would be a filing system; zero throws away the comparison.
+ * The log is opened for append so a run can be compared against the ones before it, and rotated so it
+ * cannot fill a console partition (on hardware it reached 44 KB across fourteen runs). One previous
+ * generation is kept.
  */
 #ifndef RC_LOG_MAX_BYTES
 #define RC_LOG_MAX_BYTES (128u * 1024u)

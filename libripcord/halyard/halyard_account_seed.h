@@ -20,8 +20,7 @@
  * WHICH HALF IS WHOSE. Steps 1 and 2 are cloud traffic - HTTPS, JSON and a WebSocket - and belong to the
  * client's cloud tier, not to this core (see docs/macos-plan.md, "The split"). What crosses the boundary
  * is plain data: the 32 bytes of data1/data2 the cloud tier sent, and the customData1 string it received.
- * Everything that turns that string into a seed is here, because it is crypto over console-supplied
- * bytes, and the same for every client.
+ * Turning that string into a seed is here, the same for every client.
  *
  * NO SOCKETS, NO CLOCK, NO RANDOMNESS. Generating data1/data2 is halyard_account_regist_flow.h's job, so
  * this file can be reached by a fuzzer and a known-answer runner with nothing else linked.

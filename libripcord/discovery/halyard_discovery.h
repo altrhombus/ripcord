@@ -25,17 +25,14 @@
  *
  * `host-request-port` is deliberately not parsed here: the spec calls it "a red herring" - the LAN
  * wake exchange goes to the discovery port itself (9302/987), never to this advertised value, on both
- * console families. Carrying a field this port cannot act on would just be a second thing to keep in
- * sync with a spec section that already says not to use it.
+ * console families.
  *
- * The wake itself is halyard_wake.h, which is the other half of this exchange: this parser is what
- * reports `is_awake == 0`, and that file is what does something about it.
+ * The wake itself is halyard_wake.h: this parser reports `is_awake == 0`, and that file acts on it.
  *
  * PLAIN ASCII, HTTP-STATUS-LINE-LIKE BUT NOT FULL HTTP: no header-section framing beyond the trailing
  * blank line, no Host:/User-Agent:. Only PS5 is a build target for this port (README's "Can the
  * hardware actually do this?" - HEVC-only-decoder New 3DS story), but the PS4 profile is included
- * because the wire format is otherwise identical and carrying both costs nothing but a second constant
- * table, the same call this repository's .NET side already made.
+ * because the wire format is otherwise identical, as on the .NET side.
  */
 #ifndef HALYARD_DISCOVERY_H
 #define HALYARD_DISCOVERY_H

@@ -1,13 +1,11 @@
 /*
- * ripcord-ps3 - the background, and the one detail somebody will notice without being able to name it.
+ * ripcord-ps3 - the background.
  *
- * THE XMB's WAVE IS THE MOST RECOGNISABLE THING ABOUT THIS CONSOLE'S SOFTWARE, and it is recognisable
- * precisely because it is restrained: very low contrast, very slow, and mostly empty. Anything louder
- * than that stops being this machine's background and starts being a screensaver.
+ * A nod to the XMB's wave, which is recognisable because it is restrained: very low contrast, very
+ * slow, and mostly empty. Anything louder stops being this machine's background and starts being a
+ * screensaver.
  *
- * AND IT TAKES ITS HUE FROM THE MONTH, as the XMB's did. That is the whole trick: somebody who launches
- * this in October and again in July sees something different and cannot say what. It costs a table and
- * one call to localtime.
+ * IT TAKES ITS HUE FROM THE MONTH, as the XMB's did. It costs a table and one call to localtime.
  *
  * WHAT THIS FILE IS NOT. It does not own a buffer, a display, or a frame rate. It fills a rectangle of
  * ARGB that somebody else allocated, and says how long it took - see rc_wave_last_us, which exists
@@ -61,17 +59,13 @@ const uint32_t *rc_wave_small(int *w, int *h, int *stride_px);
 void rc_wave_motes_row(uint32_t *dst, int w, int y);
 
 /*
- * TEST ONLY, AND HERE RATHER THAN NOWHERE FOR A REASON.
+ * TEST ONLY.
  *
- * The month comes from the clock, so eleven twelfths of this design is invisible on any given day and
- * SHELL-DESIGN.md's plan for reviewing it was to move the console's clock twelve times. That is a dozen
- * reboots to answer a question that is arithmetic - and it is the kind of check nobody repeats, which is
- * exactly when a table of twelve hand-picked colours gets edited.
- *
- * So the month can be forced, and tests/wave_test.c asserts what the design states in prose: every
- * month stays dark enough to be a background, every accent carries small text on a card, and no two
- * consecutive months are too close to tell apart. A negative value hands the decision back to the clock,
- * which is where it sits for every build that is not a test.
+ * The month comes from the clock, so eleven twelfths of this design is invisible on any given day. So
+ * the month can be forced, and tests/wave_test.c asserts what the design states in prose: every month
+ * stays dark enough to be a background, every accent carries small text on a card, and no two
+ * consecutive months are too close to tell apart. A negative value hands the decision back to the
+ * clock, which is where it sits for every build that is not a test.
  */
 void rc_wave_test_set_month(int month);
 
