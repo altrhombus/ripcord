@@ -15,9 +15,9 @@
 # Sharing a repository with Ripcord buys shared specs, shared constants and shared test vectors - it does
 # not and should not mean sharing a build system.
 #
-# STATUS: these flags are known-good, not provisional - all five .3dsx targets build against a real
+# STATUS: these flags are known-good, not provisional - all seven .3dsx targets build against a real
 # devkitPro installation, and two of them (ripcord-3ds, ripcord-3ds-linktest) have booted on real New 3DS
-# hardware. What each program has and has not been RUN against is tracked in README.md, not here.
+# hardware. What each program has and has not been RUN against is tracked in BRINGUP.md, not here.
 
 ifeq ($(strip $(DEVKITPRO)),)
 $(error DEVKITPRO is not set. Install devkitPro and run this from its shell - see the URL above)

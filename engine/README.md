@@ -1,8 +1,10 @@
 # engine — the Rust protocol engine
 
 The protocol engine the first-class clients are moving to. Why it exists, what it will cover and in what
-order are in [`docs/engine-plan.md`](../docs/engine-plan.md). This file covers the tree, the build and
-where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
+order are in [`docs/engine-plan.md`](../docs/engine-plan.md). This file is the reference: the tree, the
+build, where the engine follows .NET and where it follows C, the client ABI, and the current headline
+measurements. The dated measurement runs are in [`BRINGUP.md`](BRINGUP.md). What is still open is in
+[`ROADMAP.md`](../ROADMAP.md).
 
 **Status: Phase 2, through the connect sequence.** In `ripcord-proto`:
 - the stream plane (framing, the stream key schedule, packet crypto, FEC, the demuxer);
@@ -15,15 +17,15 @@ where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
   with their encrypted fields, the launch spec, and the binary control channel as a sans-IO session;
 - STUN, the candidates, the 9303 association and the rendezvous control plane over it;
 - controller input;
-- **the connect sequence and the running session** (`connect::Session`), LAN and rendezvous, from the
-  arm probe to video, with scripted consoles for both routes.
+- the connect sequence and the running session (`connect::Session`), LAN and rendezvous, from the arm
+  probe to video, with scripted consoles for both routes.
 
-`ripcord-net` runs that session on `std::net` sockets on the caller's thread, and `ripcord-ffi` exports it
-as the client ABI (`ripcord_client_*`), which Swift and .NET both drive end to end. Ported from `libripcord/`
-and cross-checked against the .NET reference, which wins where the two differ unless the reasons below
-say otherwise. It first ran against a console on 2026-09-26 (docs/journal.md, "The Rust engine's first session on
-hardware"). The Mac runs on this engine since that day (Phase 3's relink); the dotnet client still runs its
-managed engine.
+`ripcord-net` runs that session on `std::net` sockets on the caller's thread. `ripcord-ffi` exports it as
+the client ABI (`ripcord_client_*`), which Swift and .NET both drive end to end. The engine is ported from
+`libripcord/` and cross-checked against the .NET reference, which wins where the two differ unless the
+reasons below say otherwise. It first ran against a console on 2026-09-26 (docs/journal.md, "The Rust
+engine's first session on hardware"). The Mac has run on this engine since that day (Phase 3's relink). The
+dotnet client still runs its managed engine.
 
 ## Layout
 
@@ -37,15 +39,21 @@ managed engine.
 | `hosts/dotnet/` | The .NET harness: the engine through its generated C# bindings, a differential run against the managed engine, and the benchmark on both | — |
 | `deny.toml` | The dependency policy `cargo deny check` enforces | — |
 
-`ripcord-ffi`'s `test-support` feature adds `ripcord_kat_run` (a vector file through any `Ecdh` backend) and
-the scripted console, for host test suites. `ripcord-proto`'s `scripted-console` feature exposes the
-console to other crates. Neither belongs in a shipping engine. A host supplies its platform's key agreement
-through `RipcordEcdhBackend`; the Mac's is `src/Ripcord.Mac/RipcordKit/Engine/CryptoKitEngineECDH.swift`.
+**Test features.** `ripcord-ffi`'s `test-support` feature adds `ripcord_kat_run` (a vector file through any
+`Ecdh` backend) and the scripted console, for host test suites. `ripcord-proto`'s `scripted-console` feature
+exposes the console to other crates. Neither belongs in a shipping engine.
 
-`fuzz/` holds the cargo-fuzz targets, one per surface as `libripcord/tests/fuzz` has them, plus `connect`,
-which drives the whole connect machine with arbitrary host events (the C core cannot be fuzzed that way,
-since it owns its sockets), and `derive`, which feeds the crypto and Halyard derivations arbitrary peer
-points, registration contexts, selectors and counters, and checks that each inverse pair round-trips. It is its own workspace and needs nightly:
+**Key agreement.** A host supplies its platform's key agreement through `RipcordEcdhBackend`. The Mac's is
+`src/Ripcord.Mac/RipcordKit/Engine/CryptoKitEngineECDH.swift`.
+
+**Generated bindings.** They are never committed and nobody edits them. Change `ripcord-ffi/src/lib.rs`, and
+the next `cargo build` rewrites both.
+
+**Fuzzing and Miri.** `fuzz/` holds the cargo-fuzz targets, one per surface as `libripcord/tests/fuzz` has
+them, plus two more. `connect` drives the whole connect machine with arbitrary host events; the C core
+cannot be fuzzed that way, since it owns its sockets. `derive` feeds the crypto and Halyard derivations
+arbitrary peer points, registration contexts, selectors and counters, and checks that each inverse pair
+round-trips. `fuzz/` is its own workspace and needs nightly:
 
 ```sh
 cargo +nightly fuzz run connect -- -max_total_time=60      # from engine/fuzz
@@ -54,28 +62,29 @@ RUSTFLAGS='--cfg sha2_backend="soft" --cfg aes_backend="soft"' cargo +nightly mi
 
 `.github/workflows/engine-nightly.yml` runs both daily, each target for five minutes with a corpus kept
 between runs. Miri runs against RustCrypto's portable backends: its aliasing model rejects the pointer use
-inside their hardware intrinsics, which is theirs; the engine's own `unsafe` is all in `ripcord-ffi`, and
+inside their hardware intrinsics, which is theirs. The engine's own `unsafe` is all in `ripcord-ffi`, and
 passes. `demux::tests::random_packets_never_panic` stays as a stable-Rust sweep in the ordinary tests.
 
 **The interop constants are generated, never copied.** `ripcord-proto/build.rs` reads the one committed
 bundle and writes a Rust module into `OUT_DIR`, with `gen_constants.py`'s checks. `ripcord-diff` builds
 the C core's copy the way the C core does, with `gen_constants.py` itself. `Client-Type` is read the same
 way, from `HalyardRegistrationMessage.ClientTypeHex` at build time, so the engine is not a third home for
-it; `BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` checks both that and
+it. `BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` checks both that and
 that no file under `engine/` carries the value.
 
 **An engine without them is one feature.** `interop-constants`, on by default in `ripcord-proto`,
-`ripcord-net` and `ripcord-ffi`, is what reads the bundle. Built with `--no-default-features`, `build.rs`
-does not open it and every table is `None`. The derivations then report their family absent, as they
-already did for a bundle without PS4. A connect ends before reaching the console, with a log line saying
-why, and `ripcord_interop_constants_bundled()` returns false. This is the counterpart of .NET's
-`-p:BundleInteropConstants=false` (`NOTICE`), and the Mac build's `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO`
-selects it. On 2026-09-27 the release library built both ways was searched for the tables' bytes: all four
-were in the default build and none in the other. The test that proves it runs by name, since every other
-test needs the constants: `cargo test -p ripcord-proto --no-default-features --lib bundle_tests`.
+`ripcord-net` and `ripcord-ffi`, is what reads the bundle. Built with `--no-default-features`:
 
-The generated bindings are never committed. Nobody edits them: change `ripcord-ffi/src/lib.rs`, and
-the next `cargo build` rewrites both.
+- `build.rs` does not open the bundle and every table is `None`;
+- the derivations report their family absent, as they already did for a bundle without PS4;
+- a connect ends before reaching the console, with a log line saying why;
+- `ripcord_interop_constants_bundled()` returns false.
+
+This is the counterpart of .NET's `-p:BundleInteropConstants=false` (`NOTICE`), and the Mac build's
+`RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` selects it. On 2026-09-27 the release library built both ways was
+searched for the tables' bytes: all four were in the default build and none in the other. The test that
+proves it runs by name, since every other test needs the constants:
+`cargo test -p ripcord-proto --no-default-features --lib bundle_tests`.
 
 ## Building and testing
 
@@ -96,8 +105,9 @@ cargo run --release --example packet_bench -p ripcord-proto
 dotnet run -c Release --project hosts/dotnet/Ripcord.Engine.Harness
 ```
 
-`ripcord-diff` needs Python 3 and a C compiler as well. Without the vectors, each vector test prints `SKIP` and passes, like the .NET suite's capture-backed
-tests. `cargo run -p ripcord-kat` fails instead, because running it without vectors is a mistake.
+`ripcord-diff` needs Python 3 and a C compiler as well. Without the vectors, each vector test prints
+`SKIP` and passes, like the .NET suite's capture-backed tests. `cargo run -p ripcord-kat` fails instead,
+because running it without vectors is a mistake.
 
 The Mac lab (`src/Ripcord.Mac`) builds this engine itself: RipcordKit's "Build the Rust engine" phase
 runs cargo, and `ripcord-lab bench` times both engines from the same Swift workload.
@@ -114,94 +124,18 @@ dotnet run -c Release --project hosts/dotnet/Ripcord.Engine.Harness
 ```
 
 The harness prints the Rust engine and the managed engine side by side. The managed engine is what the
-dotnet client ships today, so on Windows that pair is the comparison that matters.
+dotnet client ships today, so on Windows that pair is the comparison that matters. One x64 run is recorded
+under [Measurements](#measurements).
 
-## Phase 1, measured (2026-09-25, M4 Max, macOS 27)
+## Where the engine follows .NET and where it follows C
 
-| What | Result |
-|---|---|
-| `stream-crypto.kat` | 65 of 65: all 9 `gmac`, 4 `streamkdf`, 12 `packetnonce` and 12 `packettag` lines |
-| Differential against `HalyardPacketCrypto` | 80 keystream offsets × 4 checks (CTR, both seal directions, the control AAD rule, tamper), across rotation windows and the 32-bit edge |
-| Per packet, one Swift harness for both engines (`ripcord-lab bench`) | C core **7.71–8.11 µs**, Rust **0.53–0.57 µs** |
-| Per packet, from .NET | Rust through P/Invoke **0.67–0.71 µs**, managed `HalyardPacketCrypto` 16.1–17.3 µs |
-| Per packet, from .NET on Windows x64 (2026-09-30, an x64 desktop) | Rust through P/Invoke **0.92 µs**, managed `HalyardPacketCrypto` 14.29 µs, one run |
-| Mac lab | Links through the generated header; the RipcordKit tests still build and pass (Phase 1; the Mac has since moved onto the engine entirely) |
-| .NET | Links through the generated bindings: `[UnmanagedCallersOnly]` callbacks, a `GCHandle` user pointer |
-| Size | `libripcord.dylib` 386 KB stripped. `ripcord-lab` grows from 1.10 MB to 2.35 MB stripped, which is more than the engine's own size and still to be explained |
+The C core is a port of the .NET reference, and the two differ in places. For each difference the engine
+follows .NET, unless C is strictly safer or .NET is wrong. The tables below list every choice, by area.
+They date from 2026-09-26.
 
-All three benchmarks run one workload: `PacketCryptoBenchmark.swift`'s packets, 1,426 bytes each,
-spaced so that every packet lands in its own GMAC rotation window. That is the worst case. At wire
-spacing Rust takes 0.54 µs (`packet_bench`), because a rotation window then serves many packets.
+### Takion
 
-Most of the gap is hardware AES and PMULL, which RustCrypto detects at run time, against the C core's
-portable table implementation. The rest is structure. The CTR cipher borrows a key schedule expanded
-once, where the C core expands the key on every packet. The GMAC cache is keyed by rotation window,
-where the C core derives the key with a SHA-256 on every packet just to check its cache.
-
-
-## What the engine costs in size (2026-09-26, M4 Max)
-
-Measured because the app and each extension will link the engine. The shipping library (no
-`test-support`), stripped with `strip -x`:
-
-| Build | Stripped `libripcord.dylib` |
-|---|---|
-| As shipped before this | 719 KB |
-| `panic = "abort"` | 653 KB, **not taken** |
-| `lto = "fat"` | 719 KB, no change |
-| `opt-level = "s"` / `"z"` | 720 KB / 672 KB, **not taken** |
-| Without the FEC product table | **653 KB**, taken |
-
-A linker map of the 719 KB build, totalled by crate: `ripcord_proto` 31%, `core` 17% (formatting and generic
-instantiations), `std` 8%, and std's backtrace symbolizer (`gimli`, `addr2line`, `rustc_demangle`,
-`object`) about 10%. The curve arithmetic (`primeorder`, `p521`, `p256`, `crypto_bigint`) is 6%.
-
-- **The FEC product table** was one static of 64 KB, a table of every GF(2^8) product built at compile
-  time. It was a tenth of the library, for work done only when a frame has lost units. `mul_accumulate`
-  now builds the one row it needs on the stack from the log and exp tables. A worst-case recovery (k 40,
-  m 10, ten 1,400-byte units lost) takes 174 µs where it took 155 µs, against a 16.7 ms frame at 60 fps.
-- **`panic = "abort"` is ruled out by the plan's rule 5.** Every export runs inside `catch_unwind` so that a
-  panic ends one session rather than the host process, and aborting would make every bug a crash.
-- **`opt-level = "z"`** saves 47 KB and costs speed on the per-packet path this README's gate measures.
-  Not taken without a benchmark that shows the cost is small.
-- **The backtrace symbolizer stays** on stable Rust. It is linked by std's default panic hook, which unwinding
-  needs, and removing it takes a nightly `build-std` with `panic_immediate_abort`, which is also an abort.
-
-What an executable carries, and why the lab was so much larger than the library (2026-09-27): **dead-code
-stripping was off.** Nothing in the Mac project set `DEAD_CODE_STRIPPING`, and Xcode's default for a project
-whose settings all live in xcconfig files is off, so the linker kept every object it pulled from the engine's
-static archive whole. `std` alone was 440 KB of the lab. With it on, from `Config/Project.xcconfig`:
-
-| Binary, stripped | Before | After |
-|---|---|---|
-| `ripcord-lab` | 2.86 MB | **1.72 MB** |
-| The app's own executable | 3.71 MB | **2.64 MB** |
-
-A link map of the stripped lab: RipcordKit's own Swift is the largest part at 641 KB (48% of its code), then
-`ripcord_proto` 240 KB, `std` 181 KB, `core` 35 KB and the crypto curves under 20 KB. The engine's crates total
-576 KB. So the engine is now well under half of the lab, and the next saving is not in the engine.
-
-## Phase 2, the first layer, measured (2026-09-26)
-
-| What | Result |
-|---|---|
-| `control-crypto.kat` | 172 of 172: KDF (both families), context keys, field IVs, CFB and OFB, the field and streaminfo chains |
-| `registration-crypto.kat` | 97 of 97: transport key, wrap, unwrap and scatter/gather on both families |
-| `account-pairing.kat` | 81 of 81 for `seed` and `accountwrap`. The 8 `accountrgst` lines are deferred, and each run lists them, until the `/sess/rgst` message layer lands |
-| `session-crypto.kat` | 34 of 34 on the RustCrypto backend: public keys, shared secrets and stream keys on P-256 and P-521, and the key signature |
-| Differential against the C core | Packet crypto, FEC, the control plane, registration and seed decoding, 800 to 5,000 generated cases each. The demuxer runs 300 hostile streams, half with real crypto, and agrees event for event and counter for counter: 7,300 frames, 3,000 loss reports, 4,900 authentication failures |
-| Mutation check | Changing one KDF constant fails 54 control lines, and one account-wrap constant fails 16 account lines |
-
-The first differential run failed, and the cause was the harness. Test threads decoded FEC in the C core
-at the same time, and `fec_reed_solomon_recover_source` keeps its matrices in `static` buffers, as its source
-warns. `ripcord-diff` now holds one lock around every call into C. The Rust recovery's scratch belongs to
-its caller, so it has no such limit.
-
-## Takion: where the port follows .NET and where it follows C (2026-09-26)
-
-The C core is a port of the .NET reference, and the two differ in places. A side-by-side read of both
-found 27 differences. For each one the Rust port follows .NET, unless C is strictly safer or .NET is
-wrong:
+A side-by-side read of both found 27 differences.
 
 | Topic | Rust follows | Why |
 |---|---|---|
@@ -220,26 +154,11 @@ wrong:
 | Session key | .NET: the caller's, with the observed literal as the default | |
 
 Sequencing that belongs to the connect sequence, such as version negotiation and its timeouts, is decided
-when that layer lands.
+in that layer.
 
-## Phase 2, through Takion, measured (2026-09-26)
+### Discovery, wake and /sess
 
-| What | Result |
-|---|---|
-| `control-proto.kat` | 60 of 60 for `sessionreq` and `sessionreply`. The 5 `launchspec` lines wait for the `/sess` layer |
-| Captured vectors | The INIT, three DATA packets, both SACKs and the PROTOCOL_VERSION_REQUEST and echo-command payloads all rebuild byte for byte |
-| Differential against the C core | 20,000 generated cases each for the protobuf codec, the chunk parsers and the 9303 wire; 500 sealer sequences; and 200 scripted-console sessions of 60 datagrams against `fake_dgram_console.h` |
-| CryptoKit | `session-crypto.kat` through the engine on CryptoKit gives results identical to RustCrypto (`EngineKeyAgreementTests`) |
-| Takion connection | Scripted-peer tests cover the handshake with retries and failure, DATA in place of COOKIE_ACK, fragmentation, per-channel reassembly, re-SACK on reordering, verbatim retransmission, Karn, the TSN wrap, and a full sealed session with key agreement |
-
-The differential runs found two C bugs, both fixed in `libripcord`. The C scripted console read two bytes
-past a short HELLO_ECHO chunk. `takion_control_parse_protocol_version_ack` accepted a field-0 tag that every
-other C parser, and Google.Protobuf, refuse.
-
-## Discovery, wake and /sess: where the port follows .NET and where it follows C (2026-09-26)
-
-The same method as for Takion. A side-by-side read found 26 differences; for each, the Rust port follows
-.NET unless C is strictly safer or .NET is wrong.
+The same method as for Takion. A side-by-side read found 26 differences.
 
 | Topic | Rust follows | Why |
 |---|---|---|
@@ -258,24 +177,9 @@ The same method as for Takion. A side-by-side read found 26 differences; for eac
 | Control frame types | .NET's fuller list | |
 
 Launch-spec MTU and RTT clamping, and the RP-Nonce and launch-spec order of the connect sequence, belong to
-that layer when it lands.
+the connect sequence.
 
-## Discovery, wake and /sess, measured (2026-09-26)
-
-| What | Result |
-|---|---|
-| `rendezvous-control.kat` | 4 of 4: both cases' /sess/init and /sess/ctrl byte for byte with the .NET session's own requests |
-| `account-pairing.kat` | 121 of 121, now with all 8 `accountrgst` exchanges: body, transport key and the opened pairing record |
-| `control-proto.kat` | 65 of 65, now with the 5 launch specs |
-| Deferred vector lines | none |
-| Differential against the C core | Discovery replies, wake credentials and payloads, the field plaintexts, control frames and /sess responses agree across 5,000 to 20,000 generated cases each, with the chosen differences excluded |
-| Mutation check | Changing RP-SupportCmd fails the rendezvous vectors; changing one launch-spec literal fails the launch-spec vectors |
-
-The comparison found two more C bugs, both fixed. `halyard_regist_parse_record` checked `rc_hex_decode`
-for 0 when failure is `(size_t)-1`, accepting a malformed key with a length of `SIZE_MAX`.
-`halyard_regist_split_response` never read an `RP-Application-Reason` sent as the last header.
-
-## STUN, 9303 and the rendezvous route: where the port follows .NET and where it follows C (2026-09-26)
+### STUN, 9303 and the rendezvous route
 
 The 9303 association matches rule for rule in the two references, and `dgram-transport.kat` holds both
 to it byte for byte, so the association has no row here. The differences are in what surrounds it.
@@ -299,22 +203,7 @@ to it byte for byte, so the association has no row here. The differences are in 
 Sign-in policy (re-prompting on silence, a stored passcode, what an accepted passcode without a
 SESSION_ID means) and peer filtering belong to the connect sequence, not to this layer.
 
-## STUN, 9303 and the rendezvous route, measured (2026-09-26)
-
-| What | Result |
-|---|---|
-| `dgram-transport.kat` | 177 of 177: the initiator, responder and wrap transcripts, every send and event byte for byte |
-| Differential against the C core | 20,000 generated STUN messages (over 3,000 carrying an address), 10,000 candidate choices with their address parses, and 300 generated operation sequences of 80 steps on both associations, sharing the transcripts' counting random source |
-| Control plane | Scripted-console tests run /sess/init, the reopened connection, /sess/ctrl with RP-ConPath 3 and the padded Host, a heartbeat answered on the kept connection, and the console's close. A missing nonce stops before /sess/ctrl |
-| Mutation check | Changing the opener's request word fails both the transcripts and the association differential |
-
-The route's order, which the connect sequence will drive: STUN on the control leg, then signaling (the
-host's), then `Channel::begin` between our OFFER and our ACCEPT, an optional `Exchange` carrying /sess/rgst,
-then `ControlPlane`. The A/V leg repeats STUN and signaling for the media OFFER, and `Channel::establish`
-on the media socket is the hole punch before the probe, the PROBE_REPORT (`ctrl::probe_report_plaintext`,
-sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
-
-## The connect sequence: where the port follows .NET and where it follows C (2026-09-26)
+### The connect sequence
 
 `connect::Session` is the C client's sequence (`halyard_client.c`) as a sans-IO machine. Where C and
 .NET differ, these are the choices.
@@ -347,26 +236,27 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 | Teardown on rendezvous | C: the polite 9303 close before any socket closes | A console never sent the Close keeps the session live |
 | fps, HDR | C: 30 or 60; HDR only with HEVC | A third rate's answer is [X]; HDR is an HEVC profile |
 
-## The connect sequence, measured (2026-09-26)
+### The .NET behaviours the connect sequence gained
 
 | What | Result |
 |---|---|
-| LAN, scripted | The arm probe, /sess/init and /sess/ctrl over TCP, senkusha, Takion, key agreement on the real crypto, STREAM_INFO, the IDR latch, the console's heartbeats answered, loss reports, input, sealed video, and the goodbye (`connect::tests`) |
-| LAN, failures | A refused and then accepted passcode, a stored passcode, a cancelled one, no SESSION_ID, a console refusing the stream with a reason, a console hanging up mid-stream, a stray datagram, the declared MTU |
-| Rendezvous, scripted | Prepare, begin, /sess over the 9303 association, the A/V leg's prelude, SESSION_ID, senkusha and the stream on that one socket, PROBE_REPORT and STREAM_READY, a stray dropped, and the polite Close |
-| Real sockets | `ripcord-net`'s loopback test runs the LAN sequence over `std::net` on 127.0.0.1 to five video frames and the goodbye, in about 0.35 s |
-| Mutation check | Encrypting the launch spec at counter 1 fails seven of the nine connect tests; one sign-in attempt instead of five fails the refusal test |
+| Senkusha probes | Scripted-console tests confirm the capture's order (echo on, echo off, the MTU command, the client MTU on and off), ten echoed pings and the echoed MTU packet, the confirmed MTU, and that a console ignoring every probe costs time and never the session. The loopback test through the C ABI measures both over real sockets. On the rendezvous route they run on the A/V leg |
+| A bug the tests found | The first ping went out before the echo-on command it depended on, because the command waited in the association's queue; every probe datagram now follows whatever the association has queued |
+| CORRUPT_FRAME | A gap in the frame index sends the lost range, and the IDR latch asks for the repair |
+| Adaptive ladder | Unit tests hold the ladder, the cooldown, the clean streak, a tiny window's silence and the power caps to .NET's. CONNECTION_QUALITY goes out only when enabled: the first at once, then on changes and the 2 s refresh |
+| ABI | Version 5: the two switches in the config, the ladder's target in the stats, the probes' results in the outcome, and `ripcord_client_set_power` |
 
-The scripted LAN console (`testing::scripted_lan_console`) computes the console's side of every
-derivation from what the client sent, so a client that gets a key wrong fails there as it would on a
-console. These tests are scripted; the hardware runs are in the journal from 2026-09-26.
-
-## The client ABI (2026-09-26)
+## The client ABI
 
 `ripcord_client_*` in `ripcord-ffi/src/client.rs` is `halyard_client.h`'s contract, so the Mac can move
-engines by relinking: one host thread calls connect, then pump until the session ends; every callback runs
-on that thread; buffers are borrowed for the call; the pad, the passcode, the media answer and the
-commands are pulled. The differences:
+engines by relinking:
+
+- one host thread calls connect, then pump until the session ends;
+- every callback runs on that thread;
+- buffers are borrowed for the call;
+- the pad, the passcode, the media answer and the commands are pulled.
+
+The differences:
 
 | `halyard_client.h` | The Rust ABI | Why |
 |---|---|---|
@@ -378,16 +268,22 @@ commands are pulled. The differences:
 | Results and stats | The same facts, plus the stream's SACK round trip in the stats | .NET reports it; C has none |
 
 Around the session, `ripcord-ffi/src/pairing.rs` exports the rest of what the Mac takes from the C core:
-the SRCH probe and reply parser, the wake payload (the host owns those sockets), the account-id
-normaliser (ported from C, which alone has one, and differentially checked against it on 20,000
-generated inputs), the account key material and seed recovery, PIN registration over TCP 9295
-(`ripcord-net::pairing`, with C's arm probe and read-until-close), and account registration on a
-rendezvous client's control leg. A registration returns a `RipcordPairingRecord`; saving it is the host's.
-A CSPRNG that refuses a draw fails the registration rather than supplying zeroes.
+
+- the SRCH probe and reply parser, and the wake payload (the host owns those sockets);
+- the account-id normaliser, ported from C, which alone has one, and differentially checked against it on
+  20,000 generated inputs;
+- the account key material and seed recovery;
+- PIN registration over TCP 9295 (`ripcord-net::pairing`, with C's arm probe and read-until-close);
+- account registration on a rendezvous client's control leg.
+
+A registration returns a `RipcordPairingRecord`; saving it is the host's. A CSPRNG that refuses a draw
+fails the registration rather than supplying zeroes.
 
 `RipcordClientConfig`'s port fields and `no_arm_broadcast` exist for tests. The `test-support` feature adds
 `ripcord_loopback_console_*`, the scripted LAN console on loopback sockets, so each host's suite runs a real
 session.
+
+What tests the ABI:
 
 | What | Result |
 |---|---|
@@ -396,28 +292,61 @@ session.
 | Swift | `EngineClientTests`: the same session from `@convention(c)` callbacks, with CryptoKit doing the key agreement and `SecRandomCopyBytes` the randomness |
 | Pairing | `pairing_abi.rs`: discovery, wake, the account id, the seed, and PIN registration against the loopback console, whose `/sess/rgst` answer is the console's real side of the derivation |
 
-## The .NET behaviours the connect sequence gained (2026-09-26)
-
-| What | Result |
-|---|---|
-| Senkusha probes | Scripted-console tests confirm the capture's order (echo on, echo off, the MTU command, the client MTU on and off), ten echoed pings and the echoed MTU packet, the confirmed MTU, and that a console ignoring every probe costs time and never the session. The loopback test through the C ABI measures both over real sockets. On the rendezvous route they run on the A/V leg |
-| A bug the tests found | The first ping went out before the echo-on command it depended on, because the command waited in the association's queue; every probe datagram now follows whatever the association has queued |
-| CORRUPT_FRAME | A gap in the frame index sends the lost range, and the IDR latch asks for the repair |
-| Adaptive ladder | Unit tests hold the ladder, the cooldown, the clean streak, a tiny window's silence and the power caps to .NET's. CONNECTION_QUALITY goes out only when enabled: the first at once, then on changes and the 2 s refresh |
-| ABI | Version 5: the two switches in the config, the ladder's target in the stats, the probes' results in the outcome, and `ripcord_client_set_power` |
-
-## Fuzzing and Miri, first runs (2026-09-26)
-
-| What | Result |
-|---|---|
-| Nine targets, 60 s each on the M4 Max (2026-09-26) | 0.4 to 5 million runs per target. One finding: the SRCH reply parser sliced its first line at byte 8 as a string, and a multi-byte character straddling that byte panicked. Any datagram on the discovery port could do it. Fixed, with the fuzzer's input as a regression test, and the target then ran clean for 4.7 million runs |
-| `derive`, 60 s on the M4 Max (2026-09-26) | 716,176 runs, clean, with every round-trip assertion holding. It generates its two key pairs once rather than per input, which took it from 22,000 runs a minute to that |
-| Miri over `ripcord-ffi`'s unit tests | Clean on the portable crypto backends, all seven tests. On the hardware backends Miri stops inside `sha2`'s ARMv8 intrinsics, which is not the engine's code |
-
-## Key agreement on Windows (2026-09-26)
+## Key agreement on Windows
 
 The Windows host is .NET, so its backend is .NET's `ECDiffieHellman` (CNG, BCrypt, on Windows) behind the
 engine's backend table: `hosts/dotnet/Ripcord.Engine.Harness/PlatformEcdh.cs`, which Phase 4 moves into
-`Ripcord.Protocol.Halyard.Native` unchanged. The harness runs `session-crypto.kat` through the engine with it
-and compares the result with RustCrypto's. It passes on macOS on Apple's implementation (34 checks), and on
-CNG itself on Windows x64 (34 checks, 2026-09-30).
+`Ripcord.Protocol.Halyard.Native` unchanged. The harness runs `session-crypto.kat` through the engine with
+it and compares the result with RustCrypto's. It passes on macOS on Apple's implementation (34 checks), and
+on CNG itself on Windows x64 (34 checks, 2026-09-30).
+
+## Measurements
+
+The current headline figures. The dated runs behind them, and every other run, are in
+[`BRINGUP.md`](BRINGUP.md).
+
+### Per-packet crypto, C against Rust
+
+| Harness | C core | Rust | Managed `HalyardPacketCrypto` |
+|---|---|---|---|
+| Swift, one harness for both engines (`ripcord-lab bench`), 2026-09-25, M4 Max, macOS 27 | 7.71–8.11 µs | 0.53–0.57 µs | — |
+| .NET, same date and machine | — | 0.67–0.71 µs through P/Invoke | 16.1–17.3 µs |
+| .NET on Windows x64, 2026-09-30, an x64 desktop, one run | — | 0.92 µs through P/Invoke | 14.29 µs |
+
+All three run one workload: `PacketCryptoBenchmark.swift`'s packets, 1,426 bytes each, spaced so that every
+packet lands in its own GMAC rotation window. That is the worst case. At wire spacing Rust takes 0.54 µs
+(`packet_bench`), because a rotation window then serves many packets.
+
+Most of the gap is hardware AES and PMULL, which RustCrypto detects at run time, against the C core's
+portable table implementation. The rest is structure. The CTR cipher borrows a key schedule expanded once,
+where the C core expands the key on every packet. The GMAC cache is keyed by rotation window, where the C
+core derives the key with a SHA-256 on every packet just to check its cache.
+
+### What the engine costs in size
+
+Measured on 2026-09-26 and 2026-09-27 on the M4 Max, because the app and each extension will link the
+engine.
+
+The shipping library (no `test-support`), stripped with `strip -x`, is 653 KB. It was 719 KB before the FEC
+product table was removed. The build options tried:
+
+| Build | Stripped `libripcord.dylib` | Decision |
+|---|---|---|
+| Without the FEC product table | 653 KB | Taken. A worst-case recovery (k 40, m 10, ten 1,400-byte units lost) takes 174 µs where it took 155 µs, against a 16.7 ms frame at 60 fps |
+| `panic = "abort"` | 653 KB | Not taken. The plan's rule 5 rules it out: every export runs inside `catch_unwind` so that a panic ends one session rather than the host process |
+| `lto = "fat"` | 719 KB | No change |
+| `opt-level = "s"` / `"z"` | 720 KB / 672 KB | Not taken. `"z"` saves 47 KB and costs speed on the per-packet path; not taken without a benchmark that shows the cost is small |
+
+What an executable carries, with dead-code stripping on from `Config/Project.xcconfig`:
+
+| Binary, stripped | Before | After |
+|---|---|---|
+| `ripcord-lab` | 2.86 MB | 1.72 MB |
+| The app's own executable | 3.71 MB | 2.64 MB |
+
+In the stripped lab the engine's crates total 576 KB. RipcordKit's own Swift is the largest part at 641 KB.
+
+## See also
+
+[`BRINGUP.md`](BRINGUP.md) has the dated measurement record, and
+[`docs/engine-plan.md`](../docs/engine-plan.md) has the plan.

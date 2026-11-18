@@ -1,7 +1,7 @@
 /*
  * ripcord-3ds - Phase 2 UDP link test.
  *
- * The `ftpd` measurement in README.md (~10 Mbps sustained, TCP, upload direction, idle CPU) was the
+ * The `ftpd` measurement in BRINGUP.md (~10 Mbps sustained, TCP, upload direction, idle CPU) was the
  * encouraging ceiling, not the answer: it says nothing about UDP receive - the direction and protocol the
  * actual A/V path uses - and nothing about what happens once this core is also busy decoding. This is the
  * test that settles both questions.

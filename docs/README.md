@@ -18,7 +18,8 @@ not by topic, so several cover the same subject from different angles. Pick by t
 | What does the Mac app look like, and what decides that? | [`src/Ripcord.Mac/DESIGN.md`](../src/Ripcord.Mac/DESIGN.md) |
 | How do I build, test and release the Mac app? | [`src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
 | Which protocol engine does each client run, and how does the project get to one? | [`engine-plan.md`](engine-plan.md) |
-| How do I build and test the Rust engine, and where does it stand? | [`engine/README.md`](../engine/README.md) |
+| How do I build and test the Rust engine, and where does it differ from .NET and C? | [`engine/README.md`](../engine/README.md) |
+| What did the engine's measurement runs show? | [`engine/BRINGUP.md`](../engine/BRINGUP.md) |
 | **What is left to do?** | [`ROADMAP.md`](../ROADMAP.md) |
 | **What happened, and when?** | [`journal.md`](journal.md) |
 | **What are the sources behind each part of the spec?** | [`protocol-research-log.md`](protocol-research-log.md) |
@@ -53,10 +54,12 @@ these answer "what is it, and how do I build it".
 | Document | Answers |
 |---|---|
 | [`libripcord/README.md`](../libripcord/README.md) | What the portable C99 core holds, and what the platform seam does and does not ask of an OS |
-| [`ports/ripcord-3ds/README.md`](../ports/ripcord-3ds/README.md) | The 3DS port: status, design, what runs on hardware |
+| [`ports/ripcord-3ds/README.md`](../ports/ripcord-3ds/README.md) | The 3DS port: status, layout, building |
+| [`ports/ripcord-3ds/BRINGUP.md`](../ports/ripcord-3ds/BRINGUP.md) | Its dated bring-up record: what was measured on hardware |
 | [`ports/ripcord-3ds/SETUP.md`](../ports/ripcord-3ds/SETUP.md) | Building it and getting it onto a console |
 | [`ports/ripcord-3ds/HARDWARE-PROBES.md`](../ports/ripcord-3ds/HARDWARE-PROBES.md) | What each on-device probe measured |
-| [`ports/ripcord-ps3/README.md`](../ports/ripcord-ps3/README.md) | The PS3 port: status, design, what runs on hardware |
+| [`ports/ripcord-ps3/README.md`](../ports/ripcord-ps3/README.md) | The PS3 port: status, installing, building, licensing |
+| [`ports/ripcord-ps3/BRINGUP.md`](../ports/ripcord-ps3/BRINGUP.md) | Its dated bring-up record: what was measured on hardware |
 | [`ports/ripcord-ps3/SETUP.md`](../ports/ripcord-ps3/SETUP.md) | Toolchain, packaging, and the fast iteration loop |
 | [`ports/ripcord-ps3/DECODE.md`](../ports/ripcord-ps3/DECODE.md) | The decoder investigation — why the console's own decoder, what it accepts, and the values no SDK header states |
 | [`ports/ripcord-ps3/SHELL-DESIGN.md`](../ports/ripcord-ps3/SHELL-DESIGN.md) | The shell's design plan — what the on-console interface should be, and what nine comments in `source/ui/` argue with |

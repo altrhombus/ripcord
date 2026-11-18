@@ -122,7 +122,7 @@
 /*
  * THE MAIN THREAD'S STACK - and this line is here because its absence cost two hardware runs.
  *
- * README.md has carried the warning since before this port compiled: the 3DS crashed twice on a 32 KB
+ * BRINGUP.md has carried the warning since before this port compiled: the 3DS crashed twice on a 32 KB
  * default and the Vita raised its 4 KiB default to 256 KB before running anything. When the toolchain
  * arrived, the mechanism was found (this macro), the Vita's --gc-sections trap was checked for and shown
  * not to apply here, the finding was written up in three documents - and nobody put the macro in the

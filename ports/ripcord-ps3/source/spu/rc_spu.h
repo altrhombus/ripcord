@@ -1,7 +1,7 @@
 /*
  * ripcord-ps3 - running a job on an SPE, and measuring what it costs to ask.
  *
- * Step 6 of README.md's order of work. This is the PPU half; spu/rc_spu_probe.c is the program that
+ * Step 6 of BRINGUP.md's order of work. This is the PPU half; spu/rc_spu_probe.c is the program that
  * actually runs on the SPE, and it explains why the job is a memory copy rather than anything useful.
  *
  * WHAT THIS IS FOR. The PS3's decoder has to live on the SPEs - the PPE alone will not decode 720p
