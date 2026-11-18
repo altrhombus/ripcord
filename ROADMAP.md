@@ -14,16 +14,15 @@ tag is the PS3 port's release, not Ripcord's).
 
 We're close, but not one check away. Here's what's left, in order:
 
-1. **The person-driven pass:** one checklist covering connect, the
-   HUD, pairing, the first-run setup, input, the HDR display drag, Light theme, high contrast, scale and text
-   size, and Narrator. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for
-   not skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists.
+1. **The person-driven pass:** one checklist covering connect, the HUD, pairing, the first-run setup, input,
+   the HDR display drag, Light theme, high contrast, scale and text size, and Narrator. The first part ran on
+   2026-10-02; the journal lists what it found.
 2. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
    nobody sees until it's published. Those are what the next two steps install.
-3. **Smoke-check it on ARM64.** The full run passed on 2026-10-05 from a local build; the CI-built ARM64 zip
+3. **Smoke-check it on ARM64.** The full run passed on 2026-10-05 from a local build, so the CI-built ARM64 zip
    only needs to start and stream on the Surface.
-4. **Install it on a clean machine.** Pair, stream, sign in, and a pad with and without GameInput, from the zip
-   CI built. It's also the first fresh install of the first-run setup: on a PC that can decode HEVC it
+4. **Install it on a clean machine.** Pair, stream, sign in, and use a pad with and without GameInput, from the
+   zip CI built. It's also the first fresh install of the first-run setup. On a PC that can decode HEVC it
    preselects HEVC with HDR, and Skip setup leaves the defaults (1080p60 at 20 Mbps, H.264). Try both.
 5. **Tag `v1.0`,** with `SECURITY.md`'s version row and the release notes. Then celebrate.
 
@@ -36,7 +35,7 @@ Everything else in this file is real, and it can wait. (Yes, even the Apple TV a
 | Client | State |
 |---|---|
 | **Windows** (the dotnet client) | Streams PS5 and PS4, on the LAN and over the internet. Heading for 1.0 |
-| **PlayStation 3** | Streams 720p60 from a PS5 or PS4. Builds from source; the package is being re-cut |
+| **PlayStation 3** | Streams 720p60 from a PS5 or PS4. Builds from source; `ps3-v1.1` is a draft until it has run on a console |
 | **New 3DS** | Streams a PS5 |
 | **macOS** | On the Rust engine. Streams from `ripcord-lab`; the app itself hasn't met a console yet |
 | **iPhone, iPad, Apple TV** | Builds for all three; hasn't run on a device yet |
@@ -51,37 +50,27 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 
 1.0 ships when every line is true.
 
-- [x] CI passes on a real runner, on a clean clone, for every job.
-- [x] The GMAC window boundary and the non-P521 curve gap are resolved.
-- [ ] A tagged release with x64 and ARM64 zips, and install steps checked on a machine without the SDK. (The
-      release job exists since 2026-10-01; nothing has been tagged yet.)
-- [x] The ARM64 zip runs on an ARM64 machine: it starts, pairs and streams, with both pads (2026-10-05, the
-      Surface, from a local build by the release job's own steps; the CI-built zip gets a smoke check at rc1).
-- [x] The three known defects are fixed and confirmed on hardware:
-  - [x] **The Xbox pad beside a DualSense.** Fixed, and confirmed on 2026-10-01: both pads in one stream, a
-        battery pull mid-stream, and menu navigation with both on.
-  - [x] **HDR from the wrong display.** Fixed, and confirmed on 2026-10-01 on a two-monitor desk and across a
-        laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping. An
-        SDR display asked the console for SDR for a while after that; since 2026-10-03 it asks for HDR, when Request HDR is
-        on, and Ripcord tone-maps it itself, which also covers the drag (see below).
-  - [x] **A two-line console name.** Fixed, and checked at every card density, at 100% and 200% display
-        scale, and at 100% and 150% text (2026-09-30 and 2026-10-01).
-- [ ] Ripcord's own HDR-to-SDR tone-map is right on every GPU and display path. (The Intel and NVIDIA GPUs and
-      the Surface are done; a mid-session drag between displays is left. See Blocking 1.0.)
-- [x] The defaults are 1080p60 at 20 Mbps, H.264 and no HDR (the owner's decision, 2026-10-05). HEVC and HDR
-      are a choice in Settings, which keeps HDR games' highlights; a stored HEVC on a PC that can't decode it
-      falls back to H.264 at connect.
+- [ ] A tagged release with x64 and ARM64 zips, and install steps checked on a machine without the SDK. The
+      release job exists; nothing has been tagged yet.
+- [ ] Ripcord's own HDR-to-SDR tone-map is right on every GPU and display path. A mid-session drag between
+      displays is left (see Blocking 1.0).
 - [ ] The 1.0 pass has been driven by a person, and whatever it finds is fixed or listed.
 - [ ] No user-visible control is inert.
-- [ ] `SECURITY.md` names a supported version, and private vulnerability reporting is on. (Reporting went on
-      2026-09-30; the version table is written.)
-- [ ] The README states the limits a first-time user meets in their first ten minutes. (Written 2026-09-30.)
+- [ ] `SECURITY.md` names a supported version, and private vulnerability reporting is on. The version table is
+      written.
+- [ ] The README states the limits a first-time user meets in their first ten minutes. Written; check it
+      against the release candidate.
 
-**Decided.** The zip leads, and an MSIX is optional; signing it is still open (a self-signed package asks
-each user to trust a certificate as administrator, so I'd like to try Azure Artifact Signing). The account
-tier, meaning sign-in, the account's console list, cloud wake and account pairing, is part of what 1.0
-supports. The package requires Windows 11 25H2 (build 26200). ARM64 is part of 1.0 too (decided
-2026-10-01), so every release ships an x64 zip and an ARM64 one.
+Already true, with the dates in the journal: CI passes on a clean clone for every job; the GMAC window boundary
+and the non-P521 curve gap are resolved; the ARM64 build starts, pairs and streams with both pads; the three
+known defects (an Xbox pad beside a DualSense, HDR from the wrong display, a two-line console name) are fixed
+and confirmed on hardware; and the defaults are 1080p60 at 20 Mbps, H.264 and no HDR, with HEVC and HDR a choice
+in Settings.
+
+**Decided.** The zip leads and an MSIX is optional. Signing is still open: a self-signed package asks each
+user to trust a certificate as administrator, so I'd like to try Azure Artifact Signing. The account tier
+(sign-in, the account's console list, cloud wake and account pairing) is part of 1.0. The package requires
+Windows 11 25H2 (build 26200). Every release ships an x64 zip and an ARM64 one.
 
 **Out of 1.0, and said so in the release notes:** DualSense output (haptics, adaptive triggers, lightbar,
 gyro, touchpad drag), the latency and quality polish below, WAN relay, trimming, translations, and a
@@ -93,35 +82,24 @@ purchased signing certificate.
 
 ### Packaging
 
-- [x] The unused `systemAIModels` capability is gone, the package requires 25H2, `dotnet publish` is
-      self-contained, and `PRIVACY.md` and generated third-party notices ship in the app folder.
-- [x] **GameInput's redistributable ships in the zip** (2026-10-01), and Settings > About says whether it's
-      installed. The one `GameInputRedist.msi` installs on ARM64 too, and the app detects it (the Surface,
-      2026-10-05).
-- [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03; the Intel and NVIDIA GPUs match each
-      other and the console's own screenshot, and look right on the Surface at 200%, 2026-10-05): a mid-session
-      drag between an HDR and an SDR display is left.
-- [x] **The console's HDR "On When Supported"** (2026-10-05): asked for HDR it sends HDR10 for everything, an SDR
-      game inside it with white near 255 nits; asked for SDR, an HDR game's stream clips as under "Always On".
-- [x] **SDR games inside HDR10 looked slightly dull** after the tone-map (white at 91%). The renderer now
-      measures the picture's peak and tone-maps SDR-like content from it (2026-10-05).
-- [ ] **The first-run setup, driven by a person** (built 2026-10-06): the whole setup from Settings > Advanced >
-      Run setup again, with a pad and without, pairing from it, Back on every step, and the picture question
-      alone on an install that already has a console.
+- [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU.** The Intel and NVIDIA GPUs match each other and the
+      console's own screenshot, and it looks right on the Surface at 200%. A mid-session drag between an HDR
+      and an SDR display is left.
+- [ ] **The first-run setup, driven by a person:** the whole setup from Settings > Advanced > Run setup again,
+      with a pad and without, pairing from it, Back on every step, and the picture question alone on an install
+      that already has a console.
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
       Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`. Windows Sandbox is a
-      clean Windows every launch, good for "does it start with nothing installed", though it won't pass
-      pads or the GPU through.
+      clean Windows every launch, good for "does it start with nothing installed", though it won't pass pads
+      or the GPU through.
 
 ### Discovery and the console list
 
-- [ ] **LAN discovery / console status regressed** (seen 2026-10-22, during the v2 handshake hardware run). The
-      consoles screen showed a previously-paired console as **"away"** and the freshly re-paired one as
-      **"offline"**, yet the console was plainly reachable: the session pcap has the mDNS responses, the ARP, the
-      SRC3 probe and a **successful** LAN TCP connect + v2 handshake to it. So the LAN discovery/status *display*
-      is wrong while connectivity is fine — and a re-pair left **two** entries (old + new) instead of updating
-      one. Suspected a pre-existing regression from a change landed before the v2 work; a `git bisect` candidate
-      against the discovery/scan + console-list status path. Separate from v2.
+- [ ] **The console list shows a reachable console as away or offline** (seen 2026-10-22). A previously paired
+      console showed as "away" and a freshly re-paired one as "offline", while the same session's capture has
+      its mDNS responses, the SRC3 probe and a successful LAN connect. Re-pairing also left two entries instead
+      of updating one. Connectivity is fine; the status display is wrong. Bisect the scan and console-list
+      status path. Not related to v2.
 
 ### Stated as a limit, not fixed for 1.0
 
@@ -221,17 +199,13 @@ purchased signing certificate.
 
 ### Streaming quality and the protocol
 
-- [ ] **v2 (the PS5 GCM control plane): get the stream up.** Implemented, opt-in, and specified in
-      [`docs/protocol/ps5-v2-control-plane.md`](docs/protocol/ps5-v2-control-plane.md); it has not streamed from
-      our own client yet. With `RIPCORD_V2_HANDSHAKE` set, the last hardware
-      run (2026-10-22) got through `/sess/rgst`→`init`→`init2`→`ctrl`, RPCS and senkusha, then stopped at
-      SESSION_REPLY: the console's stream-pubkey signature didn't verify. The stream-key model isn't the problem.
-      The vendor client's own sessions sign with `HMAC(handshakeKey, pubkey)` over the handshakeKey the client
-      sent (2026-11-13). The difference is the SESSION_REQUEST: the vendor offers versions up to 20, the console
-      acks 20, and the request carries field 7. The v2 path now offers the same list and sends field 7 (2026-11-16),
-      and 20 is taken as P-521 from the console's 133-byte key. Next: pair by PIN (an account-route pairing never
-      selects v2), then capture our own v2 session with `RIPCORD_V2_HANDSHAKE` set and see whether the console
-      acks 20 and the signature verifies.
+- [ ] **v2 (the PS5 GCM control plane): get the stream up.** Implemented, opt-in (`RIPCORD_V2_HANDSHAKE`), and
+      specified in [`docs/protocol/ps5-v2-control-plane.md`](docs/protocol/ps5-v2-control-plane.md). It has not
+      streamed from our own client yet. The 2026-10-22 hardware run got through `/sess/rgst`, `init`, `init2`,
+      `ctrl`, RPCS and senkusha, then stopped at SESSION_REPLY: the console's stream-pubkey signature didn't
+      verify. Since then the v2 SESSION_REQUEST offers versions up to 20 and carries field 7, as the vendor
+      client's does, and 20 is taken as P-521. Next: pair by PIN (an account-route pairing never selects v2),
+      capture our own v2 session, and see whether the console acks 20 and the signature verifies.
 - [ ] **Do the senkusha probes succeed, or fall back silently?** `MtuConfirmed` answers the MTU half in two
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
@@ -307,7 +281,9 @@ purchased signing certificate.
 
 ### Console ports and libripcord
 
-- [ ] **Re-cut the PS3 package** from `main` as a new `ps3-v*` tag, so there is a download again.
+- [ ] **Run the `ps3-v1.1` package on a PS3, then publish it.** The tag built a draft release. The shared
+      core's frame layout and recovery and its input cadence changed after `ps3-v1.0` and haven't run on the
+      console. Incoming GMAC tags on control packets are still unverified there `[X]`.
 - [ ] **The PS3 port reconnects on its own** after a stall, with bounded attempts and backoff, like
       `SessionController`'s watchdog.
 - [ ] **Pair a port from the desktop app.** Design note for review: [`docs/port-pairing.md`](docs/port-pairing.md).
@@ -318,11 +294,11 @@ purchased signing certificate.
 
 - [ ] **Repository security:** branch protection on `main`, secret scanning and push protection, Dependabot,
       and actions pinned by SHA.
-- [ ] **The release, beyond the zip:** sign the exe. Smart App Control, on by default on some new PCs and fresh
-      Windows 11 installs, blocks an unsigned app with no way to run it anyway, which makes this the biggest
-      obstacle to a stranger downloading and playing (Artifact Signing can sign one inside a zip, not only an
-      MSIX), check the notices are fresh in CI rather than only present, and note that only `dotnet publish`
-      makes the self-contained build (`msbuild -t:Publish` doesn't set `_IsPublishing`).
+- [ ] **The release, beyond the zip.** Sign the exe: Smart App Control, on by default on some new PCs and
+      fresh Windows 11 installs, blocks an unsigned app outright, which makes this the biggest obstacle to a
+      stranger downloading and playing. Artifact Signing can sign an exe inside a zip, not only an MSIX. Also
+      check in CI that the notices are fresh, not only present. Only `dotnet publish` makes the self-contained
+      build (`msbuild -t:Publish` doesn't set `_IsPublishing`).
 - [ ] **ProtocolLab's `register` and `pair`** still print the registration key and `RP-Key`; route them through
       the redactor. And the leak guard should warn, not stay silent, when it can't read its denylist.
 - [ ] **The engine and ports items the second review found untracked:** its M1, M2, L4, and the `free` case of
@@ -338,7 +314,7 @@ purchased signing certificate.
 
 ## Never commit
 
-Captures, key material and vendor binaries stay in the gitignored `docs/protocol/captures/` captures folder. That
-includes the live vectors in `registration_crypto_vectors.json` and `control_crypto_vectors.json`, which carry
-our own console's registration key, live nonces, the real MachineGuid and an account id. Publishing those
-exposes our own console and account for zero interop benefit, and it can't be taken back.
+Captures, key material and vendor binaries stay in the gitignored captures folder, `docs/protocol/captures/`.
+That includes the live vectors in `registration_crypto_vectors.json` and `control_crypto_vectors.json`, which
+carry our own console's registration key, live nonces, the real MachineGuid and an account id. Publishing those
+exposes our own console and account for no interop benefit, and it can't be taken back.

@@ -34,6 +34,26 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### CI green again, `ps3-v1.1` built, and three READMEs split (2026-11-17)
+
+The first CI run on the recreated repository failed four jobs. Three shared one cause: an unescaped quote in
+`libripcord/tools/gen_constants.py`, from an edit on 2026-11-16 that never met CI, stopped the generator
+parsing, and the C core's host suite, the engine's differential runner and the PS3 package all run it. The
+fourth was the engine: a `for` over an `Option` that clippy rejects, and a `build.rs` that wasn't
+rustfmt-clean. Fixing those uncovered a fifth failure the first had hidden: two new advisories against
+`crypto-bigint` and `ctutils`, which sit under the P-256 and P-521 key agreement. Both lockfiles moved to the
+patched releases.
+
+With CI green, the tag `ps3-v1.1` built the PS3 package into a draft release. It stays a draft until it has
+run on a console: the shared core's frame layout and recovery and its input cadence changed after `ps3-v1.0`,
+and none of that has met a PS3.
+
+The PS3, 3DS and engine READMEs had each grown into a dated record with the current state buried in it. Each
+is now a short README (what it is, where it stands, how to build it) beside a `BRINGUP.md` that holds the
+dated sections unchanged. Where an old README contradicted itself about the current state, the new one
+follows the later dated statement. The root README and the roadmap were tightened on 2026-11-18; the roadmap's
+finished checklist lines are folded into one paragraph.
+
 ### The repository was recreated (2026-11-17)
 
 The GitHub repository was deleted on 2026-11-16 and created again, and the history was rewritten on the way. Commit
