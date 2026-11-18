@@ -4,12 +4,11 @@ The PS5 Remote Play protocol in portable C99, shared by every Ripcord port. The 
 2026-09-26, when it moved to the Rust engine. No console SDK, no platform headers, no `#ifdef` naming a target.
 
 **Its scope, from 2026-09-25.** [`docs/engine-plan.md`](../docs/engine-plan.md) gives the first-class
-clients a Rust engine that presents this core's contract (`client/halyard_client.h`). The Mac has moved to
-it (2026-09-26). This is now **the console ports' core**: it keeps its tests, its fuzz harnesses and its
-CI job, and it takes fixes and the protocol work a port needs, but it no longer promises parity with the
-first-class clients. Until the Rust engine reaches parity it has a second job, as the other implementation
-the Rust engine is differentially tested against. It is retired when the last port moves off it or is
-retired.
+clients a Rust engine that presents this core's contract (`client/halyard_client.h`). This is now **the
+console ports' core**: it keeps its tests, its fuzz harnesses and its CI job, and it takes fixes and the
+protocol work a port needs, but it no longer promises parity with the first-class clients. Until the Rust
+engine reaches parity it is also the other implementation that engine is differentially tested against. It
+is retired when the last port moves off it or is retired.
 
 It lived at `ports/common` until 2026-09-24, and older records use that name. It moved to the top level
 when the macOS client (see [`docs/macos-plan.md`](../docs/macos-plan.md)) chose it as its protocol core,
@@ -68,9 +67,9 @@ Three implementations have been written. Two are in this tree:
 | `tests/rc_platform_host.c` | plain POSIX, for the host tests |
 | *`rc_platform_vita.c`, on the Vita branch* | vitasdk — compiles and links; never run |
 
-The third is where several of the findings recorded below actually came from — that sockets need no
-seam, that `inet_aton` is a BSD extension rather than C99 — so the evidence for this header's shape is
-real even though the file is not here yet. It arrives when that port does.
+Several of the findings recorded below came from the third — that sockets need no seam, that `inet_aton`
+is a BSD extension rather than C99 — so the evidence for this header's shape is real even though the file
+is not here yet. It arrives when that port does.
 
 The host one is not decoration. A header with one caller and one implementation is indirection, not a
 seam; the host build is what notices when a "portable" file quietly grows a dependency on a console.
@@ -96,8 +95,8 @@ make -C libripcord/tests fuzz-run FUZZ_CC=clang      # needs a clang with libFuz
 
 `make compile` exists because the runners stop at the socket boundary, which used to leave
 `net/rc_tcp.c`, `session/halyard_control_session.c`, `takion/takion_reliable_channel.c` and parts of
-`util/` compiled by the cross-compiler and by nothing else — precisely the set where a platform
-assumption hides. Adding it immediately found two: `inet_aton` is a BSD extension rather than C99 (and
+`util/` compiled by the cross-compiler and by nothing else — the set where a platform assumption hides.
+Adding it immediately found two: `inet_aton` is a BSD extension rather than C99 (and
 vitasdk's documented helper is `sceNetInetPton` instead), and `clock_gettime` needs an explicit
 `_POSIX_C_SOURCE` under strict `-std=c99`.
 
@@ -109,9 +108,9 @@ rather than copied.
 
 That is the default (`ECDH_BACKEND=local`). `ECDH_BACKEND=mbedtls` links a system `libmbedcrypto`
 instead, and `ECDH_BACKEND=none` skips the ECDH cases and exits 0. Before the local build existed,
-`ecdh_test` skipped on any machine without `libmbedtls-dev`, which quietly meant the curve agreement and
-the derived stream keys went unchecked exactly where nobody would notice — so "any machine with a C
-compiler and nothing else installed" is now true rather than aspirational.
+`ecdh_test` skipped on any machine without `libmbedtls-dev`, so the curve agreement and the derived stream
+keys quietly went unchecked where nobody would notice. "Any machine with a C compiler and nothing else
+installed" is now true rather than aspirational.
 
 **A build can supply its own backend instead.** Defining `RC_ECDH_EXTERNAL_BACKEND` compiles only the
 backend-neutral half of `rc_ecdh.c`, and the build provides the five backend entry points itself. The macOS
