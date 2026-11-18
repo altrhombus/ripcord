@@ -6,12 +6,9 @@ namespace Ripcord.Diagnostics;
 /// ETW/EventSource provider for Ripcord.
 ///
 /// <para>
-/// Everything before this was <c>Debug.WriteLine</c>, which compiles out of Release builds entirely — so the
-/// shipping app produced no trace of anything, and the only diagnostic for a stutter or a disconnect was
-/// whatever the user happened to notice. An EventSource costs nothing when no-one is listening, can be captured
-/// with standard tooling (<c>dotnet-trace</c>, PerfView, WPR) without attaching a debugger, and correlates
-/// against system-wide GPU and network events on the same timeline — which is exactly what diagnosing a latency
-/// problem needs.
+/// <c>Debug.WriteLine</c> compiles out of Release builds entirely. An EventSource costs nothing when no-one is
+/// listening, can be captured with standard tooling (<c>dotnet-trace</c>, PerfView, WPR) without attaching a
+/// debugger, and correlates against system-wide GPU and network events on the same timeline.
 /// </para>
 ///
 /// <para>

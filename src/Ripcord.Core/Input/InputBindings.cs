@@ -12,9 +12,8 @@ namespace Ripcord.Core.Input;
 /// </para>
 ///
 /// <para>
-/// The gamepad remap exists for hardware nobody anticipated: third-party pads and handhelds routinely report a
-/// physically-South button as East, or swap shoulders, and without a remap the only fix is a code change. It is
-/// identity by default, so an ordinary pad is unaffected.
+/// The gamepad remap covers third-party pads and handhelds that report a physically-South button as East, or
+/// swap shoulders. It is identity by default, so an ordinary pad is unaffected.
 /// </para>
 /// </summary>
 public sealed record InputBindings

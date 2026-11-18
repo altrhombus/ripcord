@@ -91,10 +91,10 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
     /// raises only <see cref="FrameReceived"/>: no join, seed or signaling from it reaches a consumer.
     ///
     /// <para>
-    /// The push channel carries every session on the account, and nothing here told them apart. From a phone
-    /// hotspot the console joined, published its seed and offered in a session our own remote wake had created,
-    /// and the route took all three as its own; every message it then sent the console was refused as "Member not
-    /// joined session." (2026-10-10). Every frame in our captures of the vendor client names its session.
+    /// The push channel carries every session on the account. Unfiltered, from a phone hotspot the console
+    /// joined, published its seed and offered in a session our own remote wake had created, and every message
+    /// the route then sent the console was refused as "Member not joined session." (2026-10-10). Every frame in
+    /// our captures of the vendor client names its session.
     /// </para>
     /// </summary>
     public string? SessionId

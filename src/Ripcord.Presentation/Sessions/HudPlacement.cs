@@ -28,16 +28,13 @@ public readonly record struct HudLayout(DiagnosticsPlacement Placement, double P
 ///
 /// <para>
 /// <b>The panel claims dead space first and overlays only when there is none.</b> The stream is 16:9 and the
-/// window usually is not, so there is nearly always a bar somewhere that is already black and already
-/// carrying nothing — an ultrawide leaves 440 px down each side of a 16:9 picture. Putting the instruments
-/// there costs the player no picture at all, which also answers why nobody keeps the panel open today: it is
-/// expensive to, and it does not have to be.
+/// window usually is not, so there is nearly always a bar that is already black — an ultrawide leaves 440 px
+/// down each side of a 16:9 picture. Putting the instruments there costs the player no picture at all.
 /// </para>
 ///
 /// <para>
-/// The arithmetic is already being done — the swap chain knows the video size and the panel knows its bounds
-/// — so this is a decision, not a measurement. Pure and unit-tested, because the alternative is discovering
-/// on an ultrawide that the rule was written for one aspect ratio.
+/// Pure and unit-tested: the inputs are the video size and the panel's bounds, and the rule has to hold at
+/// every aspect ratio.
 /// </para>
 /// </summary>
 public static class HudPlacement

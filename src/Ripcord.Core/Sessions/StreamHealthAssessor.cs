@@ -39,12 +39,9 @@ public readonly record struct StreamHealthSignals(
 /// nothing a player can do.
 ///
 /// <para>
-/// <b>Why a third string and not just a shorter tip.</b> Rung 1 is one line over a running game, and a
-/// headline on its own is a diagnosis with no remedy: "Losing packets on the network" tells a player what is
-/// happening and nothing about what to try. The full tip is two sentences and belongs at a rung someone has
-/// chosen to open. This is the clause that fits on the line they did not choose to see — and it stays
-/// separate so the headline is still identical at all three rungs, which is what lets rung 2 and rung 3 be
-/// recognisably the same verdict rather than a second opinion.
+/// Rung 1 is one line over a running game: a headline alone is a diagnosis with no remedy, and the full tip
+/// is two sentences. This clause fits on that line, and it is a separate string so the headline stays
+/// identical at all three rungs.
 /// </para>
 /// </param>
 public readonly record struct StreamHealthVerdict(

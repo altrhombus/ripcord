@@ -39,10 +39,10 @@ public enum ConsoleWakeOutcome
 /// Makes sure a console is awake before a connect is attempted.
 ///
 /// <para>
-/// A connect to a sleeping console cannot succeed, and before this existed it simply hung on "Connecting…"
-/// until timeout with no cause offered — which is the failure this seam is really about. The mechanism is
-/// deeply family-specific (a PS4 wakes on one port and protocol version, a PS5 on another) and needs the
-/// console's stored credential to sign the wake, so all of it belongs on the protocol side.
+/// A connect to a sleeping console cannot succeed; without this it hangs on "Connecting…" until timeout with
+/// no cause offered. The mechanism is family-specific (a PS4 wakes on one port and protocol version, a PS5 on
+/// another) and needs the console's stored credential to sign the wake, so all of it belongs on the protocol
+/// side.
 /// </para>
 ///
 /// <para>

@@ -11,31 +11,23 @@ namespace Ripcord.Presentation.Pairing;
 
 /// <summary>
 /// The add-a-console flow: pick a family, find the console on the network, enter the link code from its screen,
-/// pair, and name it.
+/// pair, and name it. A state machine with no page under it, so it runs in tests without hardware. Three rules
+/// hold by structure:
 ///
 /// <para>
-/// Extracted from <c>AddConsolePage</c>'s code-behind, where the same state machine ran on mutable fields and
-/// could only be exercised by launching the app against real hardware. Three defects are fixed structurally
-/// rather than guarded, because each was a consequence of living in a page:
+/// <b>1. Every transition returns a Task</b>, the scan included, so a caller can await it and an exception has
+/// somewhere to go.
 /// </para>
 ///
 /// <para>
-/// <b>1. The scan was <c>async void</c>.</b> Nothing could await it, so a test had to sleep and hope, and an
-/// exception escaping it would have gone to the message loop. Every transition here returns a Task.
+/// <b>2. A discovery result that lands after its scan ended is dropped.</b> There is one generation check —
+/// <see cref="IsCurrentScan"/> — and one rule about when to ask it: synchronously, as each event happens, never
+/// from inside a posted closure.
 /// </para>
 ///
 /// <para>
-/// <b>2. Discovery results could land after the user had left.</b> The page marshalled each result onto the
-/// dispatcher and had nowhere to ask "is this scan still the current one?", so a console answering late mutated a
-/// collection belonging to a dead page. There is now one generation check — <see cref="IsCurrentScan"/> — and one
-/// rule about when to ask it: synchronously, as each event happens, never from inside a posted closure.
-/// </para>
-///
-/// <para>
-/// <b>3. Leaving mid-pairing leaked the request.</b> The page's <c>using var cts</c> inside its pair method was a
-/// timeout, not an ownership handle, so navigating away left the exchange running and its result landing on a
-/// page that no longer existed. The flow owns both cancellation sources and <see cref="DisposeAsync"/> cancels
-/// them.
+/// <b>3. Leaving mid-pairing cancels the request.</b> The flow owns both cancellation sources and
+/// <see cref="DisposeAsync"/> cancels them, so no exchange outlives the flow.
 /// </para>
 /// </summary>
 public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyncDisposable
@@ -99,17 +91,10 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// The code form has been asked for. False until then, when somebody is not signed in.
     ///
     /// <para>
-    /// <b>Because the code route is not the lazy one, however it looks.</b> docs/design.md had it leading on
-    /// the grounds that it "needs nothing the player does not already have" - and that is simply false. It
-    /// needs them at the console, through its menus, reading an 8-digit code, AND holding their numeric
-    /// account id, which almost nobody knows and which this app's own caption sends them to a third-party
-    /// lookup tool to find. Signing in needs a password they already have.
-    /// </para>
-    ///
-    /// <para>
-    /// So sign-in leads and the code form waits to be asked for. Never a wall: the link to it is right there,
-    /// unexplained and unweighted, for anybody who would rather not connect an account - and that is a trade
-    /// they are entitled to make without being argued with.
+    /// Sign-in leads and the code form waits to be asked for, because the code route asks more of the player:
+    /// being at the console, in its menus, reading an 8-digit code, AND holding their numeric account id.
+    /// Signing in needs a password they already have. Never a wall: the link to the code form is always
+    /// there for anybody who would rather not connect an account.
     /// </para>
     /// </summary>
     private bool _codeRouteRevealed;
@@ -307,9 +292,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// <para>
     /// <b>Why the flow has to be told.</b> The account is read live — <see cref="AccountIdIsAutomatic"/> asks
     /// the session every time the state is composed — but nothing here subscribes to it, so a sign-in that
-    /// happens beside the flow changes every answer and recomposes nothing. Before this existed the invitation
-    /// navigated to the settings page to sign in, which abandoned the flow outright; the user came back by
-    /// starting pairing again.
+    /// happens beside the flow changes every answer and recomposes nothing.
     /// </para>
     ///
     /// <para>
@@ -946,18 +929,15 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 .ListConsolesAsync(own.Token)
                 .ConfigureAwait(false);
 
-            // Freshness judged here, synchronously, as the result arrives — the same rule the scan follows, and
-            // for the same reason: Mutate posts, so a check written inside the closure runs later. The question
-            // is whether THIS lookup is still the current one, which is not the same as whether the scan that
-            // started it is: the user picking a console ends the scan and must not discard an answer that is
-            // still perfectly good.
+            // Freshness judged here, synchronously, as the result arrives: Mutate posts, so a check written
+            // inside the closure runs later. The question is whether THIS lookup is still the current one,
+            // not whether the scan that started it is: the user picking a console ends the scan and must not
+            // discard an answer that is still good.
             //
-            // Applied THROUGH Mutate rather than assigned directly, which it was while nothing but BuildRecord
-            // read it. Two reasons, and the first is the layer's rule: this continuation is not on the
-            // dispatcher thread, and every field here is written on that thread alone. The second is visible —
-            // whether the account already knows this console decides whether account pairing is offered, so a
-            // list that lands while the user is on the link step has to recompose the state, or the button
-            // stays greyed out until something unrelated moves.
+            // Applied THROUGH Mutate, not assigned directly: this continuation is not on the dispatcher
+            // thread, and every field here is written on that thread alone. And whether the account already
+            // knows this console decides whether account pairing is offered, so a list that lands while the
+            // user is on the link step has to recompose the state.
             if (ReferenceEquals(_cloudCts, own))
             {
                 Mutate(() => _cloudConsoles = consoles);
@@ -1077,12 +1057,9 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         CloudConsole? cloudConsole = ResolveCloudConsole();
         bool consoleKnownToAccount = cloudConsole is not null;
 
-        // **Two flags the account's own record carries, and the step used to ignore both.** It offered the
-        // account route because the console appeared in the list, which says only that the account has seen
-        // it. The failure for getting this wrong is expensive and silent: sixty seconds of waiting, and then
-        // a message about a registration seed for a console that was never going to answer.
-        //
-        // They are not the same kind of fact and must not be treated as one:
+        // Two flags the account's own record carries. Appearing in the list says only that the account
+        // has seen the console; offering the route on that alone costs sixty seconds of waiting and then
+        // a message about a registration seed. They are not the same kind of fact:
         //
         //   RemotePlayEnabled  false → the route cannot work. Fixable, on the console.
         //   CanWakeRemotely    false → the route works on an AWAKE console. A condition, not a refusal.

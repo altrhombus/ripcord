@@ -23,11 +23,9 @@ namespace Ripcord.Presentation.Halyard.Pairing;
 /// </para>
 ///
 /// <para>
-/// Moved here from <c>Ripcord.App/Services/AppRegistrationCipher.cs</c> unchanged. The logic is deliberately
-/// carried over verbatim: the resolution order and every <c>source</c> string are user-facing text on a pairing
-/// failure, so "improving" them during a move would be an invisible behaviour change in the one place a user is
-/// already having a bad time. The only difference is static → instance, so the pairing flow can be tested
-/// against a fake.
+/// The resolution order and every <c>source</c> string are user-facing text on a pairing failure, so changing
+/// them is a behaviour change. An instance rather than a static so the pairing flow can be tested against a
+/// fake.
 /// </para>
 /// </summary>
 public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistrationCipherResolver

@@ -163,14 +163,11 @@ public class TakionSessionNegotiatorTests
     /// <summary>
     /// The version the mock console picks: 17 (0x11), the one our own capture negotiated.
     ///
-    /// <para>It was 9 until 2026-09-11, which meant this whole end-to-end path — negotiate, agree an ECDH
-    /// key, derive stream keys, decrypt a server packet — ran on P-256, because <c>CurveForVersion</c>
-    /// silently answered P-256 for any version it did not recognise. No console has ever been observed
-    /// speaking version 9. So the most complete test of the crypto path was exercising a curve the project
-    /// had never validated, while the curve real hardware uses went untested here.</para>
-    ///
-    /// <para>Now that the fallback throws, the mock has to name a version that means something, and the
-    /// coverage follows the console instead of the guess.</para>
+    /// <para>It was 9 until 2026-09-11. No console has ever been observed speaking version 9, and
+    /// <c>CurveForVersion</c> answered P-256 for any version it did not recognise, so this whole end-to-end
+    /// path — negotiate, agree an ECDH key, derive stream keys, decrypt a server packet — ran on a curve the
+    /// project had never validated while the curve real hardware uses went untested here. That fallback now
+    /// throws, so the mock has to name a version that means something.</para>
     /// </summary>
     private const uint MockConsoleVersion = 17;
 

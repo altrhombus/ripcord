@@ -29,9 +29,8 @@ public static class CloudConsoleMatch
     /// </para>
     /// </summary>
     /// <param name="reportedName">
-    /// What the console calls <em>itself</em>, never the user's nickname. Passing a display name would fail to
-    /// match every console the user has renamed — which is most of the ones they care about, since renaming is
-    /// what people do to tell two consoles apart.
+    /// What the console calls <em>itself</em>, never the user's nickname: a display name would fail to match
+    /// every console the user has renamed.
     /// </param>
     public static string? ResolveId(IReadOnlyList<CloudConsole> cloudConsoles, string? reportedName)
         => Resolve(cloudConsoles, reportedName)?.Id;
@@ -78,10 +77,8 @@ public static class CloudConsoleMatch
     /// Fill in the cloud id on stored consoles that do not have one, and report how many were repaired.
     ///
     /// <para>
-    /// This exists because the field was added after people had already paired their consoles. Without it,
-    /// remote wake would work only for consoles paired from the day the account tier shipped, and there would
-    /// be nothing on screen to explain why an older console behaved differently — the wake would simply never
-    /// be attempted.
+    /// Consoles paired before the field existed have no cloud id, and without one remote wake is never
+    /// attempted for them.
     /// </para>
     ///
     /// <para>

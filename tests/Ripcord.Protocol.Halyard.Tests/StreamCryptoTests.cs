@@ -67,11 +67,9 @@ public class StreamCryptoTests
     /// <summary>
     /// Outside the observed range this must refuse rather than answer.
     ///
-    /// <para>These cases asserted <c>NistP256</c> until 2026-09-11, which made a retracted guess look like
-    /// settled behaviour with a test behind it. The spec withdrew that default explicitly - "the earlier
-    /// 'v1 uses P-256, the default' was a guess" - and only the P-521 range was ever confirmed. A test that
-    /// pins a guess is worse than no test: it converts an open question into a documented answer and stops
-    /// the next person asking.</para>
+    /// <para>These cases asserted <c>NistP256</c> until 2026-09-11. The spec withdrew that default explicitly
+    /// - "the earlier 'v1 uses P-256, the default' was a guess" - and only the P-521 range was ever
+    /// confirmed, so a test pinning it presented an open question as a documented answer.</para>
     ///
     /// <para>0x0c and 0x12 are the two that matter, being one step outside each end of the range, which is
     /// where an off-by-one in the bound would show.</para>

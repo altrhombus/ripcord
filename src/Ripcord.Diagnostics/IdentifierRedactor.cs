@@ -10,10 +10,9 @@ namespace Ripcord.Diagnostics;
 ///
 /// <para>
 /// <b>Why at the source.</b> A hardware run is written up from what the harness printed, and a record copied
-/// from raw output carries whatever the output carried: a console's name, its address, its id. Every leak this
-/// project has had to clean up arrived that way. Redacting as the line is written means the safe form is the
-/// only one there is to copy, and the raw one is a deliberate request (the harness's
-/// <c>--show-identifiers</c>).
+/// from raw output carries whatever the output carried: a console's name, its address, its id. Redacting as
+/// the line is written means the safe form is the only one there is to copy, and the raw one is a deliberate
+/// request (the harness's <c>--show-identifiers</c>).
 /// </para>
 ///
 /// <para>

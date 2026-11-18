@@ -18,11 +18,11 @@ namespace Ripcord.Presentation.Halyard.Pairing;
 /// delivers the registration seed itself, encrypted, over the account service.
 ///
 /// <para>
-/// Almost all of this is <see cref="HalyardAccountPairing"/>'s job — generate the ephemeral key material, listen
-/// on the push channel before triggering the console, recover the seed from <c>customData1</c>, register. What is
-/// left here is what a presentation seam owes: resolving the crypto from the same chain the code route uses,
-/// gathering the three cloud values the coordinator needs (a token, the push server, a socket), and turning both
-/// halves' failures into a result rather than an exception.
+/// <see cref="HalyardAccountPairing"/> does the exchange: generate the ephemeral key material, listen on the
+/// push channel before triggering the console, recover the seed from <c>customData1</c>, register. This seam
+/// resolves the crypto from the same chain the code route uses, gathers the three cloud values the coordinator
+/// needs (a token, the push server, a socket), and turns both halves' failures into a result rather than an
+/// exception.
 /// </para>
 ///
 /// <para>
@@ -46,12 +46,10 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     /// Called with the push channel for each attempt, immediately after it is built and before it runs.
     ///
     /// <para>
-    /// This exists for diagnosis, and it earned its place the hard way: the first live run reported only that
-    /// the seed never arrived, which is the least informative thing it could have said. The console publishes
-    /// <c>customData1</c> only after it <em>joins</em> the session, and the join is announced on this same
-    /// channel — so "did the console join?" and "did it join and then not publish?" are different failures with
-    /// the same symptom unless somebody is watching the raw frames. The channel raises every one via
-    /// <see cref="HalyardPushChannel.FrameReceived"/>; nothing in the app subscribes, and the harness does.
+    /// For diagnosis. The console publishes <c>customData1</c> only after it <em>joins</em> the session, and
+    /// the join is announced on this same channel, so "did the console join?" and "did it join and then not
+    /// publish?" have the same symptom unless something watches the raw frames. The channel raises every one
+    /// via <see cref="HalyardPushChannel.FrameReceived"/>; nothing in the app subscribes, and the harness does.
     /// </para>
     /// </param>
     public HalyardAccountConsolePairing(
@@ -80,8 +78,7 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     /// </para>
     ///
     /// <para>
-    /// Only runs when a trace is on, because it costs a cloud round trip to answer a question nobody is
-    /// asking the rest of the time. Never fails the pairing.
+    /// Only runs when a trace is on, because it costs a cloud round trip. Never fails the pairing.
     /// </para>
     /// </summary>
     private async Task LogTargetAsync(AccountPairingRequest request, CancellationToken cancellationToken)

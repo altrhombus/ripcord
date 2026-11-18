@@ -11,12 +11,10 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// The account ("web"/no-PIN) route's key path, against three captured sessions.
 ///
 /// <para>
-/// <b>Why this suite had to exist.</b> Every other test of this path was a self-round-trip: the seed tests
-/// sealed and recovered with the same four parameters, and the request builder was only ever checked against
-/// its own output. So "the seed is recovered correctly" and "the transport key is <c>seed XOR
-/// registrationTable[selector]</c>" were both believed without either being run against the console's own
-/// bytes from the same session. When a live registration came back <c>403</c>, nothing in the suite could say
-/// which link was wrong.
+/// The other tests of this path are self-round-trips: the seed tests seal and recover with the same four
+/// parameters, and the request builder is checked against its own output. Without these vectors neither "the
+/// seed is recovered correctly" nor "the transport key is <c>seed XOR registrationTable[selector]</c>" is run
+/// against the console's own bytes from the same session, and a live <c>403</c> cannot be pinned on either.
 /// </para>
 ///
 /// <para>

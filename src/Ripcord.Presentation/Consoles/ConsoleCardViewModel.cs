@@ -60,10 +60,9 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     /// that reads is a styling decision and lives in the front end, not here.
     ///
     /// <para>
-    /// Pointer only, never focus. It was "hover or focus" until 2026-10-08, which broke the rule design.md states
-    /// in so many words — hover is a wash, focus is a ring — and in light theme it did worse: the wash darkens a
-    /// light card, the hero holds focus from launch, so the first thing a light-theme player saw was a grey card
-    /// darker than the page, the "hole cut in the page" the gradient rule exists to prevent.
+    /// Pointer only, never focus (since 2026-10-08): design.md's rule is that hover is a wash and focus is a
+    /// ring. In light theme the wash darkens a light card and the hero holds focus from launch, so "hover or
+    /// focus" opened on a grey card darker than the page.
     /// </para>
     /// </summary>
     public bool IsHighlighted

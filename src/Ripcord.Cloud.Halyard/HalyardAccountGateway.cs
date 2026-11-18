@@ -13,14 +13,11 @@ namespace Ripcord.Cloud.Halyard;
 public sealed record HalyardAccount(string AccountId, string OnlineId, string Region);
 
 /// <summary>
-/// The sign-in lifecycle, and the one thing that was missing from this assembly: a caller for
-/// <see cref="HalyardAuthClient.ExchangeCodeAsync"/>.
+/// The sign-in lifecycle: the caller for <see cref="HalyardAuthClient.ExchangeCodeAsync"/>.
 ///
 /// <para>
-/// Everything under it already existed — authorize-URL construction, the code exchange, the refresh grant, the
-/// auto-refreshing token provider, the account lookup. What did not exist was anything that put them in order and
-/// wrote the result down, so the only way to reach the cloud tier was to hand it a refresh token obtained by
-/// other means. This type is that order:
+/// Puts the pieces under it in order (authorize-URL construction, the code exchange, the refresh grant, the
+/// auto-refreshing token provider, the account lookup) and persists the result:
 /// </para>
 ///
 /// <list type="number">
@@ -93,12 +90,9 @@ public sealed class HalyardAccountGateway
     /// whether there is one. Safe to call repeatedly and from anywhere; the restore happens at most once.
     ///
     /// <para>
-    /// <b>The bug this exists for.</b> Nothing restored the session except the settings page. A user who
-    /// launched Ripcord and connected to a console straight away had a gateway with no account in memory, so
-    /// the account route refused with "sign in to your PlayStation Network account" — to somebody who was
-    /// signed in, and whose stored token was perfectly good. Remote play from outside your own network worked
-    /// only if you happened to open Settings first. Found on a phone hotspot, after the route had already
-    /// been confirmed working.
+    /// Every path that needs the account goes through this, not only the settings page: a user who launches
+    /// and connects straight away has a stored token but no account in memory, and the account route would
+    /// otherwise refuse them as signed out.
     /// </para>
     ///
     /// <para>
@@ -247,25 +241,21 @@ public sealed class HalyardAccountGateway
     /// which is exceptional enough to throw about.
     ///
     /// <para>
-    /// A rejected refresh token clears the store. Leaving it in place would mean every launch spending a network
-    /// round trip re-learning that it is dead, and the user seeing a sign-in prompt while a file on disk claims
-    /// otherwise.
+    /// A rejected refresh token clears the store, so later launches do not spend a round trip re-learning
+    /// that it is dead.
     /// </para>
     ///
     /// <para>
-    /// <b>Only a rejected one.</b> Any cloud failure used to clear it, so a 503 at launch, or a token endpoint
-    /// having a bad minute, signed the install out for good (the 2026-09-30 review). Now a failure that says
-    /// nothing about the credential returns null and keeps the store, and the next attempt tries again.
+    /// <b>Only a rejected one.</b> A failure that says nothing about the credential (a 503 at launch, say)
+    /// returns null and keeps the store, and the next attempt tries again (the 2026-09-30 review).
     /// </para>
-    /// </summary>
     ///
     /// <para>
     /// <b>One restore at a time, from every caller.</b> A connect and a console-list refresh racing each other
-    /// would both spend the refresh token, and the second would find it rotated. That guard used to live in
-    /// <see cref="EnsureSignedInAsync"/> alone, while Settings called this directly on every visit, so the two
-    /// could overlap: the loser's rejection then cleared the winner's freshly stored sign-in (the second
-    /// 2026-10-01 review). Now the guard is here, an account already signed in is returned without touching the
-    /// network, and <see cref="EnsureSignedInAsync"/> goes through it too.
+    /// would both spend the refresh token, the second would find it rotated, and its rejection would clear the
+    /// winner's freshly stored sign-in (the second 2026-10-01 review). The guard is here, an account already
+    /// signed in is returned without touching the network, and <see cref="EnsureSignedInAsync"/> goes through
+    /// it too.
     /// </para>
     /// </summary>
     public async Task<HalyardAccount?> RestoreAsync(CancellationToken cancellationToken)
@@ -336,8 +326,8 @@ public sealed class HalyardAccountGateway
             ?? throw new HalyardCloudException("The refresh succeeded but produced no tokens.");
 
         // Stored now, before anything else can fail. The refresh spent the stored token, so from here on the store
-        // must hold the new one whatever happens next; a network drop during the account lookup used to escape the
-        // fallback below and leave the spent one on disk (the second 2026-10-01 review).
+        // must hold the new one whatever happens next, including a network drop during the account lookup (the
+        // second 2026-10-01 review).
         if (!CommitIfCurrent(generation, () =>
                 _store.Save(stored with { RefreshToken = current.RefreshToken, SavedAt = DateTimeOffset.UtcNow })))
         {
@@ -363,8 +353,8 @@ public sealed class HalyardAccountGateway
             // The token refreshed but the account lookup failed — a service problem rather than a credential
             // one. Fall back to the cached identity so an install stays signed in through an outage.
             //
-            // The refresh spent the stored token either way, so the new one is stored here too. This path used
-            // to keep the spent one, and the launch after an account-lookup outage was signed out.
+            // The refresh spent the stored token either way, so the new one is stored here too; keeping the
+            // spent one would sign out the launch after an account-lookup outage.
             HalyardTokens latest = _tokens.Current ?? current;
             HalyardAccount? cached = stored.AccountId is null
                 ? null
@@ -425,8 +415,7 @@ public sealed class HalyardAccountGateway
         {
             // The refresh itself worked, and every caller sharing it is waiting on the token, not on the disk.
             // A store that can't be written (a locked file, a profile without DPAPI) costs the next launch its
-            // sign-in, which is what happened every time before this existed; failing the refresh would cost
-            // this session too.
+            // sign-in; failing the refresh would cost this session too.
         }
     }
 

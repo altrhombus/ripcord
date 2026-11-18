@@ -4,19 +4,17 @@ namespace Ripcord.Core.Input;
 /// The latest frame from each input engine (GameInput, the DualSense HID reader, the keyboard), and their merge.
 ///
 /// <para>
-/// <b>It forgets an engine.</b> The composite used to keep every engine's last frame for good, so a pad pulled
-/// mid-press went on OR-ing that press into every merged frame: the button stayed held in the stream. GameInput's
-/// own neutral frame on its last disconnect hid that for one engine; the DualSense never sent one (the 2026-09-30
-/// review). <see cref="Forget"/> drops the engine, so the merge no longer depends on any engine remembering to
-/// clear itself.
+/// <b>It forgets an engine.</b> <see cref="Forget"/> drops a disconnected engine's last frame, so a pad pulled
+/// mid-press does not keep OR-ing that press into every merged frame. The merge must not depend on an engine
+/// sending a neutral frame on disconnect: the DualSense never did (the 2026-09-30 review).
 /// </para>
 ///
 /// <para>
 /// <b>And it knows which engine is in use.</b> <see cref="Active"/> is the engine that last showed a deliberate
 /// press, so with two pads attached the prompts can name the one in hand rather than the one that connected last
 /// (2026-10-02). One pad can reach two engines (GameInput enumerates a DualSense that raw HID also reads), so a
-/// press another engine already holds goes to whichever of them comes first in the precedence the composite gives:
-/// otherwise the engine whose report happened to land second would win, and the names would follow the race.
+/// press another engine already holds goes to whichever of them comes first in the composite's precedence,
+/// not to whichever report landed second.
 /// </para>
 ///
 /// <para>

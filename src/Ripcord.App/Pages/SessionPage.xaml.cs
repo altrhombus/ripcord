@@ -94,11 +94,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// actually finished ending.
     ///
     /// <para>
-    /// <b>Only the shutdown path needs this.</b> Leaving a stream in the ordinary way unloads the page while
-    /// the window lives on, so the teardown completes on its own and nobody waits. Closing the window
-    /// mid-stream is different: the process is about to exit, and the teardown's last acts are a control-channel
-    /// close and — on the account route — an HTTPS call leaving the cloud session. A dropped task does neither,
-    /// and the console is then holding a session nobody told it about.
+    /// Only the shutdown path waits on it. Leaving a stream normally unloads the page while the window lives on,
+    /// so the teardown completes on its own. Closing the window mid-stream exits the process, and the teardown's
+    /// last acts are a control-channel close and — on the account route — an HTTPS call leaving the cloud
+    /// session; a dropped task does neither, and the console is left holding a session nobody told it about.
     /// </para>
     /// </summary>
     public Task? Teardown { get; private set; }
@@ -146,13 +145,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     /// <summary>
     /// This page's claim on the pad. While it is on top the router stops producing navigation intents, so the
-    /// chrome cannot consume the same buttons the console is being sent — which is what used to require the
-    /// window to ask this page for a bool on every frame.
+    /// chrome cannot consume the same buttons the console is being sent.
     ///
     /// <para>
-    /// Its deactivation edge is the mid-session-modal fix in miniature: something pushed over this scope makes
-    /// the session release what is physically held, so the combination that opened a dialog does not stay down
-    /// inside the game underneath.
+    /// On its deactivation edge — something pushed over this scope — the session releases what is physically
+    /// held, so the combination that opened a dialog does not stay down inside the game underneath.
     /// </para>
     /// </summary>
     private ShellInputScope? _sessionScope;
@@ -294,10 +291,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// Show or hide a rung of the HUD, fading.
     ///
     /// <para>
-    /// The fade was the compositor's implicit show and hide animations, and it read as no fade at all, and as the
-    /// summary sliding down as it went (owner, stream, 2026-10-09): a rung collapses at once, so the bottom band's
-    /// auto-height row shrank under the summary while it was still fading. Now a rung keeps its place while it
-    /// fades, and collapses after, when there is nothing left to see move.
+    /// A rung keeps its place while it fades, and collapses after. With the compositor's implicit show and hide
+    /// animations a rung collapsed at once, so the bottom band's auto-height row shrank under the summary while
+    /// it was still fading, and the summary slid down as it went (owner, stream, 2026-10-09).
     /// </para>
     /// </summary>
     private void ShowRung(UIElement rung, bool show)
@@ -1157,18 +1153,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         => [DiagGroupStatus, DiagGroupTarget, DiagGroupMetrics, DiagGroupPipeline, DiagGroupDevice];
 
     /// <summary>
-    /// Turn the panel on its side when it is sitting in a letterbox bar.
+    /// Turn the panel on its side when it is sitting in a letterbox bar: a bar is wide and short, so the column
+    /// becomes a row and the panel stops scrolling. In the pillarbox rail and the overlay it stays a tall narrow
+    /// column.
     ///
     /// <para>
-    /// One set of facts in two arrangements, which is why this is a layout change and not a second panel: two
-    /// copies of that markup would be two things to keep in step, and the one that is off screen is the one
-    /// that would quietly stop matching.
-    /// </para>
-    ///
-    /// <para>
-    /// A bar is wide and short, so the column becomes a row and the panel stops being something you scroll.
-    /// Everywhere else - the pillarbox rail, and the overlay when there is no dead space at all - it stays the
-    /// tall narrow column it has always been.
+    /// A layout change rather than a second panel, because two copies of the markup would have to be kept in step.
     /// </para>
     /// </summary>
     private void ApplyDiagnosticsLayout(bool sheet)
@@ -1423,17 +1413,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     /// <summary>
     /// Escape steps back one level rather than ending everything at once: fullscreen → windowed → leave the
-    /// session. Dropping straight out of a live session on a single Escape is a lot of destruction for one
-    /// keypress, and "let me see the desktop for a moment without disconnecting" is the more common intent.
+    /// session. One Escape should not drop a live session, and "let me see the desktop for a moment without
+    /// disconnecting" is the more common intent.
     /// </summary>
     /// <summary>
     /// The session's own keys: Escape steps out, F11 toggles fullscreen, F3 toggles diagnostics. True when one
     /// was handled.
     ///
     /// <para>
-    /// Declines while a popup or dialog is open, because Escape belongs to that first — the disconnect prompt
-    /// is a dialog, and intercepting Escape ahead of it would make the prompt undismissable. This runs on a
-    /// tunnelling handler at the window root, so it sees the key before the dialog does and has to say so.
+    /// Declines while a popup or dialog is open, because Escape belongs to that first: the disconnect prompt is
+    /// a dialog, and this runs on a tunnelling handler at the window root, so it sees the key before the dialog.
     /// </para>
     /// </summary>
     private bool TryHandleReservedKey(Windows.System.VirtualKey key)
@@ -1787,16 +1776,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// Wire the console buttons' pointer events.
     ///
     /// <para>
-    /// Registered in code with <c>handledEventsToo: true</c>, which is the whole reason this method exists: WinUI's
-    /// ButtonBase handles PointerPressed and PointerReleased itself to drive its visual states, and marks them
-    /// handled before any XAML-declared handler runs. Wiring them as XAML attributes therefore looked correct and
-    /// silently never fired — the buttons appeared and did nothing. XAML attribute syntax has no way to opt into
-    /// handled events, so this cannot be expressed in markup.
-    /// </para>
-    ///
-    /// <para>
-    /// Click would have worked, but only as a tap: holding PS opens the console's power menu, and press/release must
-    /// stay distinct for that.
+    /// Registered in code with <c>handledEventsToo: true</c>: WinUI's ButtonBase handles PointerPressed and
+    /// PointerReleased itself to drive its visual states, and marks them handled before any XAML-declared handler
+    /// runs, so handlers wired as XAML attributes never fire. XAML attribute syntax cannot opt into handled events.
     /// </para>
     /// </summary>
     private void WireConsoleButtons()
@@ -1865,11 +1847,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// down.
     ///
     /// <para>
-    /// A mouse click is press and release a few tens of milliseconds apart, and the release went out the moment
-    /// it arrived, so a quick click could fall between two input reports and never reach the console: the PS
-    /// button needed clicking twice (owner, 2026-10-08). The keyboard and screen-reader path already held a
-    /// press for the tap length; a pointer now gets the same floor. A real hold, for the power menu, is longer
-    /// than the floor and is released exactly when the pointer lets go.
+    /// A mouse click is press and release a few tens of milliseconds apart, and a release sent at once could fall
+    /// between two input reports and never reach the console: the PS button needed clicking twice (owner,
+    /// 2026-10-08). The keyboard and screen-reader path holds a press for the same tap length. A real hold, for
+    /// the power menu, is longer than the floor and is released exactly when the pointer lets go.
     /// </para>
     /// </summary>
     private async void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)
@@ -1933,13 +1914,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     private void ApplyDiagnosticsHeightLimit() => ApplyDiagnosticsPlacement();
 
     /// <summary>
-    /// Put the instrument panel where the video isn't.
-    ///
-    /// <para>
-    /// The stream is 16:9 and the window usually is not, so there is nearly always a bar that is already black
-    /// and carrying nothing. Claiming it costs the player no picture — which is also the answer to "nobody
-    /// leaves the panel open": today it is expensive to, and it does not have to be.
-    /// </para>
+    /// Put the instrument panel where the video isn't. The stream is 16:9 and the window usually is not, so there
+    /// is nearly always a bar that is already black, and claiming it costs the player no picture.
     ///
     /// <para>
     /// Only the pillarbox case is wired here. The panel is already a tall narrow column, so moving it into a
@@ -2210,10 +2186,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// Write a plain-text snapshot of everything the overlay knows to the state directory.
     ///
     /// <para>
-    /// This exists for machines with no development environment — a handheld, in practice — where the overlay can
-    /// be photographed but nothing can be attached to the process, ETW is impractical to collect, and
-    /// Debug.WriteLine goes nowhere. The report is deliberately plain text and self-contained so it can be read
-    /// anywhere and pasted whole.
+    /// For machines with no development environment — a handheld, in practice — where the overlay can be
+    /// photographed but nothing can be attached to the process, ETW is impractical to collect, and
+    /// Debug.WriteLine goes nowhere. Plain text and self-contained, so it can be read anywhere and pasted whole.
     /// </para>
     /// </summary>
     /// <summary>
@@ -2221,9 +2196,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     ///
     /// <para>
     /// The F8 report answers "what is wrong right now"; this answers "what happened over the last ten
-    /// minutes", which is the shape of question a threshold needs. Reading a twice-a-second figure off a
-    /// screen and trying to catch its peak is not a measurement, and it is what the receive-queue question
-    /// currently asks of whoever is holding the handheld.
+    /// minutes", which is the question a threshold needs answered.
     /// </para>
     /// </summary>
     private void StartTrace()
@@ -2263,18 +2236,15 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// Write the preamble, once, as late as the adapter name allows.
     ///
     /// <para>
-    /// The preamble exists so a trace that arrives on its own still says what it was a trace OF, and the GPU
-    /// is the one piece of machine detail in it - "which adapter" changes the answer to most questions a
-    /// trace is taken to settle. But the adapter is only resolved when the decode pipeline initialises, and
-    /// that happens on the first decoded frame. <see cref="StartTrace"/> runs at the top of the connect,
-    /// before there is a pipeline at all, so asking then reliably yields an empty string - which is exactly
-    /// what the first traces taken off hardware contained.
+    /// The preamble says what the trace is a trace of, and the GPU is the one piece of machine detail in it.
+    /// The adapter is only resolved when the decode pipeline initialises, on the first decoded frame;
+    /// <see cref="StartTrace"/> runs at the top of the connect, before there is a pipeline, so asking then
+    /// yields an empty string.
     /// </para>
     ///
     /// <para>
     /// So the preamble waits for a name, but not indefinitely: after <see cref="TracePreambleMaxWaits"/> rows
-    /// it is written regardless. A session that fails before it ever decodes is precisely when a trace is most
-    /// worth having, and a file of bare numbers with no header is not one.
+    /// it is written regardless, so a session that fails before it ever decodes still gets a header.
     /// </para>
     /// </summary>
     private void WriteTracePreamble()
@@ -2568,32 +2538,27 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// One diagnostics sample.
     ///
     /// <para>
-    /// Deliberately does NOT require a live session. The panel is least useful when it is empty, which is
-    /// exactly while something is failing to connect — and the GPU, decoder and decode-path rows are already
-    /// meaningful before any session exists.
+    /// Deliberately does NOT require a live session: the GPU, decoder and decode-path rows are meaningful before
+    /// any session exists, and the panel is most needed while something is failing to connect.
     /// </para>
     ///
     /// <para>
-    /// Everything this used to compute — rates, thresholds, wording, which rows have anything to say — moved to
-    /// <see cref="SessionViewModel.Sample"/>. What is left is reading the two live objects and redrawing the
-    /// sparklines, which are the one part of the readout that needs a canvas.
+    /// Rates, thresholds, wording and row selection live in <see cref="SessionViewModel.Sample"/>. What is left
+    /// here is reading the two live objects and redrawing the sparklines, which need a canvas.
     /// </para>
     /// </summary>
     private void StatsTick(object? sender, object e)
     {
         // SAMPLED whether or not the panel is showing; only the DRAWING is gated on visibility, further down in
-        // Render. Gating the sample itself cost two things, and a saved report showed both: the health verdict
-        // could read "Not connected yet" beside a lifecycle of "Streaming", because it had been composed before
-        // the session existed and nothing recomposed it; and the sparklines opened empty, so someone who
-        // reached for the overlay because something looked wrong got no history of the thirty seconds that made
-        // them reach for it.
+        // Render. With the sample gated, the health verdict could read "Not connected yet" beside a lifecycle of
+        // "Streaming" (composed before the session existed, never recomposed), and the sparklines opened empty,
+        // with no history of the thirty seconds before the overlay was opened.
         //
         // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
         // to mean anything — so there is nothing new to plot either.
         // The connect gate needs the clock, not just reports. ConnectFlow reports only when something
-        // changes, so a stage that hangs reports once and then goes quiet - without this, a four-second
-        // stall would never promote its own line and the screen would sit on a stage that had already
-        // stopped being true. Ticked before sampling, and unconditionally, because the connect sequence runs
+        // changes, so a stage that hangs reports once and then goes quiet, and a four-second stall would never
+        // promote its own line. Ticked before sampling, and unconditionally, because the connect sequence runs
         // before there is any telemetry to sample.
         _viewModel.TickConnect();
 

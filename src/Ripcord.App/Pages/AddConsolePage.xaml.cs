@@ -115,12 +115,11 @@ public sealed partial class AddConsolePage : Page, IStepBack
     /// The first console to answer takes focus, if the user is still where the page put them.
     ///
     /// <para>
-    /// This page had decided the opposite: an arrival never moves focus, because a console landing under a
-    /// thumb must not eat the next press. That rule is right for somebody navigating and wrong for somebody
-    /// waiting. Arriving on an empty list, a pad user sat on "Search again" with their console appearing above
-    /// it, and the obvious next press acted on the wrong thing (2026-10-08). So the rule now has the condition
-    /// it always implied: focus moves to the first result only while it is still on the seed and has never left
-    /// it. Anyone who has moved, even away and back, keeps their place; the FocusAnchor still protects them.
+    /// Otherwise an arrival never moves focus, because a console landing under a thumb must not eat the next
+    /// press. The exception is for somebody waiting: arriving on an empty list, a pad user sat on "Search
+    /// again" with their console appearing above it, and the next press acted on the wrong thing (2026-10-08).
+    /// So focus moves to the first result only while it is still on the seed and has never left it. Anyone who
+    /// has moved, even away and back, keeps their place; the FocusAnchor still protects them.
     /// </para>
     /// </summary>
     private void OnDiscoveredChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -590,10 +589,8 @@ public sealed partial class AddConsolePage : Page, IStepBack
     /// Sign in without leaving the flow.
     ///
     /// <para>
-    /// This used to navigate to the settings page, because that is where the sign-in sequence was written. The
-    /// user signed in and was then standing on a settings page with pairing abandoned behind them — the way
-    /// back was to start pairing over from the beginning. Sign-in is a modal over whatever asked for it, so
-    /// the step the user was on is still the step they are on.
+    /// Sign-in is a modal over whatever asked for it, so the step the user was on is still the step they are
+    /// on. Navigating to the settings page instead would abandon pairing behind them.
     /// </para>
     /// </summary>
     private async void OnSignInClick(object sender, RoutedEventArgs e)

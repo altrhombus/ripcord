@@ -135,10 +135,9 @@ public sealed class TakionReliableChannel : IAsyncDisposable
     /// sample. This is the real network RTT — the number a player experiences as input lag.
     ///
     /// <para>
-    /// Deliberately a <see cref="double"/>. Reported as an integer it read "0 ms" on a wired LAN, where the true
-    /// value is a few hundred microseconds — technically correct, entirely useless, and indistinguishable from
-    /// "not implemented". Sub-millisecond resolution also makes the difference between a 0.4 ms wired link and a
-    /// 3 ms Wi-Fi link visible, which is the comparison that actually matters for a handheld.
+    /// Deliberately a <see cref="double"/>. As an integer it reads "0 ms" on a wired LAN, where the true value is
+    /// a few hundred microseconds, indistinguishable from "not implemented"; sub-millisecond resolution also
+    /// separates a 0.4 ms wired link from a 3 ms Wi-Fi link.
     /// </para>
     /// </summary>
     public double RoundTripTimeMs { get { lock (_gate) return _smoothedRttMs; } }

@@ -22,9 +22,7 @@ public abstract record HalyardControlEvent
     /// A datagram the association did not know what to do with.
     ///
     /// <para>
-    /// Reported rather than dropped, and this is deliberate: the first live runs of this transport reported
-    /// only "the console sent nothing", which said nothing about what it <em>had</em> sent. An association
-    /// that names what it ignored turns a silent stall into evidence.
+    /// Reported rather than dropped, deliberately: naming what was ignored turns a silent stall into evidence.
     /// </para>
     /// </summary>
     public sealed record Unhandled(string Reason, byte[] Datagram) : HalyardControlEvent;
@@ -98,21 +96,18 @@ public enum HalyardControlAddressing
 /// The account-route control transport as a <b>peer association</b>, driven purely by what arrives.
 ///
 /// <para>
-/// <b>Why this is not a client.</b> The first shape of this code performed one request/response cycle —
-/// prelude, handshake, send, read — which assumed we were always the side that initiates. The wire says
-/// otherwise: on a WAN path the client opens the prelude to punch out through NAT, and on a shared LAN the
-/// <em>console</em> opens it as soon as signaling has given it our candidate. Both sides echo. Either side may
-/// open a chunk connection. Encoding a role at compile time meant every new observation became a
-/// restructuring, and it could never have carried the rest of the account route: the whole control plane —
-/// <c>rgst</c>, <c>init</c>, <c>ctrl</c>, and then the persistent binary frames — runs over this, and a
-/// one-shot exchange cannot hold a persistent channel.
+/// <b>Why this is not a client.</b> Neither side has a fixed role: on a WAN path the client opens the prelude
+/// to punch out through NAT, and on a shared LAN the <em>console</em> opens it as soon as signaling has given
+/// it our candidate. Both sides echo. Either side may open a chunk connection. And the whole control plane —
+/// <c>rgst</c>, <c>init</c>, <c>ctrl</c>, and then the persistent binary frames — runs over this, which a
+/// one-shot request/response exchange cannot hold.
 /// </para>
 ///
 /// <para>
 /// <b>So this is a state machine with no I/O.</b> Feed it a datagram, get back the datagrams to send and the
-/// events that occurred. No sockets, no timers, no <c>async</c> — which is what lets the whole protocol be
-/// driven from a capture, in either role, as a deterministic test. The socket pump that wraps it holds no
-/// protocol knowledge at all.
+/// events that occurred. No sockets, no timers, no <c>async</c>, so the whole protocol can be driven from a
+/// capture, in either role, as a deterministic test. The socket pump that wraps it holds no protocol
+/// knowledge.
 /// </para>
 ///
 /// <para>
@@ -276,14 +271,12 @@ public sealed class HalyardControlAssociation
     public HalyardControlAction OpenConnection(
         HalyardControlAddressing addressing = HalyardControlAddressing.PortPair)
     {
-        // Opening a connection says nothing about the previous one. The console tears each chunk connection
-        // down once it has answered -- the captured session runs `rgst`, `init` and `ctrl` as three
-        // connections over one prelude -- so this is the normal path, not a recovery.
+        // The console tears each chunk connection down once it has answered -- the captured session runs
+        // `rgst`, `init` and `ctrl` as three connections over one prelude -- so reopening is the normal path.
         //
-        // It has to work from Connected as well as Closed, because the peer's teardown of the previous
-        // connection is often still in flight when the caller asks for the next one. Refusing there left the
-        // association apparently connected, sent the next request down the connection that was already
-        // closing, and read that teardown as the answer.
+        // It has to work from Connected as well as Closed: the peer's teardown of the previous connection is
+        // often still in flight when the caller asks for the next one, and refusing there sends the next
+        // request down the closing connection and reads that teardown as the answer.
         if (Phase is HalyardControlPhase.Connected or HalyardControlPhase.Closed)
         {
             Phase = HalyardControlPhase.Established;
@@ -333,11 +326,10 @@ public sealed class HalyardControlAssociation
     /// End the open connection, the way the peer ends one: a <c>Close</c> chunk carrying our connection tag.
     ///
     /// <para>
-    /// <b>Why this has to be sent explicitly.</b> On the PIN route the control plane is TCP, and closing the
-    /// socket is what tells the console the session is over. This transport is datagrams: there is no FIN, so
-    /// a client that simply stops talking leaves the console believing the session is still live. Observed
-    /// exactly that way -- after a run the console reported Remote Play in use and refused to join any further
-    /// cloud session until it was rebooted.
+    /// <b>Why this has to be sent explicitly.</b> This transport is datagrams: there is no FIN (on the PIN
+    /// route closing the TCP socket ends the session), so a client that simply stops talking leaves the console
+    /// believing the session is still live. Observed: after a run the console reported Remote Play in use and
+    /// refused to join any further cloud session until it was rebooted.
     /// </para>
     ///
     /// <para>
@@ -381,14 +373,10 @@ public sealed class HalyardControlAssociation
         byte[] data = HalyardControlChunkCodec.Encode(
             HalyardControlChunkType.Data, DefaultFlags, WithSequence(_sequence, payload.Span));
 
-        // Each payload gets its own sequence, and this is where that was missing. Every chunk we sent on a
-        // connection carried the sequence the console handed us in its accept, so the console took the first
-        // one -- the HTTP request -- and discarded everything after it as a duplicate, exactly as its own
-        // acknowledgements said it would: they kept asking for the next sequence while we kept resending the
-        // previous. Nothing above this layer could see it. The request/response handshakes still worked,
-        // because each one opens a fresh connection and only ever sends a single payload on it; what broke was
-        // the persistent control channel that follows, where every frame after the first vanished -- the login
-        // passcode, the heartbeat replies, and every attempt to answer the console at all.
+        // Each payload gets its own sequence. With a repeated sequence the console takes the first payload and
+        // discards every later one as a duplicate (its acknowledgements keep asking for the next sequence).
+        // The request/response handshakes send one payload per connection and so never show it; the
+        // persistent control channel that follows loses every frame after the first.
         _sequence++;
 
         return Datagrams(Concat(ack, data));
@@ -491,11 +479,9 @@ public sealed class HalyardControlAssociation
                 // cookie's *echoable* region.
                 //
                 // <b>Not the whole cookie body.</b> The first 8 bytes are a fixed header the peer does not
-                // want back, and returning them makes the echo 8 bytes too long. Measured against the captured
-                // client, which answers a 42-byte cookie body with a 34-byte tail: its echo is 56 bytes where
-                // ours was 64. This codec appended the body verbatim on the reasoning that "its internal
-                // layout is not needed to complete the handshake" — and that was wrong; a live console
-                // cookied us and then would not accept the over-long echo.
+                // want back. Measured against the captured client, which answers a 42-byte cookie body with a
+                // 34-byte tail: its echo is 56 bytes, not 64. A live console would not accept the over-long
+                // echo.
                 if (_helloBody is null)
                 {
                     return Event(new HalyardControlEvent.Unhandled(
@@ -575,17 +561,15 @@ public sealed class HalyardControlAssociation
     /// Deliver a payload chunk, and acknowledge it.
     ///
     /// <para>
-    /// <b>Acknowledge, always.</b> This used to acknowledge only as a side effect of
-    /// <see cref="Send"/> prefixing one to an outgoing payload — so a console frame we had no answer for went
-    /// unacknowledged until we happened to send something, which after <c>/sess/ctrl</c> could be seconds.
-    /// The console retransmits until acknowledged: a live capture showed it resending the <c>ctrl</c> response
-    /// twice over four seconds while we sat on it. The captured client answers within about forty milliseconds.
+    /// <b>Acknowledge, always</b>, not only when <see cref="Send"/> prefixes one to an outgoing payload: a
+    /// console frame we have no answer for must still be acknowledged. The console retransmits until
+    /// acknowledged: a live capture showed it resending the <c>ctrl</c> response twice over four seconds while
+    /// we sat on it. The captured client answers within about forty milliseconds.
     /// </para>
     ///
     /// <para>
-    /// <b>And deliver each sequence once.</b> Which only matters because we now see retransmissions at all:
-    /// dropping them wholesale (what the unknown-type path did) was lossless but blind, and appending them
-    /// blindly would splice a duplicate copy of the response into the byte pipe. The sequence says which it is.
+    /// <b>And deliver each sequence once.</b> Appending a retransmission would splice a duplicate copy of the
+    /// response into the byte pipe; the sequence says which it is.
     /// </para>
     /// </summary>
     private HalyardControlAction OnData(HalyardControlChunk chunk)

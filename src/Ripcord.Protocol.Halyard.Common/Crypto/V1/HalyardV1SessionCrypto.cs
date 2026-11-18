@@ -167,11 +167,6 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
     // recomputed over cap48 (a full gameplay session whose stream keys were dumped in the same run), 300/300
     // loss reports reproduce their on-wire tag with tag+keystream_offset zeroed, and the tag-only A/V rule
     // matches none of them. So control and loss reports share a rule, and input is the odd one out.
-    //
-    // Worth keeping, because it cost a planned console trip: this was recorded as needing "a capture that
-    // reaches streaming with correlated keys", which cap48 had *already* been for days. The claim descended
-    // from a capture inventory written before cap48 existed and never revisited. Check the captures folder against
-    // the claim before believing a capture-blocked note.
     private const int LossReportTagOffset = 7;
     private const int LossReportKeystreamOffsetAt = 0xb;
     private const int LossReportLength = 15;

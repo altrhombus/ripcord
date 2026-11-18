@@ -8,27 +8,23 @@ namespace Ripcord.Input;
 /// Runs every input engine at once and merges their frames, instead of choosing one at start-up.
 ///
 /// <para>
-/// The previous factory picked DualSense raw HID when a DualSense was present and GameInput otherwise, decided
-/// once when the session page loaded. Two confirmed consequences: swapping from a DualSense to an Xbox pad
-/// mid-session was never noticed (the app kept reporting raw HID until the session was closed and reopened), and
-/// with a DualSense attached an Xbox pad could not be used at all. Running both engines fixes the first and the
-/// act of choosing. The second was below this class, and running both engines did not fix it.
+/// Choosing once (DualSense raw HID when a DualSense was present, GameInput otherwise) meant a swap from a
+/// DualSense to an Xbox pad mid-session was never noticed until the session was reopened.
 /// </para>
 ///
 /// <para>
-/// <b>The second, measured on hardware 2026-08-06:</b> with a DualSense and an Xbox pad both attached, not one
-/// Xbox frame with a button set reached this class. <see cref="GameInputControllerSource"/> read "the most recent
-/// reading from any gamepad", which a Bluetooth DualSense wins essentially always. It now reads every GameInput
-/// pad from its own device and merges them before they get here (2026-09-30), since this class keeps one frame
-/// per engine, not per device.
+/// Running both engines does not by itself let an Xbox pad work beside a DualSense. Measured on hardware
+/// 2026-08-06: with both attached, not one Xbox frame with a button set reached this class, because
+/// <see cref="GameInputControllerSource"/> read "the most recent reading from any gamepad", which a Bluetooth
+/// DualSense wins essentially always. It now reads every GameInput pad from its own device and merges them
+/// before they get here (2026-09-30), since this class keeps one frame per engine, not per device.
 /// </para>
 ///
 /// <para>
 /// Merging is safe even when two engines see the SAME physical pad, which happens with a DualSense that GameInput
 /// also enumerates: buttons are OR-ed, so identical bits give the same result, and axes take whichever is further
-/// from centre, so identical values give that value. Duplicate reporting is therefore a no-op rather than something
-/// to detect and suppress. It also means several controllers act as one pad, which is what a single console session
-/// wants — whatever the user presses, on whichever device, reaches the console.
+/// from centre, so identical values give that value. Duplicate reporting is therefore a no-op. It also means
+/// several controllers act as one pad, which is what a single console session wants.
 /// </para>
 /// </summary>
 public sealed class CompositeControllerSource : IControllerSource, IDisposable

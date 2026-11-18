@@ -41,19 +41,15 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     // of bloating the socket buffer for seconds; FEC and the IDR-request path recover the picture. Control
     // packets are NOT queued here — they stay inline on the receive loop (low volume, must remain reliable and
     // in order: SACKs, keepalives, STREAM_INFO).
-    // Bound on queued A/V datagrams before the oldest are shed.
+    // Bound on queued A/V datagrams (not frames — one frame spans many) before the oldest are shed. It is a
+    // bound on memory and added latency during a processing stall, not a tuning knob: in normal operation depth
+    // sits at 0. Raise it only with evidence that shedding is happening.
     //
-    // The previous comment claimed "~0.5 s of 720p60 headroom", which was both a guess and stated in units that no
-    // longer apply (we run 1080p, and a datagram is not a frame — one frame spans many). What the number actually
-    // guarantees is a bound: at most this many datagrams are held, so a processing stall costs bounded memory and
-    // bounded added latency rather than unbounded growth. In normal operation depth sits at 0, so this is a safety
-    // valve, not a tuning knob. Raise it only with evidence that shedding is happening.
-    //
-    // A depth AT capacity is therefore a diagnosis, not a tuning signal: it means the A/V processing loop is slower
-    // than the wire, and the "packet loss" the demuxer then reports is ours, not the network's. It has read that way
-    // twice, both times from per-packet crypto cost — pegged at 511 before the x86 GHASH fix, and again at 512 on
-    // the ARM64 first run, which had no carry-less GHASH path at all (see AesGcmCore.GfMul). Check the crypto hot
-    // path before believing the link.
+    // A depth AT capacity is a diagnosis: the A/V processing loop is slower than the wire, and the "packet loss"
+    // the demuxer then reports is ours, not the network's. Both times it has read that way the cause was
+    // per-packet crypto cost — pegged at 511 before the x86 GHASH fix, and at 512 on the ARM64 first run, which
+    // had no carry-less GHASH path at all (see AesGcmCore.GfMul). Check the crypto hot path before believing the
+    // link.
     private const int AvQueueCapacity = 512;
     private Channel<byte[]>? _avQueue;
 
@@ -67,7 +63,7 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     /// <summary>
     /// Smoothed network round-trip time in milliseconds, measured from control-DATA → SACK on the reliable
     /// channel; 0 until the first clean sample. Surfaced so the session can report it and the health assessor
-    /// can tell the user "the picture is fine, the link is slow" — previously hardcoded to 0 and never measured.
+    /// can tell the user "the picture is fine, the link is slow".
     /// </summary>
     public double RoundTripTimeMs => _reliable?.RoundTripTimeMs ?? 0;
 
@@ -366,9 +362,8 @@ public sealed class HalyardTakionStream : IAsyncDisposable
 
     /// <summary>
     /// Send a graceful DISCONNECT on the session channel before teardown. The vendor sends this at session end
-    /// (cap48: <c>DISCONNECT</c> with an empty reason) and it is the difference between the vendor's clean
-    /// disconnect and our previous abrupt drop — the console needs the message to act on the disconnect (e.g.
-    /// enter rest mode) rather than wait out its AFK timeout. Best-effort: a send failure must not block
+    /// (cap48: <c>DISCONNECT</c> with an empty reason): the console needs the message to act on the disconnect
+    /// (e.g. enter rest mode) rather than wait out its AFK timeout. Best-effort: a send failure must not block
     /// teardown, and this runs on its own short budget because the session token is about to be cancelled.
     /// </summary>
     public async Task SendDisconnectAsync(string reason, CancellationToken cancellationToken)

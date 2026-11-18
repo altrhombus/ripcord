@@ -25,12 +25,9 @@ public enum MetricSeverity
 /// Where one sparkline's axis sits: what value is at the top, and where its threshold rule is drawn.
 ///
 /// <para>
-/// <b>Why this exists at all.</b> The four sparkline strokes used to be fixed per metric in markup — frames
-/// always success-green, latency always caution-yellow, loss always critical-red. So the loss chart was red
-/// when loss was zero and the frames chart was green while frames collapsed: colour that looked like it
-/// carried meaning and carried none, in an app whose standing rule is that colour is never the sole carrier
-/// of it. A stroke now takes its colour from <see cref="MetricSeverity"/>, which means a coloured line is
-/// always a line worth looking at.
+/// A stroke takes its colour from <see cref="MetricSeverity"/>, never a fixed colour per metric: a loss
+/// chart that is red at zero loss carries no meaning, and a coloured line must always be one worth looking
+/// at.
 /// </para>
 ///
 /// <para>

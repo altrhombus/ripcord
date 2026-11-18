@@ -98,13 +98,13 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
 
     // Recent history events, newest-first (index 0 = most recent). cap48 confirms newest-first ordering:
     // consecutive history packets are cumulative, with each new event PREPENDED (an older packet is a strict
-    // suffix of the next). That property is what let the atomic event boundaries be recovered empirically.
+    // suffix of the next).
     private readonly List<byte[]> _history = [];
 
     /// <summary>
-    /// Build the input packets for a controller frame: a state packet when the analog state changed or the
-    /// keepalive elapsed, and a history packet when any button/trigger transitioned. Returns 0–2 packets, each
-    /// sealed and ready to send on the stream socket.
+    /// Build the input packets for a controller frame: a state packet on the first frame and then once per
+    /// state interval, and a history packet when any button/trigger transitioned or the repeat period elapsed.
+    /// Returns 0–2 packets, each sealed and ready to send on the stream socket.
     /// </summary>
     public IReadOnlyList<byte[]> BuildPackets(in ControllerStateFrame frame)
     {
@@ -330,9 +330,8 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     /// no resting/identity value can be read off it either — 5,025 distinct values, none dominant.
     /// </para>
     /// <para>
-    /// Zero is therefore sent deliberately as a documented placeholder: well-defined, stable, and free of
-    /// cost today because we never populate gyro/accel, so orientation is inert either way. Deriving the
-    /// packing is a prerequisite for real motion support, not for streaming.
+    /// Zero is therefore sent deliberately as a placeholder; it is inert today because we never populate
+    /// gyro/accel. Deriving the packing is a prerequisite for real motion support, not for streaming.
     /// </para>
     /// </summary>
     private const uint RestingOrientation = 0u;

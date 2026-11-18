@@ -8,10 +8,9 @@ using Ripcord.Core.Sessions;
 namespace Ripcord.Client;
 
 /// <summary>
-/// Owns a streaming session's whole life: connect, watch, degrade, reconnect, tear down. This is the layer the
-/// app was missing — <see cref="SessionState.Degraded"/> and <see cref="SessionState.Reconnecting"/> existed as
-/// enum values that nothing ever assigned, so a Wi-Fi blip ended a session permanently and the only feedback
-/// was a line of grey text.
+/// Owns a streaming session's whole life: connect, watch, degrade, reconnect, tear down. It is what assigns
+/// <see cref="SessionState.Degraded"/> and <see cref="SessionState.Reconnecting"/>, so a Wi-Fi blip does not
+/// end a session permanently.
 ///
 /// <para>
 /// Everything external is injected (session factory, sink, input, power, clock, delay), so the entire policy —
@@ -58,17 +57,15 @@ public sealed class SessionController : IAsyncDisposable
     /// Opens a session, once per connect attempt including reconnects.
     ///
     /// <para>
-    /// <b>Asynchronous, and it has to be.</b> A LAN session is a socket and could be handed over synchronously,
-    /// but a session reached through the account rendezvous is not: it is a cloud round trip that takes tens of
-    /// seconds before there is anything to hand back. A synchronous factory could only have blocked the caller
-    /// or lied about being ready. The token is the connect's own, so a user who leaves the page mid-rendezvous
-    /// cancels it rather than waiting it out.
+    /// Asynchronous because a session reached through the account rendezvous is a cloud round trip that takes
+    /// tens of seconds before there is anything to hand back. The token is the connect's own, so a user who
+    /// leaves the page mid-rendezvous cancels it rather than waiting it out.
     /// </para>
     ///
     /// <para>
-    /// Whatever it returns is disposed by this controller and must own everything it needs — a route that holds
+    /// Whatever it returns is disposed by this controller and must own everything it needs: a route that holds
     /// extra machinery open (an association, a push channel) hands back a session that disposes them with
-    /// itself, rather than expecting the controller to know they exist.
+    /// itself.
     /// </para>
     /// </param>
     public SessionController(
@@ -196,8 +193,7 @@ public sealed class SessionController : IAsyncDisposable
     /// </summary>
     /// <summary>
     /// Why the controller last changed or capped quality, or empty with no live session. Paired with
-    /// <see cref="RecommendedQuality"/>: a target that differs from the request is not self-explanatory, and an
-    /// unattributed drop to 720p on a healthy link is indistinguishable from a bug.
+    /// <see cref="RecommendedQuality"/>, so a target that differs from the request is attributed.
     /// </summary>
     public string QualityReason
     {
@@ -519,18 +515,16 @@ public sealed class SessionController : IAsyncDisposable
     ///
     /// <para>
     /// <b>Why the deadline exists.</b> <see cref="SessionControllerOptions.MaxReconnectAttempts"/> bounds how
-    /// many attempts there are and says nothing about one that never returns — and one that never returns is
-    /// a window reading "Connecting…" for as long as somebody will watch it. Reported that way from hardware.
+    /// many attempts there are and says nothing about one that never returns, which is a window reading
+    /// "Connecting…" indefinitely (reported from hardware).
     /// </para>
     ///
     /// <para>
     /// <b>Why it is armed and disarmed rather than simply waited out.</b> Stopping the wait
     /// (<c>Task.WaitAsync</c>) leaves the attempt running, and an account-route attempt that is still running
-    /// is still <em>joined to its cloud session</em> — it leaves that session on its own teardown path, which
-    /// it reaches only when it eventually finishes. A cloud session nobody is in is the half-open-session
-    /// state that makes a console refuse every later connection until it is restarted, so a backstop built
-    /// that way would trade a stuck window for a stranded console. Cancelling is the only ending that
-    /// releases what the attempt holds.
+    /// is still <em>joined to its cloud session</em>, which it leaves only on its own teardown path. A cloud
+    /// session nobody is in is the half-open-session state that makes a console refuse every later connection
+    /// until it is restarted. Cancelling is the only ending that releases what the attempt holds.
     /// </para>
     ///
     /// <para>

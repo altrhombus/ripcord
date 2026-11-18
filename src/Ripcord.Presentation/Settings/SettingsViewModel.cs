@@ -12,18 +12,12 @@ namespace Ripcord.Presentation.Settings;
 /// The settings page's state and its save policy.
 ///
 /// <para>
-/// <b>The <c>_loading</c> flag is gone, and this is why.</b> The page used to carry a bool that every one of its
-/// fourteen change handlers checked, because XAML parsing raises change events on its own — setting
-/// <c>Slider.Minimum="2"</c> during <c>InitializeComponent</c> moves <c>Value</c> from 0 to 2 and fires
-/// <c>ValueChanged</c> before the controls declared later in the file exist. That produced two distinct faults:
-/// a save that dereferenced nulls, and a save that misrepresented what the user wanted.
-/// </para>
-///
-/// <para>
-/// The first disappears here because saving no longer reads controls — the draft record is the truth, and it is
-/// complete from the moment it is loaded. The second is answered by <b>saving on change rather than on event</b>:
-/// every setter below compares against what is already held and does nothing when they agree. A duplicate event
-/// is then structurally a no-op, rather than something a flag has to be remembered for.
+/// <b>There is no <c>_loading</c> flag, and none is needed.</b> XAML parsing raises change events on its own:
+/// setting <c>Slider.Minimum="2"</c> during <c>InitializeComponent</c> moves <c>Value</c> from 0 to 2 and fires
+/// <c>ValueChanged</c> before the controls declared later in the file exist. Saving does not read controls — the
+/// draft record is the truth, complete from the moment it is loaded — and it is <b>on change rather than on
+/// event</b>: every setter below compares against what is already held and does nothing when they agree, so a
+/// duplicate event is a no-op.
 /// </para>
 ///
 /// <para>

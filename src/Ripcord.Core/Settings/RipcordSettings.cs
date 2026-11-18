@@ -44,16 +44,14 @@ public enum ExitGesture
 /// </summary>
 public sealed record RipcordSettings
 {
-    // Properties are `set`, not `init`, and that is load-bearing rather than sloppy. This record is read with
-    // the System.Text.Json SOURCE GENERATOR (see SettingsStore), and for a record whose properties are all
-    // `init` the generator constructs the object with an object-initialiser that assigns EVERY property in the
-    // contract - so a property absent from the JSON is written as default(T) rather than left at the value its
-    // initialiser gave it. Measured, not assumed: `{ "Width": 1920 }` yields TargetFps 0 with `init` and 60
-    // with `set`, while reflection yields 60 either way.
+    // Properties are `set`, not `init`, and that is load-bearing. This record is read with the
+    // System.Text.Json SOURCE GENERATOR (see SettingsStore), which for an all-`init` record assigns EVERY
+    // property in the contract, so a property absent from the JSON becomes default(T) instead of keeping
+    // its initialiser's value. Measured: `{ "Width": 1920 }` yields TargetFps 0 with `init` and 60 with
+    // `set`, while reflection yields 60 either way.
     //
-    // The effect is that a settings file written by an older build silently resets every setting it does not
-    // mention. `SettingsStoreTests.PartiallyUnknownFile_KeepsWhatItCanAndDefaultsTheRest` pins this, so
-    // changing these back to `init` fails the suite rather than quietly wiping preferences on upgrade.
+    // With `init`, a settings file written by an older build silently resets every setting it does not
+    // mention. `SettingsStoreTests.PartiallyUnknownFile_KeepsWhatItCanAndDefaultsTheRest` pins this.
     //
     // A positional record with defaulted parameters also works, if this ever wants its immutability back.
 
@@ -174,12 +172,11 @@ public sealed record RipcordSettings
     /// How much of the HUD a stream opens at.
     ///
     /// <para>
-    /// <b>Nullable, and that is the migration.</b> This could not simply replace the bool above: the settings
-    /// store catches <c>JsonException</c> and falls back to defaults, so a file carrying
-    /// <c>"ShowDiagnosticsOverlay": false</c> against a property that had become an enum would not lose one
-    /// preference — it would silently lose all of them. Null therefore means "no answer in the file", which is
-    /// distinguishable from an answer of <see cref="DiagnosticsRung.Hidden"/>, and lets the old bool supply
-    /// one. It stops being null the first time the user touches the setting.
+    /// <b>Nullable, and that is the migration.</b> The settings store catches <c>JsonException</c> and falls
+    /// back to defaults, so turning the bool above into an enum would make a file carrying
+    /// <c>"ShowDiagnosticsOverlay": false</c> lose every preference, not one. Null means "no answer in the
+    /// file", distinct from <see cref="DiagnosticsRung.Hidden"/>, and lets the old bool supply one. It stops
+    /// being null the first time the user touches the setting.
     /// </para>
     /// </summary>
     public DiagnosticsRung? DiagnosticsOnConnect { get; set; }

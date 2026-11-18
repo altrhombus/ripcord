@@ -19,23 +19,21 @@ namespace Ripcord_App.Input;
 /// scrolls, and what North opens.
 ///
 /// <para>
-/// Lifted out of <c>MainWindow</c>, which had accumulated the whole of it — directional search, range
-/// adjustment, automation-peer activation and popup-root resolution — alongside navigation, the title bar and
-/// the stream layer. None of it is about being a window; all of it is about a visual tree, which is why it
-/// takes the root as a parameter and can therefore be pointed at a dialog later without changing.
+/// It is about a visual tree, not a window: it takes the root as a parameter and can therefore be pointed
+/// at a dialog without changing.
 /// </para>
 ///
 /// <para>
 /// <b>Why WinUI's own engine and not a hand-rolled one.</b> WinUI 3 desktop gives the full XY-focus engine —
 /// <c>FindNextElement</c>, strategies, overrides — but <em>no gamepad input source at all</em>: with no
-/// CoreWindow, gamepad virtual keys never arrive in <c>KeyDown</c>. So reading the pad has to be ours
-/// permanently, while deciding which element is next must not be. Both the pad and the keyboard call the same
-/// engine with the same options, so a pad Down and a keyboard Down land on the same element by construction.
+/// CoreWindow, gamepad virtual keys never arrive in <c>KeyDown</c>. So reading the pad has to be ours, while
+/// deciding which element is next must not be. Both the pad and the keyboard call the same engine with the
+/// same options, so a pad Down and a keyboard Down land on the same element.
 /// </para>
 ///
 /// <para>
-/// <b>And never by synthesizing key events.</b> A pad→arrow bridge would appear to get XY navigation free, and
-/// would also inject arrows into the console stream and into text boxes.
+/// <b>And never by synthesizing key events.</b> A pad→arrow bridge would also inject arrows into the console
+/// stream and into text boxes.
 /// </para>
 /// </summary>
 public sealed class FocusPilot(
@@ -137,15 +135,8 @@ public sealed class FocusPilot(
         // Nothing in that direction. Usually that is correct and focus should stay put — pressing against the
         // end of a row should not teleport the caret somewhere else.
         //
-        // A range control is the exception, and the history here is worth keeping because it was a
-        // misdiagnosis rather than a hard problem. Up/Down would not leave the bitrate slider, and that was
-        // read as WinUI's focus engagement — a state defined in gamepad key events that never arrive in a
-        // desktop app, so it looked un-exitable by construction. It was not that at all: DirectionalRoot was
-        // handing the search a TOOLTIP as its root (see NavigablePopups), so the search found nothing from
-        // anywhere, and the slider was merely where it was noticed. Two fixes were written against the wrong
-        // cause and neither worked, which in hindsight was the evidence.
-        //
-        // What remains after that is genuine but small, and is handled below.
+        // A range control is the exception, handled below. (Up/Down once would not leave the bitrate slider for
+        // a different reason: DirectionalRoot was handing the search a TOOLTIP as its root; see NavigablePopups.)
         object? focused = FocusManager.GetFocusedElement(searchRoot.XamlRoot);
 
         if (focused is null)
@@ -157,13 +148,10 @@ public sealed class FocusPilot(
         // Nothing in that direction, and that is almost always correct: pressing against the end of a row
         // should leave focus where the user is pushing.
         //
-        // There used to be a special case here for range controls, on the theory that a Slider would not
-        // release focus vertically. It was wrong twice over. The original symptom was the tooltip bug (see
-        // NavigablePopups), and what remained was the settings page's own geometry — its sliders end at x=996
-        // and its toggles begin at x=1008, so they never overlap and the default XY rule cannot see one from
-        // the other. That is fixed where it belongs, with an XY focus strategy on the page. The special case
-        // never once fired against real markup: measured, the primary search always returned a candidate.
-        // Removed rather than left as insurance for a cause that does not exist.
+        // No special case for range controls here. A Slider does release focus vertically; what looked
+        // otherwise was the tooltip bug (see NavigablePopups) and the settings page's own geometry — its
+        // sliders end at x=996 and its toggles begin at x=1008, so they never overlap and the default XY rule
+        // cannot see one from the other. That is handled with an XY focus strategy on the page.
         if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
         {
             seedFocus();
@@ -439,9 +427,7 @@ public sealed class FocusPilot(
     /// XamlRoot's popup root, which is <b>not</b> a descendant of <c>Window.Content</c> — so a search root of
     /// the window content excludes them entirely and focus cannot move inside them.
     /// <see cref="FocusManager.GetFocusedElement(XamlRoot)"/>, which activation uses, is XamlRoot-wide and so
-    /// was never affected. That asymmetry is the whole of the "directional gamepad focus cannot get inside a
-    /// ContentDialog (it activates, it does not move)" behaviour this project recorded as a platform
-    /// limitation: it was ours, and it was this one line.
+    /// is not affected.
     /// </para>
     /// </summary>
     public FrameworkElement? DirectionalRoot()
@@ -663,11 +649,9 @@ public sealed class FocusPilot(
     /// When focus reaches the first or last control a page can focus, scroll the page all the way to that end.
     ///
     /// <para>
-    /// Bringing a control into view scrolls only as far as the control. Whatever sits above the first one or
-    /// below the last one — a page title, a hero, a table of facts with nothing to press — was then out of reach
-    /// with a pad: on About, once you had gone down, there was no way back to the top of the page (owner, with a
-    /// pad, 2026-10-08). Arriving at the end of the focusable things is the moment someone wants the end of the
-    /// page, so that is when it is shown.
+    /// Bringing a control into view scrolls only as far as the control, so whatever sits above the first one or
+    /// below the last one — a page title, a hero, a table of facts with nothing to press — was out of reach
+    /// with a pad: on About there was no way back to the top of the page (owner, with a pad, 2026-10-08).
     /// </para>
     /// </summary>
     private static void RevealPageEdge(UIElement focused)
@@ -798,24 +782,19 @@ public sealed class FocusPilot(
     /// The open popups that are actually places a user can be — the ones holding something focusable.
     ///
     /// <para>
-    /// <b>Found on hardware, and it made the pad look dead.</b> A TOOLTIP is a popup. So is the dimmed smoke
-    /// layer behind a ContentDialog. Neither contains anything focusable, and both are frequently the topmost
-    /// popup on the XamlRoot. Treating them as the search root meant directional focus searched a tooltip,
-    /// found nothing, and did nothing — so hovering the mouse over a button with a tooltip silently killed
-    /// controller navigation until the tooltip faded. Reported as "sometimes the controller stops responding
-    /// and there's a tooltip on screen", which is exactly what it was.
+    /// A TOOLTIP is a popup. So is the dimmed smoke layer behind a ContentDialog. Neither contains anything
+    /// focusable, and both are frequently the topmost popup on the XamlRoot. With a tooltip as the search
+    /// root, directional focus found nothing and did nothing, so hovering the mouse over a button with a
+    /// tooltip killed controller navigation until the tooltip faded (found on hardware).
     /// </para>
     ///
     /// <para>
-    /// The same list drives dismissal, and the same bug was there in a second costume: Back closed the smoke
-    /// layer rather than the dialog, so the first press removed the dimming and left the prompt sitting there.
-    /// One filter fixes both, because both are the same mistake — assuming every popup is a surface.
+    /// The same list drives dismissal: unfiltered, Back closed the smoke layer rather than the dialog.
     /// </para>
     ///
     /// <para>
     /// "Holds something focusable" rather than a type check on ToolTip: it is the property actually being
-    /// relied on, it needs no list of popup types to keep current, and any future decoration rendered in a
-    /// popup is excluded without anyone having to remember to add it.
+    /// relied on, and it needs no list of popup types to keep current.
     /// </para>
     /// </summary>
     private static IReadOnlyList<Popup> NavigablePopups(XamlRoot xamlRoot)

@@ -22,8 +22,7 @@ public sealed partial class RipcordWordmark : UserControl
     ///
     /// <para>
     /// Named <c>Ink</c> rather than <c>Foreground</c>, which a <see cref="UserControl"/> already has: that
-    /// one inherits, so a caller who set nothing would get whatever the parent happened to be using and a
-    /// caller who meant to be explicit could not tell the difference. No default, for the reason
+    /// one inherits, so a caller who set nothing would silently get the parent's. No default, for the reason
     /// <see cref="RipcordMark.WedgeFill"/> has none — a brush resolved in code here would freeze at
     /// whichever theme was current when the control loaded.
     /// </para>

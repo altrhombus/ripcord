@@ -40,11 +40,10 @@ public class LiveRegistrationVectorTests
     /// The account ("web"/no-PIN) seed delivery, against a captured console reply.
     ///
     /// <para>
-    /// <b>Why this had to exist.</b> Every other seed-delivery test is a round trip through our own code —
-    /// <c>SealSeed</c> then <c>RecoverSeed</c>, sharing the key, the material, the counter and the context key.
-    /// A round trip like that passes whichever of those four is wrong, so it proved the pair consistent and
-    /// nothing about whether either matches a console. This vector is the console's own <c>customData1</c> and
-    /// the seed the vendor client actually derived from it, so it fails if any element of the schedule drifts.
+    /// Every other seed-delivery test is a round trip through our own code — <c>SealSeed</c> then
+    /// <c>RecoverSeed</c>, sharing the key, the material, the counter and the context key — which passes
+    /// whichever of those four is wrong. This vector is the console's own <c>customData1</c> and the seed the
+    /// vendor client actually derived from it, so it fails if any element of the schedule drifts.
     /// </para>
     ///
     /// <para>

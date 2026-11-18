@@ -25,10 +25,8 @@ public sealed record DiagnosticsHostInfo(
 /// Builds the text file behind "save diagnostics".
 ///
 /// <para>
-/// Its own type rather than a method on <see cref="SessionViewModel"/>: the report is a snapshot serialiser with
-/// no state of its own, and keeping it separate means the view-model does not grow a second reason to hold the
-/// settings, the histories and the host facts all at once. It is also the piece most likely to be wanted by
-/// something that is not a live session — a crash handler, say.
+/// Its own type rather than a method on <see cref="SessionViewModel"/>: it is a snapshot serialiser with no
+/// state of its own, and something that is not a live session — a crash handler, say — may want it.
 /// </para>
 ///
 /// <para>

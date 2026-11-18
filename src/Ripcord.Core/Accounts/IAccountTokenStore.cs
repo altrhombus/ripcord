@@ -4,17 +4,14 @@ namespace Ripcord.Core.Accounts;
 /// What survives between runs after the user has signed in to their account.
 ///
 /// <para>
-/// <b>The refresh token is the whole credential.</b> Access tokens last about an hour and are never persisted —
-/// there is no point, and every extra copy of a bearer token on disk is a liability. What the user experiences as
-/// "the app remembered me" is exactly "the app still holds a valid refresh token", so this record is the single
-/// thing standing between a signed-in install and a sign-in prompt.
+/// <b>The refresh token is the whole credential.</b> Access tokens last about an hour and are never
+/// persisted: every extra copy of a bearer token on disk is a liability.
 /// </para>
 ///
 /// <para>
-/// <see cref="AccountId"/> and <see cref="DisplayName"/> are a cache, not authority. They exist so a surface can
-/// say who is signed in — and so pairing can pre-fill the account id — without a network round trip on every
-/// launch, and so an offline start still shows something truthful. Anything that matters is re-read from the
-/// account service once a token has been refreshed.
+/// <see cref="AccountId"/> and <see cref="DisplayName"/> are a cache, not authority: they let a surface say
+/// who is signed in, and pairing pre-fill the account id, without a network round trip and on an offline
+/// start. Anything that matters is re-read from the account service once a token has been refreshed.
 /// </para>
 /// </summary>
 /// <param name="RefreshToken">The long-lived credential. Encrypted at rest by the store, never logged.</param>

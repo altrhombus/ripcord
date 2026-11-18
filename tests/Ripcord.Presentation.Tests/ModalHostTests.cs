@@ -7,17 +7,10 @@ namespace Ripcord.Presentation.Tests;
 /// Structural guard on modality: nothing calls <c>ContentDialog.ShowAsync</c> except <c>ModalHost</c>.
 ///
 /// <para>
-/// <b>Why this is a test and not a convention.</b> Seven call sites showed a dialog and exactly one pushed a
-/// Modal input scope — the one where somebody had hit the bug, mid-stream, and found that the session still
-/// owned the pad so the controller could not reach the prompt it had just raised. The other six were not
-/// wrong on purpose; they were written by someone who had no reason to know the rule existed. That is exactly
-/// the shape of thing a comment does not fix, and this repo already governs itself this way
-/// (<c>PageStyleTests</c>, <c>PresentationPortabilityTests</c>).
-/// </para>
-///
-/// <para>
-/// The cost of getting it wrong is not cosmetic: a dialog shown without a scope leaves whatever is underneath
-/// still holding the pad, so on a handheld with no keyboard the user is looking at a prompt they cannot answer.
+/// A dialog shown without a Modal input scope leaves whatever is underneath still holding the pad, so on a
+/// handheld with no keyboard the user is looking at a prompt they cannot answer. Seven call sites showed a
+/// dialog and exactly one pushed the scope, so this is a test and not a convention, as with
+/// <c>PageStyleTests</c> and <c>PresentationPortabilityTests</c>.
 /// </para>
 ///
 /// <para>
@@ -66,13 +59,12 @@ public class ModalHostTests
     /// The shell never puts focus into the page while a modal is up.
     ///
     /// <para>
-    /// <b>Why this needs a guard.</b> Six paths seed focus — window activation, navigation, chrome scope
-    /// activation, region cycling, a pad direction with nothing focused, and the focus watchdog — and all six
-    /// end at <c>FocusFirstContentElement</c>, which focuses the content BEHIND the modal. The first attempt
-    /// at this bug guarded one caller and left the watchdog unguarded, so the symptom (a PSN password box that
-    /// deselects the instant it is clicked, because a WebView2's native focus reads as no XAML focus at all)
-    /// survived the fix untouched. Guarding callers one at a time is how one gets missed; the check belongs at
-    /// the chokepoint, and this asserts it is still there.
+    /// Six paths seed focus — window activation, navigation, chrome scope activation, region cycling, a pad
+    /// direction with nothing focused, and the focus watchdog — and all six end at
+    /// <c>FocusFirstContentElement</c>, which focuses the content BEHIND the modal. The symptom is a PSN
+    /// password box that deselects the instant it is clicked, because a WebView2's native focus reads as no
+    /// XAML focus at all. Guarding callers one at a time is how one gets missed; the check belongs at the
+    /// chokepoint, and this asserts it is still there.
     /// </para>
     /// </summary>
     [Fact]

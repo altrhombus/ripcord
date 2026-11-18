@@ -104,15 +104,14 @@ public sealed class HalyardDatagramControlOptions
     ///
     /// <para>
     /// A same-LAN capture of the vendor settles this — its client sends the opening Init and the console
-    /// answers, and the client then opens the chunk connection. An earlier version of this waited two seconds
-    /// first, on the reasoning that the console appeared to initiate on a LAN; it only appeared to because we
-    /// opened our socket <em>after</em> sending the ACCEPT the console reacts to. Losing that race put us in
-    /// the responder role, and the console then never opened a chunk connection at all.
+    /// answers, and the client then opens the chunk connection. Waiting first loses the race to the console,
+    /// which reacts to our ACCEPT; that puts us in the responder role, and the console then never opens a
+    /// chunk connection at all.
     /// </para>
     ///
     /// <para>
-    /// Kept as a knob rather than deleted because the association handles either role, and a path where the
-    /// peer genuinely gets there first is one this transport should survive.
+    /// Kept as a knob because the association handles either role, and a path where the peer gets there first
+    /// is one this transport should survive.
     /// </para>
     /// </summary>
     public TimeSpan ListenBeforeOpening { get; init; } = TimeSpan.Zero;
@@ -143,9 +142,8 @@ public sealed class HalyardDatagramControlOptions
 /// </para>
 ///
 /// <para>
-/// That split is the point. The first version of this transport interleaved protocol decisions with socket
-/// awaits, and each new observation about the wire — that the console may open the prelude, that both sides
-/// echo — meant restructuring its control flow and another run against hardware to find the next one.
+/// Keep it that way: interleaving protocol decisions with socket awaits makes each new observation about the
+/// wire (that the console may open the prelude, that both sides echo) a restructuring of the control flow.
 /// </para>
 /// </summary>
 public sealed class HalyardDatagramControlChannel : IAsyncDisposable
@@ -279,11 +277,10 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
         Log($"hello sent, addressed {_options.HelloAddressing}");
 
         // Re-sent while we wait. In the captured LAN pairing the client's first hello goes unanswered and its
-        // second, about a second later, is the one the console replies to — so a single attempt is not a
-        // question the console has declined to answer, it is one it never heard.
+        // second, about a second later, is the one the console replies to.
         // Wait for CONNECTED specifically, not merely "left Established". The peer's teardown of the previous
         // connection routinely arrives after the next hello has gone out, and treating that Closed as the end
-        // of the wait returns a connection that was never opened -- the next request then goes nowhere.
+        // of the wait returns a connection that was never opened.
         await PumpUntilAsync(
             () => _association.Phase is HalyardControlPhase.Connected,
             onQuiet: () => _association.ReopenConnection(),
@@ -331,9 +328,9 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
     /// the stage timeout by default, which suits a request waiting for its answer.
     /// <see cref="Timeout.InfiniteTimeSpan"/> waits until the peer closes or the token is cancelled, which is
     /// what a running control channel needs: the console may say nothing for a while, and silence there is not
-    /// a failure. Before 2026-09-26 the running channel also had the 30 s stage deadline, and its keep-alive
-    /// loop swallowed the timeout and stopped answering heartbeats while the session carried on (engine
-    /// comparisons). The C pipe and the Rust engine have no deadline once the channel runs.
+    /// a failure. A stage deadline on the running channel made its keep-alive loop stop answering heartbeats
+    /// while the session carried on (engine comparisons, 2026-09-26). The C pipe and the Rust engine have no
+    /// deadline once the channel runs.
     /// </para>
     /// </summary>
     public async Task<byte[]?> ReceiveBytesAsync(CancellationToken cancellationToken, TimeSpan? timeout = null)
@@ -439,8 +436,8 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
 
             foreach (HalyardControlEvent raised in action.Events)
             {
-                // Named, always. A silent stall on this transport is what cost the first live runs their
-                // diagnosis; an association that reports what it ignored turns one into evidence.
+                // Named, always, including what the association ignored: otherwise a stall on this transport
+                // is silent.
                 Log(raised is HalyardControlEvent.Unhandled unhandled
                     ? $"ignored a datagram: {unhandled.Reason} ({unhandled.Datagram.Length} bytes)"
                     : raised.GetType().Name);

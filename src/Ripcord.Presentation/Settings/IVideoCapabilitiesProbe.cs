@@ -21,19 +21,16 @@ public readonly record struct VideoAdapterOption(
 /// <para>
 /// A seam because every answer comes from native code — a decoder enumeration, a DXGI HDR query, and an adapter
 /// walk that creates and destroys a D3D12 device per adapter to test decode capability. What the app does with
-/// the answers is judgement, and judgement is what wants testing: whether HEVC is offered at all, which HDR
-/// prerequisite to point at, and whether to warn that no installed GPU can decode.
+/// the answers is judgement, and is tested: whether HEVC is offered at all, which HDR prerequisite to point
+/// at, and whether to warn that no installed GPU can decode.
 /// </para>
 ///
 /// <para>
-/// <b>Asynchronous on purpose, and this is a correctness requirement rather than a courtesy.</b> On Windows
-/// these resolve to Media Foundation and D3D12 calls that <em>cannot be made from the WinUI UI thread</em>:
-/// doing so takes the whole process down with a stowed <c>E_UNEXPECTED</c> out of <c>Microsoft.UI.Xaml.dll</c>,
-/// which no <c>try</c>/<c>catch</c> can intercept — the app simply vanishes. The settings page did exactly that
-/// and crashed every time it was opened; the About page, which had always run the same query through
-/// <c>Task.Run</c>, was fine. Returning Tasks is what stops the next caller rediscovering that: an
-/// implementation is free to move the work off-thread, and no call site can accidentally block the UI thread on
-/// it.
+/// <b>Asynchronous on purpose, as a correctness requirement.</b> On Windows these resolve to Media Foundation
+/// and D3D12 calls that <em>cannot be made from the WinUI UI thread</em>: doing so takes the whole process
+/// down with a stowed <c>E_UNEXPECTED</c> out of <c>Microsoft.UI.Xaml.dll</c>, which no
+/// <c>try</c>/<c>catch</c> can intercept. Returning Tasks lets an implementation move the work off-thread,
+/// and no call site can accidentally block the UI thread on it.
 /// </para>
 ///
 /// <para>

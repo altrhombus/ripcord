@@ -120,11 +120,9 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
     /// Whether <paramref name="address"/> sits on a network this machine is actually attached to.
     ///
     /// <para>
-    /// This is the question "can we talk to the console directly, or do we have to go out and back?", and it
-    /// is asked of the interface table rather than assumed from the address we were handed. The rendezvous
-    /// route offers both a <c>LOCAL</c> and a <c>STATIC</c> candidate for every connection; taking the local
-    /// one is right on the same network and useless anywhere else, and the client cannot know which it is
-    /// without looking. Compares against each interface's own IPv4 mask instead of guessing at private
+    /// Decides whether the console can be reached directly. The rendezvous route offers both a <c>LOCAL</c>
+    /// and a <c>STATIC</c> candidate for every connection; the local one is right on the same network and
+    /// useless anywhere else. Compares against each interface's own IPv4 mask instead of guessing at private
     /// ranges, because a private address on someone else's network is exactly as unreachable as a public one.
     /// </para>
     /// </summary>

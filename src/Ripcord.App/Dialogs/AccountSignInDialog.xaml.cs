@@ -20,9 +20,8 @@ namespace Ripcord_App.Dialogs;
 /// </para>
 ///
 /// <para>
-/// <b>The window this is the "device" the portable layer refuses to name.</b> Everything decided here is
-/// mechanical — navigate, watch, close. Which URL to open and what the code means belong to
-/// <see cref="IAccountSession"/>, and this dialog asks it both questions rather than knowing either.
+/// Everything decided here is mechanical — navigate, watch, close. Which URL to open and what the code means
+/// belong to <see cref="IAccountSession"/>, and this dialog asks it both questions rather than knowing either.
 /// </para>
 ///
 /// <para>

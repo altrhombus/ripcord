@@ -7,17 +7,11 @@ namespace Ripcord.Presentation.Halyard.Sessions;
 /// leaves running.
 ///
 /// <para>
-/// <b>Why this exists.</b> The account route's session is not self-contained: the whole control plane rides an
-/// association that was opened before the session existed, and the cloud session it belongs to must stay
-/// joined for as long as the stream runs — leaving it early ends the session the console joined, and the
-/// console tears the association down with it. Something has to outlive the handshake and die with the stream.
-/// </para>
-///
-/// <para>
-/// That something could have been the caller, and was, in the harness: connect, then remember to dispose two
-/// things in the right order. That is exactly the kind of obligation that survives one call site and breaks at
-/// the second. Wrapping it here means <see cref="IStreamingSession"/> keeps its promise — dispose it and
-/// everything it needed goes away — so no caller has to know which route produced the session it holds.
+/// The account route's whole control plane rides an association that was opened before the session existed,
+/// and the cloud session it belongs to must stay joined for as long as the stream runs — leaving it early
+/// ends the session the console joined, and the console tears the association down with it. This wrapper
+/// holds both and disposes them, in the right order, with the stream, so <see cref="IStreamingSession"/>
+/// keeps its promise and no caller has to know which route produced the session it holds.
 /// </para>
 /// </summary>
 internal sealed class AccountRouteSession : IStreamingSession

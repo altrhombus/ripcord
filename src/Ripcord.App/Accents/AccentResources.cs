@@ -9,11 +9,10 @@ namespace Ripcord_App.Accents;
 /// Maps a portable <see cref="AccentRole"/> onto this front end's palette.
 ///
 /// <para>
-/// This is the WinUI half of the split that let <see cref="ConsoleFamily"/> become portable. The role travels
-/// through the app layer as a plain enum; the colour is looked up here, by key, from
+/// The role travels through the app layer as a plain enum; the colour is looked up here, by key, from
 /// <c>Styles/Ripcord.Tokens.xaml</c> — which in turn points at <c>brand/README.md</c>. Resolving by key rather than
-/// holding literals means the palette still has exactly one home, and a native macOS or Linux front end
-/// supplies its own version of this file rather than inheriting a Windows brush.
+/// holding literals means the palette has exactly one home, and a native macOS or Linux front end supplies
+/// its own version of this file rather than inheriting a Windows brush.
 /// </para>
 ///
 /// <para>
@@ -47,8 +46,7 @@ internal static class AccentResources
     /// In high contrast this resolves to a system brush instead. That is not a fallback for something missing —
     /// high contrast is a contract that no colour outside the system palette appears, and these accents are
     /// decorative by their own definition (they never carry meaning on their own, which is stated where they
-    /// are declared). A user in high contrast has often chosen it to make the screen legible at all, so an
-    /// arbitrary blue drawn over it is a straightforward regression.
+    /// are declared).
     /// </para>
     /// </summary>
     public static Brush Brush(AccentRole role) => AppEffects.HighContrast

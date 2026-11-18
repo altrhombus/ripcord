@@ -32,23 +32,17 @@ namespace Ripcord.Presentation.Halyard;
 public static class HalyardAppServices
 {
     /// <summary>
-    /// Assemble the graph.
-    ///
-    /// <para>
-    /// Every collaborator is an optional parameter defaulting to the real thing, which is this codebase's
-    /// existing house style for a seam and is what lets a harness — or a future integration test that wants a
-    /// real graph over a temporary directory — substitute one piece without restating the other seven.
-    /// </para>
+    /// Assemble the graph. Every collaborator is an optional parameter defaulting to the real thing, so a
+    /// harness or an integration test can substitute one piece without restating the others.
     /// </summary>
     /// <param name="dispatcher">
-    /// The front end's marshalling seam. No default: this is the one thing only the front end can supply, and
-    /// guessing it (a synchronization context that may not exist yet) is how a view-model ends up mutating from
-    /// the wrong thread in exactly one host.
+    /// The front end's marshalling seam. No default: only the front end can supply it, and guessing it (a
+    /// synchronization context that may not exist yet) would let a view-model mutate from the wrong thread.
     /// </param>
     /// <param name="videoCapabilities">
-    /// What the front end's graphics stack can do. Like the dispatcher, only the front end can answer this, and
-    /// on Windows the implementation must marshal off the UI thread or the process dies — which is precisely why
-    /// it is one object in the graph rather than something each surface builds for itself.
+    /// What the front end's graphics stack can do. Only the front end can answer this, and on Windows the
+    /// implementation must marshal off the UI thread or the process dies, which is why it is one object in
+    /// the graph rather than something each surface builds for itself.
     /// </param>
     public static RipcordAppServices Create(
         IUiDispatcher dispatcher,
@@ -152,25 +146,23 @@ public static class HalyardAppServices
     /// all.
     ///
     /// <para>
-    /// The decision is made once, here, rather than inside each seam: a gateway constructed without a
-    /// credential would be an object whose every method declines, and the graph is a better place to say "this
-    /// capability is absent" than each of its methods. It also means the machine's device id is only resolved
-    /// when it will actually be used — <see cref="HalyardClientDeviceId"/> throws on a host that cannot supply
-    /// one, and a build that will never sign in should not fail to start over it.
+    /// Decided once, here, rather than inside each seam: the graph is the place to say "this capability is
+    /// absent". It also means the machine's device id is resolved only when it will be used —
+    /// <see cref="HalyardClientDeviceId"/> throws on a host that cannot supply one, and a build that will
+    /// never sign in should not fail to start over it.
     /// </para>
     ///
     /// <para>
-    /// Null feeds two null objects rather than one, because two capabilities ride on this: signing in, and
-    /// pairing through the account. They are absent together, always — the second is a use of the first.
+    /// Null feeds two null objects, because two capabilities ride on this and are absent together: signing
+    /// in, and pairing through the account.
     /// </para>
     /// </summary>
     /// <summary>
     /// The session source: the local route always, the account route when this build has a gateway.
     ///
     /// <para>
-    /// The account connector is built <b>per attempt</b> rather than once, because it holds a single-use push
-    /// socket — a connect that has been tried and torn down cannot be tried again on the same object, and
-    /// connecting is exactly the thing a user retries.
+    /// The account connector is built <b>per attempt</b>: it holds a single-use push socket, so a connect
+    /// that has been tried and torn down cannot be tried again on the same object.
     /// </para>
     /// </summary>
     private static IStreamingSessionSource BuildSessionSource(

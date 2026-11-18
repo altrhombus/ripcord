@@ -9,9 +9,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// The control association's state machine.
 ///
 /// <para>
-/// Every test here is synchronous and deterministic, which is the whole reason the machine has no I/O: the
-/// protocol's awkward part is <em>who does what when</em>, and that had been discovered by running against a
-/// console and reading a packet capture. Here it is asserted.
+/// Every test here is synchronous and deterministic, which is the reason the machine has no I/O: the
+/// protocol's awkward part is <em>who does what when</em>, and here it is asserted.
 /// </para>
 ///
 /// <para>

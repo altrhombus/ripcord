@@ -52,11 +52,10 @@ public sealed class TakionSessionNegotiator
     /// uses — 12 really is absent (cap64/cap65, [W]). The console answers with the single one it picked.
     ///
     /// <para>
-    /// Sending this at all is the point. The stream association used to skip straight to SESSION_REQUEST, and
-    /// a console that has agreed no version defaults to the lowest it knows: it answered ours at version 9 and
-    /// returned a SESSION_REPLY with the ECDH fields simply absent, which arrives downstream as
-    /// "ecdhSignature verification failed" and reads like a crypto bug. The senkusha association is the
-    /// exception and offers only 9, because a probe needs no key agreement.
+    /// The offer must be sent before SESSION_REQUEST. A console that has agreed no version defaults to the
+    /// lowest it knows: it answers at version 9 and returns a SESSION_REPLY with the ECDH fields absent, which
+    /// arrives downstream as "ecdhSignature verification failed" and reads like a crypto bug. The senkusha
+    /// association is the exception and offers only 9, because a probe needs no key agreement.
     /// </para>
     /// </summary>
     public static readonly IReadOnlyList<uint> V1OfferedVersions = [9, 10, 11, 13, 14, 15, 16, 17];
